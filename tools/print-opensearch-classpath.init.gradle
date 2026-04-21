@@ -1,0 +1,15 @@
+allprojects {
+    tasks.register("printResolvedClasspath") {
+        doLast {
+            def sourceSets = project.extensions.findByName("sourceSets")
+            if (sourceSets == null) {
+                return
+            }
+            def mainSourceSet = sourceSets.findByName("main")
+            if (mainSourceSet == null) {
+                return
+            }
+            println mainSourceSet.runtimeClasspath.asPath
+        }
+    }
+}

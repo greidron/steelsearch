@@ -1,0 +1,887 @@
+# Project Checklist
+- [x] 프로젝트 요구사항 분석
+  - 산출물: `docs/rust-port/requirements.md`
+- [x] Transport error response 디코더 구현
+  - [x] Java OpenSearch transport exception 직렬화 포맷 확인
+  - [x] Rust에서 error response body 최소 디코딩 구현
+  - [x] `os-tcp-probe`에서 원격 예외 class/message 출력
+- [x] Transport compression 감지 및 해제 구현
+  - [x] Java OpenSearch 압축 플래그 및 compressor 포맷 확인
+  - [x] compressed response body 해제 경로 추가
+  - [x] 압축 frame fixture 또는 live-node 검증 추가
+- [x] Cluster-state decode 진입점 설계 및 fixture 확보
+  - [x] Java OpenSearch cluster-state transport action 경로 확인
+  - [x] cluster-state fixture 생성 방식 결정
+  - [x] `os-cluster-state` decode 모델 초안 작성
+- [x] Java cluster-state response fixture 생성
+  - [x] `OpenSearchWireFixture`에 최소 `ClusterStateResponse.writeTo` fixture 추가
+  - [x] Rust fixture test에서 response prefix decode 검증
+  - [x] fixture에 사용한 OpenSearch wire version 기록
+- [x] Cluster-state metadata prefix decode 구현
+  - [x] Java `Metadata.readFrom` wire layout 확인
+  - [x] fixture minimal state의 metadata version/cluster UUID decode
+  - [x] unsupported metadata/custom 영역 fail-closed 에러 추가
+- [x] Cluster-state coordination metadata/settings decode 구현
+  - [x] `CoordinationMetadata(StreamInput)` wire layout 확인
+  - [x] transient/persistent `Settings` wire layout 확인
+  - [x] minimal fixture에서 coordination/settings/hash map 영역 consume 검증
+- [x] Cluster-state metadata tail/routing skeleton decode 구현
+  - [x] templates/custom metadata count wire layout 확인
+  - [x] minimal fixture에서 metadata tail consume 검증
+  - [x] routing table empty skeleton consume 검증
+- [x] Cluster-state discovery nodes/blocks skeleton decode 구현
+  - [x] `DiscoveryNodes.readFrom` wire layout 확인
+  - [x] `ClusterBlocks.readFrom` wire layout 확인
+  - [x] minimal fixture에서 nodes/blocks/custom count까지 consume 검증
+- [x] Cluster-state minimal response full-consume API 정리
+  - [x] `ClusterStateResponsePrefix`의 현재 decode 범위 문서화
+  - [x] unsupported discovery nodes/blocks/customs fail-closed 테스트 추가
+  - [x] Java VInt signed compatibility 회귀 테스트 보강
+- [x] Cluster-state transport request builder 설계
+  - [x] Java `ClusterStateRequest.writeTo` wire layout 확인
+  - [x] Rust request body builder 초안 구현
+  - [x] Java fixture로 request bytes 호환성 검증
+- [x] Cluster-state transport frame builder 연동
+  - [x] `cluster:monitor/state` action variable header와 request body 결합
+  - [x] Java full request frame fixture 추가
+  - [x] Rust frame bytes 호환성 검증
+- [x] `os-tcp-probe` cluster-state 요청 경로 추가
+  - [x] CLI 옵션 또는 서브커맨드 설계
+  - [x] transport handshake 이후 cluster-state request 전송
+  - [x] cluster-state response prefix 출력 검증
+- [x] Cluster-state filtered live response fixture 확보
+  - [x] `os-tcp-probe --cluster-state` 출력 형식 고정
+  - [x] local OpenSearch 노드 대상 smoke 절차 문서화
+  - [x] filtered response의 nodes/blocks/metadata false 동작 확인
+- [x] Cluster-state discovery node decode 확장
+  - [x] `DiscoveryNodes.writeToWithAttribute` / `DiscoveryNode.writeToWithAttribute` wire layout 확인
+  - [x] Java fixture에 단일 node 포함 cluster-state response 추가
+  - [x] Rust에서 node id/name/address/roles skeleton decode 검증
+- [x] Cluster-state cluster blocks decode 확장
+  - [x] `ClusterBlock.writeTo` wire layout 확인
+  - [x] Java fixture에 global block 포함 cluster-state response 추가
+  - [x] Rust에서 block id/uuid/levels skeleton decode 검증
+- [x] Cluster-state routing table index skeleton decode 확장
+  - [x] `IndexRoutingTable.writeTo` wire layout 확인
+  - [x] Java fixture에 단일 index routing table 포함 response 추가
+  - [x] Rust에서 index name/uuid/shard count fail-closed skeleton 검증
+- [x] Cluster-state index metadata skeleton decode 확장
+  - [x] `IndexMetadata.writeTo` wire layout 확인
+  - [x] Java fixture에 단일 index metadata 포함 response 추가
+  - [x] Rust에서 index name/uuid/settings/shard counts skeleton 검증
+- [x] Cluster-state shard routing skeleton decode 확장
+  - [x] `IndexShardRoutingTable.writeToThin` / `ShardRouting.writeToThin` layout 확인
+  - [x] Java fixture에 단일 unassigned shard routing 포함 response 추가
+  - [x] Rust에서 shard id/state/primary/current node skeleton decode 검증
+- [x] Cluster-state allocated shard routing decode 확장
+  - [x] `AllocationId.writeTo` 및 started shard wire layout 확인
+  - [x] Java fixture에 started primary shard routing 포함 response 추가
+  - [x] Rust에서 allocation id/current node/state STARTED skeleton 검증
+- [x] Cluster-state initializing shard routing decode 확장
+  - [x] initializing shard expected size/recovery source layout 확인
+  - [x] Java fixture에 initializing primary shard routing 포함 response 추가
+  - [x] Rust에서 state INITIALIZING/recovery source/allocation id/expected size 검증
+- [x] Cluster-state relocating shard routing decode 확장
+  - [x] relocating shard relocation id/current+relocating node layout 확인
+  - [x] Java fixture에 relocating primary shard routing 포함 response 추가
+  - [x] Rust에서 state RELOCATING/relocation id/expected size 검증
+- [x] Cluster-state replica shard routing decode 확장
+  - [x] primary+replica shard routing table layout 확인
+  - [x] Java fixture에 started primary + unassigned replica 포함 response 추가
+  - [x] Rust에서 shard routing count 2 및 primary=false replica skeleton 검증
+- [x] Cluster-state index-scoped cluster blocks decode 확장
+  - [x] `ClusterBlocks.writeTo` index block map layout 확인
+  - [x] Java fixture에 단일 index block 포함 response 추가
+  - [x] Rust에서 index name/block id/levels skeleton 검증
+- [x] Cluster-state top-level metadata settings decode 확장
+  - [x] `Settings.writeSettingsToStream` generic value layout 재확인
+  - [x] Java fixture에 transient/persistent metadata settings 포함 response 추가
+  - [x] Rust에서 top-level setting key/value skeleton 검증
+- [x] Cluster-state consistent settings hash decode 확장
+  - [x] `DiffableStringMap.writeTo` / generic map layout 확인
+  - [x] Java fixture에 hashesOfConsistentSettings 포함 response 추가
+  - [x] Rust에서 hash key/value skeleton 검증
+- [x] Cluster-state legacy index template metadata skeleton decode 확장
+  - [x] `TemplatesMetadata.writeTo` / `IndexTemplateMetadata.writeTo` layout 확인
+  - [x] Java fixture에 legacy index template 포함 response 추가
+  - [x] Rust에서 template name/pattern/settings count skeleton 검증
+- [x] Cluster-state legacy index template mappings/aliases decode 확장
+  - [x] `CompressedXContent.writeTo` 및 `AliasMetadata.writeTo` layout 확인
+  - [x] Java fixture에 mapping/alias 포함 legacy template response 추가
+  - [x] Rust에서 mapping count/alias name skeleton 검증
+- [x] Cluster-state index metadata mappings/aliases skeleton decode 확장
+  - [x] `MappingMetadata.writeTo` 및 `AliasMetadata.writeTo` layout 확인
+  - [x] Java fixture에 mapping/alias 포함 index metadata response 추가
+  - [x] Rust에서 index mapping count/alias name skeleton 검증
+- [x] Cluster-state index metadata custom data skeleton decode 확장
+  - [x] `DiffableStringMap.writeTo` custom data layout 확인
+  - [x] Java fixture에 custom data 포함 index metadata response 추가
+  - [x] Rust에서 custom data key/count skeleton 검증
+- [x] Cluster-state index metadata rollover info skeleton decode 확장
+  - [x] `RolloverInfo.writeTo` layout 확인
+  - [x] Java fixture에 rollover info 포함 index metadata response 추가
+  - [x] Rust에서 rollover alias/met conditions count skeleton 검증
+- [x] Cluster-state index metadata rollover met-condition decode 확장
+  - [x] rollover `Condition` named writeable names/layout 확인
+  - [x] Java fixture에 met condition 포함 rollover info response 추가
+  - [x] Rust에서 condition name/count skeleton 검증
+- [x] Cluster-state index metadata rollover max_age/max_size condition decode 확장
+  - [x] `MaxAgeCondition` / `MaxSizeCondition` payload layout 확인
+  - [x] Java fixture에 max_age/max_size 포함 rollover info response 추가
+  - [x] Rust에서 condition values skeleton 검증
+- [x] Cluster-state index metadata split-shards child ranges decode 확장
+  - [x] `SplitShardsMetadata.writeTo` child range layout 확인
+  - [x] Java fixture에 split shard child range 포함 index metadata response 추가
+  - [x] Rust에서 split child count/range skeleton 검증
+- [x] Cluster-state index-graveyard tombstone skeleton decode 확장
+  - [x] `IndexGraveyard.Tombstone.writeTo` layout 확인
+  - [x] Java fixture에 index graveyard tombstone 포함 metadata response 추가
+  - [x] Rust에서 tombstone index name/uuid/delete date skeleton 검증
+- [x] Cluster-state component template metadata skeleton decode 확장
+  - [x] `ComponentTemplateMetadata.writeTo` / `ComponentTemplate.writeTo` layout 확인
+  - [x] Java fixture에 component template metadata 포함 response 추가
+  - [x] Rust에서 component template name/version/template settings count skeleton 검증
+- [x] Cluster-state component template mappings/aliases decode 확장
+  - [x] `Template.writeTo` mapping/alias payload layout 재확인
+  - [x] Java fixture에 mapping/alias 포함 component template response 추가
+  - [x] Rust에서 component template mapping length/alias name skeleton 검증
+- [x] Cluster-state component template metadata map decode 확장
+  - [x] component template metadata generic map layout 확인
+  - [x] Java fixture에 metadata map 포함 component template response 추가
+  - [x] Rust에서 metadata key/value skeleton 검증
+- [x] Cluster-state composable index template metadata skeleton decode 확장
+  - [x] `ComposableIndexTemplateMetadata.writeTo` / `ComposableIndexTemplate.writeTo` layout 확인
+  - [x] Java fixture에 composable index template metadata 포함 response 추가
+  - [x] Rust에서 template name/index patterns/composed_of count skeleton 검증
+- [x] Cluster-state composable index template mappings/aliases decode 확장
+  - [x] mapping/alias 포함 `Template.writeTo` payload를 composable template fixture에 적용
+  - [x] Java fixture에 mapping/alias 포함 composable index template response 추가
+  - [x] Rust에서 composable template mapping length/alias name skeleton 검증
+- [x] Cluster-state composable index template data stream/context decode 확장
+  - [x] `DataStreamTemplate.writeTo` / `Context.writeTo` layout 확인
+  - [x] Java fixture에 data stream/context 포함 composable index template response 추가
+  - [x] Rust에서 data stream timestamp/context name skeleton 검증
+- [x] Cluster-state data stream metadata skeleton decode 확장
+  - [x] `DataStreamMetadata.writeTo` / `DataStream.writeTo` layout 확인
+  - [x] Java fixture에 data stream metadata 포함 response 추가
+  - [x] Rust에서 data stream name/timestamp/backing index count skeleton 검증
+- [x] Cluster-state repository metadata skeleton decode 확장
+  - [x] `RepositoriesMetadata.writeTo` / `RepositoryMetadata.writeTo` layout 확인
+  - [x] Java fixture에 repository metadata 포함 response 추가
+  - [x] Rust에서 repository name/type/settings count skeleton 검증
+- [x] Cluster-state weighted routing metadata skeleton decode 확장
+  - [x] `WeightedRoutingMetadata.writeTo` / `WeightedRouting.writeTo` layout 확인
+  - [x] Java fixture에 weighted routing metadata 포함 response 추가
+  - [x] Rust에서 weighted routing awareness attribute/weight count skeleton 검증
+- [x] Cluster-state view metadata skeleton decode 확장
+  - [x] `ViewMetadata.writeTo` layout 확인
+  - [x] Java fixture에 view metadata 포함 response 추가
+  - [x] Rust에서 view name/source/index pattern count skeleton 검증
+- [x] Cluster-state workload group metadata skeleton decode 확장
+  - [x] `WorkloadGroupMetadata.writeTo` / `WorkloadGroup.writeTo` layout 확인
+  - [x] Java fixture에 workload group metadata 포함 response 추가
+  - [x] Rust에서 workload group name/resource count skeleton 검증
+- [x] Cluster-state crypto metadata skeleton decode 확장
+  - [x] `CryptoMetadata.writeTo` layout 확인
+  - [x] Java fixture에 crypto metadata 포함 repository response 추가
+  - [x] Rust에서 crypto provider/name/settings count skeleton 검증
+- [x] Cluster-state repository metadata multi-entry decode 확장
+  - [x] `RepositoriesMetadata.writeTo` list ordering fixture 확인
+  - [x] Java fixture에 repository 2개 포함 response 추가
+  - [x] Rust에서 repository count/name list skeleton 검증
+- [x] Cluster-state templates/custom metadata mixed decode fixture 확장
+  - [x] legacy template + component template + composable template 동시 포함 layout 확인
+  - [x] Java fixture에 metadata custom/template 혼합 response 추가
+  - [x] Rust에서 templates/custom counts 및 개별 skeleton 동시 검증
+- [x] Cluster-state data stream/composable template mixed fixture 확장
+  - [x] data stream metadata + composable data stream template 동시 포함 layout 확인
+  - [x] Java fixture에 data stream metadata와 composable template 혼합 response 추가
+  - [x] Rust에서 data stream/custom template skeleton 동시 검증
+- [x] Cluster-state misc custom metadata aggregate fixture 확장
+  - [x] repositories + weighted routing + view + workload group 동시 포함 layout 확인
+  - [x] Java fixture에 misc custom metadata 혼합 response 추가
+  - [x] Rust에서 misc custom counts 및 skeleton 동시 검증
+- [x] Cluster-state metadata fixture coverage 문서화
+  - [x] 현재 Java cluster-state fixture 목록과 decode 범위 정리
+  - [x] 지원 custom metadata와 fail-closed 영역 문서 갱신
+  - [x] 다음 구현 후보 우선순위 정리
+- [x] `os-tcp-probe` cluster-state metadata custom summary 출력 확장
+  - [x] 현재 cluster-state 출력 포맷과 metadata custom 필드 매핑 확인
+  - [x] decoded metadata custom count/name summary 출력 추가
+  - [x] CLI formatting unit test 갱신
+- [x] `os-tcp-probe` cluster-state metadata entity count summary 출력 확장
+  - [x] index/template/custom entity count 출력 키 설계
+  - [x] decoded metadata entity counts 출력 추가
+  - [x] CLI formatting unit test 갱신
+- [x] `os-tcp-probe` cluster-state routing shard summary 출력 확장
+  - [x] 현재 routing table 출력 포맷과 shard count 필드 매핑 확인
+  - [x] decoded routing shard/index summary 출력 추가
+  - [x] CLI formatting unit test 갱신
+- [x] `os-tcp-probe` cluster-state discovery/block summary 출력 확장
+  - [x] 현재 discovery nodes/cluster blocks 출력 포맷과 필드 매핑 확인
+  - [x] decoded node id/name 및 block count summary 출력 추가
+  - [x] CLI formatting unit test 갱신
+- [x] `os-tcp-probe` cluster-state summary 출력 문서 갱신
+  - [x] 현재 cluster-state 출력 키 목록 정리
+  - [x] metadata/routing/discovery/block summary 키 문서화
+  - [x] smoke 절차 출력 예시 갱신
+- [x] Cluster-state compatibility gap 재평가
+  - [x] 현재 decoder fail-closed 항목과 지원 항목 비교
+  - [x] 다음 wire compatibility 우선순위 선정
+  - [x] `tasks.md`에 다음 구현 단위 추가
+- [x] Cluster-state existing_store recovery source decode 확장
+  - [x] OpenSearch `ExistingStoreRecoverySource.writeTo` wire layout 확인
+  - [x] Java fixture에 existing_store recovery source 포함 shard routing response 추가
+  - [x] Rust에서 existing_store recovery source skeleton decode 검증
+- [x] Cluster-state snapshot recovery source decode 확장
+  - [x] OpenSearch `SnapshotRecoverySource.writeTo` wire layout 확인
+  - [x] Java fixture에 snapshot recovery source 포함 shard routing response 추가
+  - [x] Rust에서 snapshot recovery source skeleton decode 검증
+- [x] Cluster-state remote_store recovery source decode 확장
+  - [x] OpenSearch `RemoteStoreRecoverySource.writeTo` wire layout 확인
+  - [x] Java fixture에 remote_store recovery source 포함 shard routing response 추가
+  - [x] Rust에서 remote_store recovery source skeleton decode 검증
+- [x] Cluster-state unassigned-info failure exception decode 확장
+  - [x] OpenSearch `UnassignedInfo.writeTo` failure exception wire layout 확인
+  - [x] Java fixture에 failure 포함 unassigned shard routing response 추가
+  - [x] Rust에서 failure exception skeleton decode 검증
+- [x] Cluster-state rollover condition gap 재평가
+  - [x] OpenSearch rollover `Condition` named writeable 목록 확인
+  - [x] 현재 Rust decoder 지원 condition과 미지원 condition 비교
+  - [x] 다음 condition decode 구현 단위 추가
+- [x] Cluster-state top-level custom registry 후보 조사
+  - [x] OpenSearch `ClusterState.Custom` 구현체와 writeable name 확인
+  - [x] fixture로 만들 수 있는 top-level custom 후보 선정
+  - [x] 다음 custom decode 구현 단위 추가
+- [x] Cluster-state repository_cleanup custom decode 확장
+  - [x] OpenSearch `RepositoryCleanupInProgress.writeTo` wire layout 확인
+  - [x] Java fixture에 repository_cleanup top-level custom 포함 response 추가
+  - [x] Rust에서 repository_cleanup custom skeleton decode 검증
+- [x] Cluster-state snapshot_deletions custom decode 확장
+  - [x] OpenSearch `SnapshotDeletionsInProgress.writeTo` wire layout 확인
+  - [x] Java fixture에 snapshot_deletions top-level custom 포함 response 추가
+  - [x] Rust에서 snapshot_deletions custom skeleton decode 검증
+- [x] Cluster-state restore custom decode 확장
+  - [x] OpenSearch `RestoreInProgress.writeTo` wire layout 확인
+  - [x] Java fixture에 restore top-level custom 포함 response 추가
+  - [x] Rust에서 restore custom skeleton decode 검증
+- [x] Cluster-state snapshots custom decode 확장
+  - [x] OpenSearch `SnapshotsInProgress.writeTo` wire layout 확인
+  - [x] Java fixture에 snapshots top-level custom 포함 response 추가
+  - [x] Rust에서 snapshots custom skeleton decode 검증
+- [x] `os-tcp-probe` cluster-state top-level custom summary 출력 확장
+  - [x] 현재 cluster-state tail custom 출력 포맷과 필드 매핑 확인
+  - [x] decoded custom names 및 entry count summary 출력 추가
+  - [x] CLI formatting unit test 갱신
+- [x] Cluster-state top-level custom fixture coverage 문서화
+  - [x] 현재 top-level custom fixture 목록과 decode 범위 정리
+  - [x] 지원 custom과 fail-closed payload 영역 문서 갱신
+  - [x] 다음 구현 후보 우선순위 정리
+- [x] Cluster-state restore shard status skeleton decode 확장
+  - [x] OpenSearch `RestoreInProgress.ShardRestoreStatus.writeTo` wire layout 확인
+  - [x] Java fixture에 restore custom shard status 포함 response 추가
+  - [x] Rust에서 restore shard status skeleton decode 검증
+- [x] Cluster-state snapshots shard status skeleton decode 확장
+  - [x] OpenSearch `SnapshotsInProgress.ShardSnapshotStatus.writeTo` wire layout 확인
+  - [x] Java fixture에 snapshots custom shard status 포함 response 추가
+  - [x] Rust에서 snapshots shard status skeleton decode 검증
+- [x] Cluster-state snapshots clone map skeleton decode 확장
+  - [x] OpenSearch `SnapshotsInProgress` clone map key/value wire layout 확인
+  - [x] Java fixture에 snapshots custom clone map 포함 response 추가
+  - [x] Rust에서 snapshots clone map skeleton decode 검증
+- [x] Cluster-state snapshots user metadata generic map decode 확장
+  - [x] OpenSearch `StreamOutput.writeMap` generic value wire layout 중 fixture용 타입 확인
+  - [x] Java fixture에 snapshots custom user metadata 포함 response 추가
+  - [x] Rust에서 snapshots user metadata skeleton decode 검증
+- [x] Cluster-state snapshots user metadata generic value coverage 확장
+  - [x] OpenSearch generic value list/map/array wire layout 확인
+  - [x] Java fixture에 nested/list user metadata 포함 response 추가
+  - [x] Rust에서 nested/list user metadata decode 검증
+- [x] Cluster-state snapshots user metadata numeric/date/binary value coverage 확장
+  - [x] OpenSearch generic value numeric/date/binary wire layout 확인
+  - [x] Java fixture에 float/double/short/byte/date/binary user metadata 포함 response 추가
+  - [x] Rust에서 numeric/date/binary user metadata decode 검증
+- [x] Cluster-state repository/workload group multi-entry validation fixture 확장
+  - [x] 현재 repository/workload group fixture coverage 확인
+  - [x] Java fixture에 repository/workload group multi-entry settings 포함 response 추가
+  - [x] Rust에서 multi-entry repository/workload group decode 검증
+- [x] Cluster-state custom metadata dispatch table 정리
+  - [x] 현재 metadata/top-level custom match 분기 목록 확인
+  - [x] registry-driven dispatch helper 설계
+  - [x] 기존 fail-closed 테스트 유지하며 dispatch table로 리팩터링
+- [x] Cluster-state mixed custom live compatibility probe 설계
+  - [x] 현재 fixture 기반 custom coverage와 live probe 출력 비교
+  - [x] mixed metadata/top-level custom response probe 시나리오 정리
+  - [x] `os-tcp-probe` summary 또는 문서에 live 검증 절차 추가
+- [x] Cluster-state mixed custom live probe transcript readiness 확인
+  - [x] 로컬 OpenSearch transport listener 존재 여부 확인
+  - [x] `os-tcp-probe --cluster-state` 실패 출력 캡처
+  - [x] transcript 확보에 필요한 live node 조건 문서화
+- [x] Cluster-state mixed custom live probe transcript 확보
+  - [x] repository/snapshot activity가 있는 OpenSearch node 실행
+  - [x] `os-tcp-probe --cluster-state-full` 성공 출력 캡처
+  - [x] transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state workload group plugin-enabled live probe transcript 확보
+  - [x] workload-management REST handler가 로드된 OpenSearch node 실행 경로 확인
+  - [x] `queryGroups` metadata custom이 포함된 `os-tcp-probe --cluster-state-full` 출력 캡처
+  - [x] live workload group transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state combined custom live probe transcript 확보
+  - [x] workload-management plugin-enabled node에서 repository/snapshot/workload group activity 동시 생성
+  - [x] repositories/queryGroups/snapshots가 함께 포함된 `os-tcp-probe --cluster-state-full` 출력 캡처
+  - [x] combined transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state active snapshot/restore non-empty live probe transcript 확보
+  - [x] long-running snapshot 또는 restore 상태를 유도하는 OpenSearch activity 설계
+  - [x] non-empty `SnapshotsInProgress`가 포함된 `os-tcp-probe --cluster-state-full` 출력 캡처
+  - [x] active top-level custom transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state active restore non-empty live probe transcript 확보
+  - [x] long-running restore 상태를 유도하는 OpenSearch activity 설계
+  - [x] non-empty `RestoreInProgress`가 포함된 `os-tcp-probe --cluster-state-full` 출력 캡처
+  - [x] active restore transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state live compatibility transcript matrix 정리
+  - [x] filtered/full/repository/workload/snapshot/restore live transcript 목록 정리
+  - [x] 각 transcript의 decoded custom coverage와 remaining bytes 결과 표로 문서화
+  - [x] 남은 live compatibility gap 후보를 다음 작업으로 구체화
+- [x] Cluster-state snapshot deletion/repository cleanup live transcript 확보
+  - [x] non-empty `snapshot_deletions` 또는 `repository_cleanup` 상태를 유도하는 OpenSearch activity 설계
+  - [x] 해당 top-level custom이 포함된 `os-tcp-probe --cluster-state-full` 출력 캡처
+  - [x] live transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state repository cleanup non-empty live transcript 확보
+  - [x] stale repository cleanup 상태를 유도할 수 있는 OpenSearch activity 조사
+  - [x] non-empty `repository_cleanup`이 포함된 `os-tcp-probe --cluster-state-full` 출력 캡처
+  - [x] repository cleanup transcript 기반 compatibility gap 또는 완료 상태 문서화
+- [x] Cluster-state plugin-provided custom coverage 후보 정리
+  - [x] OpenSearch 기본 실행 및 선택 plugin 실행에서 cluster-state custom 이름 수집
+  - [x] 현재 dispatch table과 비교해 unknown custom 후보 분류
+  - [x] fixture/live transcript 우선순위 문서화
+- [x] Cluster-state ingest metadata custom decode 확장
+  - [x] OpenSearch `IngestMetadata.writeTo` / pipeline metadata wire layout 확인
+  - [x] Java fixture에 ingest metadata custom 포함 response 추가
+  - [x] Rust에서 ingest metadata skeleton decode 검증
+- [x] Cluster-state search pipeline metadata custom decode 확장
+  - [x] OpenSearch `SearchPipelineMetadata.writeTo` / pipeline metadata wire layout 확인
+  - [x] Java fixture에 search pipeline metadata custom 포함 response 추가
+  - [x] Rust에서 search pipeline metadata skeleton decode 검증
+- [x] Cluster-state script metadata custom decode 확장
+  - [x] OpenSearch `ScriptMetadata.writeTo` / stored script wire layout 확인
+  - [x] Java fixture에 script metadata custom 포함 response 추가
+  - [x] Rust에서 script metadata skeleton decode 검증
+- [x] Cluster-state persistent tasks metadata custom decode 확장
+  - [x] OpenSearch `PersistentTasksCustomMetadata.writeTo` wire layout 확인
+  - [x] Java fixture에 persistent tasks metadata custom 포함 response 추가
+  - [x] Rust에서 persistent tasks metadata skeleton decode 검증
+- [x] Cluster-state decommission metadata custom decode 확장
+  - [x] OpenSearch `DecommissionAttributeMetadata.writeTo` wire layout 확인
+  - [x] Java fixture에 `decommissionedAttribute` metadata custom 포함 response 추가
+  - [x] Rust에서 decommission metadata skeleton decode 검증
+- [x] Cluster-state operational metadata live transcript coverage 확장
+  - [x] `persistent_tasks` metadata custom live 생성 절차 확인
+  - [x] `decommissionedAttribute` metadata custom live 생성 절차 확인
+  - [x] `os-tcp-probe --cluster-state-full` transcript로 fixture 외 live 호환성 문서화
+- [x] Persistent tasks live producer 구현 검토
+  - [x] OpenSearch test plugin 또는 fixture helper로 no-op `PersistentTaskPlugin` 등록 가능성 확인
+  - [x] live node에서 non-empty `persistent_tasks` 생성 REST/transport helper 설계
+  - [x] `os-tcp-probe --cluster-state-full` non-empty persistent task transcript 추가 조건 문서화
+- [x] Persistent tasks live fixture plugin 구현
+  - [x] OpenSearch example/test plugin skeleton 추가
+  - [x] `PersistentTaskPlugin` params/executor 및 REST start route 구현
+  - [x] live node에서 non-empty `persistent_tasks` transcript 캡처
+- [x] Persistent task named-writeable payload compatibility hardening
+  - [x] fixture plugin params에 non-empty wire payload 추가
+  - [x] Rust persistent task decoder가 known fixture params payload를 소비하도록 확장
+  - [x] live transcript로 non-empty params payload fully consumed 확인
+- [x] Persistent task optional state named-writeable compatibility 조사
+  - [x] OpenSearch persistent task state 등록/직렬화 경로 확인
+  - [x] fixture plugin에서 non-empty optional state 발행 가능성 확인
+  - [x] Rust decoder의 state named-writeable payload 처리 전략 문서화
+- [x] Persistent task optional state fixture 구현
+  - [x] fixture plugin에 `PersistentTaskState` named-writeable 추가
+  - [x] executor에서 deterministic non-empty state publish 구현
+  - [x] Rust decoder와 live transcript로 state payload fully consumed 확인
+- [x] Cluster-state plugin-provided custom live coverage 재평가
+  - [x] 현재 dispatch table과 live compatibility matrix 비교
+  - [x] OpenSearch bundled/plugin-provided custom 후보 재확인
+  - [x] 다음 fixture/live coverage 구현 단위 선정
+- [x] Cluster-state view metadata live transcript coverage 구현
+  - [x] `/views` REST API로 non-empty `view` metadata 생성 절차 확인
+  - [x] `os-tcp-probe --cluster-state-full` live transcript 캡처
+  - [x] live compatibility matrix에 `view` metadata 행 추가
+- [x] Cluster-state pipeline/script metadata live transcript coverage 구현
+  - [x] ingest pipeline REST producer와 live transcript 캡처
+  - [x] search pipeline REST producer와 live transcript 캡처
+  - [x] stored script REST producer와 live transcript 캡처
+- [x] Cluster-state template metadata live transcript coverage 구현
+  - [x] component template REST producer와 live transcript 캡처
+  - [x] composable index template REST producer와 live transcript 캡처
+  - [x] live compatibility matrix에 template metadata 행 추가
+- [x] Cluster-state plugin-provided custom live coverage 후보 재평가
+  - [x] 현재 live compatibility matrix와 dispatch table 비교
+  - [x] OpenSearch bundled/plugin 실행에서 남은 custom 후보 재수집
+  - [x] 다음 fixture/live coverage 작업 단위 선정
+- [x] `os-tcp-probe` workload group metadata identity summary 출력 확장
+  - [x] 현재 `WorkloadGroupPrefix` 필드와 출력 포맷 매핑 확인
+  - [x] workload group 이름/id/resource/search setting count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` data stream metadata identity summary 출력 확장
+  - [x] 현재 `DataStreamPrefix` 필드와 출력 포맷 매핑 확인
+  - [x] data stream 이름/timestamp field/backing index count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` repository metadata identity summary 출력 확장
+  - [x] 현재 `RepositoryMetadataPrefix` 필드와 출력 포맷 매핑 확인
+  - [x] repository 이름/type/settings count/generation 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` index metadata identity summary 출력 확장
+  - [x] 현재 `IndexMetadataPrefix` 필드와 출력 포맷 매핑 확인
+  - [x] index 이름/uuid/shard count/settings/mapping/alias count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` legacy index template identity summary 출력 확장
+  - [x] 현재 `LegacyIndexTemplatePrefix` 필드와 출력 포맷 매핑 확인
+  - [x] template 이름/pattern/settings/mapping/alias count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` component template identity summary 출력 확장
+  - [x] 현재 `ComponentTemplatePrefix` 필드와 출력 포맷 매핑 확인
+  - [x] component template 이름/version/settings/mapping/alias count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` composable index template identity summary 출력 확장
+  - [x] 현재 `ComposableIndexTemplatePrefix` 필드와 출력 포맷 매핑 확인
+  - [x] composable template 이름/index pattern/component/settings/mapping/alias count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` index graveyard tombstone identity summary 출력 확장
+  - [x] 현재 `IndexGraveyardTombstonePrefix` 필드와 출력 포맷 매핑 확인
+  - [x] tombstone index 이름/uuid/delete timestamp 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` routing shard identity summary 출력 확장
+  - [x] 현재 `ShardRoutingPrefix` 필드와 출력 포맷 매핑 확인
+  - [x] shard id/state/primary/current node/allocation id 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` discovery node identity summary 출력 확장
+  - [x] 현재 `DiscoveryNodePrefix` 필드와 출력 포맷 매핑 확인
+  - [x] node id/name/address/role count/attribute count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` cluster block identity summary 출력 확장
+  - [x] 현재 `ClusterBlockPrefix` 필드와 출력 포맷 매핑 확인
+  - [x] block id/uuid/level/status 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] `os-tcp-probe` top-level cluster-state custom identity summary 출력 확장
+  - [x] 현재 repository cleanup/snapshot deletions/restore/snapshots custom 필드와 출력 포맷 매핑 확인
+  - [x] custom별 대표 id/name/state/status count 출력 추가
+  - [x] CLI formatting unit test와 문서 transcript 갱신
+- [x] cluster-state live transcript summary key backfill
+  - [x] 기존 live transcript 중 routing/node/block/custom summary key 누락 구간 조사
+  - [x] 최신 `os-tcp-probe` key set 기준으로 대표 transcript 갱신
+  - [x] 문서 consistency 확인 및 검증 실행
+- [x] cluster-state unsupported custom compatibility ledger 정리
+  - [x] 현재 `UnsupportedNamedWriteable`/unknown custom 실패 경로와 문서화 상태 확인
+  - [x] 신규 custom 발견 시 기록할 ledger 템플릿 추가
+  - [x] 문서 consistency 확인 및 검증 실행
+- [x] cluster-state named diff compatibility 조사
+  - [x] OpenSearch cluster-state named diff serialization 경로 확인
+  - [x] Rust 포트에서 필요한 prefix decode 범위와 fail-closed 정책 정리
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff prefix decoder 스캐폴딩
+  - [x] OpenSearch `ClusterStateDiff` header와 `DiffableUtils.MapDiff` envelope fixture 생성 범위 확정
+  - [x] Rust prefix struct/error 타입과 fail-closed 테스트 추가
+  - [x] `os-tcp-probe` 또는 별도 fixture test에서 diff prefix summary 검증
+- [x] publication cluster-state diff section count summary 확장
+  - [x] routing/nodes/metadata/blocks/customs diff section envelope 경계 확인
+  - [x] prefix-only section count struct와 fixture 테스트 추가
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff Java fixture 생성
+  - [x] OpenSearch test fixture에서 empty diff와 delete-only map diff 생성 방법 확인
+  - [x] Rust decoder fixture test에 Java-produced diff bytes 연결
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff non-empty routing delete fixture 확장
+  - [x] Java fixture에서 routing table index delete diff 생성
+  - [x] Rust prefix decoder에서 routing delete key summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index delete fixture 확장
+  - [x] Java fixture에서 metadata index delete diff 생성
+  - [x] Rust prefix decoder에서 metadata index delete key summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata template delete fixture 확장
+  - [x] Java fixture에서 legacy index template delete diff 생성
+  - [x] Rust prefix decoder에서 metadata template delete key summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata custom delete fixture 확장
+  - [x] Java fixture에서 metadata custom delete diff 생성
+  - [x] Rust prefix decoder에서 metadata custom delete key summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff consistent-settings hash delete fixture 확장
+  - [x] Java fixture에서 hashesOfConsistentSettings delete diff 생성
+  - [x] Rust prefix decoder에서 consistent-settings hash delete key summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index upsert fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index upsert diff 생성
+  - [x] Rust prefix decoder가 upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index upsert prefix decode 구현
+  - [x] Java `IndexMetadata.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 metadata index upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff routing index upsert fail-closed fixture 확장
+  - [x] Java fixture에서 routing index upsert diff 생성
+  - [x] Rust prefix decoder가 routing upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff routing index upsert prefix decode 구현
+  - [x] Java `IndexRoutingTable.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 routing index upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata template upsert fail-closed fixture 확장
+  - [x] Java fixture에서 legacy index template upsert diff 생성
+  - [x] Rust prefix decoder가 metadata template upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata template upsert prefix decode 구현
+  - [x] Java `IndexTemplateMetadata.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 metadata template upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata custom upsert fail-closed fixture 확장
+  - [x] Java fixture에서 metadata custom upsert diff 생성
+  - [x] Rust prefix decoder가 metadata custom upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff repositories metadata custom upsert prefix decode 구현
+  - [x] Java `RepositoriesMetadata.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 repositories metadata custom upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff top-level custom upsert fail-closed fixture 확장
+  - [x] Java fixture에서 top-level cluster-state custom upsert diff 생성
+  - [x] Rust prefix decoder가 top-level custom upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff snapshots top-level custom upsert prefix decode 구현
+  - [x] Java `SnapshotsInProgress.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 snapshots top-level custom upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff top-level custom non-empty snapshots fixture 확장
+  - [x] Java fixture에서 snapshot entry 포함 top-level snapshots custom upsert diff 생성
+  - [x] Rust prefix decoder에서 snapshots entry skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff restore top-level custom upsert fail-closed fixture 확장
+  - [x] Java fixture에서 restore entry 포함 top-level custom upsert diff 생성
+  - [x] Rust prefix decoder가 restore top-level custom upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff restore top-level custom upsert prefix decode 구현
+  - [x] Java `RestoreInProgress.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 restore top-level custom upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff top-level custom restore shard-status fixture 확장
+  - [x] Java fixture에서 shard status 포함 restore top-level custom upsert diff 생성
+  - [x] Rust prefix decoder에서 restore shard status skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff snapshot-deletions top-level custom upsert fail-closed fixture 확장
+  - [x] Java fixture에서 snapshot deletions entry 포함 top-level custom upsert diff 생성
+  - [x] Rust prefix decoder가 snapshot_deletions top-level custom upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff snapshot-deletions top-level custom upsert prefix decode 구현
+  - [x] Java `SnapshotDeletionsInProgress.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 snapshot_deletions top-level custom upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff repository-cleanup top-level custom upsert fail-closed fixture 확장
+  - [x] Java fixture에서 repository cleanup entry 포함 top-level custom upsert diff 생성
+  - [x] Rust prefix decoder가 repository_cleanup top-level custom upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff repository-cleanup top-level custom upsert prefix decode 구현
+  - [x] Java `RepositoryCleanupInProgress.writeTo` payload를 diff upsert 섹션에서 재사용할 수 있는지 확인
+  - [x] Rust prefix decoder에서 repository_cleanup top-level custom upsert key와 skeleton payload summary 검증
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff top-level custom named-diff fail-closed fixture 확장
+  - [x] Java fixture에서 top-level custom named diff 생성
+  - [x] Rust prefix decoder가 top-level custom named diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff top-level custom named-diff prefix decode 조사
+  - [x] Java `RepositoryCleanupInProgress.diff/writeTo` named diff payload layout 확인
+  - [x] Rust prefix decoder에서 repository_cleanup named diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff repository-cleanup top-level custom named-diff prefix decode 구현
+  - [x] Rust prefix decoder에서 repository_cleanup named diff boolean과 replacement payload summary 검증
+  - [x] Java fixture로 repository_cleanup named diff replacement payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff routing index named-diff fail-closed fixture 확장
+  - [x] Java fixture에서 routing index named diff 생성
+  - [x] Rust prefix decoder가 routing index named diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff routing index named-diff prefix decode 조사
+  - [x] Java `IndexRoutingTable.readDiffFrom/writeTo` named diff payload layout 확인
+  - [x] Rust prefix decoder에서 routing index named diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff routing index complete-diff prefix decode 구현
+  - [x] Rust prefix decoder에서 routing index diff boolean과 replacement payload summary 검증
+  - [x] Java fixture로 routing index complete diff replacement payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata index named-diff fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index named diff 생성
+  - [x] Rust prefix decoder가 metadata index named diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index named-diff prefix decode 조사
+  - [x] Java `IndexMetadataDiff.readFrom/writeTo` payload layout 확인
+  - [x] Rust prefix decoder에서 metadata index named diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index scalar/settings prefix decode 구현
+  - [x] Rust prefix decoder에서 metadata index diff scalar header와 settings summary 검증
+  - [x] nested map diff는 비어 있을 때만 consume하고 비어 있지 않으면 fail-closed 유지
+  - [x] Java fixture로 metadata index diff scalar/settings payload consume 확인
+- [x] publication cluster-state diff metadata index nested mapping-diff fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index mapping nested diff 생성
+  - [x] Rust prefix decoder가 nested mapping diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested mapping-diff prefix decode 조사
+  - [x] Java `MappingMetadata.readDiffFrom/writeTo` payload layout 확인
+  - [x] Rust prefix decoder에서 nested mapping diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested mapping-diff prefix decode 구현
+  - [x] Rust prefix decoder에서 nested mapping diff boolean과 replacement payload summary 검증
+  - [x] Java fixture로 nested mapping diff replacement payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata index nested alias-diff fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index alias nested diff 생성
+  - [x] Rust prefix decoder가 nested alias diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested alias-diff prefix decode 조사
+  - [x] Java `AliasMetadata.readDiffFrom/writeTo` payload layout 확인
+  - [x] Rust prefix decoder에서 nested alias diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested alias-diff prefix decode 구현
+  - [x] Rust prefix decoder에서 nested alias diff boolean과 replacement payload summary 검증
+  - [x] Java fixture로 nested alias diff replacement payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata index nested custom-data diff fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index custom data nested diff 생성
+  - [x] Rust prefix decoder가 nested custom data diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested custom-data diff prefix decode 조사
+  - [x] Java `DiffableStringMap` nested diff payload layout 확인
+  - [x] Rust prefix decoder에서 nested custom data diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested custom-data diff prefix decode 구현
+  - [x] Rust prefix decoder에서 nested custom data diff delete/upsert payload summary 검증
+  - [x] Java fixture로 nested custom data diff payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata index nested rollover-info diff fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index rollover info nested diff 생성
+  - [x] Rust prefix decoder가 nested rollover info diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested rollover-info diff prefix decode 조사
+  - [x] Java `RolloverInfo.readDiffFrom/writeTo` payload layout 확인
+  - [x] Rust prefix decoder에서 nested rollover info diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested rollover-info diff prefix decode 구현
+  - [x] Rust prefix decoder에서 nested rollover info diff boolean과 replacement payload summary 검증
+  - [x] Java fixture로 nested rollover info diff replacement payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata index nested in-sync allocation ids fail-closed fixture 확장
+  - [x] Java fixture에서 metadata index in-sync allocation ids nested diff 생성
+  - [x] Rust prefix decoder가 nested in-sync allocation ids diff payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested in-sync allocation ids prefix decode 조사
+  - [x] Java `StringSetValueSerializer` map diff payload layout 확인
+  - [x] Rust prefix decoder에서 nested in-sync allocation ids diff를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested in-sync allocation ids prefix decode 구현
+  - [x] Rust prefix decoder에서 nested in-sync allocation ids delete/upsert payload summary 검증
+  - [x] Java fixture로 nested in-sync allocation ids diff payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff metadata index nested split-shards diff fixture 확장
+  - [x] Java fixture에서 metadata index split-shards metadata diff 생성
+  - [x] Rust prefix decoder에서 split-shards diff boolean과 replacement payload summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata index nested diff coverage 정리
+  - [x] metadata index diff nested map 및 split-shards fixture 목록 재점검
+  - [x] 남은 fail-closed 영역과 다음 publication diff 구현 후보 선정
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff component-template metadata custom upsert fail-closed fixture 확장
+  - [x] Java fixture에서 component template metadata custom upsert diff 생성
+  - [x] Rust prefix decoder가 component template metadata custom upsert payload를 명시적으로 거부하는지 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff component-template metadata custom upsert prefix decode 조사
+  - [x] Java `ComponentTemplateMetadata.writeTo` payload layout 확인
+  - [x] Rust prefix decoder에서 component template metadata custom upsert를 안전하게 요약 가능한지 판단
+  - [x] fail-closed 정책과 다음 구현 작업 구체화
+- [x] publication cluster-state diff component-template metadata custom upsert prefix decode 구현
+  - [x] Rust prefix decoder에서 component template metadata custom upsert count/name/template summary 검증
+  - [x] Java fixture로 component template metadata custom upsert payload consume 확인
+  - [x] fail-closed 정책과 문서 consistency 갱신
+- [x] publication cluster-state diff composable index-template metadata custom upsert 후보 조사
+  - [x] Java `ComposableIndexTemplateMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state index_template metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff composable index-template metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 composable index template metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 index_template metadata custom upsert count/name/template summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff data-stream metadata custom upsert 후보 조사
+  - [x] Java `DataStreamMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state data_stream metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff data-stream metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 data stream metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 data_stream metadata custom upsert count/name/backing-index summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff ingest metadata custom upsert 후보 조사
+  - [x] Java `IngestMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state ingest metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff ingest metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 ingest metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 ingest metadata custom upsert count/id/config/media-type summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff search-pipeline metadata custom upsert 후보 조사
+  - [x] Java `SearchPipelineMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state search_pipeline metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff search-pipeline metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 search pipeline metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 search_pipeline metadata custom upsert count/id/config/media-type summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff stored-scripts metadata custom upsert 후보 조사
+  - [x] Java `ScriptMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state stored_scripts metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff stored-scripts metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 stored scripts metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 stored_scripts metadata custom upsert count/id/lang/source/options summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff index-graveyard metadata custom upsert 후보 조사
+  - [x] Java `IndexGraveyard.writeTo` payload layout 확인
+  - [x] Rust full-state index-graveyard metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff index-graveyard metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 index graveyard metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 index-graveyard metadata custom upsert count/name/uuid/timestamp summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff persistent-tasks metadata custom upsert 후보 조사
+  - [x] Java `PersistentTasksCustomMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state persistent_tasks metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff persistent-tasks metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 persistent tasks metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 persistent_tasks metadata custom upsert task/params/state summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff decommission metadata custom upsert 후보 조사
+  - [x] Java `DecommissionAttributeMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state decommissionedAttribute metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff decommission metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 decommissionedAttribute metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 decommissionedAttribute metadata custom upsert attribute/status/request summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff weighted-routing metadata custom upsert 후보 조사
+  - [x] Java `WeightedRoutingMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state weighted_shard_routing metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff weighted-routing metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 weighted_shard_routing metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 weighted_shard_routing metadata custom upsert awareness/weights/version summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff view metadata custom upsert 후보 조사
+  - [x] Java `ViewMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state view metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff view metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 view metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 view metadata custom upsert name/source/index-pattern summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff workload-group metadata custom upsert 후보 조사
+  - [x] Java `WorkloadGroupMetadata.writeTo` payload layout 확인
+  - [x] Rust full-state queryGroups metadata custom reader 재사용 가능 여부 판단
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff workload-group metadata custom upsert prefix decode 구현
+  - [x] Java fixture에서 queryGroups metadata custom upsert diff 생성
+  - [x] Rust prefix decoder에서 queryGroups metadata custom upsert name/id/resource/search-settings summary 검증
+  - [x] 문서 consistency 확인 및 다음 구현 작업 구체화
+- [x] publication cluster-state diff metadata custom named diff 후보 조사
+  - [x] Java metadata custom named diff envelope layout 확인
+  - [x] map-backed metadata custom의 custom-specific diff와 CompleteNamedDiff 구분 방식 확인
+  - [x] fail-closed fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff view metadata custom named diff prefix decode 구현
+  - [x] Java fixture에서 기존 view target 변경 metadata custom diff 생성
+  - [x] Rust prefix decoder에서 view custom-specific nested map diff replacement summary 검증
+  - [x] CompleteNamedDiff 대상과 map-backed custom diff 처리 순서 문서화
+- [x] publication cluster-state diff workload-group metadata custom named diff 후보 조사
+  - [x] Java `WorkloadGroupMetadataDiff` nested map diff layout 재확인
+  - [x] Rust view named diff reader 패턴을 queryGroups에 재사용 가능한지 판단
+  - [x] fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff workload-group metadata custom named diff prefix decode 구현
+  - [x] Java fixture에서 기존 queryGroups resource/search-settings 변경 metadata custom diff 생성
+  - [x] Rust prefix decoder에서 queryGroups nested map diff replacement summary 검증
+  - [x] map-backed metadata custom named diff reader 공통화 여부 판단
+- [x] publication cluster-state diff data-stream metadata custom named diff 후보 조사
+  - [x] Java `DataStreamMetadataDiff` nested map diff layout 재확인
+  - [x] Rust view/queryGroups named diff reader 패턴을 data_stream에 재사용 가능한지 판단
+  - [x] fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff data-stream metadata custom named diff prefix decode 구현
+  - [x] Java fixture에서 기존 data_stream generation/backing index 변경 metadata custom diff 생성
+  - [x] Rust prefix decoder에서 data_stream nested map diff replacement summary 검증
+  - [x] map-backed metadata custom named diff reader 공통화 여부 재검토
+- [x] publication cluster-state diff component-template metadata custom named diff 후보 조사
+  - [x] Java `ComponentTemplateMetadataDiff` nested map diff layout 재확인
+  - [x] Rust map-backed named diff reader 패턴을 component_template에 재사용 가능한지 판단
+  - [x] fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff component-template metadata custom named diff prefix decode 구현
+  - [x] Java fixture에서 기존 component_template version/settings 변경 metadata custom diff 생성
+  - [x] Rust prefix decoder에서 component_template nested map diff replacement summary 검증
+  - [x] map-backed metadata custom named diff reader 공통화 여부 재검토
+- [x] publication cluster-state diff composable index-template metadata custom named diff 후보 조사
+  - [x] Java `ComposableIndexTemplateMetadataDiff` nested map diff layout 재확인
+  - [x] Rust map-backed named diff reader 패턴을 index_template에 재사용 가능한지 판단
+  - [x] fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff composable index-template metadata custom named diff prefix decode 구현
+  - [x] Java fixture에서 기존 index_template priority/version/settings 변경 metadata custom diff 생성
+  - [x] Rust prefix decoder에서 index_template nested map diff replacement summary 검증
+  - [x] composable index template value reader를 full-state/upsert/named-diff 경로에서 재사용하도록 정리
+- [x] publication cluster-state diff legacy index-template metadata template named diff 후보 조사
+  - [x] Java `IndexTemplateMetadata.readDiffFrom` 및 metadata templates map diff layout 재확인
+  - [x] Rust legacy index template reader를 named diff replacement 경로에 재사용 가능한지 판단
+  - [x] fixture 또는 prefix decode 구현 순서 결정
+- [x] publication cluster-state diff legacy index-template metadata template named diff prefix decode 구현
+  - [x] Java fixture에서 기존 legacy template order/version/settings 변경 metadata templates diff 생성
+  - [x] Rust metadata_templates map diff에서 replacement boolean 및 legacy template replacement summary 검증
+  - [x] metadata template diff reader fail-closed 분기를 replacement decode 경로로 전환
+- [x] publication cluster-state diff legacy index-template metadata template mapping/alias named diff 확장 후보 조사
+  - [x] Java fixture에서 legacy template mapping 또는 alias 변경 시 replacement payload 형태 확인
+  - [x] Rust legacy template reader의 mapping/alias summary가 named diff fixture에도 충분한지 판단
+  - [x] 별도 fixture가 필요한지 현재 named template fixture 확장으로 충분한지 결정
+- [x] publication cluster-state diff legacy index-template metadata template mapping/alias named diff fixture 확장
+  - [x] Java fixture에서 기존 legacy template mapping 및 alias 변경 metadata templates diff 생성
+  - [x] Rust metadata_templates replacement에서 mapping crc/bytes 및 alias name summary 검증
+  - [x] 기존 scalar named template fixture와 별도 mapping/alias fixture 유지 여부 문서화
+- [x] publication cluster-state diff custom complete-named-diff 후보 조사
+  - [x] Java metadata custom/top-level custom 중 `CompleteNamedDiff` 기본 경로 대상 목록 재확인
+  - [x] Rust custom diff reader에서 full custom prefix reader 재사용 가능한 대상 선정
+  - [x] 다음 fixture 구현 후보 결정
+- [x] publication cluster-state diff weighted-routing metadata custom complete named diff prefix decode 구현
+  - [x] Java fixture에서 기존 weighted_shard_routing weights/version 변경 metadata custom diff 생성
+  - [x] Rust metadata_customs diff에서 `CompleteNamedDiff` boolean 및 weighted routing replacement summary 검증
+  - [x] metadata custom complete named diff dispatch 후보를 weighted/decommission/repositories 순서로 문서화
+- [x] publication cluster-state diff decommission metadata custom complete named diff prefix decode 구현
+  - [x] Java fixture에서 기존 decommissionedAttribute status/request 변경 metadata custom diff 생성
+  - [x] Rust metadata_customs diff에서 `CompleteNamedDiff` boolean 및 decommission replacement summary 검증
+  - [x] metadata custom complete named diff helper 공통화 여부 판단
+- [x] publication cluster-state diff repositories metadata custom complete named diff 후보 조사
+  - [x] Java `RepositoriesMetadata` complete named diff와 repository list payload 재확인
+  - [x] Rust repositories full reader가 named diff replacement payload에 바로 재사용 가능한지 판단
+  - [x] repository crypto metadata 포함 여부와 fixture 범위 결정
+- [x] publication cluster-state diff repositories metadata custom complete named diff prefix decode 구현
+  - [x] Java fixture에서 기존 repositories list/settings 변경 metadata custom diff 생성
+  - [x] Rust metadata_customs diff에서 `CompleteNamedDiff` boolean 및 repository replacement summary 검증
+  - [x] crypto metadata는 기존 full-state fixture로 충분한지 문서화
+- [x] publication cluster-state diff top-level restore complete named diff 후보 조사
+  - [x] Java `RestoreInProgress` complete named diff와 entry/shard-status payload 재확인
+  - [x] Rust restore full reader가 named diff replacement payload에 바로 재사용 가능한지 판단
+  - [x] empty restore 또는 shard-status fixture 중 구현 후보 결정
+- [x] publication cluster-state diff top-level restore complete named diff prefix decode 구현
+  - [x] Java fixture에서 기존 restore custom entry/shard-status 변경 top-level custom diff 생성
+  - [x] Rust customs diff에서 `CompleteNamedDiff` boolean 및 restore replacement summary 검증
+  - [x] top-level custom complete named diff 후보를 restore/snapshot_deletions/snapshots 순서로 문서화
+- [x] publication cluster-state diff top-level snapshot_deletions complete named diff 후보 조사
+  - [x] Java `SnapshotDeletionsInProgress` complete named diff와 entry payload 재확인
+  - [x] Rust snapshot deletions full reader가 named diff replacement payload에 바로 재사용 가능한지 판단
+  - [x] 단일 entry fixture 또는 다중 snapshot-id fixture 중 구현 후보 결정
+- [x] publication cluster-state diff top-level snapshot_deletions complete named diff prefix decode 구현
+  - [x] Java fixture에서 기존 snapshot_deletions custom 단일 entry snapshot-id/repository-state 변경 diff 생성
+  - [x] Rust customs diff에서 `CompleteNamedDiff` boolean 및 snapshot deletions replacement summary 검증
+  - [x] top-level custom complete named diff 후보를 snapshot_deletions/snapshots 순서로 문서화
+- [x] publication cluster-state diff top-level snapshots complete named diff 후보 조사
+  - [x] Java `SnapshotsInProgress` complete named diff와 entry/shard-status payload 재확인
+  - [x] Rust snapshots full reader가 named diff replacement payload에 바로 재사용 가능한지 판단
+  - [x] entry fixture 또는 shard-status/user-metadata fixture 중 구현 후보 결정
+- [x] publication cluster-state diff top-level snapshots complete named diff prefix decode 구현
+  - [x] Java fixture에서 기존 snapshots custom basic entry를 shard-status entry로 변경한 diff 생성
+  - [x] Rust customs diff에서 `CompleteNamedDiff` boolean 및 snapshots replacement summary 검증
+  - [x] top-level custom complete named diff 후보 완료 상태 문서화

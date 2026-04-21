@@ -1,0 +1,10 @@
+[package]
+name = "os-node"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+os-core = { path = "../os-core" }
+tracing.workspace = true

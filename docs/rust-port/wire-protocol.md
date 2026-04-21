@@ -1,0 +1,2728 @@
+# Wire Protocol Notes
+
+## TCP Header
+
+OpenSearch transport messages begin with a fixed header:
+
+```text
+2 bytes   marker: "ES"
+4 bytes   message length, excluding the marker and length field
+8 bytes   request id
+1 byte    status
+4 bytes   version id
+4 bytes   variable header size
+N bytes   variable header
+M bytes   body
+```
+
+The Rust implementation lives in `crates/os-wire`.
+
+## Status Bits
+
+OpenSearch uses one status byte:
+
+```text
+bit 0  request/response; unset means request, set means response
+bit 1  error response
+bit 2  compressed body
+bit 3  handshake
+```
+
+The Rust implementation lives in `crates/os-wire/src/status.rs`.
+
+## Ping
+
+A ping is the marker plus a zero message length:
+
+```text
+45 53 00 00 00 00
+ E  S
+```
+
+The Rust constant is `os_transport::PING_FRAME`.
+
+## Compression
+
+Transport compression is indicated by status bit 2. OpenSearch uses the default
+`DEFLATE` compressor for transport payloads. The compressed body starts with
+the OpenSearch compressor marker:
+
+```text
+44 46 4c 00
+ D  F  L \0
+```
+
+The bytes after that marker are raw DEFLATE bytes. The fixed TCP header and
+variable header remain readable by the transport layer; Rust decompresses the
+message body after splitting the variable header from the body.
+
+## Variable Header
+
+For request messages, OpenSearch writes:
+
+```text
+thread context request headers
+thread context response headers
+string array: features
+string: action name
+```
+
+For response messages, OpenSearch writes only thread context headers.
+
+The Rust implementation lives in `crates/os-transport/src/variable_header.rs`.
+
+## Handshake Messages
+
+OpenSearch uses two handshake actions:
+
+- `internal:tcp/handshake`: low-level connection/version handshake.
+- `internal:transport/handshake`: higher-level node/cluster-name handshake.
+
+The Rust builders live in `crates/os-transport/src/handshake.rs`. They currently
+emit uncompressed requests. That is intentional for the first interop attempt:
+Java OpenSearch can read uncompressed transport requests when the compression bit
+is not set.
+
+The first network probe lives in `crates/os-tcp-probe`:
+
+```bash
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300
+```
+
+It sends `internal:tcp/handshake`, then `internal:transport/handshake`, and
+prints the remote transport version, cluster name, node id, node address, and
+node roles. This has been verified against a local Java OpenSearch
+`3.7.0-SNAPSHOT` node.
+
+To request a minimally filtered cluster-state response after the transport
+handshake:
+
+```bash
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state
+```
+
+To request all cluster-state sections for live compatibility checks:
+
+```bash
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+The probe sends `cluster:monitor/state` and prints every decoded prefix section
+that is present in the response. The current decoder covers the state header,
+metadata entity summaries, routing table summaries, discovery node summaries,
+and cluster block summaries.
+
+The cluster-state output format is line-oriented `key=value` text. Expected
+keys for a decoded response are:
+
+```text
+cluster_state_response_cluster_name
+cluster_state_wait_for_timed_out
+cluster_state_name
+cluster_state_version
+cluster_state_uuid
+cluster_state_metadata_version
+cluster_state_cluster_uuid
+cluster_state_metadata_custom_count
+cluster_state_metadata_indices
+cluster_state_metadata_index_names
+cluster_state_metadata_index_uuids
+cluster_state_metadata_index_routing_shard_counts
+cluster_state_metadata_index_primary_shard_counts
+cluster_state_metadata_index_replica_counts
+cluster_state_metadata_index_setting_counts
+cluster_state_metadata_index_mapping_counts
+cluster_state_metadata_index_alias_counts
+cluster_state_metadata_legacy_templates
+cluster_state_metadata_legacy_template_names
+cluster_state_metadata_legacy_template_patterns
+cluster_state_metadata_legacy_template_setting_counts
+cluster_state_metadata_legacy_template_mapping_counts
+cluster_state_metadata_legacy_template_alias_counts
+cluster_state_metadata_index_graveyard_tombstones
+cluster_state_metadata_index_graveyard_tombstone_names
+cluster_state_metadata_index_graveyard_tombstone_uuids
+cluster_state_metadata_index_graveyard_tombstone_delete_timestamps
+cluster_state_metadata_component_templates
+cluster_state_metadata_component_template_names
+cluster_state_metadata_component_template_versions
+cluster_state_metadata_component_template_setting_counts
+cluster_state_metadata_component_template_mapping_counts
+cluster_state_metadata_component_template_alias_counts
+cluster_state_metadata_composable_templates
+cluster_state_metadata_composable_template_names
+cluster_state_metadata_composable_template_index_patterns
+cluster_state_metadata_composable_template_components
+cluster_state_metadata_composable_template_setting_counts
+cluster_state_metadata_composable_template_mapping_counts
+cluster_state_metadata_composable_template_alias_counts
+cluster_state_metadata_data_streams
+cluster_state_metadata_data_stream_names
+cluster_state_metadata_data_stream_timestamp_fields
+cluster_state_metadata_data_stream_backing_index_counts
+cluster_state_metadata_data_stream_backing_index_names
+cluster_state_metadata_data_stream_generations
+cluster_state_metadata_repositories
+cluster_state_metadata_repository_names
+cluster_state_metadata_repository_types
+cluster_state_metadata_repository_setting_counts
+cluster_state_metadata_repository_generations
+cluster_state_metadata_repository_pending_generations
+cluster_state_metadata_repository_crypto_provider_names
+cluster_state_metadata_repository_crypto_provider_types
+cluster_state_metadata_views
+cluster_state_metadata_workload_groups
+cluster_state_metadata_workload_group_names
+cluster_state_metadata_workload_group_ids
+cluster_state_metadata_workload_group_resource_limit_counts
+cluster_state_metadata_workload_group_search_setting_counts
+cluster_state_metadata_workload_group_resiliency_modes
+cluster_state_metadata_weighted_routing
+cluster_state_metadata_decoded_custom_count
+cluster_state_metadata_decoded_customs
+cluster_state_routing_indices
+cluster_state_routing_index_names
+cluster_state_routing_shard_tables
+cluster_state_routing_shards
+cluster_state_routing_shard_ids
+cluster_state_routing_shard_states
+cluster_state_routing_shard_primaries
+cluster_state_routing_shard_current_node_ids
+cluster_state_routing_shard_allocation_ids
+cluster_state_nodes
+cluster_state_cluster_manager_node_id
+cluster_state_node_ids
+cluster_state_node_names
+cluster_state_node_addresses
+cluster_state_node_role_counts
+cluster_state_node_attribute_counts
+cluster_state_global_blocks
+cluster_state_index_blocks
+cluster_state_index_block_names
+cluster_state_block_entries
+cluster_state_global_block_ids
+cluster_state_global_block_uuids
+cluster_state_global_block_levels
+cluster_state_global_block_statuses
+cluster_state_index_block_ids
+cluster_state_index_block_uuids
+cluster_state_index_block_levels
+cluster_state_index_block_statuses
+cluster_state_custom_count
+cluster_state_custom_names
+cluster_state_repository_cleanup_entries
+cluster_state_repository_cleanup_repositories
+cluster_state_repository_cleanup_state_ids
+cluster_state_snapshot_deletions_entries
+cluster_state_snapshot_deletion_uuids
+cluster_state_snapshot_deletion_repositories
+cluster_state_snapshot_deletion_snapshot_counts
+cluster_state_snapshot_deletion_state_ids
+cluster_state_restore_entries
+cluster_state_restore_uuids
+cluster_state_restore_repositories
+cluster_state_restore_snapshot_names
+cluster_state_restore_state_ids
+cluster_state_restore_shard_status_counts
+cluster_state_snapshots_entries
+cluster_state_snapshot_names
+cluster_state_snapshot_repositories
+cluster_state_snapshot_uuids
+cluster_state_snapshot_state_ids
+cluster_state_snapshot_shard_status_counts
+cluster_state_remaining_bytes
+```
+
+Metadata custom names are comma-separated when decoded. The currently reported
+customs are `index-graveyard`, `component_template`, `index_template`,
+`data_stream`, `repositories`, `weighted_shard_routing`, `view`, and
+`queryGroups`. Top-level custom names, routing index names, node ids, node
+names, and index block names are also comma-separated and are empty when the
+decoded section has no entries.
+
+Smoke procedure for a local OpenSearch checkout:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew :run
+cd /home/ubuntu/steelsearch
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state
+```
+
+The smoke passes when the command prints the transport handshake fields plus the
+cluster-state keys above. For the minimally filtered path, entity counts should
+usually be zero and `cluster_state_remaining_bytes=0`. For a fuller response,
+the summary keys should reflect the decoded metadata, routing, discovery, and
+block sections while still ending with `cluster_state_remaining_bytes=0`.
+
+Mixed custom live probe procedure:
+
+1. Start a local OpenSearch node with at least one repository, one workload
+   group, and one active or recently completed snapshot/restore operation when
+   available.
+2. Run `os-tcp-probe --cluster-state-full` against port `9300`.
+3. Confirm metadata custom summary keys include the expected registry-backed
+   names:
+   `cluster_state_metadata_decoded_customs=index-graveyard,...,repositories,...,queryGroups`
+   when those customs are present in cluster state.
+4. Confirm top-level custom summary keys expose decoded custom names and entry
+   identity fields:
+   `cluster_state_custom_names`,
+   `cluster_state_repository_cleanup_entries`,
+   `cluster_state_repository_cleanup_repositories`,
+   `cluster_state_repository_cleanup_state_ids`,
+   `cluster_state_snapshot_deletions_entries`,
+   `cluster_state_snapshot_deletion_uuids`,
+   `cluster_state_snapshot_deletion_repositories`,
+   `cluster_state_snapshot_deletion_snapshot_counts`,
+   `cluster_state_snapshot_deletion_state_ids`,
+   `cluster_state_restore_entries`,
+   `cluster_state_restore_uuids`,
+   `cluster_state_restore_repositories`,
+   `cluster_state_restore_snapshot_names`,
+   `cluster_state_restore_state_ids`,
+   `cluster_state_restore_shard_status_counts`,
+   `cluster_state_snapshots_entries`,
+   `cluster_state_snapshot_names`,
+   `cluster_state_snapshot_repositories`,
+   `cluster_state_snapshot_uuids`,
+   `cluster_state_snapshot_state_ids`, and
+   `cluster_state_snapshot_shard_status_counts`.
+5. Treat any `UnsupportedNamedWriteable` or non-zero
+   `cluster_state_remaining_bytes` as a compatibility gap. Add the captured
+   custom name and OpenSearch version to `unsupported-custom-ledger.md` before
+   widening decode support.
+
+The fixture coverage that backs this live probe includes mixed metadata customs,
+multi-entry repositories and workload groups, and top-level
+`repository_cleanup`, `snapshot_deletions`, `restore`, and `snapshots` custom
+payload skeletons. The live probe is intended to catch version-gated or
+plugin-provided customs that are not represented by static fixtures.
+
+Top-level custom identity formatting transcript:
+
+```text
+cluster_state_custom_count=4
+cluster_state_custom_names=repository_cleanup,snapshot_deletions,restore,snapshots
+cluster_state_repository_cleanup_entries=1
+cluster_state_repository_cleanup_repositories=repo-a
+cluster_state_repository_cleanup_state_ids=7
+cluster_state_snapshot_deletions_entries=1
+cluster_state_snapshot_deletion_uuids=delete-entry-uuid
+cluster_state_snapshot_deletion_repositories=repo-b
+cluster_state_snapshot_deletion_snapshot_counts=1
+cluster_state_snapshot_deletion_state_ids=2
+cluster_state_restore_entries=1
+cluster_state_restore_uuids=restore-uuid
+cluster_state_restore_repositories=repo-c
+cluster_state_restore_snapshot_names=snapshot-restore-a
+cluster_state_restore_state_ids=1
+cluster_state_restore_shard_status_counts=0
+cluster_state_snapshots_entries=1
+cluster_state_snapshot_names=snapshot-live-a
+cluster_state_snapshot_repositories=repo-d
+cluster_state_snapshot_uuids=snapshot-live-uuid
+cluster_state_snapshot_state_ids=3
+cluster_state_snapshot_shard_status_counts=0
+cluster_state_remaining_bytes=0
+```
+
+Summary key backfill audit:
+
+- Older scenario-specific live transcripts in this file remain historical
+  captures from the probe version used at the time, so some of them do not show
+  later identity summary keys.
+- The current canonical coverage for the added summary keys is split across the
+  dedicated identity transcripts: discovery node identity, cluster block
+  identity, routing shard identity, and top-level custom identity formatting.
+- The stable CLI formatting fixture covers the full summary key order in one
+  response and is validated by `cargo test -p os-tcp-probe`.
+- New live compatibility captures should include the current key set from the
+  list above, even when the value is empty because the decoded section has no
+  entries.
+
+Current transcript status:
+
+Initial readiness check:
+
+```text
+Error: failed to connect to 127.0.0.1:9300
+Caused by:
+    Connection refused (os error 111)
+```
+
+Live compatibility transcript against a local OpenSearch `3.7.0-SNAPSHOT`
+`./gradlew run` node after creating `steelsearch_repo`,
+`steelsearch-live-index`, and a completed `steelsearch_snapshot`:
+
+```bash
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=ERuhvKReRPKR7WDslgm2NA
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=11
+cluster_state_uuid=COX5G28aTsaiDG_WGBsnug
+cluster_state_metadata_version=8
+cluster_state_cluster_uuid=1XhJZk6ITHiYj-5u-yvBgA
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=1
+cluster_state_metadata_repositories=1
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,repositories
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-live-index
+cluster_state_routing_shards=1
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=1
+cluster_state_custom_names=snapshots
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: repository metadata and the
+top-level `snapshots` custom decode and fully consume successfully. Workload
+group live coverage remains open because this `./gradlew run` node did not load
+the workload-management REST handler; `PUT /_wlm/workload_group` returned `no
+handler found`.
+
+Index metadata identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-index-summary' \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0,"index.refresh_interval":"1s"},"mappings":{"properties":{"title":{"type":"text"},"rank":{"type":"integer"}}},"aliases":{"steelsearch-index-summary-alias":{}}}'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/steelsearch-index-summary'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=-20i2-p8SlaCOeMpiQkFSg
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=4
+cluster_state_uuid=YfXNmahaQX-ETlLptyMZpw
+cluster_state_metadata_version=3
+cluster_state_cluster_uuid=bdh8CxnATGCmQufOcZXpLQ
+cluster_state_metadata_custom_count=1
+cluster_state_metadata_indices=1
+cluster_state_metadata_index_names=steelsearch-index-summary
+cluster_state_metadata_index_uuids=1Q6s-FY8TNy0bSdWsfxC_Q
+cluster_state_metadata_index_routing_shard_counts=1024
+cluster_state_metadata_index_primary_shard_counts=1
+cluster_state_metadata_index_replica_counts=0
+cluster_state_metadata_index_setting_counts=8
+cluster_state_metadata_index_mapping_counts=1
+cluster_state_metadata_index_alias_counts=1
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=1
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-index-summary
+cluster_state_routing_shard_tables=1
+cluster_state_routing_shards=1
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=-20i2-p8SlaCOeMpiQkFSg
+cluster_state_node_ids=-20i2-p8SlaCOeMpiQkFSg
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Discovery node identity transcript:
+
+```bash
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=P3VNiQiUTSOLjRjm8ZiErQ
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=2
+cluster_state_uuid=1LjADD5DSQG8fNPaGd__lQ
+cluster_state_metadata_version=1
+cluster_state_cluster_uuid=vpxsclEDSU6V50CoB5kTzw
+cluster_state_metadata_custom_count=1
+cluster_state_metadata_indices=0
+cluster_state_metadata_index_names=
+cluster_state_metadata_index_uuids=
+cluster_state_metadata_index_routing_shard_counts=
+cluster_state_metadata_index_primary_shard_counts=
+cluster_state_metadata_index_replica_counts=
+cluster_state_metadata_index_setting_counts=
+cluster_state_metadata_index_mapping_counts=
+cluster_state_metadata_index_alias_counts=
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_legacy_template_names=
+cluster_state_metadata_legacy_template_patterns=
+cluster_state_metadata_legacy_template_setting_counts=
+cluster_state_metadata_legacy_template_mapping_counts=
+cluster_state_metadata_legacy_template_alias_counts=
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_index_graveyard_tombstone_names=
+cluster_state_metadata_index_graveyard_tombstone_uuids=
+cluster_state_metadata_index_graveyard_tombstone_delete_timestamps=
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_component_template_versions=
+cluster_state_metadata_component_template_setting_counts=
+cluster_state_metadata_component_template_mapping_counts=
+cluster_state_metadata_component_template_alias_counts=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_composable_template_setting_counts=
+cluster_state_metadata_composable_template_mapping_counts=
+cluster_state_metadata_composable_template_alias_counts=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=1
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_routing_shard_ids=
+cluster_state_routing_shard_states=
+cluster_state_routing_shard_primaries=
+cluster_state_routing_shard_current_node_ids=
+cluster_state_routing_shard_allocation_ids=
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=P3VNiQiUTSOLjRjm8ZiErQ
+cluster_state_node_ids=P3VNiQiUTSOLjRjm8ZiErQ
+cluster_state_node_names=runTask-0
+cluster_state_node_addresses=127.0.0.1:9300
+cluster_state_node_role_counts=4
+cluster_state_node_attribute_counts=2
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Cluster block identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-block-live' \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0}}'
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-block-live/_settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"index.blocks.read_only":true}'
+curl -XPUT 'http://127.0.0.1:9200/_cluster/settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"transient":{"cluster.blocks.read_only":true}}'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+curl -XPUT 'http://127.0.0.1:9200/_cluster/settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"transient":{"cluster.blocks.read_only":null}}'
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-block-live/_settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"index.blocks.read_only":false}'
+curl -XDELETE 'http://127.0.0.1:9200/steelsearch-block-live'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=h80Btp2FQj6ZytlIISBOEw
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=6
+cluster_state_uuid=rfztkDD3SbisM90HjiABeQ
+cluster_state_metadata_version=5
+cluster_state_cluster_uuid=Tt00T59eScC9yDSqzXS3UA
+cluster_state_metadata_custom_count=1
+cluster_state_metadata_indices=1
+cluster_state_metadata_index_names=steelsearch-block-live
+cluster_state_metadata_index_uuids=kdK8k1svR5i8PFJUBng0FA
+cluster_state_metadata_index_routing_shard_counts=1024
+cluster_state_metadata_index_primary_shard_counts=1
+cluster_state_metadata_index_replica_counts=0
+cluster_state_metadata_index_setting_counts=8
+cluster_state_metadata_index_mapping_counts=0
+cluster_state_metadata_index_alias_counts=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_legacy_template_names=
+cluster_state_metadata_legacy_template_patterns=
+cluster_state_metadata_legacy_template_setting_counts=
+cluster_state_metadata_legacy_template_mapping_counts=
+cluster_state_metadata_legacy_template_alias_counts=
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_index_graveyard_tombstone_names=
+cluster_state_metadata_index_graveyard_tombstone_uuids=
+cluster_state_metadata_index_graveyard_tombstone_delete_timestamps=
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_component_template_versions=
+cluster_state_metadata_component_template_setting_counts=
+cluster_state_metadata_component_template_mapping_counts=
+cluster_state_metadata_component_template_alias_counts=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_composable_template_setting_counts=
+cluster_state_metadata_composable_template_mapping_counts=
+cluster_state_metadata_composable_template_alias_counts=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=1
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-block-live
+cluster_state_routing_shard_tables=1
+cluster_state_routing_shards=1
+cluster_state_routing_shard_ids=0
+cluster_state_routing_shard_states=Started
+cluster_state_routing_shard_primaries=true
+cluster_state_routing_shard_current_node_ids=h80Btp2FQj6ZytlIISBOEw
+cluster_state_routing_shard_allocation_ids=1xbt86a5TC27dUKecEwN5A
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=h80Btp2FQj6ZytlIISBOEw
+cluster_state_node_ids=h80Btp2FQj6ZytlIISBOEw
+cluster_state_node_names=runTask-0
+cluster_state_node_addresses=127.0.0.1:9300
+cluster_state_node_role_counts=4
+cluster_state_node_attribute_counts=2
+cluster_state_global_blocks=1
+cluster_state_index_blocks=1
+cluster_state_index_block_names=steelsearch-block-live
+cluster_state_block_entries=2
+cluster_state_global_block_ids=6
+cluster_state_global_block_uuids=
+cluster_state_global_block_levels=write+metadata_write
+cluster_state_global_block_statuses=FORBIDDEN
+cluster_state_index_block_ids=5
+cluster_state_index_block_uuids=
+cluster_state_index_block_levels=write+metadata_write
+cluster_state_index_block_statuses=FORBIDDEN
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Routing shard identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-routing-live' \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0}}'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/steelsearch-routing-live'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=T1KxlwOiQWiXYGtlPVG8uQ
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=4
+cluster_state_uuid=HBrPuioBQna3U2AIUXB5kw
+cluster_state_metadata_version=3
+cluster_state_cluster_uuid=g_JX15RGREmT0rBEiW5J0w
+cluster_state_metadata_custom_count=1
+cluster_state_metadata_indices=1
+cluster_state_metadata_index_names=steelsearch-routing-live
+cluster_state_metadata_index_uuids=6dF7YFsHRsCTjyFJq2AuJw
+cluster_state_metadata_index_routing_shard_counts=1024
+cluster_state_metadata_index_primary_shard_counts=1
+cluster_state_metadata_index_replica_counts=0
+cluster_state_metadata_index_setting_counts=7
+cluster_state_metadata_index_mapping_counts=0
+cluster_state_metadata_index_alias_counts=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_legacy_template_names=
+cluster_state_metadata_legacy_template_patterns=
+cluster_state_metadata_legacy_template_setting_counts=
+cluster_state_metadata_legacy_template_mapping_counts=
+cluster_state_metadata_legacy_template_alias_counts=
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_index_graveyard_tombstone_names=
+cluster_state_metadata_index_graveyard_tombstone_uuids=
+cluster_state_metadata_index_graveyard_tombstone_delete_timestamps=
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_component_template_versions=
+cluster_state_metadata_component_template_setting_counts=
+cluster_state_metadata_component_template_mapping_counts=
+cluster_state_metadata_component_template_alias_counts=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_composable_template_setting_counts=
+cluster_state_metadata_composable_template_mapping_counts=
+cluster_state_metadata_composable_template_alias_counts=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=1
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-routing-live
+cluster_state_routing_shard_tables=1
+cluster_state_routing_shards=1
+cluster_state_routing_shard_ids=0
+cluster_state_routing_shard_states=Started
+cluster_state_routing_shard_primaries=true
+cluster_state_routing_shard_current_node_ids=T1KxlwOiQWiXYGtlPVG8uQ
+cluster_state_routing_shard_allocation_ids=M03TQ_8XR_Gfv1PmBPJBvQ
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=T1KxlwOiQWiXYGtlPVG8uQ
+cluster_state_node_ids=T1KxlwOiQWiXYGtlPVG8uQ
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Index graveyard tombstone identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-graveyard-live' \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0}}'
+curl -XDELETE 'http://127.0.0.1:9200/steelsearch-graveyard-live'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=GAI2h_M6Q_mtWoHuTzAgrw
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=5
+cluster_state_uuid=MuaS7XVYQXiEqOVRuw6atQ
+cluster_state_metadata_version=4
+cluster_state_cluster_uuid=mKdfDf4ZRUuxpam5mwSePQ
+cluster_state_metadata_custom_count=1
+cluster_state_metadata_indices=0
+cluster_state_metadata_index_names=
+cluster_state_metadata_index_uuids=
+cluster_state_metadata_index_routing_shard_counts=
+cluster_state_metadata_index_primary_shard_counts=
+cluster_state_metadata_index_replica_counts=
+cluster_state_metadata_index_setting_counts=
+cluster_state_metadata_index_mapping_counts=
+cluster_state_metadata_index_alias_counts=
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_legacy_template_names=
+cluster_state_metadata_legacy_template_patterns=
+cluster_state_metadata_legacy_template_setting_counts=
+cluster_state_metadata_legacy_template_mapping_counts=
+cluster_state_metadata_legacy_template_alias_counts=
+cluster_state_metadata_index_graveyard_tombstones=1
+cluster_state_metadata_index_graveyard_tombstone_names=steelsearch-graveyard-live
+cluster_state_metadata_index_graveyard_tombstone_uuids=IO4nk3IoQdO8AsP6zf0GrQ
+cluster_state_metadata_index_graveyard_tombstone_delete_timestamps=1776761708999
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_component_template_versions=
+cluster_state_metadata_component_template_setting_counts=
+cluster_state_metadata_component_template_mapping_counts=
+cluster_state_metadata_component_template_alias_counts=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_composable_template_setting_counts=
+cluster_state_metadata_composable_template_mapping_counts=
+cluster_state_metadata_composable_template_alias_counts=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=1
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=GAI2h_M6Q_mtWoHuTzAgrw
+cluster_state_node_ids=GAI2h_M6Q_mtWoHuTzAgrw
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Composable index template identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_component_template/steelsearch_composable_component_summary' \
+  -H 'Content-Type: application/json' \
+  -d '{"template":{"settings":{"number_of_shards":1}}}'
+curl -XPUT 'http://127.0.0.1:9200/_index_template/steelsearch_composable_summary' \
+  -H 'Content-Type: application/json' \
+  -d '{"index_patterns":["steelsearch-composable-*"],"composed_of":["steelsearch_composable_component_summary"],"priority":7,"version":6,"template":{"settings":{"number_of_replicas":0},"mappings":{"properties":{"title":{"type":"text"}}},"aliases":{"steelsearch-composable-alias":{}}}}'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_index_template/steelsearch_composable_summary'
+curl -XDELETE 'http://127.0.0.1:9200/_component_template/steelsearch_composable_component_summary'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=o5rjZGpLRSG6ihIP4RanKg
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=4
+cluster_state_uuid=8T7_jWlHScmrl5zvPX799Q
+cluster_state_metadata_version=3
+cluster_state_cluster_uuid=os-eMJOgTpeamumvwodsbA
+cluster_state_metadata_custom_count=3
+cluster_state_metadata_indices=0
+cluster_state_metadata_index_names=
+cluster_state_metadata_index_uuids=
+cluster_state_metadata_index_routing_shard_counts=
+cluster_state_metadata_index_primary_shard_counts=
+cluster_state_metadata_index_replica_counts=
+cluster_state_metadata_index_setting_counts=
+cluster_state_metadata_index_mapping_counts=
+cluster_state_metadata_index_alias_counts=
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_legacy_template_names=
+cluster_state_metadata_legacy_template_patterns=
+cluster_state_metadata_legacy_template_setting_counts=
+cluster_state_metadata_legacy_template_mapping_counts=
+cluster_state_metadata_legacy_template_alias_counts=
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=1
+cluster_state_metadata_component_template_names=steelsearch_composable_component_summary
+cluster_state_metadata_component_template_versions=
+cluster_state_metadata_component_template_setting_counts=1
+cluster_state_metadata_component_template_mapping_counts=0
+cluster_state_metadata_component_template_alias_counts=0
+cluster_state_metadata_composable_templates=1
+cluster_state_metadata_composable_template_names=steelsearch_composable_summary
+cluster_state_metadata_composable_template_index_patterns=steelsearch-composable-*
+cluster_state_metadata_composable_template_components=steelsearch_composable_component_summary
+cluster_state_metadata_composable_template_setting_counts=1
+cluster_state_metadata_composable_template_mapping_counts=1
+cluster_state_metadata_composable_template_alias_counts=1
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=3
+cluster_state_metadata_decoded_customs=index-graveyard,component_template,index_template
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=o5rjZGpLRSG6ihIP4RanKg
+cluster_state_node_ids=o5rjZGpLRSG6ihIP4RanKg
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Component template identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_component_template/steelsearch_component_summary' \
+  -H 'Content-Type: application/json' \
+  -d '{"version":5,"template":{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"title":{"type":"text"}}},"aliases":{"steelsearch-component-alias":{}}}}'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_component_template/steelsearch_component_summary'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=6Ru9NlYITCGjib9eIAgs9A
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=3
+cluster_state_uuid=5pPBeJt2SbK-YZE8ZN3AWQ
+cluster_state_metadata_version=2
+cluster_state_cluster_uuid=_EfSmYztRFONAWKBV99-zg
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=0
+cluster_state_metadata_index_names=
+cluster_state_metadata_index_uuids=
+cluster_state_metadata_index_routing_shard_counts=
+cluster_state_metadata_index_primary_shard_counts=
+cluster_state_metadata_index_replica_counts=
+cluster_state_metadata_index_setting_counts=
+cluster_state_metadata_index_mapping_counts=
+cluster_state_metadata_index_alias_counts=
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_legacy_template_names=
+cluster_state_metadata_legacy_template_patterns=
+cluster_state_metadata_legacy_template_setting_counts=
+cluster_state_metadata_legacy_template_mapping_counts=
+cluster_state_metadata_legacy_template_alias_counts=
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=1
+cluster_state_metadata_component_template_names=steelsearch_component_summary
+cluster_state_metadata_component_template_versions=5
+cluster_state_metadata_component_template_setting_counts=2
+cluster_state_metadata_component_template_mapping_counts=1
+cluster_state_metadata_component_template_alias_counts=1
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,component_template
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=6Ru9NlYITCGjib9eIAgs9A
+cluster_state_node_ids=6Ru9NlYITCGjib9eIAgs9A
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Legacy index template identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_template/steelsearch_legacy_template_summary' \
+  -H 'Content-Type: application/json' \
+  -d '{"index_patterns":["steelsearch-legacy-*"],"order":7,"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"title":{"type":"text"},"rank":{"type":"integer"}}},"aliases":{"steelsearch-legacy-alias":{}}}'
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_template/steelsearch_legacy_template_summary'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=SmklXacyT3msyVHEyz0Z_A
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=3
+cluster_state_uuid=O24R--EYQQCj6yIgcca1xg
+cluster_state_metadata_version=2
+cluster_state_cluster_uuid=gV6Dvnq8Q0ib1mCnj9LXRg
+cluster_state_metadata_custom_count=1
+cluster_state_metadata_indices=0
+cluster_state_metadata_index_names=
+cluster_state_metadata_index_uuids=
+cluster_state_metadata_index_routing_shard_counts=
+cluster_state_metadata_index_primary_shard_counts=
+cluster_state_metadata_index_replica_counts=
+cluster_state_metadata_index_setting_counts=
+cluster_state_metadata_index_mapping_counts=
+cluster_state_metadata_index_alias_counts=
+cluster_state_metadata_legacy_templates=1
+cluster_state_metadata_legacy_template_names=steelsearch_legacy_template_summary
+cluster_state_metadata_legacy_template_patterns=steelsearch-legacy-*
+cluster_state_metadata_legacy_template_setting_counts=2
+cluster_state_metadata_legacy_template_mapping_counts=1
+cluster_state_metadata_legacy_template_alias_counts=1
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=0
+cluster_state_metadata_repository_names=
+cluster_state_metadata_repository_types=
+cluster_state_metadata_repository_setting_counts=
+cluster_state_metadata_repository_generations=
+cluster_state_metadata_repository_pending_generations=
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=1
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=SmklXacyT3msyVHEyz0Z_A
+cluster_state_node_ids=SmklXacyT3msyVHEyz0Z_A
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Repository metadata identity transcript:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_snapshot/steelsearch_repo_summary' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"fs","settings":{"location":"/home/ubuntu/OpenSearch/build/testclusters/runTask-0/repo/steelsearch-repo-summary","compress":true}}'
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_snapshot/steelsearch_repo_summary'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=PSRQ-O34RRK-rAzKcQWu2Q
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=3
+cluster_state_uuid=R9aJ54YfTrOLsPbYP9P2nw
+cluster_state_metadata_version=2
+cluster_state_cluster_uuid=lg7PdAFdT9uUIqhNHk19_Q
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_data_stream_names=
+cluster_state_metadata_data_stream_timestamp_fields=
+cluster_state_metadata_data_stream_backing_index_counts=
+cluster_state_metadata_data_stream_backing_index_names=
+cluster_state_metadata_data_stream_generations=
+cluster_state_metadata_repositories=1
+cluster_state_metadata_repository_names=steelsearch_repo_summary
+cluster_state_metadata_repository_types=fs
+cluster_state_metadata_repository_setting_counts=2
+cluster_state_metadata_repository_generations=-2
+cluster_state_metadata_repository_pending_generations=-1
+cluster_state_metadata_repository_crypto_provider_names=
+cluster_state_metadata_repository_crypto_provider_types=
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,repositories
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=PSRQ-O34RRK-rAzKcQWu2Q
+cluster_state_node_ids=PSRQ-O34RRK-rAzKcQWu2Q
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Workload-management plugin-enabled transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon -PinstalledPlugins="['workload-management']"
+curl -XPUT 'http://127.0.0.1:9200/_cluster/settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"persistent":{"wlm.workload_group.mode":"enabled"}}'
+curl -XPUT 'http://127.0.0.1:9200/_wlm/workload_group/' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"steelsearch_live_group","resiliency_mode":"enforced","resource_limits":{"cpu":0.2,"memory":0.1},"search_settings":{"timeout":"5s"}}'
+cd /home/ubuntu/steelsearch
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=j_Ii0l2hTtWTWyn1p9wh0w
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=4
+cluster_state_uuid=z2rlta15Q9eNxv_SkIYRUQ
+cluster_state_metadata_version=3
+cluster_state_cluster_uuid=vqu2vD4yQMmwlrZ__09Irw
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=1
+cluster_state_metadata_workload_group_names=steelsearch_live_group
+cluster_state_metadata_workload_group_ids=g3nmzTSFQ36ukjC7DNZCfw
+cluster_state_metadata_workload_group_resource_limit_counts=2
+cluster_state_metadata_workload_group_search_setting_counts=1
+cluster_state_metadata_workload_group_resiliency_modes=enforced
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,queryGroups
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=j_Ii0l2hTtWTWyn1p9wh0w
+cluster_state_node_ids=j_Ii0l2hTtWTWyn1p9wh0w
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: workload group metadata custom
+`queryGroups` decodes successfully from a live plugin-enabled node and the
+response is fully consumed.
+
+Combined repository/workload/snapshot transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon -PinstalledPlugins="['workload-management']"
+curl -XPUT 'http://127.0.0.1:9200/_cluster/settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"persistent":{"wlm.workload_group.mode":"enabled"}}'
+curl -XPUT 'http://127.0.0.1:9200/_wlm/workload_group/' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"steelsearch_combined_group","resiliency_mode":"enforced","resource_limits":{"cpu":0.2,"memory":0.1},"search_settings":{"timeout":"5s"}}'
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-combined-index' \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0}}'
+curl -XPOST 'http://127.0.0.1:9200/steelsearch-combined-index/_doc?refresh=true' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"combined live probe"}'
+curl -XPUT 'http://127.0.0.1:9200/_snapshot/steelsearch_combined_repo' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"fs","settings":{"location":"/home/ubuntu/OpenSearch/build/testclusters/runTask-0/repo/steelsearch-combined"}}'
+curl -XPUT 'http://127.0.0.1:9200/_snapshot/steelsearch_combined_repo/steelsearch_combined_snapshot?wait_for_completion=false' \
+  -H 'Content-Type: application/json' \
+  -d '{"indices":"steelsearch-combined-index","include_global_state":true}'
+cd /home/ubuntu/steelsearch
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=HBoYvfHsQMS-gk-uk7_a7Q
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=12
+cluster_state_uuid=1Bxng6ISS1euqUqCLPt0MQ
+cluster_state_metadata_version=9
+cluster_state_cluster_uuid=nWJrLm6jTsqtzE8nljO1AA
+cluster_state_metadata_custom_count=3
+cluster_state_metadata_indices=1
+cluster_state_metadata_repositories=1
+cluster_state_metadata_workload_groups=1
+cluster_state_metadata_decoded_custom_count=3
+cluster_state_metadata_decoded_customs=index-graveyard,repositories,queryGroups
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-combined-index
+cluster_state_routing_shards=1
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=1
+cluster_state_custom_names=snapshots
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: mixed metadata customs
+`repositories` and `queryGroups` plus top-level `snapshots` are present in the
+same live response and fully consumed. The completed snapshot leaves an empty
+`snapshots` custom payload in this run, so an active long-running snapshot is
+still useful for non-empty `SnapshotsInProgress` live entry coverage. This
+combined transcript predates workload group identity summary fields; the
+plugin-only transcript above is the canonical current output for those fields.
+
+Active snapshot transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon
+curl -XPUT 'http://127.0.0.1:9200/steelsearch-active-index' \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0,"index.refresh_interval":"-1"}}'
+# Bulk index random payload documents, then create a throttled fs repository:
+curl -XPUT 'http://127.0.0.1:9200/_snapshot/steelsearch_active_repo' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"fs","settings":{"location":"/home/ubuntu/OpenSearch/build/testclusters/runTask-0/repo/steelsearch-active","max_snapshot_bytes_per_sec":"1kb"}}'
+curl -XPUT 'http://127.0.0.1:9200/_snapshot/steelsearch_active_repo/steelsearch_active_snapshot?wait_for_completion=false' \
+  -H 'Content-Type: application/json' \
+  -d '{"indices":"steelsearch-active-index","include_global_state":true}'
+cd /home/ubuntu/steelsearch
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=kXieY-w9TvSkxMcvXRbvhA
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=7
+cluster_state_uuid=pB4MxHzoTxi9HfuIEi_t5Q
+cluster_state_metadata_version=5
+cluster_state_cluster_uuid=KdKB8OFFQ3CXED0uAtY5_Q
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=1
+cluster_state_metadata_repositories=1
+cluster_state_metadata_decoded_customs=index-graveyard,repositories
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-active-index
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=1
+cluster_state_custom_names=snapshots
+cluster_state_snapshots_entries=1
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: non-empty `SnapshotsInProgress`
+live state decodes and fully consumes. The first active probe exposed that
+snapshot user metadata can be a null generic map (`type=-1`); the prefix decoder
+now treats that as an empty metadata map.
+
+Active restore transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon
+# Create a source index with random payload documents, snapshot it to an fs
+# repository configured with max_restore_bytes_per_sec=1kb, delete the source
+# index, then restore it under a new name.
+curl -XPOST 'http://127.0.0.1:9200/_snapshot/steelsearch_restore_repo/steelsearch_restore_snapshot/_restore?wait_for_completion=false' \
+  -H 'Content-Type: application/json' \
+  -d '{"indices":"steelsearch-restore-source","rename_pattern":"steelsearch-restore-source","rename_replacement":"steelsearch-restore-target"}'
+cd /home/ubuntu/steelsearch
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=NwZeidcPRWKkW9DKya7XHw
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=13
+cluster_state_uuid=mj4JVujcQwGfy7Ibn-YHkw
+cluster_state_metadata_version=10
+cluster_state_cluster_uuid=5Mpj6_f8RKW0NVmZSSniaA
+cluster_state_metadata_custom_count=3
+cluster_state_metadata_indices=1
+cluster_state_metadata_index_graveyard_tombstones=1
+cluster_state_metadata_repositories=1
+cluster_state_metadata_decoded_custom_count=3
+cluster_state_metadata_decoded_customs=index-graveyard,data_stream,repositories
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-restore-target
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=2
+cluster_state_custom_names=snapshots,restore
+cluster_state_restore_entries=1
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: non-empty `RestoreInProgress` live
+state decodes and fully consumes.
+
+Snapshot deletion transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon
+# Create an index with random payload documents, create a throttled fs
+# repository, start a snapshot, then delete that in-progress snapshot.
+curl -XDELETE 'http://127.0.0.1:9200/_snapshot/steelsearch_delete_repo/steelsearch_delete_snapshot'
+cd /home/ubuntu/steelsearch
+cargo run -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=KXnZLkwZQCmBcMZtcOP8WA
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=8
+cluster_state_uuid=oMHdg5EUTta0Zqz0CDKHZQ
+cluster_state_metadata_version=5
+cluster_state_cluster_uuid=omD0PYDVSVyNUwiZ3LG3-A
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=1
+cluster_state_metadata_repositories=1
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,repositories
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=steelsearch-delete-index
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=2
+cluster_state_custom_names=snapshots,snapshot_deletions
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=1
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=1
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: non-empty `SnapshotDeletionsInProgress`
+live state decodes and fully consumes while the interrupted snapshot remains in
+`SnapshotsInProgress`.
+
+Repository cleanup transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon
+curl -XPUT 'http://127.0.0.1:9200/_snapshot/steelsearch_cleanup_repo' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"fs","settings":{"location":"/home/ubuntu/OpenSearch/build/testclusters/runTask-0/repo/steelsearch-cleanup"}}'
+# Create 60000 stale root blobs named snap-stale2-*.dat in the fs repository,
+# start cleanup in the background, then probe until the in-progress entry appears.
+curl -XPOST 'http://127.0.0.1:9200/_snapshot/steelsearch_cleanup_repo/_cleanup'
+cd /home/ubuntu/steelsearch
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=iy_oroE7T7adN-h3WQRoyQ
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=8
+cluster_state_uuid=V_XGmpHwRBCl8L6_MYWRiQ
+cluster_state_metadata_version=4
+cluster_state_cluster_uuid=sCSDZe0RREW4z1-vbZ5Hzw
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=0
+cluster_state_metadata_repositories=1
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,repositories
+cluster_state_routing_indices=0
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=1
+cluster_state_custom_names=repository_cleanup
+cluster_state_repository_cleanup_entries=1
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: non-empty `RepositoryCleanupInProgress`
+live state decodes and fully consumes. A fast cleanup can leave an empty
+`repository_cleanup` marker briefly after the removal task, so the live probe
+uses many stale root blobs and loops until a non-empty entry is observed.
+
+Operational metadata transcript:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon
+curl -XPUT 'http://127.0.0.1:9200/_cluster/settings' \
+  -H 'Content-Type: application/json' \
+  -d '{"persistent":{"cluster.routing.allocation.awareness.attributes":"testattr","cluster.routing.allocation.awareness.force.testattr.values":"test,other"}}'
+curl -XPUT 'http://127.0.0.1:9200/_cluster/routing/awareness/testattr/weights' \
+  -H 'Content-Type: application/json' \
+  -d '{"weights":{"test":"0.0","other":"1.0"},"_version":0}'
+curl -XPUT 'http://127.0.0.1:9200/_cluster/decommission/awareness/testattr/test?no_delay=true'
+cd /home/ubuntu/steelsearch
+cargo run -q -p os-tcp-probe -- --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+The first startup attempt used `-Dtests.opensearch.nodeattr.zone=zone-c` and
+failed before the node bound transport because OpenSearch rejected the unknown
+setting `nodeattr.zone`. The default `./gradlew run` node already exposes
+`testattr=test`, so the live decommission path can use that built-in test node
+attribute once awareness, forced awareness values, and weighted routing are set.
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=yzNAWG2sR6CayL8TU0YmyQ
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=7
+cluster_state_uuid=yVDnbo3LTDKvMwmvEiPITw
+cluster_state_metadata_version=6
+cluster_state_cluster_uuid=EhkFl6rATiaYkBvmnRmPpg
+cluster_state_metadata_custom_count=3
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=1
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=1
+cluster_state_metadata_decoded_custom_count=3
+cluster_state_metadata_decoded_customs=index-graveyard,decommissionedAttribute,weighted_shard_routing
+cluster_state_routing_indices=0
+cluster_state_nodes=1
+cluster_state_node_names=runTask-0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Compatibility status from this transcript: `decommissionedAttribute` metadata
+and the companion `weighted_shard_routing` metadata decode from a live node and
+fully consume. The decommission REST call can remain open while the node drains,
+but the cluster state metadata is published before the HTTP request returns.
+
+Persistent task live producer status: implemented as an OpenSearch-side local
+plugin at `/home/ubuntu/OpenSearch/plugins/persistent-task-live-fixture`. The
+plugin implements `ActionPlugin` and `PersistentTaskPlugin`, registers
+`steelsearch-fixture-persistent-task` params as a named writeable, registers a
+no-op `PersistentTasksExecutor`, and exposes fixture-only REST routes:
+
+- `PUT /_steelsearch/persistent_task/{task_id}` starts a persistent task via
+  `StartPersistentTaskAction.INSTANCE`.
+- `DELETE /_steelsearch/persistent_task/{task_id}` removes it via
+  `RemovePersistentTaskAction.INSTANCE`.
+
+The plugin compiles with:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew :plugins:persistent-task-live-fixture:compileJava --no-daemon
+```
+
+Live command shape:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew run --no-daemon -PinstalledPlugins="['persistent-task-live-fixture']"
+curl -XPUT 'http://127.0.0.1:9200/_steelsearch/persistent_task/steelsearch-live-task'
+cd /home/ubuntu/steelsearch
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+```
+
+Task creation returns the allocated persistent task:
+
+```json
+{"task_id":"steelsearch-live-task","allocation_id":1}
+```
+
+The plugin is visible through `_cat/plugins`:
+
+```text
+name      component                    version
+runTask-0 persistent-task-live-fixture 3.7.0-SNAPSHOT
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=p3s2oRTmSi2AmUeG1xZPug
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=4
+cluster_state_uuid=utxGrEXMSGmlAa9CayREcQ
+cluster_state_metadata_version=3
+cluster_state_cluster_uuid=7ySLxTksQRisi_nfJQ-gKg
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=1
+cluster_state_metadata_persistent_task_names=steelsearch-fixture-persistent-task
+cluster_state_metadata_persistent_task_param_names=steelsearch-fixture-persistent-task
+cluster_state_metadata_persistent_task_fixture_markers=steelsearch-fixture-payload
+cluster_state_metadata_persistent_task_fixture_generations=7
+cluster_state_metadata_persistent_task_state_names=steelsearch-fixture-persistent-task
+cluster_state_metadata_persistent_task_fixture_state_markers=steelsearch-fixture-state
+cluster_state_metadata_persistent_task_fixture_state_generations=11
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,persistent_tasks
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=p3s2oRTmSi2AmUeG1xZPug
+cluster_state_node_ids=p3s2oRTmSi2AmUeG1xZPug
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Cleanup returns:
+
+```json
+{"removed":"steelsearch-live-task"}
+```
+
+Persistent task optional state coverage:
+
+- Wire path: `PersistentTasksCustomMetadata.PersistentTask.writeTo` serializes
+  state with `StreamOutput.writeOptionalNamedWriteable(state)` immediately after
+  params, and `PersistentTask(StreamInput)` reads it through
+  `in.readOptionalNamedWriteable(PersistentTaskState.class)`.
+- Registry path: plugin-provided state classes use the same
+  `ActionPlugin.getNamedWriteables()` hook as params, but the category class is
+  `PersistentTaskState.class`.
+- Update path: `AllocatedPersistentTask.updatePersistentTaskState(...)` delegates
+  to `PersistentTasksService.sendUpdateStateRequest(...)`, which sends
+  `UpdatePersistentTaskStatusAction.Request`; the cluster-manager applies it via
+  `PersistentTasksClusterService.updatePersistentTaskState(...)`.
+- Fixture implementation: `FixturePersistentTasksExecutor.nodeOperation`
+  publishes `FixturePersistentTaskState` through the allocated task when no
+  state is present yet. The state uses the same writeable name as the task
+  (`steelsearch-fixture-persistent-task`), matching the validation in
+  `PersistentTasksCustomMetadata.PersistentTask`.
+- Rust strategy: unknown state payloads remain fail-closed by default. The
+  decoder has a branch for the fixture state name and consumes the deterministic
+  `string marker` plus `long generation` payload. `os-tcp-probe` exposes those
+  fields so the live transcript proves payload consumption as well as
+  `cluster_state_remaining_bytes=0`.
+
+View metadata live coverage:
+
+```bash
+curl --max-time 5 -XPOST 'http://127.0.0.1:9200/views' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"steelsearch-live-view","description":"steelsearch live view","targets":[{"indexPattern":"steelsearch-view-*"}]}' || true
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/views/steelsearch-live-view'
+```
+
+The create request publishes the view metadata before the HTTP response returns
+in this local run; `--max-time` keeps the producer command bounded. Captured
+probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=aU9wSukVR1apsqLsQJmzEQ
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=3
+cluster_state_uuid=rvZtA6BKSGmOWyCmkDU_GQ
+cluster_state_metadata_version=2
+cluster_state_cluster_uuid=7QqXwi1_RlqisSMczbEhfw
+cluster_state_metadata_custom_count=2
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=1
+cluster_state_metadata_view_names=steelsearch-live-view
+cluster_state_metadata_view_target_patterns=steelsearch-view-*
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=2
+cluster_state_metadata_decoded_customs=index-graveyard,view
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=aU9wSukVR1apsqLsQJmzEQ
+cluster_state_node_ids=aU9wSukVR1apsqLsQJmzEQ
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Pipeline and stored script metadata live coverage:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_ingest/pipeline/steelsearch-live-ingest' \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"steelsearch live ingest","processors":[]}'
+curl -XPUT 'http://127.0.0.1:9200/_search/pipeline/steelsearch-live-search' \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"steelsearch live search","request_processors":[],"response_processors":[]}'
+curl -XPUT 'http://127.0.0.1:9200/_scripts/steelsearch-live-script' \
+  -H 'Content-Type: application/json' \
+  -d '{"script":{"lang":"painless","source":"return params.value;"}}'
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_ingest/pipeline/steelsearch-live-ingest'
+curl -XDELETE 'http://127.0.0.1:9200/_search/pipeline/steelsearch-live-search'
+curl -XDELETE 'http://127.0.0.1:9200/_scripts/steelsearch-live-script'
+```
+
+Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=O5IR79rkSMOEKxUjeKbKNw
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=5
+cluster_state_uuid=RXkMyH8AQJCGzc_63T29mg
+cluster_state_metadata_version=4
+cluster_state_cluster_uuid=CrdLZVVQQZ6T9KSslrBRqA
+cluster_state_metadata_custom_count=4
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=1
+cluster_state_metadata_ingest_pipeline_ids=steelsearch-live-ingest
+cluster_state_metadata_search_pipelines=1
+cluster_state_metadata_search_pipeline_ids=steelsearch-live-search
+cluster_state_metadata_stored_scripts=1
+cluster_state_metadata_stored_script_ids=steelsearch-live-script
+cluster_state_metadata_stored_script_langs=painless
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=0
+cluster_state_metadata_composable_template_names=
+cluster_state_metadata_composable_template_index_patterns=
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=4
+cluster_state_metadata_decoded_customs=index-graveyard,ingest,search_pipeline,stored_scripts
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=O5IR79rkSMOEKxUjeKbKNw
+cluster_state_node_ids=O5IR79rkSMOEKxUjeKbKNw
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Template metadata live coverage:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_component_template/steelsearch-live-component' \
+  -H 'Content-Type: application/json' \
+  -d '{"template":{"settings":{"index.number_of_shards":"1"},"mappings":{"properties":{"field":{"type":"keyword"}}},"aliases":{"steelsearch-live-alias":{}}},"version":7,"_meta":{"steelsearch":"live"}}'
+curl -XPUT 'http://127.0.0.1:9200/_index_template/steelsearch-live-template' \
+  -H 'Content-Type: application/json' \
+  -d '{"index_patterns":["steelsearch-template-*"],"composed_of":["steelsearch-live-component"],"template":{"settings":{"index.number_of_replicas":"0"}},"priority":501,"version":11,"_meta":{"steelsearch":"live"}}'
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_index_template/steelsearch-live-template'
+curl -XDELETE 'http://127.0.0.1:9200/_component_template/steelsearch-live-component'
+```
+
+The composable template must be created after the component template is
+acknowledged; otherwise OpenSearch rejects the request because the referenced
+component template does not exist yet. Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=JyuyF8pQQgSx_Xih0Eu2FQ
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=4
+cluster_state_uuid=VseZSHuDSaClySfMsNa7gQ
+cluster_state_metadata_version=3
+cluster_state_cluster_uuid=D4QQyE9pTbyVmWOGGOutZQ
+cluster_state_metadata_custom_count=3
+cluster_state_metadata_indices=0
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=0
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=1
+cluster_state_metadata_component_template_names=steelsearch-live-component
+cluster_state_metadata_composable_templates=1
+cluster_state_metadata_composable_template_names=steelsearch-live-template
+cluster_state_metadata_composable_template_index_patterns=steelsearch-template-*
+cluster_state_metadata_composable_template_components=steelsearch-live-component
+cluster_state_metadata_data_streams=0
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=3
+cluster_state_metadata_decoded_customs=index-graveyard,component_template,index_template
+cluster_state_routing_indices=0
+cluster_state_routing_index_names=
+cluster_state_routing_shard_tables=0
+cluster_state_routing_shards=0
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=JyuyF8pQQgSx_Xih0Eu2FQ
+cluster_state_node_ids=JyuyF8pQQgSx_Xih0Eu2FQ
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Data stream metadata live coverage:
+
+```bash
+curl -XPUT 'http://127.0.0.1:9200/_index_template/steelsearch-ds-template' \
+  -H 'Content-Type: application/json' \
+  -d '{"index_patterns":["steelsearch-ds-*"],"data_stream":{},"template":{"mappings":{"properties":{"@timestamp":{"type":"date"},"message":{"type":"keyword"}}}}}'
+curl -XPOST 'http://127.0.0.1:9200/steelsearch-ds-live/_doc?op_type=create' \
+  -H 'Content-Type: application/json' \
+  -d '{"@timestamp":"2026-04-21T08:26:30Z","message":"data stream live probe"}'
+target/debug/os-tcp-probe --addr 127.0.0.1:9300 --cluster-state-full
+curl -XDELETE 'http://127.0.0.1:9200/_data_stream/steelsearch-ds-live'
+curl -XDELETE 'http://127.0.0.1:9200/_index_template/steelsearch-ds-template'
+```
+
+The document write must use `op_type=create`; a plain `_doc` write can create a
+regular index before the data stream is initialized. Captured probe transcript:
+
+```text
+connected=127.0.0.1:9300
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+node_name=runTask-0
+node_id=gOuK9fc3Sc6E4jLrbzs9Vw
+node_address=127.0.0.1:9300
+node_roles=cluster_manager,data,ingest,remote_cluster_client
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_name=runTask
+cluster_state_version=9
+cluster_state_uuid=NVJHz5t5RTmgfXHCl-42Zg
+cluster_state_metadata_version=8
+cluster_state_cluster_uuid=VV-yItpVTHayWC1e_Odwtw
+cluster_state_metadata_custom_count=3
+cluster_state_metadata_indices=1
+cluster_state_metadata_legacy_templates=0
+cluster_state_metadata_index_graveyard_tombstones=1
+cluster_state_metadata_ingest_pipelines=0
+cluster_state_metadata_ingest_pipeline_ids=
+cluster_state_metadata_search_pipelines=0
+cluster_state_metadata_search_pipeline_ids=
+cluster_state_metadata_stored_scripts=0
+cluster_state_metadata_stored_script_ids=
+cluster_state_metadata_stored_script_langs=
+cluster_state_metadata_persistent_tasks=0
+cluster_state_metadata_persistent_task_names=
+cluster_state_metadata_persistent_task_param_names=
+cluster_state_metadata_persistent_task_fixture_markers=
+cluster_state_metadata_persistent_task_fixture_generations=
+cluster_state_metadata_persistent_task_state_names=
+cluster_state_metadata_persistent_task_fixture_state_markers=
+cluster_state_metadata_persistent_task_fixture_state_generations=
+cluster_state_metadata_decommissioned_attribute=0
+cluster_state_metadata_component_templates=0
+cluster_state_metadata_component_template_names=
+cluster_state_metadata_composable_templates=1
+cluster_state_metadata_composable_template_names=steelsearch-ds-template
+cluster_state_metadata_composable_template_index_patterns=steelsearch-ds-*
+cluster_state_metadata_composable_template_components=
+cluster_state_metadata_data_streams=1
+cluster_state_metadata_data_stream_names=steelsearch-ds-live
+cluster_state_metadata_data_stream_timestamp_fields=@timestamp
+cluster_state_metadata_data_stream_backing_index_counts=1
+cluster_state_metadata_data_stream_backing_index_names=.ds-steelsearch-ds-live-000001
+cluster_state_metadata_data_stream_generations=1
+cluster_state_metadata_repositories=0
+cluster_state_metadata_views=0
+cluster_state_metadata_view_names=
+cluster_state_metadata_view_target_patterns=
+cluster_state_metadata_workload_groups=0
+cluster_state_metadata_workload_group_names=
+cluster_state_metadata_workload_group_ids=
+cluster_state_metadata_workload_group_resource_limit_counts=
+cluster_state_metadata_workload_group_search_setting_counts=
+cluster_state_metadata_workload_group_resiliency_modes=
+cluster_state_metadata_weighted_routing=0
+cluster_state_metadata_decoded_custom_count=3
+cluster_state_metadata_decoded_customs=index-graveyard,index_template,data_stream
+cluster_state_routing_indices=1
+cluster_state_routing_index_names=.ds-steelsearch-ds-live-000001
+cluster_state_routing_shard_tables=1
+cluster_state_routing_shards=2
+cluster_state_nodes=1
+cluster_state_cluster_manager_node_id=gOuK9fc3Sc6E4jLrbzs9Vw
+cluster_state_node_ids=gOuK9fc3Sc6E4jLrbzs9Vw
+cluster_state_node_names=runTask-0
+cluster_state_global_blocks=0
+cluster_state_index_blocks=0
+cluster_state_index_block_names=
+cluster_state_block_entries=0
+cluster_state_custom_count=0
+cluster_state_custom_names=
+cluster_state_repository_cleanup_entries=0
+cluster_state_snapshot_deletions_entries=0
+cluster_state_restore_entries=0
+cluster_state_snapshots_entries=0
+cluster_state_remaining_bytes=0
+```
+
+Live compatibility matrix:
+
+| Scenario | Command shape | Metadata custom coverage | Top-level custom coverage | Remaining bytes | Status |
+| --- | --- | --- | --- | --- | --- |
+| readiness without node | `--cluster-state` against closed port | none | none | n/a | expected connection failure documented |
+| filtered/minimal request | `--cluster-state` | `index-graveyard` only | none | `0` | decoded and fully consumed |
+| repository + completed snapshot | `--cluster-state-full` | `index-graveyard,repositories` | `snapshots` with zero entries | `0` | decoded and fully consumed |
+| workload-management plugin | `--cluster-state-full` on `-PinstalledPlugins="['workload-management']"` | `index-graveyard,queryGroups` | none | `0` | decoded and fully consumed |
+| combined repository/workload/snapshot | `--cluster-state-full` on plugin-enabled node | `index-graveyard,repositories,queryGroups` | `snapshots` with zero entries | `0` | decoded and fully consumed |
+| active snapshot | throttled fs repository + `--cluster-state-full` | `index-graveyard,repositories` | `snapshots` with one entry | `0` | decoded and fully consumed after null generic map support |
+| active restore | throttled restore + `--cluster-state-full` | `index-graveyard,data_stream,repositories` | `snapshots,restore` with one restore entry | `0` | decoded and fully consumed |
+| snapshot deletion | delete in-progress throttled snapshot + `--cluster-state-full` | `index-graveyard,repositories` | `snapshots,snapshot_deletions` with one deletion entry | `0` | decoded and fully consumed |
+| repository cleanup | cleanup repo with stale root blobs + `--cluster-state-full` | `index-graveyard,repositories` | `repository_cleanup` with one entry | `0` | decoded and fully consumed |
+| decommission metadata | awareness + forced awareness + weighted routing + decommission | `index-graveyard,decommissionedAttribute,weighted_shard_routing` | none | `0` | decoded and fully consumed |
+| persistent task metadata | `persistent-task-live-fixture` plugin + `--cluster-state-full` | `index-graveyard,persistent_tasks` with one task, params payload, and state payload | none | `0` | decoded and fully consumed |
+| view metadata | `/views` REST create + `--cluster-state-full` | `index-graveyard,view` with one view | none | `0` | decoded and fully consumed |
+| pipeline/script metadata | REST create ingest pipeline, search pipeline, and stored script + `--cluster-state-full` | `index-graveyard,ingest,search_pipeline,stored_scripts` with one entry each | none | `0` | decoded and fully consumed |
+| template metadata | REST create component template and composable index template + `--cluster-state-full` | `index-graveyard,component_template,index_template` with one entry each | none | `0` | decoded and fully consumed |
+| data stream metadata | data stream index template + create document with `op_type=create` + `--cluster-state-full` | `index-graveyard,index_template,data_stream` with one data stream and backing index | none | `0` | decoded and fully consumed after nullable string map support |
+
+Remaining live compatibility gaps:
+
+- publication cluster-state diffs are not decoded yet; OpenSearch publish
+  payloads use a full/diff boolean and `ClusterStateDiff` map/named-diff
+  envelopes. Rust now reads the diff header, empty/prefix-only section count
+  summaries, delete-only string map diff envelopes, routing index upsert
+  skeletons, metadata index/template upsert skeletons, and repositories
+  metadata custom plus top-level
+  `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom upsert
+  skeletons, and still fails closed before other named diff/upsert payloads or
+  apply semantics. Java fixtures cover an empty
+  publication diff plus delete-only top-level custom, routing index, metadata
+  index, metadata template, metadata custom, consistent-setting hash diffs, and
+  routing/metadata index/template/repositories custom and top-level
+  `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom upsert
+  diffs, including a non-empty snapshots entry payload and a restore
+  shard-status payload. A top-level `repository_cleanup` named diff fixture is
+  decoded as a default `CompleteNamedDiff` boolean followed by the full custom
+  payload when the boolean is `true`. A routing index map diff fixture is now
+  decoded as a string map key followed by the default `AbstractDiffable`
+  boolean; when the boolean is `true`, Rust reuses the existing
+  `IndexRoutingTable` prefix reader and fully consumes the replacement payload.
+  Legacy metadata template named diffs use the same string-keyed map diff
+  pattern: the template key is followed by the default `AbstractDiffable`
+  replacement boolean, then a full `IndexTemplateMetadata.writeTo` payload when
+  present. That replacement payload repeats the template name and can reuse the
+  existing legacy template prefix reader. A fixture now validates that by
+  changing legacy template order, pattern, settings, and version. Mapping and
+  alias changes are covered by the same replacement payload shape, with mapping
+  entries as compressed x-content and alias entries as `AliasMetadata.writeTo`
+  values. A separate fixture now validates mapping compressed bytes and alias
+  name through that same replacement branch.
+  A metadata index diff fixture verifies the remaining `IndexMetadataDiff`
+  scalar/settings header and empty nested map diffs are consumed from
+  OpenSearch bytes. Java fixture coverage now includes a nested mapping diff
+  decoded through the default
+  `AbstractDiffable` boolean and full `MappingMetadata` replacement payload,
+  plus a nested alias diff decoded through the default `AbstractDiffable`
+  boolean and full `AliasMetadata` replacement payload. A nested custom data
+  diff fixture is decoded as the outer custom data key followed by
+  `DiffableStringMapDiff` payload: a string delete list and a string-to-string
+  upsert map, with no complete-diff boolean and no incremental diff map. A
+  nested rollover info diff fixture is decoded as the outer rollover alias
+  followed by the default `AbstractDiffable` complete-diff boolean and full
+  `RolloverInfo.writeTo` bytes when the boolean is `true`. A nested in-sync
+  allocation ids fixture is decoded as shard-id keyed map upserts containing
+  string collections. The diff envelope uses four-byte int shard ids in current
+  OpenSearch bytes, while full index metadata still writes the same map with
+  VInt shard ids. A split-shards metadata diff fixture is decoded through the
+  default `AbstractDiffable` complete-diff boolean and full
+  `SplitShardsMetadata.writeTo` replacement payload. This completes current
+  metadata index nested diff fixture coverage; remaining publication diff gaps
+  are now outside `IndexMetadataDiff`, especially metadata custom map entries
+  beyond the existing `repositories` upsert coverage. The
+  `component_template` metadata custom upsert fixture is now decoded by
+  reusing the full-state `component_template` custom reader: map count,
+  component template name, `Template.writeTo`, optional version, and optional
+  metadata map. The adjacent `index_template` composable metadata custom uses
+  the same map-upsert shape and its value layout matches the existing
+  full-state composable index template reader for the current OpenSearch wire
+  version; that publication diff fixture is now decoded through the same prefix
+  reader. Its named diff form is also map-backed: the outer custom diff key is
+  `index_template`, followed by a nested composable-template-name keyed map
+  diff whose changed entries use the default replacement boolean and then a
+  `ComposableIndexTemplate.writeTo` value when present. The `data_stream`
+  metadata custom has the same map-upsert shape and
+  its value layout matches the existing full-state data stream reader: name,
+  timestamp field, backing index list, and generation; that publication diff
+  fixture is now decoded through the same prefix reader. `ingest` differs from
+  those map-backed customs by writing pipeline count plus
+  `PipelineConfiguration.writeTo` values without separate map keys; the
+  publication diff fixture is now decoded through the same full-state ingest
+  reader. `search_pipeline` follows the same count-plus-pipeline-values shape,
+  and its publication diff fixture is now decoded through the same full-state
+  search pipeline reader. `stored_scripts` writes a script count followed by
+  script id and `StoredScriptSource.writeTo` values; that publication diff
+  fixture is now decoded through the same full-state stored script reader.
+  `index-graveyard` writes a tombstone list where each tombstone is
+  `Index.writeTo` plus a fixed long delete timestamp; its publication diff
+  fixture removes the default empty graveyard from the before-state so the
+  after-state serializes as a metadata custom upsert, and Rust decodes it
+  through the full-state index graveyard reader. `persistent_tasks` writes a
+  fixed long last allocation id followed by a task-id keyed map of
+  `PersistentTask.writeTo` values; that publication diff fixture is now decoded
+  through the full-state persistent task reader, including fixture named params
+  and state payloads. `decommissionedAttribute` writes attribute name/value,
+  status, and request id strings; that publication diff fixture is now decoded
+  through the full-state decommission reader. `weighted_shard_routing` writes
+  awareness attribute, generic weights map, and version long; that publication
+  diff fixture is now decoded through the full-state weighted routing reader.
+  Its metadata custom named diff form uses the default `CompleteNamedDiff`
+  shape; the focused fixture now reads a replacement boolean and reuses the
+  same weighted-routing reader. `decommissionedAttribute` shares that default
+  metadata custom diff shape and now reuses the decommission reader for named
+  replacements. `repositories` also shares the default metadata custom shape:
+  after the replacement boolean, the payload is a list of `RepositoryMetadata`
+  values, matching the existing repository reader. The fixture now uses a
+  non-crypto repository list replacement because crypto is already covered by
+  full-state repository fixtures. Top-level `restore`, `snapshot_deletions`,
+  and `snapshots` share that default `CompleteNamedDiff` shape with the
+  already-covered top-level `repository_cleanup`. `restore` is the next focused
+  candidate: `RestoreInProgress.readDiffFrom` delegates to the default
+  complete named diff reader, so the payload is a replacement boolean followed
+  by `RestoreInProgress.writeTo`; the existing Rust restore reader can consume
+  that replacement, including entry shard-status maps. The focused named diff
+  fixture now changes an existing `restore` custom from a basic entry to a
+  shard-status entry and validates that replacement path. The remaining
+  top-level complete-named-diff candidates are `snapshot_deletions` and
+  `snapshots`, in that order. `snapshot_deletions` also uses the default
+  `CompleteNamedDiff` path: the replacement boolean is followed by
+  `SnapshotDeletionsInProgress.writeTo`, a deletion-entry list containing
+  repository name, snapshot ids, start time, repository state id, state byte,
+  and deletion UUID. The existing Rust snapshot-deletions reader can consume
+  that payload directly. The focused named diff fixture now mutates a single
+  entry by adding a second snapshot id and changing the repository state id.
+  The remaining top-level complete-named-diff candidate is `snapshots`.
+  `snapshots` follows the same default named-diff wrapper, with a replacement
+  boolean followed by `SnapshotsInProgress.writeTo`. Its entry payload is the
+  richest top-level custom shape: snapshot id, booleans, state byte, index-id
+  list, start time, shard-status map, repository state id, optional failure,
+  generic user metadata, version, data streams, optional source, clone map, and
+  remote-store flags. The existing Rust snapshots reader can consume that
+  replacement. The first focused fixture should replace a basic snapshots entry
+  with a shard-status entry; user metadata and clone payloads already have
+  full-state fixture coverage. That fixture is now implemented, completing the
+  focused top-level custom complete-named-diff coverage for
+  `repository_cleanup`, `restore`, `snapshot_deletions`, and `snapshots`.
+  `view` writes a view-keyed map whose values contain view name, optional
+  description, created/modified zlongs, and target index-pattern strings; that
+  publication diff fixture is now decoded through the full-state view reader.
+  `queryGroups` writes a workload-group-id keyed map whose values contain group
+  name/id, resource limits, resiliency mode, optional search settings, and
+  updated timestamp; that publication diff fixture is now decoded through the
+  full-state workload group reader.
+- metadata custom named diffs dispatch by the outer custom key because
+  `NamedDiffableValueSerializer` writes no extra type tag. The first supported
+  map-backed case is `view`: the outer metadata custom diff key is `view`, and
+  the nested payload is a view-keyed map diff whose changed entry uses the
+  default `AbstractDiffable` replacement boolean plus a full `View.writeTo`
+  payload when present. `queryGroups` now follows the same path with a
+  workload-group-id keyed map diff and the full `WorkloadGroup.writeTo` payload
+  when the nested replacement boolean is present. `data_stream` follows the
+  same path with a data-stream-name keyed map diff and the full
+  `DataStream.writeTo` payload when the nested replacement boolean is present.
+  `component_template` also follows this path, except the nested map key
+  supplies the component template name and the replacement payload is the
+  `ComponentTemplate.writeTo` value without repeating that key.
+- built-in metadata customs are covered by `METADATA_CUSTOM_DISPATCH`; live
+  transcript coverage now includes a non-empty `persistent_tasks` entry through
+  the fixture plugin, including non-empty known params and state named-writeable
+  payloads with marker/generation fields
+- dispatch coverage matches the metadata customs registered by
+  `ClusterModule`: `repositories`, `ingest`, `search_pipeline`,
+  `stored_scripts`, `index-graveyard`, `persistent_tasks`,
+  `component_template`, `index_template`, `data_stream`, `view`,
+  `weighted_shard_routing`, `decommissionedAttribute`, and `queryGroups`
+- live matrix coverage now includes REST-produced `component_template` and
+  `index_template` metadata rows with non-empty template names, index patterns,
+  and composed component names
+- source re-scan of `ClusterModule.getNamedWriteables()` plus bundled
+  module/plugin `getNamedWriteables()` implementations found no additional
+  `Metadata.Custom` or `ClusterState.Custom` registrations beyond the current
+  dispatch table, top-level custom table, and the local persistent-task fixture
+  plugin
+- any additional plugin-provided cluster-state or metadata custom should be
+  treated as fail-closed until it is added to the dispatch table with fixtures
+
+## Immediate Tasks
+
+- Add compression detection and decompression.
+- Add Java fixture coverage for high-level handshake responses.
+- Decode transport error responses well enough to print remote exception names
+  and messages.
+
+## Versioning
+
+OpenSearch gates serialization behavior by `Version`. Rust code must carry the
+remote version through every stream decoder and encoder that depends on wire
+compatibility.
+
+The current `os-core::Version` type stores only the raw integer id. It should
+gain named constants once the target OpenSearch version is fixed.
