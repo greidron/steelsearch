@@ -1,0 +1,59 @@
+{
+  "name": "cluster-settings-compat",
+  "cases": [
+    {
+      "name": "get_cluster_settings_readback",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ]
+      }
+    },
+    {
+      "name": "put_cluster_settings_bounded_mutation",
+      "method": "PUT",
+      "path": "/_cluster/settings",
+      "body": {
+        "persistent": {
+          "cluster.routing.allocation.enable": "primaries"
+        },
+        "transient": {
+          "cluster.info.update.interval": "45s"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "persistent",
+          "transient"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "persistent.cluster.routing.allocation.enable",
+          "transient.cluster.info.update.interval"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_settings_after_bounded_mutation",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ],
+        "body_paths_equal": [
+          "persistent.cluster.routing.allocation.enable",
+          "transient.cluster.info.update.interval"
+        ]
+      }
+    }
+  ]
+}

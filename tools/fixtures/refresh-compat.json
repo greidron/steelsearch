@@ -1,0 +1,104 @@
+{
+  "name": "refresh-compat",
+  "cases": [
+    {
+      "name": "create_refresh_compat_index",
+      "method": "PUT",
+      "path": "/refresh-compat-000001",
+      "body": {},
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "write_doc_without_request_refresh",
+      "method": "PUT",
+      "path": "/refresh-compat-000001/_doc/doc-1?routing=tenant-a",
+      "body": {
+        "message": "refresh-boundary"
+      },
+      "compare": {
+        "expected_status": 201
+      }
+    },
+    {
+      "name": "post_index_refresh_bounded_response_shape",
+      "method": "POST",
+      "path": "/refresh-compat-000001/_refresh",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_shards.total",
+          "_shards.successful",
+          "_shards.failed"
+        ],
+        "body_paths_equal": [
+          "_shards.total",
+          "_shards.successful",
+          "_shards.failed"
+        ]
+      }
+    },
+    {
+      "name": "get_doc_after_explicit_refresh_visibility",
+      "method": "GET",
+      "path": "/refresh-compat-000001/_doc/doc-1?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "write_doc_with_wait_for_refresh_policy",
+      "method": "PUT",
+      "path": "/refresh-compat-000001/_doc/doc-2?routing=tenant-a&refresh=wait_for",
+      "body": {
+        "message": "wait-for-visible"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_doc_after_wait_for_visibility",
+      "method": "GET",
+      "path": "/refresh-compat-000001/_doc/doc-2?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    }
+  ]
+}

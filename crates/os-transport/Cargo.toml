@@ -9,8 +9,11 @@ rust-version.workspace = true
 bytes.workspace = true
 flate2.workspace = true
 os-core = { path = "../os-core" }
+os-engine = { path = "../os-engine" }
 os-stream = { path = "../os-stream" }
 os-wire = { path = "../os-wire" }
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

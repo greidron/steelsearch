@@ -1,0 +1,106 @@
+{
+  "name": "multi-node-transport-admin",
+  "cases": [
+    {
+      "name": "node_a_cluster_health",
+      "target": "node_a",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "status",
+          "number_of_nodes"
+        ]
+      }
+    },
+    {
+      "name": "node_b_cluster_state",
+      "target": "node_b",
+      "method": "GET",
+      "path": "/_cluster/state",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "metadata"
+        ]
+      }
+    },
+    {
+      "name": "node_a_cluster_settings",
+      "target": "node_a",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ]
+      }
+    },
+    {
+      "name": "node_b_pending_tasks",
+      "target": "node_b",
+      "method": "GET",
+      "path": "/_cluster/pending_tasks",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "tasks"
+        ]
+      }
+    },
+    {
+      "name": "node_a_tasks",
+      "target": "node_a",
+      "method": "GET",
+      "path": "/_tasks",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
+      }
+    },
+    {
+      "name": "node_b_nodes_stats",
+      "target": "node_b",
+      "method": "GET",
+      "path": "/_nodes/stats",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
+      }
+    },
+    {
+      "name": "node_a_cluster_stats",
+      "target": "node_a",
+      "method": "GET",
+      "path": "/_cluster/stats",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "indices",
+          "nodes"
+        ]
+      }
+    },
+    {
+      "name": "node_b_indices_stats",
+      "target": "node_b",
+      "method": "GET",
+      "path": "/_stats",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_all",
+          "indices"
+        ]
+      }
+    }
+  ]
+}

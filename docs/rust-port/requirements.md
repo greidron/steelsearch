@@ -55,12 +55,40 @@ with fixtures or live Java OpenSearch interop tests.
   `internal:tcp/handshake` and `internal:transport/handshake` requests.
 - The Rust probe decoded remote version, cluster name, discovery node id,
   transport address, attributes, and node roles.
+- Transport error bodies are minimally decoded, including common JVM exception
+  wrappers and selected OpenSearch transport exceptions, with unknown exception
+  keys surfaced as fail-closed compatibility errors.
+- Compressed transport message bodies are detected and deflate-compressed
+  payloads are decompressed by the frame decoder.
+- Cluster-state transport requests can be built from Rust and checked against
+  Java fixtures.
+- Cluster-state responses are decoded as Java-compatible prefix/skeleton models,
+  covering metadata, routing, discovery nodes, cluster blocks, selected
+  metadata customs, and publication diff envelopes.
+- Unknown cluster-state named writeables and unsupported custom metadata fail
+  closed instead of being silently skipped.
+- `os-tcp-probe` can issue cluster-state requests and print decoded summaries
+  for handshake, metadata, routing, node, block, and selected custom sections.
+- The development Steelsearch daemon exposes a partial OpenSearch-shaped REST
+  surface covering root, cluster health/state, index create/read/delete,
+  document index/get, refresh, search, aliases/templates, and selected
+  snapshot and operational development flows.
 
 ## Immediate Implementation Risks
 
-- Transport exception decoding is still missing, making failed live interop hard
-  to diagnose.
-- Compression support is not implemented.
-- Cluster-state and named writeable decoding are not implemented.
-- Version constants are currently raw ids and should be named before broader
-  version-gated serialization is added.
+- `requirements.md` can drift behind the more detailed compatibility ledger in
+  `docs/api-spec/`; this document must be kept in sync when transport or REST
+  compatibility expands.
+- Transport compatibility work is still concentrated on handshake,
+  cluster-state probing, and decode-oriented interop. Most OpenSearch transport
+  actions remain explicitly unimplemented.
+- Cluster-state support is intentionally decode-first and fail-closed. It is not
+  yet a claim of mixed-cluster membership, cluster-manager participation, or
+  production-grade coordination safety.
+- Many REST surfaces are only partial development replacements. They preserve
+  useful route and response shape compatibility, but not full OpenSearch
+  semantics for routing, versioning, allocation, task management, and admin
+  controls.
+- Version-gated serialization coverage still depends on a curated set of named
+  constants and fixtures; broader action parity will require more exhaustive
+  version compatibility review.

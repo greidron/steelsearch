@@ -1,0 +1,181 @@
+{
+  "name": "snapshot-lifecycle-compat",
+  "cases": [
+    {
+      "name": "register_snapshot_repository",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "/tmp/steelsearch-snapshot-compat"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_repository",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat",
+      "repository_name": "repo-compat",
+      "extract": "repository_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "name",
+          "type",
+          "settings.location"
+        ],
+        "body_paths_equal": [
+          "name",
+          "type",
+          "settings.location"
+        ]
+      }
+    },
+    {
+      "name": "verify_snapshot_repository",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/_verify",
+      "extract": "verify_nodes",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_happy_path",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-compat",
+      "body": {
+        "indices": "logs-compat",
+        "include_global_state": false,
+        "metadata": {
+          "owner": "compat"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_happy_path",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-compat",
+      "extract": "snapshot_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "uuid",
+          "state"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "state"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_status_happy_path",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_status",
+      "extract": "snapshot_status_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "repository",
+          "state",
+          "shards_stats"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "repository",
+          "state"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_happy_path",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "indices": "logs-compat",
+        "include_global_state": false,
+        "rename_pattern": "logs-(.+)",
+        "rename_replacement": "restored-$1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "delete_snapshot_happy_path",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-compat/snapshot-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "cleanup_snapshot_repository_happy_path",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/_cleanup",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "results.deleted_bytes",
+          "results.deleted_blobs"
+        ],
+        "body_paths_equal": [
+          "results.deleted_bytes",
+          "results.deleted_blobs"
+        ]
+      }
+    },
+    {
+      "name": "missing_snapshot_failure",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/missing-snapshot",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    }
+  ]
+}

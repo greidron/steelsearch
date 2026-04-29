@@ -93,13 +93,14 @@ pub enum TcpHeaderError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use os_core::OPENSEARCH_3_0_0;
 
     #[test]
     fn encodes_and_decodes_header() {
         let header = TcpHeader {
             request_id: 42,
             status: 0,
-            version: Version::from_id(3000099),
+            version: OPENSEARCH_3_0_0,
             content_size: 128,
             variable_header_size: 7,
         };

@@ -1,0 +1,530 @@
+{
+  "schema_version": 1,
+  "name": "opensearch-comparison",
+  "description": "Deterministic fixture manifest for Steelsearch versus OpenSearch HTTP comparison tests.",
+  "indices": [
+    {
+      "name": "comparison-logs-v1",
+      "aliases": [
+        "comparison-logs",
+        "comparison-logs-read"
+      ],
+      "settings": {
+        "index": {
+          "number_of_replicas": 0,
+          "number_of_shards": 1,
+          "refresh_interval": "-1"
+        }
+      },
+      "mappings": {
+        "properties": {
+          "bytes": {
+            "type": "long"
+          },
+          "level": {
+            "type": "keyword"
+          },
+          "message": {
+            "type": "text"
+          },
+          "service": {
+            "type": "keyword"
+          },
+          "tenant": {
+            "type": "keyword"
+          },
+          "ts": {
+            "type": "date"
+          }
+        }
+      },
+      "documents": [
+        {
+          "_id": "log-1",
+          "_source": {
+            "bytes": 120,
+            "level": "info",
+            "message": "checkout service accepted payment",
+            "service": "checkout",
+            "tenant": "acme",
+            "ts": "2026-04-22T00:00:00Z"
+          }
+        },
+        {
+          "_id": "log-2",
+          "_source": {
+            "bytes": 300,
+            "level": "warn",
+            "message": "checkout service payment timeout",
+            "service": "checkout",
+            "tenant": "acme",
+            "ts": "2026-04-22T00:01:00Z"
+          }
+        },
+        {
+          "_id": "log-3",
+          "_source": {
+            "bytes": 80,
+            "level": "info",
+            "message": "catalog service refreshed product cache",
+            "service": "catalog",
+            "tenant": "beta",
+            "ts": "2026-04-22T00:02:00Z"
+          }
+        },
+        {
+          "_id": "log-4",
+          "_source": {
+            "bytes": 210,
+            "level": "error",
+            "message": "checkout service rejected duplicate payment",
+            "service": "checkout",
+            "tenant": "beta",
+            "ts": "2026-04-22T00:03:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "name": "comparison-vectors-v1",
+      "aliases": [
+        "comparison-vectors"
+      ],
+      "settings": {
+        "index": {
+          "knn": true,
+          "number_of_replicas": 0,
+          "number_of_shards": 1,
+          "refresh_interval": "-1"
+        }
+      },
+      "mappings": {
+        "properties": {
+          "body": {
+            "type": "text"
+          },
+          "body_vector": {
+            "dimension": 4,
+            "method": {
+              "engine": "nmslib",
+              "name": "hnsw",
+              "space_type": "l2"
+            },
+            "type": "knn_vector"
+          },
+          "category": {
+            "type": "keyword"
+          },
+          "rank": {
+            "type": "long"
+          }
+        }
+      },
+      "documents": [
+        {
+          "_id": "vec-rust",
+          "_source": {
+            "body": "rust vector search engine",
+            "body_vector": [
+              0.98,
+              0.02,
+              0.0,
+              0.0
+            ],
+            "category": "search",
+            "rank": 1
+          }
+        },
+        {
+          "_id": "vec-java",
+          "_source": {
+            "body": "java transport compatibility",
+            "body_vector": [
+              0.05,
+              0.95,
+              0.0,
+              0.0
+            ],
+            "category": "interop",
+            "rank": 2
+          }
+        },
+        {
+          "_id": "vec-ml",
+          "_source": {
+            "body": "neural rerank embedding model",
+            "body_vector": [
+              0.75,
+              0.15,
+              0.1,
+              0.0
+            ],
+            "category": "ml",
+            "rank": 3
+          }
+        },
+        {
+          "_id": "vec-cooking",
+          "_source": {
+            "body": "recipe tomatoes pasta",
+            "body_vector": [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            "category": "cooking",
+            "rank": 4
+          }
+        }
+      ]
+    }
+  ],
+  "bulk_payloads": [
+    {
+      "index": "comparison-logs-v1",
+      "refresh": false,
+      "documents_from_index": "comparison-logs-v1"
+    },
+    {
+      "index": "comparison-vectors-v1",
+      "refresh": false,
+      "documents_from_index": "comparison-vectors-v1"
+    }
+  ],
+  "refresh": [
+    "comparison-logs-v1",
+    "comparison-vectors-v1"
+  ],
+  "requests": [
+    {
+      "name": "get_logs_alias_mapping",
+      "area": "index",
+      "method": "GET",
+      "path": "/comparison-logs",
+      "compare": {
+        "fields": [
+          "status",
+          "mappings.properties"
+        ]
+      }
+    },
+    {
+      "name": "get_existing_document",
+      "area": "document",
+      "method": "GET",
+      "path": "/comparison-logs/_doc/log-2",
+      "compare": {
+        "fields": [
+          "status",
+          "_id",
+          "found",
+          "_source"
+        ]
+      }
+    },
+    {
+      "name": "match_sorted_checkout_logs",
+      "area": "search",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout payment"
+          }
+        },
+        "size": 3,
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "top_ids": [
+          "log-2",
+          "log-4",
+          "log-1"
+        ],
+        "total": 3
+      },
+      "compare": {
+        "fields": [
+          "status",
+          "hits.total.value",
+          "hits.hits._id",
+          "hits.hits._source"
+        ]
+      }
+    },
+    {
+      "name": "bool_filter_range_logs",
+      "area": "search",
+      "method": "POST",
+      "path": "/comparison-logs-read/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "filter": [
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              },
+              {
+                "range": {
+                  "bytes": {
+                    "gte": 200
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "size": 10,
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "top_ids": [
+          "log-4",
+          "log-2"
+        ],
+        "total": 2
+      },
+      "compare": {
+        "fields": [
+          "status",
+          "hits.total.value",
+          "hits.hits._id",
+          "hits.hits._source.bytes"
+        ]
+      }
+    },
+    {
+      "name": "terms_aggregation_by_service",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_key": "asc"
+              },
+              "size": 10
+            }
+          }
+        },
+        "size": 0
+      },
+      "expected": {
+        "buckets": [
+          {
+            "doc_count": 1,
+            "key": "catalog"
+          },
+          {
+            "doc_count": 3,
+            "key": "checkout"
+          }
+        ]
+      },
+      "compare": {
+        "fields": [
+          "status",
+          "aggregations.by_service.buckets"
+        ]
+      }
+    },
+    {
+      "name": "knn_vector_top_ids",
+      "area": "knn",
+      "method": "POST",
+      "path": "/comparison-vectors/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "body_vector": {
+              "k": 2,
+              "vector": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          }
+        },
+        "size": 2
+      },
+      "expected": {
+        "top_ids": [
+          "vec-rust",
+          "vec-ml"
+        ],
+        "total_relation": "gte"
+      },
+      "compare": {
+        "fields": [
+          "status",
+          "hits.hits._id",
+          "hits.hits._source.category"
+        ]
+      }
+    },
+    {
+      "name": "hybrid_match_and_knn_vector",
+      "area": "hybrid",
+      "method": "POST",
+      "path": "/comparison-vectors/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "body": "rust search"
+                }
+              },
+              {
+                "knn": {
+                  "body_vector": {
+                    "k": 3,
+                    "vector": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "size": 3
+      },
+      "expected": {
+        "contains_ids": [
+          "vec-rust"
+        ]
+      },
+      "compare": {
+        "fields": [
+          "status",
+          "hits.total.value",
+          "hits.hits._id"
+        ]
+      }
+    }
+  ],
+  "expected_error_cases": [
+    {
+      "name": "missing_document",
+      "area": "error",
+      "method": "GET",
+      "path": "/comparison-logs/_doc/does-not-exist",
+      "expected_status": 404,
+      "compare": {
+        "fields": [
+          "status",
+          "found",
+          "_id"
+        ]
+      }
+    },
+    {
+      "name": "missing_index_search",
+      "area": "error",
+      "method": "POST",
+      "path": "/comparison-missing/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 404,
+      "compare": {
+        "fields": [
+          "status",
+          "error.type"
+        ]
+      }
+    },
+    {
+      "name": "unknown_query_type",
+      "area": "error",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+        "query": {
+          "unsupported_query": {
+            "message": "checkout"
+          }
+        }
+      },
+      "expected_status": 400,
+      "compare": {
+        "fields": [
+          "status",
+          "error.type"
+        ]
+      }
+    },
+    {
+      "name": "knn_wrong_dimension",
+      "area": "error",
+      "method": "POST",
+      "path": "/comparison-vectors/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "body_vector": {
+              "k": 2,
+              "vector": [
+                1.0,
+                0.0
+              ]
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "compare": {
+        "fields": [
+          "status",
+          "error.type"
+        ]
+      }
+    }
+  ],
+  "normalization": {
+    "drop_fields": [
+      "_shards.failures",
+      "_seq_no",
+      "_primary_term",
+      "_version",
+      "cluster_uuid",
+      "node",
+      "nodes",
+      "task",
+      "timed_out",
+      "took",
+      "version.build_hash"
+    ],
+    "sort_arrays": [
+      "aggregations.*.buckets"
+    ]
+  }
+}

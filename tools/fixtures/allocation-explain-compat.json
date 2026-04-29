@@ -1,0 +1,66 @@
+{
+  "name": "allocation-explain-compat",
+  "setup": [
+    {
+      "name": "seed_logs_compat_index",
+      "method": "PUT",
+      "path": "/logs-compat",
+      "compare": {
+        "expected_status": 200
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "allocation_explain_primary_happy_path",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain",
+      "body": {
+        "index": "logs-compat",
+        "shard": 0,
+        "primary": true
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "index",
+          "shard",
+          "primary",
+          "current_state"
+        ],
+        "body_paths_equal": [
+          "index",
+          "shard",
+          "primary",
+          "current_state"
+        ]
+      }
+    },
+    {
+      "name": "allocation_explain_replica_unassigned_path",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain",
+      "body": {
+        "index": "logs-compat",
+        "shard": 0,
+        "primary": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "index",
+          "shard",
+          "primary",
+          "current_state",
+          "node_allocation_decisions"
+        ],
+        "body_paths_equal": [
+          "index",
+          "shard",
+          "primary",
+          "current_state"
+        ]
+      }
+    }
+  ]
+}

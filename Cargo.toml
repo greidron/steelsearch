@@ -9,6 +9,10 @@ members = [
     "crates/os-query-dsl",
     "crates/os-engine",
     "crates/os-engine-tantivy",
+    "crates/os-plugin-knn",
+    "crates/os-ml-commons",
+    "crates/os-snapshot",
+    "crates/os-migration",
     "crates/os-node",
     "crates/os-tcp-probe",
 ]

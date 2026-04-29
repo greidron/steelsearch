@@ -2,11 +2,12 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bytes::{Bytes, BytesMut};
 use os_cluster_state::{
-    build_cluster_state_request_frame, read_publication_cluster_state_diff_prefix,
-    ClusterBlockLevelPrefix, ClusterStateRequest, ClusterStateResponsePrefix, GenericValuePrefix,
-    RecoverySourceTypePrefix, ShardRoutingStatePrefix, CLUSTER_STATE_ACTION,
+    build_cluster_state_request_frame, read_publication_cluster_state_diff,
+    read_publication_cluster_state_diff_prefix, ClusterBlockLevel, ClusterBlockLevelPrefix,
+    ClusterState, ClusterStateRequest, ClusterStateResponsePrefix, GenericValuePrefix,
+    RecoverySourceTypePrefix, ShardRoutingState, ShardRoutingStatePrefix, CLUSTER_STATE_ACTION,
 };
-use os_core::Version;
+use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_stream::StreamInput;
 use os_transport::frame::{decode_frame, DecodedFrame};
 use os_transport::variable_header::RequestVariableHeader;
@@ -23,6 +24,35 @@ fn fixtures() -> BTreeMap<&'static str, Vec<u8>> {
             (name, STANDARD.decode(value).unwrap())
         })
         .collect()
+}
+
+fn decode_cluster_state_fixture(
+    fixtures: &BTreeMap<&'static str, Vec<u8>>,
+    name: &'static str,
+) -> ClusterState {
+    ClusterStateResponsePrefix::read(Bytes::from(fixtures.get(name).unwrap().clone()))
+        .unwrap()
+        .into_cluster_state()
+        .unwrap()
+}
+
+fn assert_publication_diff_applies_to_post_state(
+    before_fixture: &'static str,
+    diff_fixture: &'static str,
+    after_fixture: &'static str,
+) -> ClusterState {
+    let fixtures = fixtures();
+    let before = decode_cluster_state_fixture(&fixtures, before_fixture);
+    let after = decode_cluster_state_fixture(&fixtures, after_fixture);
+    let diff = read_publication_cluster_state_diff(
+        Bytes::from(fixtures.get(diff_fixture).unwrap().clone()),
+        OPENSEARCH_3_7_0_TRANSPORT,
+    )
+    .unwrap();
+    let applied = diff.apply_to(&before).unwrap();
+
+    assert_eq!(applied, after);
+    applied
 }
 
 #[test]
@@ -69,7 +99,7 @@ fn java_cluster_state_transport_request_frame_decodes() {
     let variable_header = RequestVariableHeader::read(message.variable_header.freeze()).unwrap();
 
     assert_eq!(message.request_id, 3);
-    assert_eq!(message.version, Version::from_id(137287827));
+    assert_eq!(message.version, OPENSEARCH_3_7_0_TRANSPORT);
     assert!(message.status.is_request());
     assert_eq!(variable_header.action, CLUSTER_STATE_ACTION);
     assert_eq!(
@@ -168,6 +198,124 @@ fn java_cluster_state_response_fixture_decodes_prefix() {
 }
 
 #[test]
+fn java_cluster_state_response_acceptance_single_node_full_decodes_typed_without_remaining_bytes() {
+    let fixtures = fixtures();
+    let response = ClusterStateResponsePrefix::read(Bytes::from(
+        fixtures
+            .get("cluster_state_response_acceptance_single_node_full")
+            .unwrap()
+            .clone(),
+    ))
+    .unwrap();
+
+    assert_eq!(response.remaining_state_bytes_after_prefix, 0);
+    let state = response.into_cluster_state().unwrap();
+    assert_eq!(state.response_cluster_name, "fixture-acceptance-cluster");
+    assert_eq!(
+        state.header.state_uuid,
+        "fixture-acceptance-single-node-full-state"
+    );
+    assert_eq!(state.header.version, 50);
+
+    assert_eq!(
+        state.discovery_nodes.cluster_manager_node_id.as_deref(),
+        Some("fixture-acceptance-node-id")
+    );
+    assert_eq!(state.discovery_nodes.nodes.len(), 1);
+    assert_eq!(
+        state.discovery_nodes.nodes[0].name,
+        "fixture-acceptance-node"
+    );
+    assert_eq!(
+        state.discovery_nodes.nodes[0].id,
+        "fixture-acceptance-node-id"
+    );
+    assert_eq!(state.discovery_nodes.nodes[0].address.port, 9300);
+
+    assert_eq!(state.metadata.index_metadata.len(), 1);
+    let index = &state.metadata.index_metadata[0];
+    assert_eq!(index.name, "fixture-acceptance-index");
+    assert_eq!(
+        index.index_uuid.as_deref(),
+        Some("fixture-acceptance-index-uuid")
+    );
+    assert_eq!(index.number_of_shards, Some(1));
+    assert_eq!(index.number_of_replicas, Some(0));
+    assert_eq!(index.mapping_count, 1);
+    assert_eq!(index.alias_count, 1);
+    assert_eq!(index.aliases[0].alias, "fixture-acceptance-alias");
+    assert_eq!(state.metadata.templates.len(), 1);
+    assert_eq!(
+        state.metadata.templates[0].name,
+        "fixture-acceptance-template"
+    );
+
+    let customs = &state.metadata.customs;
+    assert_eq!(customs.declared_count, 6);
+    assert_eq!(customs.ingest_pipelines.len(), 1);
+    assert_eq!(
+        customs.ingest_pipelines[0].id,
+        "fixture-acceptance-pipeline"
+    );
+    assert_eq!(customs.stored_scripts.len(), 1);
+    assert_eq!(customs.stored_scripts[0].id, "fixture-acceptance-script");
+    assert_eq!(customs.component_templates.len(), 1);
+    assert_eq!(
+        customs.component_templates[0].name,
+        "fixture-acceptance-component"
+    );
+    assert_eq!(customs.composable_index_templates.len(), 1);
+    assert_eq!(
+        customs.composable_index_templates[0].name,
+        "fixture-acceptance-composable"
+    );
+    assert_eq!(customs.repositories.len(), 1);
+    assert_eq!(
+        customs.repositories[0].name,
+        "fixture-acceptance-repository"
+    );
+
+    assert_eq!(state.routing_table.indices.len(), 1);
+    let routing_index = &state.routing_table.indices[0];
+    assert_eq!(routing_index.index_name, "fixture-acceptance-index");
+    assert_eq!(routing_index.index_uuid, "fixture-acceptance-index-uuid");
+    assert_eq!(routing_index.shards.len(), 1);
+    assert_eq!(routing_index.shards[0].shard_id, 0);
+    assert_eq!(routing_index.shards[0].shard_routings.len(), 1);
+    let shard = &routing_index.shards[0].shard_routings[0];
+    assert_eq!(
+        shard.current_node_id.as_deref(),
+        Some("fixture-acceptance-node-id")
+    );
+    assert!(shard.primary);
+    assert_eq!(shard.state, ShardRoutingState::Started);
+
+    assert!(state.cluster_blocks.global_blocks.is_empty());
+    assert_eq!(state.cluster_blocks.index_blocks.len(), 1);
+    assert_eq!(
+        state.cluster_blocks.index_blocks[0].index_name,
+        "fixture-acceptance-index"
+    );
+    assert_eq!(state.cluster_blocks.index_blocks[0].blocks.len(), 1);
+    let block = &state.cluster_blocks.index_blocks[0].blocks[0];
+    assert_eq!(block.id, 44);
+    assert_eq!(
+        block.uuid.as_deref(),
+        Some("fixture-acceptance-index-block-uuid")
+    );
+    assert_eq!(
+        block.levels,
+        vec![ClusterBlockLevel::Read, ClusterBlockLevel::MetadataRead]
+    );
+    assert_eq!(block.status, "FORBIDDEN");
+
+    assert_eq!(state.customs.declared_count, 1);
+    assert_eq!(state.customs.names, vec!["repository_cleanup"]);
+    assert!(state.customs.repository_cleanup.is_some());
+    assert!(!state.wait_for_timed_out);
+}
+
+#[test]
 fn java_cluster_state_publication_empty_diff_decodes_prefix() {
     let fixtures = fixtures();
     let response = read_publication_cluster_state_diff_prefix(
@@ -177,7 +325,7 @@ fn java_cluster_state_publication_empty_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -196,6 +344,43 @@ fn java_cluster_state_publication_empty_diff_decodes_prefix() {
 }
 
 #[test]
+fn java_cluster_state_publication_empty_diff_applies_to_post_state() {
+    let fixtures = fixtures();
+    let before = ClusterStateResponsePrefix::read(Bytes::from(
+        fixtures
+            .get("cluster_state_publication_empty_before_state")
+            .unwrap()
+            .clone(),
+    ))
+    .unwrap()
+    .into_cluster_state()
+    .unwrap();
+    let after = ClusterStateResponsePrefix::read(Bytes::from(
+        fixtures
+            .get("cluster_state_publication_empty_after_state")
+            .unwrap()
+            .clone(),
+    ))
+    .unwrap()
+    .into_cluster_state()
+    .unwrap();
+    let diff = read_publication_cluster_state_diff(
+        Bytes::from(
+            fixtures
+                .get("cluster_state_publication_diff_empty")
+                .unwrap()
+                .clone(),
+        ),
+        OPENSEARCH_3_7_0_TRANSPORT,
+    )
+    .unwrap();
+
+    let applied = diff.apply_to(&before).unwrap();
+
+    assert_eq!(applied, after);
+}
+
+#[test]
 fn java_cluster_state_publication_delete_custom_diff_decodes_prefix() {
     let fixtures = fixtures();
     let response = read_publication_cluster_state_diff_prefix(
@@ -205,7 +390,7 @@ fn java_cluster_state_publication_delete_custom_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -228,7 +413,7 @@ fn java_cluster_state_publication_upsert_snapshots_custom_diff_decodes_prefix() 
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -254,7 +439,7 @@ fn java_cluster_state_publication_upsert_snapshots_custom_entry_diff_decodes_pre
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -304,7 +489,7 @@ fn java_cluster_state_publication_named_snapshots_custom_shard_status_diff_decod
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -374,7 +559,7 @@ fn java_cluster_state_publication_upsert_restore_custom_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -414,7 +599,7 @@ fn java_cluster_state_publication_upsert_restore_custom_shard_status_diff_decode
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -458,7 +643,7 @@ fn java_cluster_state_publication_named_restore_custom_shard_status_diff_decodes
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -505,7 +690,7 @@ fn java_cluster_state_publication_upsert_snapshot_deletions_custom_diff_decodes_
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -544,7 +729,7 @@ fn java_cluster_state_publication_named_snapshot_deletions_custom_diff_decodes_p
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -591,7 +776,7 @@ fn java_cluster_state_publication_upsert_repository_cleanup_custom_diff_decodes_
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -623,7 +808,7 @@ fn java_cluster_state_publication_named_repository_cleanup_custom_diff_decodes_p
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -658,7 +843,7 @@ fn java_cluster_state_publication_delete_routing_index_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -687,7 +872,7 @@ fn java_cluster_state_publication_upsert_routing_index_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -714,6 +899,75 @@ fn java_cluster_state_publication_upsert_routing_index_diff_decodes_prefix() {
 }
 
 #[test]
+fn java_cluster_state_publication_upsert_routing_diff_applies_to_post_state() {
+    let fixtures = fixtures();
+    let before = ClusterStateResponsePrefix::read(Bytes::from(
+        fixtures
+            .get("cluster_state_publication_upsert_routing_before_state")
+            .unwrap()
+            .clone(),
+    ))
+    .unwrap()
+    .into_cluster_state()
+    .unwrap();
+    let after = ClusterStateResponsePrefix::read(Bytes::from(
+        fixtures
+            .get("cluster_state_publication_upsert_routing_after_state")
+            .unwrap()
+            .clone(),
+    ))
+    .unwrap()
+    .into_cluster_state()
+    .unwrap();
+    let diff = read_publication_cluster_state_diff(
+        Bytes::from(
+            fixtures
+                .get("cluster_state_publication_diff_upsert_routing_index")
+                .unwrap()
+                .clone(),
+        ),
+        OPENSEARCH_3_7_0_TRANSPORT,
+    )
+    .unwrap();
+
+    let applied = diff.apply_to(&before).unwrap();
+
+    assert_eq!(applied, after);
+    assert_eq!(applied.routing_table.indices.len(), 1);
+    assert_eq!(
+        applied.routing_table.indices[0].index_name,
+        "fixture-upsert-routing-index"
+    );
+}
+
+#[test]
+fn java_cluster_state_publication_upsert_metadata_template_diff_applies_to_post_state() {
+    let applied = assert_publication_diff_applies_to_post_state(
+        "cluster_state_publication_upsert_metadata_template_before_state",
+        "cluster_state_publication_diff_upsert_metadata_template",
+        "cluster_state_publication_upsert_metadata_template_after_state",
+    );
+
+    assert_eq!(applied.metadata.templates.len(), 1);
+    assert_eq!(
+        applied.metadata.templates[0].name,
+        "fixture-upsert-template"
+    );
+}
+
+#[test]
+fn java_cluster_state_publication_upsert_custom_diff_applies_to_post_state() {
+    let applied = assert_publication_diff_applies_to_post_state(
+        "cluster_state_publication_upsert_custom_before_state",
+        "cluster_state_publication_diff_upsert_custom",
+        "cluster_state_publication_upsert_custom_after_state",
+    );
+
+    assert_eq!(applied.customs.names, vec!["snapshots"]);
+    assert!(applied.customs.snapshots.is_some());
+}
+
+#[test]
 fn java_cluster_state_publication_named_routing_index_diff_decodes_prefix() {
     let fixtures = fixtures();
     let response = read_publication_cluster_state_diff_prefix(
@@ -723,7 +977,7 @@ fn java_cluster_state_publication_named_routing_index_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -765,7 +1019,7 @@ fn java_cluster_state_publication_delete_metadata_index_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -793,7 +1047,7 @@ fn java_cluster_state_publication_delete_metadata_template_diff_decodes_prefix()
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -821,7 +1075,7 @@ fn java_cluster_state_publication_upsert_metadata_template_diff_decodes_prefix()
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -858,7 +1112,7 @@ fn java_cluster_state_publication_named_metadata_template_diff_decodes_prefix() 
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -901,7 +1155,7 @@ fn java_cluster_state_publication_named_metadata_template_mapping_alias_diff_dec
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -949,7 +1203,7 @@ fn java_cluster_state_publication_delete_metadata_custom_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -978,7 +1232,7 @@ fn java_cluster_state_publication_upsert_repositories_metadata_custom_diff_decod
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1017,7 +1271,7 @@ fn java_cluster_state_publication_named_repositories_metadata_custom_diff_decode
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1070,7 +1324,7 @@ fn java_cluster_state_publication_upsert_component_template_metadata_custom_diff
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1120,7 +1374,7 @@ fn java_cluster_state_publication_upsert_index_template_metadata_custom_diff_dec
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1189,7 +1443,7 @@ fn java_cluster_state_publication_upsert_data_stream_metadata_custom_diff_decode
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1232,7 +1486,7 @@ fn java_cluster_state_publication_upsert_ingest_metadata_custom_diff_decodes_pre
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1266,7 +1520,7 @@ fn java_cluster_state_publication_upsert_search_pipeline_metadata_custom_diff_de
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1303,7 +1557,7 @@ fn java_cluster_state_publication_upsert_stored_scripts_metadata_custom_diff_dec
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1341,7 +1595,7 @@ fn java_cluster_state_publication_upsert_index_graveyard_metadata_custom_diff_de
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1384,7 +1638,7 @@ fn java_cluster_state_publication_upsert_persistent_tasks_metadata_custom_diff_d
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1440,7 +1694,7 @@ fn java_cluster_state_publication_upsert_decommission_metadata_custom_diff_decod
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1487,7 +1741,7 @@ fn java_cluster_state_publication_named_decommission_metadata_custom_diff_decode
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1533,7 +1787,7 @@ fn java_cluster_state_publication_upsert_weighted_routing_metadata_custom_diff_d
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1572,7 +1826,7 @@ fn java_cluster_state_publication_named_weighted_routing_metadata_custom_diff_de
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1613,7 +1867,7 @@ fn java_cluster_state_publication_upsert_view_metadata_custom_diff_decodes_prefi
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1656,7 +1910,7 @@ fn java_cluster_state_publication_upsert_workload_group_metadata_custom_diff_dec
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1708,7 +1962,7 @@ fn java_cluster_state_publication_named_view_metadata_custom_diff_decodes_prefix
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1756,7 +2010,7 @@ fn java_cluster_state_publication_named_workload_group_metadata_custom_diff_deco
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1819,7 +2073,7 @@ fn java_cluster_state_publication_named_data_stream_metadata_custom_diff_decodes
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1877,7 +2131,7 @@ fn java_cluster_state_publication_named_component_template_metadata_custom_diff_
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -1931,7 +2185,7 @@ fn java_cluster_state_publication_named_index_template_metadata_custom_diff_deco
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2003,7 +2257,7 @@ fn java_cluster_state_publication_delete_consistent_setting_hash_diff_decodes_pr
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2040,7 +2294,7 @@ fn java_cluster_state_publication_upsert_metadata_index_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2079,7 +2333,7 @@ fn java_cluster_state_publication_named_metadata_index_diff_decodes_prefix() {
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2126,7 +2380,7 @@ fn java_cluster_state_publication_named_metadata_index_mapping_diff_decodes_pref
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2164,7 +2418,7 @@ fn java_cluster_state_publication_named_metadata_index_alias_diff_decodes_prefix
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2202,7 +2456,7 @@ fn java_cluster_state_publication_named_metadata_index_custom_data_diff_decodes_
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2245,7 +2499,7 @@ fn java_cluster_state_publication_named_metadata_index_rollover_diff_decodes_pre
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2284,7 +2538,7 @@ fn java_cluster_state_publication_named_metadata_index_in_sync_diff_decodes_pref
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -2324,7 +2578,7 @@ fn java_cluster_state_publication_named_metadata_index_split_shards_diff_decodes
                 .unwrap()
                 .clone(),
         ),
-        Version::from_id(137_287_827),
+        OPENSEARCH_3_7_0_TRANSPORT,
     )
     .unwrap();
 
@@ -3468,7 +3722,7 @@ fn java_cluster_state_response_with_single_node_decodes_discovery_node() {
     assert_eq!(node.roles[0].name, "cluster_manager");
     assert_eq!(node.roles[0].abbreviation, "m");
     assert!(!node.roles[0].can_contain_data);
-    assert_eq!(node.version, 137287827);
+    assert_eq!(node.version, OPENSEARCH_3_7_0_TRANSPORT.id());
     assert_eq!(response.remaining_state_bytes_after_prefix, 0);
 }
 
@@ -3577,6 +3831,71 @@ fn java_cluster_state_response_with_metadata_settings_decodes_settings() {
     assert_eq!(
         metadata.persistent_settings[0].value.as_deref(),
         Some("persistent-value")
+    );
+    assert_eq!(response.remaining_state_bytes_after_prefix, 0);
+}
+
+#[test]
+fn java_cluster_state_response_with_coordination_metadata_settings_decodes_values() {
+    let fixtures = fixtures();
+    let response = ClusterStateResponsePrefix::read(Bytes::from(
+        fixtures
+            .get("cluster_state_response_coordination_metadata")
+            .unwrap()
+            .clone(),
+    ))
+    .unwrap();
+
+    let metadata = response.metadata_prefix.unwrap();
+    assert_eq!(metadata.transient_settings_count, 1);
+    assert_eq!(
+        metadata.transient_settings[0].key,
+        "fixture.transient.coordination"
+    );
+    assert_eq!(
+        metadata.transient_settings[0].value.as_deref(),
+        Some("coordination-transient")
+    );
+    assert_eq!(metadata.persistent_settings_count, 1);
+    assert_eq!(
+        metadata.persistent_settings[0].key,
+        "fixture.persistent.coordination"
+    );
+    assert_eq!(
+        metadata.persistent_settings[0].value.as_deref(),
+        Some("coordination-persistent")
+    );
+    assert_eq!(metadata.hashes_of_consistent_settings_count, 1);
+    assert_eq!(
+        metadata.hashes_of_consistent_settings[0].key,
+        "fixture.secure.coordination"
+    );
+    assert_eq!(
+        metadata.hashes_of_consistent_settings[0].value.as_deref(),
+        Some("coordination-hash")
+    );
+
+    let coordination = metadata.coordination;
+    assert_eq!(coordination.term, 23);
+    assert_eq!(
+        coordination.last_committed_configuration,
+        ["fixture-node-1", "fixture-node-2"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    );
+    assert_eq!(
+        coordination.last_accepted_configuration,
+        ["fixture-node-2"].into_iter().map(str::to_string).collect()
+    );
+    assert_eq!(coordination.voting_config_exclusions.len(), 1);
+    assert_eq!(
+        coordination.voting_config_exclusions[0].node_id,
+        "fixture-node-3"
+    );
+    assert_eq!(
+        coordination.voting_config_exclusions[0].node_name,
+        "fixture-node-name-3"
     );
     assert_eq!(response.remaining_state_bytes_after_prefix, 0);
 }
@@ -4580,6 +4899,6 @@ fn java_cluster_state_fixture_records_wire_version() {
             .clone(),
     ));
 
-    assert_eq!(input.read_vint().unwrap(), 137287827);
+    assert_eq!(input.read_vint().unwrap(), OPENSEARCH_3_7_0_TRANSPORT.id());
     assert_eq!(input.remaining(), 0);
 }

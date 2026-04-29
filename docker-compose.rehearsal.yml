@@ -1,0 +1,120 @@
+services:
+  steelsearch-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: steelsearch:local
+    user: "0:0"
+    command:
+      - --http.host
+      - 0.0.0.0
+      - --http.port
+      - "9200"
+      - --transport.host
+      - 0.0.0.0
+      - --transport.port
+      - "9300"
+      - --node.id
+      - steel-node-1
+      - --node.name
+      - steel-node-1
+      - --node.roles
+      - cluster_manager,data,ingest
+      - --cluster.name
+      - steelsearch-docker
+      - --discovery.seed_hosts
+      - steelsearch-1:9300,steelsearch-2:9300,steelsearch-3:9300
+      - --path.data
+      - /var/lib/steelsearch/data
+    ports:
+      - "${STEELSEARCH_HTTP_PORT:-29201}:9200"
+    volumes:
+      - steelsearch-1-data:/var/lib/steelsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9200/"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  steelsearch-2:
+    image: steelsearch:local
+    user: "0:0"
+    command:
+      - --http.host
+      - 0.0.0.0
+      - --http.port
+      - "9200"
+      - --transport.host
+      - 0.0.0.0
+      - --transport.port
+      - "9300"
+      - --node.id
+      - steel-node-2
+      - --node.name
+      - steel-node-2
+      - --node.roles
+      - cluster_manager,data,ingest
+      - --cluster.name
+      - steelsearch-docker
+      - --discovery.seed_hosts
+      - steelsearch-1:9300,steelsearch-2:9300,steelsearch-3:9300
+      - --path.data
+      - /var/lib/steelsearch/data
+    volumes:
+      - steelsearch-2-data:/var/lib/steelsearch/data
+    depends_on:
+      - steelsearch-1
+
+  steelsearch-3:
+    image: steelsearch:local
+    user: "0:0"
+    command:
+      - --http.host
+      - 0.0.0.0
+      - --http.port
+      - "9200"
+      - --transport.host
+      - 0.0.0.0
+      - --transport.port
+      - "9300"
+      - --node.id
+      - steel-node-3
+      - --node.name
+      - steel-node-3
+      - --node.roles
+      - cluster_manager,data,ingest
+      - --cluster.name
+      - steelsearch-docker
+      - --discovery.seed_hosts
+      - steelsearch-1:9300,steelsearch-2:9300,steelsearch-3:9300
+      - --path.data
+      - /var/lib/steelsearch/data
+    volumes:
+      - steelsearch-3-data:/var/lib/steelsearch/data
+    depends_on:
+      - steelsearch-1
+
+  opensearch:
+    image: "${OPENSEARCH_IMAGE:-opensearchproject/opensearch:latest}"
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "${OPENSEARCH_JAVA_OPTS:--Xms1g -Xmx1g}"
+      cluster.name: opensearch-docker
+      node.name: opensearch-docker-node
+      bootstrap.memory_lock: "false"
+    ports:
+      - "${OPENSEARCH_HTTP_PORT:-29200}:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+volumes:
+  steelsearch-1-data:
+  steelsearch-2-data:
+  steelsearch-3-data:
+  opensearch-data:

@@ -1,0 +1,93 @@
+{
+  "name": "index-lifecycle-compat",
+  "cases": [
+    {
+      "name": "create_index_bounded_body",
+      "method": "PUT",
+      "path": "/logs-compat-lifecycle-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1
+          }
+        },
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            }
+          }
+        },
+        "aliases": {
+          "logs-compat-lifecycle-read": {}
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_index_created_metadata",
+      "method": "GET",
+      "path": "/logs-compat-lifecycle-000001",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-lifecycle-000001.settings",
+          "logs-compat-lifecycle-000001.mappings",
+          "logs-compat-lifecycle-000001.aliases"
+        ]
+      }
+    },
+    {
+      "name": "head_index_created_bodyless",
+      "method": "HEAD",
+      "path": "/logs-compat-lifecycle-000001",
+      "compare": {
+        "expected_status": 200,
+        "body_text_exact": "",
+        "body_text_equal": true
+      }
+    },
+    {
+      "name": "head_index_missing_bodyless",
+      "method": "HEAD",
+      "path": "/missing-compat-lifecycle-000001",
+      "compare": {
+        "expected_status": 404,
+        "body_text_exact": "",
+        "body_text_equal": true
+      }
+    },
+    {
+      "name": "delete_index_wildcard_success",
+      "method": "DELETE",
+      "path": "/logs-compat-lifecycle-*",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "delete_index_missing_error_shape",
+      "method": "DELETE",
+      "path": "/missing-compat-lifecycle-000001",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type"
+        ]
+      }
+    }
+  ]
+}

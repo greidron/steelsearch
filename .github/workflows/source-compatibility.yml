@@ -1,0 +1,142 @@
+name: Source compatibility drift
+
+on:
+  schedule:
+    # Weekly low-traffic UTC slot; this job starts local OpenSearch.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      steelsearch_url:
+        description: "Optional Steelsearch HTTP base URL; omitted means CI starts one"
+        required: false
+        type: string
+      opensearch_url:
+        description: "Optional OpenSearch HTTP base URL; omitted means CI starts one"
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - ".github/workflows/source-compatibility.yml"
+      - "docs/rust-port/generated/**"
+      - "tools/source-compatibility-*.sh"
+      - "tools/check-source-compatibility-drift.sh"
+      - "tools/check-rest-compat-report.py"
+      - "tools/run-rest-compat-ci-report.sh"
+      - "tools/run-search-compat.sh"
+      - "tools/search_compat.py"
+      - "tools/fixtures/search-compat.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/source-compatibility.yml"
+      - "docs/rust-port/generated/**"
+      - "tools/source-compatibility-*.sh"
+      - "tools/check-source-compatibility-drift.sh"
+      - "tools/check-rest-compat-report.py"
+      - "tools/run-rest-compat-ci-report.sh"
+      - "tools/run-search-compat.sh"
+      - "tools/search_compat.py"
+      - "tools/fixtures/search-compat.json"
+
+jobs:
+  rest-compat-fixture-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Steelsearch
+        uses: actions/checkout@v4
+
+      - name: Check REST compatibility fixture contract
+        run: python3 tools/check-rest-compat-report.py --fixture tools/fixtures/search-compat.json
+
+  rest-compat-executable-report:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Steelsearch
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned OpenSearch
+        if: github.event_name == 'schedule' || inputs.opensearch_url == ''
+        uses: actions/checkout@v4
+        with:
+          repository: opensearch-project/OpenSearch
+          ref: f991609d190dfd91c8a09902053a7bbfe0c27b3e
+          path: OpenSearch
+
+      - name: Set up Java for local OpenSearch
+        if: github.event_name == 'schedule' || inputs.opensearch_url == ''
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run REST compatibility fixture
+        env:
+          STEELSEARCH_URL: ${{ inputs.steelsearch_url || '' }}
+          OPENSEARCH_URL: ${{ inputs.opensearch_url || '' }}
+          OPENSEARCH_ROOT: ${{ github.workspace }}/OpenSearch
+          REST_COMPAT_WORK_DIR: target/rest-compat
+        run: |
+          tools/run-rest-compat-ci-report.sh
+
+      - name: Upload REST compatibility report
+        id: upload-rest-compat-report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rest-compat-search-report
+          path: target/rest-compat
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summarize REST compatibility failure
+        if: failure() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+        env:
+          ARTIFACT_URL: ${{ steps.upload-rest-compat-report.outputs.artifact-url || '' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "## REST compatibility failure triage"
+            echo
+            echo "- Event: ${GITHUB_EVENT_NAME}"
+            echo "- Workflow run: ${RUN_URL}"
+            if [ -n "${ARTIFACT_URL}" ]; then
+              echo "- Uploaded artifact: ${ARTIFACT_URL}"
+            else
+              echo "- Uploaded artifact: unavailable; inspect the upload step logs"
+            fi
+            echo "- Report path in artifact: target/rest-compat/search-compat-report.json"
+            echo "- Target metadata: target/rest-compat/targets.env"
+            echo "- Service logs: target/rest-compat/steelsearch.log and target/rest-compat/opensearch.log"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  generated-tsv-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Steelsearch
+        uses: actions/checkout@v4
+        with:
+          path: steelsearch
+
+      - name: Checkout pinned OpenSearch
+        uses: actions/checkout@v4
+        with:
+          repository: opensearch-project/OpenSearch
+          ref: f991609d190dfd91c8a09902053a7bbfe0c27b3e
+          path: OpenSearch
+
+      - name: Checkout pinned k-NN
+        uses: actions/checkout@v4
+        with:
+          repository: opensearch-project/k-NN
+          ref: 86ad5668acddbcf57d62ee0a3db17385aa93fde0
+          path: k-NN
+
+      - name: Check generated source compatibility TSVs
+        working-directory: steelsearch
+        env:
+          OPENSEARCH_ROOT: ${{ github.workspace }}/OpenSearch
+          KNN_ROOT: ${{ github.workspace }}/k-NN
+        run: tools/check-source-compatibility-drift.sh

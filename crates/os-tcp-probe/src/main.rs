@@ -4,7 +4,7 @@ use os_cluster_state::{
     build_cluster_state_request_frame, ClusterBlockLevelPrefix, ClusterBlockPrefix,
     ClusterStateRequest, ClusterStateResponsePrefix,
 };
-use os_core::Version;
+use os_core::{Version, OPENSEARCH_3_7_0_MIN_COMPAT_TRANSPORT, OPENSEARCH_3_7_0_TRANSPORT};
 use os_stream::StreamInput;
 use os_transport::error::TransportError;
 use os_transport::frame::{decode_frame, DecodedFrame};
@@ -20,12 +20,6 @@ use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 const DEFAULT_ADDR: &str = "127.0.0.1:9300";
-
-// Derived from the Java OpenSearch 3.7.0-SNAPSHOT wire fixture in this repo.
-// The header version is CURRENT.minimumCompatibilityVersion(), while payload
-// version is CURRENT.
-const DEFAULT_HEADER_VERSION_ID: i32 = 136_407_827;
-const DEFAULT_PAYLOAD_VERSION_ID: i32 = 137_287_827;
 
 #[derive(Clone, Debug)]
 struct ProbeConfig {
@@ -1411,8 +1405,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<ProbeConfig> {
     let mut config = ProbeConfig {
         addr: DEFAULT_ADDR.to_string(),
         request_id: 1,
-        header_version: Version::from_id(DEFAULT_HEADER_VERSION_ID),
-        payload_version: Version::from_id(DEFAULT_PAYLOAD_VERSION_ID),
+        header_version: OPENSEARCH_3_7_0_MIN_COMPAT_TRANSPORT,
+        payload_version: OPENSEARCH_3_7_0_TRANSPORT,
         timeout: Duration::from_secs(5),
         cluster_state: false,
         cluster_state_full: false,
@@ -1484,7 +1478,10 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::format_cluster_state_prefix;
+    use super::{
+        format_cluster_state_prefix, OPENSEARCH_3_7_0_MIN_COMPAT_TRANSPORT,
+        OPENSEARCH_3_7_0_TRANSPORT,
+    };
     use os_cluster_state::{
         AllocationIdPrefix, ClusterBlockLevelPrefix, ClusterBlockPrefix, ClusterBlocksPrefix,
         ClusterStateHeader, ClusterStateResponsePrefix, ClusterStateTailPrefix,
@@ -1500,6 +1497,11 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_module_can_access_transport_version_constants() {
+        assert!(OPENSEARCH_3_7_0_TRANSPORT.id() > OPENSEARCH_3_7_0_MIN_COMPAT_TRANSPORT.id());
+    }
 
     #[test]
     fn formats_cluster_state_prefix_with_stable_keys() {
@@ -1803,7 +1805,7 @@ mod tests {
                         failure: None,
                         user_metadata_count: 0,
                         user_metadata: Vec::new(),
-                        version_id: 137_287_827,
+                        version_id: OPENSEARCH_3_7_0_TRANSPORT.id(),
                         data_streams_count: 0,
                         data_streams: Vec::new(),
                         source: None,

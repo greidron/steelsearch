@@ -1,0 +1,205 @@
+{
+  "name": "alias-read-compat",
+  "cases": [
+    {
+      "name": "create_index_for_alias_read_cases",
+      "method": "PUT",
+      "path": "/logs-compat-alias-000001",
+      "body": {
+        "aliases": {
+          "logs-compat-read": {},
+          "logs-compat-write": {
+            "is_write_index": true
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "create_second_index_for_alias_read_cases",
+      "method": "PUT",
+      "path": "/metrics-compat-alias-000001",
+      "body": {
+        "aliases": {
+          "metrics-compat-read": {}
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_alias_global_readback",
+      "method": "GET",
+      "path": "/_alias/logs-compat-read",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-read"
+        ]
+      }
+    },
+    {
+      "name": "put_alias_write_index_and_routing_subset",
+      "method": "PUT",
+      "path": "/logs-compat-alias-000001/_alias/logs-compat-write",
+      "body": {
+        "is_write_index": true,
+        "routing": "r1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_alias_after_put_write_index_and_routing_subset",
+      "method": "GET",
+      "path": "/logs-compat-alias-000001/_alias/logs-compat-write",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index",
+          "logs-compat-alias-000001.aliases.logs-compat-write.index_routing",
+          "logs-compat-alias-000001.aliases.logs-compat-write.search_routing"
+        ],
+        "body_paths_equal": [
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index",
+          "logs-compat-alias-000001.aliases.logs-compat-write.index_routing",
+          "logs-compat-alias-000001.aliases.logs-compat-write.search_routing"
+        ]
+      }
+    },
+    {
+      "name": "get_alias_index_scoped_readback",
+      "method": "GET",
+      "path": "/logs-compat-alias-000001/_alias/logs-compat-read",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-read"
+        ]
+      }
+    },
+    {
+      "name": "post_aliases_bulk_filter_subset_and_remove_read_alias",
+      "method": "POST",
+      "path": "/_aliases",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "index": "logs-compat-alias-000001",
+              "alias": "logs-compat-search",
+              "filter": {
+                "term": {
+                  "service": "logs"
+                }
+              }
+            }
+          },
+          {
+            "remove": {
+              "index": "logs-compat-alias-000001",
+              "alias": "logs-compat-read"
+            }
+          }
+        ]
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_aliases_after_bulk_filter_subset_and_remove_read_alias",
+      "method": "GET",
+      "path": "/_aliases",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-search.filter.term.service",
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index",
+          "metrics-compat-alias-000001.aliases.metrics-compat-read"
+        ],
+        "body_paths_absent": [
+          "logs-compat-alias-000001.aliases.logs-compat-read"
+        ],
+        "body_paths_equal": [
+          "logs-compat-alias-000001.aliases.logs-compat-search.filter.term.service",
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index"
+        ]
+      }
+    },
+    {
+      "name": "get_alias_wildcard_readback",
+      "method": "GET",
+      "path": "/_alias/*-compat-read",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "metrics-compat-alias-000001.aliases.metrics-compat-read"
+        ]
+      }
+    },
+    {
+      "name": "get_aliases_registry_readback",
+      "method": "GET",
+      "path": "/_aliases",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index",
+          "metrics-compat-alias-000001.aliases.metrics-compat-read"
+        ],
+        "body_paths_equal": [
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index"
+        ]
+      }
+    },
+    {
+      "name": "delete_alias_after_bounded_bulk_mutation",
+      "method": "DELETE",
+      "path": "/logs-compat-alias-000001/_alias/logs-compat-search",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_aliases_after_delete_alias_subset",
+      "method": "GET",
+      "path": "/_aliases",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index",
+          "metrics-compat-alias-000001.aliases.metrics-compat-read"
+        ],
+        "body_paths_absent": [
+          "logs-compat-alias-000001.aliases.logs-compat-search"
+        ],
+        "body_paths_equal": [
+          "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index"
+        ]
+      }
+    }
+  ]
+}

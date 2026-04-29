@@ -2711,6 +2711,40 @@ Remaining live compatibility gaps:
 - any additional plugin-provided cluster-state or metadata custom should be
   treated as fail-closed until it is added to the dispatch table with fixtures
 
+## Live Probe Log
+
+2026-04-21 after the version-constant normalization and stream-version gated
+cluster-state decoder updates:
+
+```bash
+cd /home/ubuntu/OpenSearch
+./gradlew :run
+cd /home/ubuntu/steelsearch
+cargo run -q -p os-tcp-probe -- \
+  --addr 127.0.0.1:9300 \
+  --timeout 5s \
+  --cluster-state-full
+```
+
+Observed against local Java OpenSearch `3.7.0-SNAPSHOT`:
+
+```text
+remote_version_id=137287827
+response_header_version_id=136407827
+cluster_name=runTask
+transport_version_id=137287827
+cluster_state_response_cluster_name=runTask
+cluster_state_wait_for_timed_out=false
+cluster_state_metadata_decoded_customs=index-graveyard
+cluster_state_nodes=1
+cluster_state_custom_count=0
+cluster_state_remaining_bytes=0
+```
+
+The probe completed the transport handshake and fully consumed the live
+cluster-state response. No new unsupported custom metadata was observed in this
+minimal single-node state.
+
 ## Immediate Tasks
 
 - Add compression detection and decompression.

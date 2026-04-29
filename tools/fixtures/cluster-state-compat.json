@@ -1,0 +1,215 @@
+{
+  "name": "cluster-state-compat",
+  "cases": [
+    {
+      "name": "get_cluster_state_full",
+      "method": "GET",
+      "path": "/_cluster/state",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "metadata.indices.logs-compat",
+          "nodes",
+          "routing_table.indices.logs-compat"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state",
+          "routing_table.indices.logs-compat.shards.0.0.primary"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_filtered_metadata_single_index",
+      "method": "GET",
+      "path": "/_cluster/state?metric=metadata&indices=logs-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-compat"
+        ],
+        "body_paths_absent": [
+          "nodes",
+          "routing_table"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_filtered_metadata_routing_single_index",
+      "method": "GET",
+      "path": "/_cluster/state?metric=metadata,routing_table&indices=logs-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-compat",
+          "routing_table.indices.logs-compat"
+        ],
+        "body_paths_absent": [
+          "nodes"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state",
+          "routing_table.indices.logs-compat.shards.0.0.primary"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_path_metric_single_index",
+      "method": "GET",
+      "path": "/_cluster/state/metadata/logs-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-compat"
+        ],
+        "body_paths_absent": [
+          "nodes",
+          "routing_table"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_path_metric_routing_single_index",
+      "method": "GET",
+      "path": "/_cluster/state/metadata,routing_table/logs-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-compat",
+          "routing_table.indices.logs-compat"
+        ],
+        "body_paths_absent": [
+          "nodes"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state",
+          "routing_table.indices.logs-compat.shards.0.0.primary"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_unsupported_metric",
+      "method": "GET",
+      "path": "/_cluster/state?metric=blocks",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "blocks"
+        ],
+        "body_paths_absent": [
+          "metadata",
+          "nodes",
+          "routing_table"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_wildcard_index_filter",
+      "method": "GET",
+      "path": "/_cluster/state?metric=metadata&indices=logs-*",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-compat"
+        ],
+        "body_paths_absent": [
+          "nodes",
+          "routing_table"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_nodes_with_index_filter",
+      "method": "GET",
+      "path": "/_cluster/state?metric=nodes&indices=logs-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "nodes"
+        ],
+        "body_paths_absent": [
+          "metadata",
+          "routing_table"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_path_unsupported_metric",
+      "method": "GET",
+      "path": "/_cluster/state/blocks",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "blocks"
+        ],
+        "body_paths_absent": [
+          "metadata",
+          "nodes",
+          "routing_table"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_path_wildcard_index_filter",
+      "method": "GET",
+      "path": "/_cluster/state/metadata/logs-*",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-compat"
+        ],
+        "body_paths_absent": [
+          "nodes",
+          "routing_table"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-compat.state"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_path_nodes_with_index_filter",
+      "method": "GET",
+      "path": "/_cluster/state/nodes/logs-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "nodes"
+        ],
+        "body_paths_absent": [
+          "metadata",
+          "routing_table"
+        ]
+      }
+    }
+  ]
+}

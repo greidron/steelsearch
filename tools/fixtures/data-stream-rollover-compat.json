@@ -1,0 +1,85 @@
+{
+  "name": "data-stream-rollover-compat",
+  "cases": [
+    {
+      "name": "get_data_stream_global_fail_closed_vs_opensearch_supported",
+      "method": "GET",
+      "path": "/_data_stream",
+      "steelsearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "data_streams"
+        ]
+      }
+    },
+    {
+      "name": "get_data_stream_stats_fail_closed_vs_opensearch_supported",
+      "method": "GET",
+      "path": "/_data_stream/_stats",
+      "steelsearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "data_stream_count"
+        ]
+      }
+    },
+    {
+      "name": "rollover_unnamed_fail_closed_vs_opensearch_missing_target",
+      "method": "POST",
+      "path": "/logs-write/_rollover",
+      "steelsearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "rollover_named_fail_closed_vs_opensearch_missing_target",
+      "method": "POST",
+      "path": "/logs-write/_rollover/logs-000002",
+      "steelsearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    }
+  ]
+}

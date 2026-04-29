@@ -885,3 +885,754 @@
   - [x] Java fixture에서 기존 snapshots custom basic entry를 shard-status entry로 변경한 diff 생성
   - [x] Rust customs diff에서 `CompleteNamedDiff` boolean 및 snapshots replacement summary 검증
   - [x] top-level custom complete named diff 후보 완료 상태 문서화
+- [x] 문서/spec 동기화 정리
+  - [x] `docs/rust-port/requirements.md`의 verified state와 immediate risks를 현재 구현 수준에 맞게 유지
+  - [x] `docs/api-spec`와 `tasks.md` 사이의 상태 불일치가 없는지 점검
+  - [x] transport/REST/dev-only 범위를 문서에서 명확히 구분
+  - [x] 각 API family 문서에 Phase A/B/C 관련성 또는 milestone gate 표기 방식 통일
+  - [x] `docs/api-spec/README.md`의 동기화 규칙을 route-surface inventory 기준까지 더 예시화할지 검토
+- [x] Core transport action parity backlog 정리
+  - [x] `docs/api-spec/generated/transport-actions.md` 기준 핵심 admin/read action 우선순위 재분류
+  - [x] `ClusterStateAction`/`ClusterHealthAction`/task 계열 transport action의 구현 범위와 fail-closed 기준 정의
+  - [x] handshake/probe 전용 호환성과 server-side transport parity를 별도 추적 항목으로 분리
+  - [x] Tier 1 transport action에 대한 구현/테스트 순서와 소유 모듈 배치 초안 작성
+  - [x] `ClusterHealthAction`/`ClusterStateAction`/task actions별 OpenSearch 비교 테스트 acceptance 기준 정의
+  - [x] generated transport action inventory에 `probe-only`/`server-side`/`mixed-cluster` 추적 태그 적용 기준 정의
+  - [x] Tier 1 action family별 Steelsearch integration test와 OpenSearch 비교 test fixture 입력 목록 초안 작성
+  - [x] OpenSearch 비교 테스트에서 정규화 가능한 비결정 필드 목록과 금지 정규화 목록 정의
+  - [x] generated transport action inventory 각 항목에 현재 최고 달성 태그를 채우는 작업 계획 수립
+  - [x] Tier 1 공용 fixture topology builder와 action별 request builder 분리 계획 수립
+  - [x] OpenSearch 비교 테스트 공용 normalization helper의 입력/출력 계약 초안 작성
+  - [x] generated transport inventory 태그 컬럼 추가 시 Markdown/TSV 동시 갱신 규칙 정의
+  - [x] Tier 1 topology builder가 반환해야 하는 공용 handle(cluster health ready/index names/task ids) 계약 정의
+  - [x] `docs/api-spec/README.md`의 core transport backlog reading rule에 action-family 예시를 더 붙일지 검토
+  - [x] action family별 normalization allow-list/deny-list 테이블 초안 작성
+  - [x] generated transport inventory 태그 컬럼 명세(tag name, evidence source, fail-closed note) 초안 작성
+  - [x] Tier 1 topology handle의 최소 필드 집합과 optional field 집합 분리
+  - [x] action family별 normalization profile을 test helper enum 또는 config 형태로 표현할지 결정
+  - [x] generated transport inventory evidence source 값 집합의 canonical spelling 정의
+  - [x] topology kind별 minimum handle 보장치(empty/one-index/loaded/active-task) 테이블 초안 작성
+  - [x] normalization profile config record의 최소 필드(compared/allow/deny/notes) 정의
+  - [x] evidence_source 다중 값 표현 방식(csv/array/rendered list) 결정
+  - [x] topology kind와 action family 매핑표(어떤 테스트가 어떤 topology minimum을 요구하는지) 초안 작성
+  - [x] normalization profile config에서 semantic category와 concrete field path를 같이 표현할지 결정
+  - [x] fail_closed_note 길이 제한과 Markdown/TSV 공통 문체 규칙 정의
+  - [x] action family별 positive-path와 rejection-path가 서로 다른 topology minimum을 요구하는 경우 표기 규칙 정의
+  - [x] normalization category 충돌 시 category rule 우선 적용 규칙을 helper 계약으로 승격
+  - [x] fail_closed_note 예시 문구 템플릿(지원 subset / explicit rejection) 초안 작성
+  - [x] topology 매핑표에서 positive-path/rejection-path를 두 컬럼으로 분리할지 결정
+  - [x] normalization helper에서 category-to-field-path 매핑 정의 위치(shared table vs per-profile) 결정
+  - [x] fail_closed_note에서 placeholder 치환 규칙(`<subset>`, `<unsupported option>`) 예시 정리
+  - [x] topology 매핑표를 실제 two-column 형태로 재작성할지 후속 리팩터 여부 결정
+  - [x] shared category-to-field-path table의 초기 category 집합 정의
+  - [x] fail_closed_note에서 request surface 이름을 canonical route/option 이름으로 쓸지 결정
+  - [x] topology 매핑표의 rejection-path 컬럼에 action family별 대표 rejection scenario 예시 추가 여부 결정
+  - [x] shared category별 대표 concrete field path 예시 초기 목록 작성
+  - [x] fail_closed_note에서 route name과 parameter name 표기 우선순위(`/_route` vs `param_name`) 예시 정리
+  - [x] topology 매핑표에 representative rejection scenario 컬럼을 실제 추가할지 후속 리팩터 여부 결정
+  - [x] shared category 예시에서 response-shape 경로 표기법(dot path vs field label) 결정
+  - [x] fail_closed_note에서 route-scoped subset과 option-scoped rejection이 함께 있을 때 문장 결합 규칙 정의
+  - [x] topology 매핑표의 representative rejection scenario가 fail_closed_note 템플릿과 같은 어휘를 강제할지 결정
+  - [x] shared category 예시에서 wildcard/id placeholder 표기(`<id>` vs `*`) 규칙 정의
+  - [x] fail_closed_note에서 두 절 사이 구분자(`;` vs `,`)를 고정할지 결정
+  - [x] representative rejection scenario에서 동사 생략형(`unsupported X`)과 완전 문구형(`rejects X`) 중 어느 쪽을 기본으로 할지 결정
+  - [x] shared category 예시에서 배열 인덱스 placeholder(`.<n>` vs `[]`) 규칙 정의
+  - [x] fail_closed_note에서 세 번째 clause가 필요한 경우 연결 규칙 정의
+  - [x] representative rejection scenario와 fail_closed_note 사이의 어휘 공유 범위(명사구만 공유 vs 전체 문형 공유) 정의
+  - [x] shared category 경로 표기에서 map key placeholder와 array placeholder를 함께 쓸 때 결합 순서 규칙 정의
+  - [x] fail_closed_note의 세 번째 clause가 허용되는 경우와 금지되는 경우 경계 정의
+  - [x] representative rejection scenario와 fail_closed_note 사이에서 동사만 달라지고 목적어 구는 동일해야 한다는 규칙 명문화
+  - [x] shared category 경로 표기에서 다중 map key placeholder가 중첩될 때 표기 규칙 정의
+  - [x] fail_closed_note의 세 번째 clause를 쓸 때 허용되는 boundary 유형(omit/readonly/partial field set) 예시 보강
+  - [x] representative rejection scenario와 fail_closed_note 사이에서 복수 옵션을 나열할 때 목적어 구 정렬 규칙 정의
+  - [x] shared category 경로 표기에서 서로 다른 map key 의미를 `<node_id>`, `<attr_key>`처럼 구분할지 결정
+  - [x] fail_closed_note 세 번째 clause에서 `omits`/`readonly`/`returns partial` 동사군을 canonical set으로 고정할지 결정
+  - [x] representative rejection scenario와 fail_closed_note에서 복수 옵션 구분자(`/`, `,`, `and`) 우선순위 규칙 정의
+  - [x] shared category 경로 표기에서 concept-specific placeholder naming style(`_id` vs `_key` vs domain noun) 규칙 정의
+  - [x] fail_closed_note 세 번째 clause에서 canonical verb 외 예외를 허용하는 기준 정의
+  - [x] 복수 옵션 나열 시 `/`와 `,`를 섞어 써도 되는 경우의 경계 정의
+  - [x] concept-specific placeholder에서 singular domain noun과 suffixed noun(`index` vs `index_name`) 우선순위 규칙 정의
+  - [x] canonical third-clause verb 예외가 쓰인 경우 별도 표식이 필요한지 결정
+  - [x] 복수 옵션 나열에서 grouping이 필요한 경우 괄호 허용 여부 결정
+  - [x] concept-specific placeholder에서 `_name`/`_id`/`_key` suffix 선택 기준을 domain별로 더 세분화할지 결정
+  - [x] canonical third-clause verb 예외를 쓸 때도 예외 동사 목록을 별도 인벤토리로 유지할지 결정
+  - [x] 괄호를 쓰는 경우 안쪽 구분자(`/`)와 바깥 구분자(`,`)의 조합 예시 추가 여부 결정
+  - [x] 실제 response-shape 예시에서 domain-specific ambiguity가 발생하는 placeholder 후보 수집
+  - [x] exceptional third-clause verb 사용 빈도가 inventory 승격 기준을 넘는지 추후 판단 기준 정의
+  - [x] 괄호 예시에서 두 그룹 이상이 필요한 경우 중첩 괄호를 금지할지 결정
+  - [x] ambiguity candidate별 권장 placeholder 대체안(`<node_id>`, `<attr_key>`, `<index_name>`, `<shard_id>`) 초안 작성
+  - [x] exceptional third-clause verb의 “multiple related entries” 범위를 API family 단위로 볼지 route cluster 단위로 볼지 결정
+  - [x] 중첩 괄호가 필요해 보이는 경우 clause 분해/재작성 우선 규칙 정의
+  - [x] ambiguity candidate별 recommended replacement를 실제 shared category 예시에 반영할지 결정
+  - [x] route cluster 수준 반복이 API family 승격 전 경고 신호로 취급되는 조건 정의
+  - [x] clause 재작성 시 우선순위(절 분해 vs 경계 문구 축약) 결정
+  - [x] shared category 예시에서 남아 있는 generic field label(`status`, `metadata`)을 dot-path 수준으로 끌어올릴지 결정
+  - [x] route cluster 경고 신호를 reviewer checklist로 명시할지 결정
+  - [x] clause 재작성 후에도 길이가 길 경우 세 번째 clause 자체를 제거할지 결정
+  - [x] shared category 예시 중 top-level label로 남겨둘 항목과 dot-path로 승격할 항목을 분류
+  - [x] reviewer checklist에 추가할 최소 경고 문구 초안 작성
+  - [x] 세 번째 clause를 제거한 경우 누락된 boundary를 다른 문서 층으로 옮겨 적어야 하는지 결정
+  - [x] shared category 예시에서 `metadata`/`nodes` 같은 section-level label을 완전히 없앨지 결정
+  - [x] reviewer warning 문구에서 `route cluster`를 그대로 쓸지 더 사용자 친화적 표현으로 바꿀지 결정
+  - [x] 세 번째 clause에서 빠진 secondary boundary를 API family prose spec의 어느 섹션에 둘지 정의
+  - [x] 기존 shared category 예시 중 section-level label 잔여 항목이 있는지 점검
+  - [x] reviewer warning 본문에서는 `route cluster` 용어를 유지할지 `related routes`로 통일할지 결정
+  - [x] moved secondary boundary를 API family 문서의 status/behavior/milestone note 중 어느 섹션에 우선 둘지 세분화
+  - [x] `top_level_section_presence` 예시를 section 존재성 의미와 dot-path 구체성 사이에서 더 조정할지 결정
+  - [x] reviewer warning에서 `related-route cluster`를 다시 더 짧은 표현으로 줄일지 결정
+  - [x] moved secondary boundary가 user-visible response semantics인지 phase note인지 판별하는 기준 예시 추가
+  - [x] `top_level_section_presence` 외 다른 semantic category에도 “witness field” 설명이 필요한지 점검
+  - [x] reviewer warning 본문과 최소 경고 문구 사이에서 `related routes`/`related route` 단수-복수 일관성 점검
+  - [x] moved secondary boundary 예시에서 response-shape 중심 사례와 milestone-scope 중심 사례의 수를 균형 있게 맞출지 결정
+  - [x] future semantic category가 간접 witness를 쓰기 시작할 때 witness-language를 의무화할지 결정
+  - [x] reviewer warning에서 `related routes wording drift` 표현을 더 자연스럽게 줄일지 결정
+  - [x] moved secondary boundary 예시가 서로 중복되지 않도록 response-shape/phase-note 사례를 더 구분할지 검토
+  - [x] future semantic category용 witness-language의 최소 템플릿 문구 초안 작성
+  - [x] reviewer warning 최소 문구에서 `related route drift`와 `family-level normalization`의 어조를 더 압축할지 검토
+  - [x] moved secondary boundary 예시 중 `deferred` 계열 문구가 phase-note 예시 안에서 과도하게 중복되는지 점검
+  - [x] witness-language 템플릿에서 `<broader semantic boundary>` 자리에 들어갈 문구 수준 예시 추가
+  - [x] reviewer warning 최소 문구에서 `repeated exceptional phrasing`까지 더 짧게 줄일지 검토
+  - [x] phase-note 예시에서 `deferred`와 `later phase` 계열 의미가 여전히 겹치는지 추가 점검
+  - [x] witness-language 예시 문구가 너무 추상적인지 category별로 더 구체화할지 검토
+  - [x] reviewer warning 최소 문구에서 `related route drift`를 더 축약할지 검토
+  - [x] phase-note 예시에서 `current phase`와 `later replacement phase`의 구분이 충분히 선명한지 추가 점검
+  - [x] witness-language 예시에서 `visibility`/`state` 같은 추상 명사를 더 줄일 수 있는지 검토
+  - [x] reviewer warning 최소 문구에서 `repeated exceptions`도 더 압축할지 검토
+  - [x] phase-note 예시에서 `current phase`와 `active milestone` 용어를 통일할지 결정
+  - [x] witness-language 예시에서 `reporting`조차 더 구체적인 표현으로 바꿀 필요가 있는지 검토
+  - [x] reviewer warning 최소 문구에서 `may need family normalization`을 더 압축할지 검토
+  - [x] phase-note 예시에서 `later replacement phase`와 `future milestone` 중 어느 표현을 더 일관되게 쓸지 검토
+  - [x] witness-language 예시에서 `tracked task lifecycle`이 충분히 self-explanatory한지 재검토
+  - [x] reviewer warning 최소 문구에서 `may need normalization`도 더 압축할지 검토
+  - [x] phase-note 문맥에서 `replacement phase`와 `milestone`을 동시에 써야 하는 경우 구분 규칙 정의
+  - [x] witness-language 예시에서 `cluster-wide shard availability`와의 추상도 균형을 다시 점검
+  - [x] reviewer warning 최소 문구에서 `repeat exceptions`를 더 자연스러운 짧은 표현으로 바꿀지 검토
+  - [x] phase-note 문맥에서 `later replacement phase`와 `active milestone`을 함께 쓴 예시 문장 초안 작성
+  - [x] witness-language 예시 세 항목의 길이와 추상도 균형을 최종 점검
+  - [x] reviewer warning 최소 문구에서 `route drift` 자체를 더 자연스러운 표현으로 바꿀지 검토
+  - [x] phase-note 예시 문장에서 `reserved for`와 `not part of`의 어조 차이를 더 다듬을지 검토
+  - [x] witness-language 예시 세 항목을 모두 명사구로 유지할지 더 강하게 규정할지 검토
+  - [x] reviewer warning 최소 문구에서 `repeated exceptions`를 더 구체적인 짧은 표현으로 바꿀지 검토
+  - [x] phase-note 예시 문장에서 `scheduled for`가 너무 계획적 뉘앙스를 주는지 재검토
+  - [x] witness-language 예시에서 명사구 길이 상한을 둘지 검토
+  - [x] reviewer warning 최소 문구에서 `exception wording`을 더 간결하게 줄일지 검토
+  - [x] phase-note 예시 문장에서 `left for`가 너무 소극적으로 들리는지 재검토
+  - [x] witness-language 예시 명사구가 modifier를 너무 많이 가지는지 점검하는 기준 추가
+  - [x] witness-language 명사구에서 sibling concept 구분용 modifier와 단순 domain 반복 modifier의 예시를 추가할지 검토
+  - [x] witness-language 예시에서 `tracked`처럼 supported subset을 나타내는 modifier와 단순 descriptive modifier를 구분하는 기준 보강
+  - [x] witness-language 예시에서 subset-signaling modifier를 유지할 때도 과도한 contract claim처럼 읽히지 않게 하는 표현 기준 보강
+  - [x] witness-language 예시에서 expansive modifier(`full`, `complete`, `global`) 금지 예시를 더 추가할지 검토
+  - [x] witness-language 금지 예시에서 avoided phrase와 preferred phrase를 짝으로 제시할지 검토
+  - [x] witness-language avoided/preferred 짝 예시에서 “prefer” 동사를 유지할지 더 중립적인 표기로 바꿀지 검토
+  - [x] witness-language avoided/preferred 짝 예시에서 “avoid/use” 동사를 더 압축한 기호형 표기로 바꿀지 검토
+  - [x] witness-language avoided/preferred 짝 예시에서 왼쪽이 금지인지 단순 비권장인지 더 세분화할지 검토
+  - [x] witness-language style guidance와 fail-closed contract warning을 같은 표 안에 섞지 않도록 하는 경계 규칙 보강
+  - [x] witness-language wording pair 예시에서 contract semantics로 오해될 수 있는 동사(`rejects`, `supports`)를 피하는 규칙 추가 검토
+  - [x] witness-language wording pair 예시에서 `avoid` 외에 더 약한 동사(`skip`, `drop`)를 허용할지 검토
+  - [x] witness-language wording pair 예시에서 `use`보다 더 규범적이지 않은 오른쪽 동사(`write`, `say`)를 허용할지 검토
+  - [x] witness-language wording pair 예시에서 `avoid ...; use ...` 순서를 고정할지 검토
+  - [x] witness-language wording pair 예시에서 세미콜론 대신 화살표 표기를 허용하지 않는 이유를 더 명시할지 검토
+  - [x] witness-language wording pair 예시에서 세미콜론이 prose style과 정렬된다는 점을 더 짧게 재서술할지 검토
+  - [x] witness-language wording pair 예시에서 `reads like the surrounding prose` 문구를 더 contract-focused하게 바꿀지 검토
+  - [x] witness-language wording pair 설명에서 `contract prose` 표현을 더 좁은 `compatibility prose`로 바꿀지 검토
+  - [x] witness-language wording pair 설명에서 `compatibility prose`가 witness-language 범위에 충분히 특화된 표현인지 검토
+  - [x] witness-language wording pair 설명에서 `compatibility wording`이 style guidance와 contract wording 경계를 충분히 드러내는지 검토
+  - [x] witness-language wording pair 설명에서 `runtime contract semantics` 문구를 더 짧게 줄일지 검토
+  - [x] witness-language wording pair 설명에서 `runtime semantics`가 contract/runtime 경계 의미를 충분히 보존하는지 검토
+  - [x] witness-language wording pair 설명에서 `protocol semantics`가 너무 transport-biased하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `contract semantics`가 fail-closed contract와 wording guidance 경계를 충분히 보존하는지 검토
+  - [x] witness-language wording pair 설명에서 `fail-closed contract semantics` 표현을 더 짧게 줄일지 검토
+  - [x] witness-language wording pair 설명에서 `fail-closed semantics`가 contract 의미를 충분히 보존하는지 검토
+  - [x] witness-language wording pair 설명에서 `fail-closed contract behavior`가 semantics/behavior 중 더 적절한지 검토
+  - [x] witness-language wording pair 설명에서 `fail-closed behavior`가 contract 경계를 충분히 드러내는지 검토
+  - [x] witness-language wording pair 설명에서 `elsewhere in the spec` 문구를 더 짧게 줄일지 검토
+  - [x] witness-language wording pair 설명에서 `in the spec`이 위치 구분을 충분히 드러내는지 검토
+  - [x] witness-language wording pair 설명에서 `defined elsewhere`가 다시 너무 모호해지지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `in contract sections`가 문서 층 구분을 충분히 드러내는지 검토
+  - [x] witness-language wording pair 설명에서 `API/transport contract sections`가 witness-language 범위에 비해 너무 넓지 않은지 검토
+  - [x] witness-language wording pair 설명에서 `compatibility contract sections`가 style guidance와 contract 층 구분을 충분히 유지하는지 검토
+  - [x] witness-language wording pair 설명에서 `compatibility contracts`가 문서 위치보다 개념 층을 더 잘 드러내는지 검토
+  - [x] witness-language wording pair 설명에서 `compatibility contract text`가 지나치게 prose-biased하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `covered by compatibility contracts`가 다시 너무 간접적인지 검토
+  - [x] witness-language wording pair 설명에서 `described in compatibility contracts`가 wording guidance와 contract 기술 층을 충분히 분리하는지 검토
+  - [x] witness-language wording pair 설명에서 `documented by compatibility contracts`가 행위 주체를 뒤집어 어색하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 관사 없는 `fail-closed behavior`가 충분히 자연스러운지 검토
+  - [x] witness-language wording pair 설명에서 `the fail-closed behavior`가 특정 known contract처럼 과도하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 관사 없는 `fail-closed behavior`와 특정 참조 대상 사이의 균형을 더 명시할지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract entry` 문구를 더 짧게 줄일지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract`가 여전히 너무 무거운 표현인지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical rule`이 contract 계층 의미를 너무 약하게 만들지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract rule`이 다시 무거워지지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract point`가 지나치게 추상적으로 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract statement`가 다시 prose-biased하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract clause`가 과도하게 문장 단위 해석을 유도하지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract formulation`이 다시 추상적으로 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract phrasing`이 wording pair와 지나치게 동어반복처럼 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract label`이 다시 너무 naming-oriented하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract reference`가 다시 지나치게 메타하게 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract term`이 naming 뉘앙스를 다시 강화하지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract wording`이 wording pair와 다시 중복감이 생기지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract expression`이 다시 추상적으로 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract phrase`가 wording pair와 중복되는지 재검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract line`이 문장 단위 뉘앙스를 다시 키우지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract form`이 추상도와 naming 뉘앙스 사이에서 균형이 맞는지 재검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract wording form`이 다시 중복적으로 들리지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract form`으로 되돌렸을 때 추상도가 다시 높아지지 않는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract wording`이 wording pair 문맥과 다시 중복되는지 검토
+  - [x] witness-language wording pair 설명에서 `single canonical contract form`과 `wording pair` 사이 중복/추상도 tradeoff를 더 이상 쪼개지 않고 고정할지 결정
+  - [x] reviewer warning 최소 문구에서 `needs normalization`을 더 짧은 동사구로 바꿀지 검토
+  - [x] reviewer warning 최소 문구에서 `normalize exception wording`이 imperative처럼 과하게 들리지 않는지 검토
+  - [x] reviewer warning 최소 문구에서 `exception wording normalization`이 명사구 과적재처럼 들리지 않는지 검토
+  - [x] reviewer warning 최소 문구에서 `normalize wording`이 너무 일반적이라 exception 맥락을 잃지 않는지 검토
+  - [x] reviewer warning 최소 문구에서 `normalize exception wording`과 earlier imperative concern 사이 tradeoff를 고정할지 결정
+  - [x] phase-note 예시 문장에서 `moved to`가 의도적 재배치처럼 들리는지 재검토
+  - [x] phase-note 예시 문장에서 `handled in a later replacement phase`가 너무 implementation-oriented하게 들리지 않는지 검토
+  - [x] phase-note 예시 문장에서 `belongs to a later replacement phase`가 ownership처럼 들리지 않는지 검토
+  - [x] phase-note 예시 문장에서 `falls under a later replacement phase`가 분류 행정보다 roadmap 경계로 읽히는지 검토
+  - [x] phase-note 예시 문장에서 `deferred to a later replacement phase`가 예전 deferred wording 중복 문제를 다시 키우지 않는지 검토
+  - [x] phase-note 예시 문장에서 `left to a later replacement phase`가 다시 too passive하게 들리지 않는지 검토
+  - [x] phase-note 예시 문장에서 `kept for a later replacement phase`가 다시 ownership/intentional holding 뉘앙스를 키우지 않는지 검토
+  - [x] phase-note 예시 문장에서 `slated for a later replacement phase`가 다시 너무 계획적 뉘앙스를 주지 않는지 검토
+  - [x] phase-note 예시 문장에서 `reserved for a later replacement phase`가 다시 의도적 보류 뉘앙스를 과하게 주지 않는지 검토
+  - [x] phase-note 예시 문장에서 `in a later replacement phase`가 연결 동사가 빠져 너무 절단된 느낌을 주지 않는지 검토
+  - [x] phase-note 예시 문장에서 `planned for a later replacement phase`가 다시 계획 뉘앙스를 과하게 주지 않는지 검토
+  - [x] phase-note 예시 문장에서 `assigned to a later replacement phase`가 ownership/assignment 뉘앙스를 다시 키우지 않는지 검토
+  - [x] phase-note 예시 문장에서 `shifted to a later replacement phase`가 다시 재배치 뉘앙스를 키우지 않는지 검토
+  - [x] phase-note 예시 문장에서 `set for a later replacement phase`가 다시 계획/배정 뉘앙스를 키우지 않는지 검토
+  - [x] phase-note 예시 문장에서 `deferred to a later replacement phase`를 최종 고정 표현으로 둘지 결정
+- [x] Root/cluster/node API parity 보강
+  - [x] `docs/api-spec/root-cluster-node.md`의 parity reading rule에 task/stats/state 예시를 더 붙일지 검토
+  - [x] `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel`의 최소 호환 범위 설계
+  - [x] `/_tasks` 최소 호환 범위에 필요한 task envelope 필드(action, node, cancellable, error shape) allow-list 정의
+  - [x] `/_tasks` 비교에서 `type`, `headers`를 기본 필드로 둘지 optional evidence 필드로 내릴지 결정
+  - [x] `/_tasks` optional evidence 필드(`type`, `headers`)를 사용할 때 필요한 안정성 조건을 더 명시할지 검토
+  - [x] `/_tasks` optional evidence 필드의 안정성 조건이 충족되지 않을 때 comparison helper가 필드를 자동 제외할지 결정
+  - [x] `/_tasks` optional evidence 필드 자동 제외가 silent weakening처럼 보이지 않도록 test output 주석 규칙을 추가할지 검토
+  - [x] `/_tasks` optional evidence 필드 제외 주석에서 필드명과 제외 사유를 canonical 순서로 출력할지 결정
+  - [x] `/_tasks` optional evidence 제외 주석의 canonical reason phrase 집합을 정의할지 검토
+  - [x] `/_tasks` optional evidence 제외 주석에서 canonical reason phrase와 자유 설명을 섞어도 되는지 결정
+  - [x] `/_tasks` optional evidence 제외 주석에서 free-form explanation이 허용되는 대표 사례를 추가할지 검토
+  - [x] `/_tasks` free-form explanation 사례에서 canonical phrase와 자유 설명의 결합 템플릿을 추가할지 검토
+  - [x] `/_tasks` free-form explanation 템플릿에서 세미콜론 구분자를 고정할지 검토
+  - [x] `/_tasks` free-form explanation 템플릿에서 canonical reason과 boundary note 순서를 고정할지 검토
+  - [x] `/_tasks` free-form explanation 템플릿에서 boundary note를 생략할 때도 canonical reason 단독 형태를 같은 문장 틀로 유지할지 검토
+  - [x] `/_tasks` annotation 예시에서 singular/plural field wording(`field` vs `fields`)을 따로 정의할지 검토
+  - [x] `/_tasks` grouped omission set을 한 annotation으로 묶어도 되는 대표 사례를 추가할지 검토
+  - [x] `/_tasks` grouped omission set 허용 조건에서 “같은 제외 사유” 판정 기준을 더 명시할지 검토
+  - [x] `/_tasks` grouped omission set에서 canonical reason은 같지만 free-form note가 다를 때 분리 강제 예시를 추가할지 검토
+  - [x] `/_tasks` grouped omission 강제 분리 예시에서 `headers`/`type` 외에 reviewer가 자주 볼 추가 사례를 더 넣을지 검토
+  - [x] `/_tasks` grouped omission 강제 분리 예시에서 optional evidence 필드와 required parity 필드를 섞는 경우를 별도 규칙으로 승격할지 검토
+  - [x] `/_tasks` optional-vs-required split rule에 대응하는 comparison output 예시를 추가할지 검토
+  - [x] `/_tasks` required parity mismatch 출력에서 필드명 뒤에 mismatch 이유를 붙일지 검토
+  - [x] `/_tasks` required parity mismatch 이유 phrase의 canonical 집합을 정의할지 검토
+  - [x] `/_tasks` required parity mismatch에서 canonical reason phrase와 free-form explanation을 같이 허용할지 검토
+  - [x] `/_tasks` required parity mismatch에서 free-form explanation이 허용되는 대표 사례를 추가할지 검토
+  - [x] `/_tasks` required parity mismatch에서 canonical reason + free-form explanation 결합 템플릿을 추가할지 검토
+  - [x] `/_tasks` required parity mismatch 템플릿에서도 세미콜론 구분자를 고정할지 검토
+  - [x] `/_tasks` required parity mismatch 템플릿에서 canonical reason과 free-form note 순서를 고정할지 검토
+  - [x] `/_tasks` required parity mismatch 템플릿에서 free-form note를 생략할 때도 같은 문장 틀을 유지할지 검토
+  - [x] `/_tasks` required parity mismatch 예시에서 singular/plural field wording(`mismatch` vs grouped mismatch)을 따로 정의할지 검토
+  - [x] `/_tasks` grouped required-field failure set을 한 annotation으로 묶어도 되는 대표 사례를 추가할지 검토
+  - [x] `/_tasks` grouped required-field failure 허용 조건에서 “같은 mismatch reason” 판정 기준을 더 명시할지 검토
+  - [x] `/_tasks` grouped required-field failure에서 canonical mismatch reason은 같지만 free-form note가 다를 때 분리 강제 예시를 추가할지 검토
+  - [x] `/_tasks` grouped required-field failure 강제 분리 예시에서 `action`/`cancellable` 외에 reviewer가 자주 볼 추가 사례를 더 넣을지 검토
+  - [x] `/_tasks` grouped required-field failure에서 identity 계열(`node`, `id`)과 capability 계열(`action`, `cancellable`)을 섞는 경우를 별도 규칙으로 승격할지 검토
+  - [x] `/_tasks` identity-vs-capability split rule에 대응하는 comparison output 예시를 추가할지 검토
+  - [x] `/_tasks` identity-vs-capability split 예시에서 두 mismatch를 같은 response block 안에서 나란히 보여주는 형식을 추가할지 검토
+  - [x] `/_tasks` same-block mismatch 예시에서 출력 순서를 identity 먼저/capability 나중으로 고정할지 검토
+  - [x] `/_tasks` same-block mismatch 예시에서 identity/capability 사이 빈 줄 없이 연속 출력할지 검토
+  - [x] `/_tasks` same-block mismatch 예시에서 각 줄 접두사를 반복 유지할지, 두 번째 줄부터 축약할지 검토
+  - [x] `/_tasks` same-block mismatch 예시를 두 줄 초과로 확장할 때도 같은 접두사 반복 규칙을 유지할지 검토
+  - [x] `/_tasks` same-block mismatch 블록이 길어질 때 최대 줄 수를 둘지 검토
+  - [x] `/_tasks` same-block mismatch 블록을 여러 예시로 쪼갤 때 분할 기준(축별 분할 vs severity별 분할)을 정할지 검토
+  - [x] `/_tasks` same-block mismatch 예시 분할 기준에 맞춘 두세 개의 canonical example families를 정의할지 검토
+  - [x] `/_tasks` canonical example families에서 shape-only mismatch family를 별도 추가할지 검토
+  - [x] `/_tasks` shape-only mismatch family에서 대표 필드(`node` vs `action`)를 구체 예시로 넣을지 검토
+  - [x] `/_tasks` shape-only mismatch family에서 대표 필드 예시를 comparison output 예시까지 확장할지 검토
+  - [x] `/_tasks` shape-only mismatch output 예시에서 `shape mismatch` 외에 더 세분화된 canonical phrase가 필요한지 검토
+  - [x] `/_tasks` shape-only mismatch에서 envelope-level vs nesting-level 차이를 free-form note로만 풀지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 envelope-level / nesting-level 용어를 canonical note vocabulary로 고정할지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 `shape boundary`가 충분히 구체적인지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 `shape contract`가 contract 층 의미를 과하게 키우지 않는지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 `shape difference`가 너무 중립적이라 경계 의미를 잃지 않는지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 `shape boundary mismatch`가 다시 너무 길지 않은지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 `boundary mismatch`만으로 shape 맥락이 충분히 유지되는지 검토
+  - [x] `/_tasks` shape-only mismatch free-form note에서 `envelope-level`/`nesting-level`만으로도 shape family가 충분히 암시되는지 재검토
+  - [x] `/_tasks` shape-only mismatch free-form note vocabulary를 `shape mismatch`로 최종 고정할지 결정
+  - [x] `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`의 development summary와 OpenSearch 의미 차이를 문서/응답에서 명확히 유지
+  - [x] stats 계열 summary-only 필드에 붙일 labeling/naming 규칙(`summary`, `development`, `partial`)을 정할지 검토
+  - [x] stats payload 내부 필드명에는 `partial`을 쓰지 않는다는 규칙에 대한 예시를 추가할지 검토
+  - [x] stats summary naming 규칙에서 `development` label이 허용되는 대표 필드 사례를 추가할지 검토
+  - [x] stats summary naming 규칙에서 `development_*_summary` 패턴을 canonical 예시로 고정할지 검토
+  - [x] stats summary naming 규칙에서 `development_*_summary` 외의 허용 패턴을 더 둘지 검토
+  - [x] `GET /_cluster/state` 필터링/metric 파라미터 지원 여부를 spec 기준으로 정리
+  - [x] `/_cluster/state`에서 허용할 metric subset과 명시적 reject 대상 조합을 표로 분리할지 검토
+  - [x] `/_cluster/state` 표에서 supported metric subset의 대표 section 예시를 더 구체적으로 넣을지 검토
+  - [x] `/_cluster/state` 표에서 supported metadata summary / node summary / routing summary를 별도 행으로 쪼갤지 검토
+  - [x] `/_cluster/state` 표에서 cluster identity와 top-level state identity subset을 더 분리할지 검토
+  - [x] `/_cluster/state` 표에서 supported subset 행들에 대표 metric name 예시를 붙일지 검토
+  - [x] `/_cluster/state` 표의 대표 metric 예시를 placeholder 수준에서 더 구체적인 OpenSearch metric 이름으로 바꿀지 검토
+  - [x] `/_cluster/state` 표에서 `metadata` / `nodes` / `routing_table` 예시를 실제 허용 metric 이름으로 더 좁힐지 검토
+  - [x] `/_cluster/state`의 `metadata` / `nodes` / `routing_table` exact allow-listed metric names를 별도 표로 분리할지 검토
+  - [x] `/_cluster/state`의 `metadata` / `nodes` / `routing_table` side-by-side metric mapping이 생기면 exact allow-list 표로 승격할 기준을 정의
+  - [x] `/_cluster/state` exact allow-list 표 승격 기준에서 repeated side-by-side stability를 몇 회 비교로 볼지 정할지 검토
+  - [x] `/_cluster/state` exact allow-list 승격 기준의 3회 연속 비교가 같은 section-level metric subset 기준임을 예시로 보강할지 검토
+  - [x] `/_cluster/state` exact allow-list 승격 기준에서 section-level subset별로 독립 승격이 가능한지 명시할지 검토
+  - [x] `/_cluster/state` exact allow-list의 partial promotion 상태를 문서에서 어떻게 표시할지 검토
+  - [x] `/_cluster/state` partial promotion 표기에서 `Promoted` / `Family-level only`를 canonical status label로 고정할지 검토
+  - [x] `/_cluster/state` partial promotion status label에서 `Family-level only`를 더 짧게 줄일지 검토
+- [x] Index and metadata API parity 보강
+  - [x] `HEAD /{index}` 구현 여부와 에러 shape를 spec 기준으로 정리
+  - [x] `HEAD /{index}` minimum contract에서 wildcard/comma target과 exact-target-only 범위를 더 명시할지 검토
+  - [x] `HEAD /{index}` minimum contract에서 unsupported broad selector 예시(`_all`, wildcard, comma list)를 fail-closed 예시로 별도 줄에 뺄지 검토
+  - [x] `HEAD /{index}` fail-closed 예시에서 broad selector마다 별도 reject reason을 달지 검토
+  - [x] `HEAD /{index}` fail-closed broad-selector bucket 이름을 canonical phrase로 고정할지 검토
+  - [x] `HEAD /{index}` broad-selector canonical phrase에서 `unsupported broad selector`를 더 줄일지 검토
+  - [x] `docs/api-spec/index-and-metadata.md`의 parity reading rule에 mapping/settings/template/data-stream 예시를 더 붙일지 검토
+  - [x] `_mapping`, `_settings`, alias delete, legacy template route군의 실제 지원 범위를 문서와 코드에서 일치시킴
+  - [x] component/composable template route군도 internal persistence와 REST route parity를 분리해서 같은 정렬 규칙을 적용할지 검토
+  - [x] component/composable template route군에서 component/composable을 한 행으로 유지할지 별도 행으로 분리할지 검토
+  - [x] composable template 행에서 `/_index_template/_simulate*` 계열을 별도 하위 family로 분리할지 검토
+  - [x] composable template simulation 행에 `_simulate`와 `_simulate_index/{name}`를 각각 따로 적을지 검토
+  - [x] composable template simulation 행에서 named/unnamed `_simulate`를 한 행으로 유지할지 추가 분리할지 검토
+  - [x] data stream / rollover 계열 fail-closed 응답이 OpenSearch 호환 shape를 유지하는지 점검
+  - [x] data stream / rollover fail-closed bucket 이름을 canonical phrase로 고정할지 검토
+  - [x] data stream / rollover canonical fail-closed phrase를 더 줄일지 검토
+- [x] Search and write-path parity backlog 정리
+  - [x] `docs/api-spec/README.md`의 search/write-path backlog reading rule에 `_search` vs `_bulk` 예시를 더 붙일지 검토
+  - [x] `_search` 지원 subset과 fail-closed 항목(highlight, suggest, scroll, PIT 등)을 명시적으로 매트릭스화
+  - [x] `_search` support matrix에서 `Explicit fail-closed`와 `Planned`를 나누는 기준을 더 명시할지 검토
+  - [x] `_search` support matrix에서 `highlight` / `suggest` / `scroll` / `PIT` 각각이 왜 `Explicit fail-closed`인지 짧은 exemplar note를 붙일지 검토
+  - [x] `_search` support matrix에서 exemplar note 길이를 더 줄여도 상태 구분이 유지되는지 검토
+  - [x] single-document delete/update의 현재 상태를 spec과 실제 코드 기준으로 재평가
+  - [x] single-document delete/update route군에도 GET/PUT 쪽과 같은 route-surface alignment note를 더 넓게 적용할지 검토
+  - [x] single-document route군에서 `POST /{index}/_doc`도 generated inventory 기준으로 재분류할지 검토
+  - [x] generated route inventory가 `POST /{index}/_doc` generated-id surface를 별도 구분하도록 source extraction을 보강할지 검토
+  - [x] generated route inventory에서 generated-id create와 id-bearing index route를 가르는 extraction rule 초안을 작성할지 검토
+  - [x] generated route inventory extraction rule에서 shared source handler family를 separate surface로 분리하는 기준을 더 명시할지 검토
+  - [x] generated route inventory extraction rule에서 id ownership / request shape / response contract 중 어떤 축을 우선 분리 기준으로 둘지 검토
+  - [x] generated route inventory extraction priority에서 response contract와 request shape의 경계 예시를 추가할지 검토
+  - [x] generated route inventory extraction priority 예시에서 `HEAD /{index}/_doc/{id}`를 실제 inventory status와 연결해 더 보강할지 검토
+  - [x] generated route inventory extraction priority 예시에서 request-shape 축도 concrete status split 예시로 보강할지 검토
+  - [x] request-shape 예시에서 generated-id surface의 provisional `Partial` 상태를 별도 caveat로 더 분리할지 검토
+  - [x] generated-id surface의 provisional `Partial`을 별도 status marker 없이 prose caveat만으로 유지할지 검토
+  - [x] `_bulk` 지원 항목(index/create/update/delete)별 OpenSearch 의미 차이를 문서화
+  - [x] `_bulk` item-type semantic table와 route-level `Partial` 상태 사이의 긴장을 별도 note로 설명할지 검토
+- [x] Phase A milestone 계약 문서화
+  - [x] `docs/rust-port/milestones.md`에 Phase A standalone replacement 완료 기준 정리
+  - [x] `docs/rust-port/milestones.md`에 Phase B mixed-cluster interop 완료 기준 정리
+  - [x] `docs/rust-port/milestones.md`에 Phase C same-cluster participation 완료 기준 정리
+- [x] Phase A acceptance harness 구축
+  - [x] Steelsearch와 OpenSearch를 같은 입력으로 검증하는 side-by-side REST 비교 테스트 harness 설계
+  - [x] acceptance harness의 final comparison result vocabulary(`match` / `expected fail-closed` / `mismatch`)를 canonical로 고정할지 검토
+  - [x] acceptance harness vocabulary에서 `expected fail-closed`를 더 짧게 줄일지 검토
+  - [x] 성공 응답 canonicalization 규칙(JSON field ordering, volatile field masking) 정의
+  - [x] acceptance harness success canonicalization에서 allowed volatile field categories를 canonical list로 고정할지 검토
+  - [x] acceptance harness success canonicalization에서 canonical volatile category 밖 예외를 허용하는 기준을 정의할지 검토
+  - [x] acceptance harness success canonicalization 예외에 reviewer note 의무화를 붙일지 검토
+  - [x] 실패 응답 canonicalization 규칙(status/error.type/reason/resource metadata) 정의
+  - [x] acceptance harness failure canonicalization에서 `error.reason`의 허용 normalization 범위를 더 세분화할지 검토
+  - [x] acceptance harness failure canonicalization에서 boundary noun phrase를 canonical comparison anchor로 명시할지 검토
+  - [x] 로컬 OpenSearch 기동 스크립트 또는 테스트 fixture 환경 문서화
+  - [x] acceptance harness local fixture environment에서 shared reusable seed와 per-case reset boundary를 더 분리해 적을지 검토
+  - [x] acceptance harness local fixture environment에서 reusable family seed와 per-case mutation reset 예시를 더 붙일지 검토
+  - [x] acceptance harness local fixture environment에서 read/search shared seed와 write-path reset boundary를 canonical example pair로 고정할지 검토
+  - [x] CI 또는 로컬 repeatable 환경에서 Steelsearch/OpenSearch 통합 비교 테스트를 실행하는 진입점 추가
+  - [x] `tools/run-phase-a-acceptance-harness.sh`의 mode별(local/ci) expected artifact layout을 문서화할지 검토
+  - [x] acceptance harness artifact layout에서 `compare/`와 `rehearsal/` 하위 canonical report 이름까지 고정할지 검토
+  - [x] acceptance harness artifact layout에서 opt-in report(`http-load-comparison.json`, `alias-template-persistence-report.json`)와 always-on report를 더 분리해 적을지 검토
+  - [x] `docs/api-spec/README.md`의 acceptance harness rule에 success/error/fixture reuse 예시를 더 붙일지 검토
+  - [x] acceptance harness example block에서 success / expected fail-closed / fixture-reset 순서를 canonical teaching order로 고정할지 검토
+  - [x] acceptance harness/test plan에 `os-node` runtime/service layer 연결 검증 단계를 canonical step으로 추가
+  - [x] compare report 전에 `cargo check -p os-node` 및 runtime route activation 가능 여부를 선행 gate로 강제
+  - [x] helper/local harness 결과와 실제 `SteelNode` HTTP/runtime path 결과를 구분해 artifact에 기록
+- [x] Phase A 완료 판정 공통 규칙: 문서/helper/fixture 완료만으로는 `[x]` 처리하지 않고, 각 항목이 `os-node` runtime/service layer 또는 실제 `SteelNode` HTTP path까지 연결되었는지 확인
+  - [x] `cargo check -p os-node` runtime gate blocker로 `main.rs`/tests가 기대하는 unresolved import set 재확인
+  - [x] `main.rs`와 tests가 기대하는 `os-node` runtime API source-of-truth를 복구하거나 현재 worktree 구조에 맞게 정렬
+  - [x] `cargo check -p os-node --features development-runtime --bin steelsearch`가 통과하는 runtime 연결 상태를 완료 판정의 기본 gate로 사용
+  - [x] `tools/run-phase-a-acceptance-harness.sh --mode local` 또는 동등한 runtime-backed 검증이 가능한 항목만 최종 `[x]`로 승격
+  - [x] feature-gated `development-runtime` target이 기대하는 `os-node` runtime API를 실제로 복구
+    - [x] gateway/task-queue/persisted coordination manifest 모델과 load/save shim 복구
+    - [x] development runtime import layer(`SteelNode`, discovery/coordinator skeleton, membership/task types) 최소 shim 추가
+    - [x] `ProductionMembershipState`, `MembershipNode`, `DiscoveryPeer`, `ExtensionBoundaryRegistry` shape를 `main.rs` call-site와 일치시키기
+    - [x] metadata replay typed state(`metadata_state`, `metadata_commit_state`, `PublicationRoundState`)를 `main.rs` field access와 일치시키기
+    - [x] `cargo check -p os-node --features development-runtime --bin steelsearch`의 남은 field/method mismatch 0건 만들기
+    - [x] `SteelNode::start_rest` / `serve_rest_http_listener_until`가 실제 HTTP bind/serve loop를 제공하도록 복구
+    - [x] 실제 HTTP serving path가 source-owned route helper 대신 404를 반환하는 문제를 root/cluster/node family부터 해소
+      - [x] `GET /`, `HEAD /`, `GET /_cluster/health`, `GET /_cluster/state`, `GET /_cluster/settings`, `GET /_cluster/pending_tasks`, `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel`, `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`를 `SteelNode::handle_rest_request` dispatch에 연결
+      - [x] `GET /_cluster/allocation/explain`과 `POST /_cluster/allocation/explain`를 `SteelNode::handle_rest_request` dispatch에 연결
+      - [x] root/cluster/node family acceptance harness full pass까지 runtime-backed 검증 범위를 확장
+        - [x] scoped acceptance run이 `cluster-health-compat`까지는 runtime-backed pass로 진입
+        - [x] `allocation-explain-compat` fixture가 OpenSearch 쪽 `logs-compat` seed 없이 404로 깨지는 문제를 해소
+        - [x] `allocation_explain_primary_happy_path`에서 OpenSearch가 `node_allocation_decisions`를 생략하는 실제 응답 shape에 fixture expectation을 맞추기
+        - [x] `cluster-settings-compat`에서 dotted cluster-setting mutation key를 OpenSearch처럼 nested readback shape로 merge하도록 Steelsearch runtime semantics를 맞추기
+        - [x] `cluster-state-compat`에서 created-index metadata/routing readback과 `blocks`/wildcard/filter OpenSearch 200 semantics를 runtime path에 반영
+    - [x] `main.rs` binary unit tests를 compile-clean 상태로 복구해 development-runtime test surface를 binary test까지 확장
+      - [x] `cargo test -p os-node --features development-runtime --bin steelsearch gateway_startup_restore -- --nocapture`가 compile-clean을 넘어 selected binary test pass까지 도달
+      - [x] selected `gateway_startup_restore` binary test pass를 broader `steelsearch` binary test suite smoke run으로 확장
+      - [x] `steelsearch` binary smoke run에서 root/cluster/node 외 index/metadata/document/template/alias runtime route가 여전히 `404`로 떨어지는 문제를 family별로 복구
+      - [x] `steelsearch` binary smoke run에서 cluster-settings query fail-closed / mutation replay semantics drift를 binary test expectation과 맞추기
+      - [x] `steelsearch` binary smoke run에서 pending-tasks / tasks registry seeded replay shape를 binary test expectation과 맞추기
+        - [x] `/_cluster/pending_tasks` seeded replay가 binary smoke에서 빈 배열로 떨어지지 않도록 runtime coordination/task-queue handoff를 복구
+        - [x] `/_tasks` list/get seeded replay shape가 binary smoke에서 runtime task queue를 읽도록 복구
+        - [x] unknown task cancel의 binary smoke `404 resource_not_found_exception` expectation과 root/cluster/node compat의 `200 + node_failures` expectation을 reconcile
+      - [x] `steelsearch` binary smoke run에서 alias read wildcard/filtering과 single-doc delete missing-status semantics를 binary test expectation과 맞추기
+      - [x] `steelsearch` binary smoke run에서 development coordination / liveness / publication semantics drift를 test expectation과 맞추기
+      - [x] `steelsearch` binary smoke run에서 production mode gate와 data-stream/rollover fail-closed behavior를 binary test expectation과 맞추기
+- [x] Phase A root/cluster/node API parity
+  - [x] root/cluster/node API family가 source-owned helper 수준이 아니라 `os-node` runtime dispatch/service layer까지 연결되었는지 명시적으로 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 root/cluster/node family의 실제 `SteelNode` HTTP/runtime path 검증 재개
+  - [x] runtime HTTP server가 `GET /`, `HEAD /`, `/_cluster/*`, `/_tasks*`, `/_stats*`를 실제 `SteelNode::handle_rest_request` dispatch로 연결
+    - [x] `GET /`, `HEAD /`, `GET /_cluster/health`, `GET /_cluster/state`, `GET /_cluster/settings`, `GET /_cluster/pending_tasks`, `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel`, `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`
+    - [x] `GET /_cluster/allocation/explain`, `POST /_cluster/allocation/explain`
+  - [x] root/cluster/node acceptance harness 전체 route set을 runtime-backed full pass로 검증
+    - [x] local scoped acceptance에서 `cluster-health-compat` full pass 확인
+    - [x] local scoped acceptance에서 `cluster-settings-compat` dotted-key merge drift 해소 후 다음 compat runner까지 연쇄 통과 확인
+    - [x] local scoped acceptance에서 `cluster-state-compat`, `tasks-compat`, `stats-compat`, `root-cluster-node-compat`까지 연쇄 full pass 확인
+  - [x] scoped root/cluster/node runtime-backed acceptance 결과를 broader Phase A compare tree 기본 경로에 승격
+    - [x] `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` preset 추가
+    - [x] `tools/run-development-replacement-rehearsal.sh`가 같은 scope preset을 이해하도록 정렬
+    - [x] scope preset으로 manual env 나열 없이 local runtime-backed full pass 재검증
+  - [x] `GET /`, `HEAD /` 응답 shape를 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] root route live-compat runner(`tools/root_cluster_node_compat.py`)를 phase-a acceptance entrypoint에 연결할지 검토
+  - [x] cluster health live-compat runner도 `run-phase-a-acceptance-harness.sh` compare tree에 같은 방식으로 연결할지 검토
+  - [x] cluster health live-compat runner에 `wait_for_status` / `timeout` semantics case를 확장할지 검토
+  - [x] `GET /_cluster/health` top-level counters, status, wait/timeout 의미를 OpenSearch와 비교하는 테스트 추가
+  - [x] cluster health live-compat fixture에 index-scoped health나 `wait_for_active_shards` semantics를 추가할지 검토
+  - [x] cluster health live-compat fixture에 index-scoped health를 올릴 stable-semantics gate를 정의할지 검토
+  - [x] `GET /_cluster/state` implementation blocker로 `SteelNode` route-registration source visibility를 조사
+  - [x] `SteelNode` cluster-state route-registration source를 workspace-visible module/file로 분리
+  - [x] `GET /_cluster/state` response filtering/metric/index 파라미터 구현
+  - [x] cluster-state route scope helper를 live `SteelNode` REST handler에 실제로 연결
+  - [x] cluster-state route scope helper call-site blocker로 concrete `SteelNode` route symbol visibility를 조사
+  - [x] cluster-state route scope helper 호출 대상 concrete `SteelNode` route symbol을 workspace-visible source로 노출
+  - [x] cluster-state route scope helper 호출을 concrete `SteelNode` route call-site에 연결
+  - [x] cluster-state response builder를 extracted `SteelNode` live route path에서 실제로 invoke
+  - [x] concrete `SteelNode` runtime route registry가 `_cluster/state` traffic을 invoke helper로 dispatch
+  - [x] literal `SteelNode` route registry wiring에서 `_cluster/state`를 invoke helper로 연결
+  - [x] concrete `SteelNode` route registry table이 `_cluster/state` traffic을 canonical hook symbol로 dispatch
+  - [x] concrete `SteelNode` runtime route table이 `_cluster/state` canonical registry entry를 실제로 consume
+  - [x] `GET /_cluster/state` filtered/full 응답을 OpenSearch와 비교하는 테스트 추가
+  - [x] cluster-state live-compat runner를 `run-phase-a-acceptance-harness.sh` compare tree에 연결할지 검토
+  - [x] cluster-state live-compat fixture에 unsupported metric/index fail-closed case를 확장할지 검토
+  - [x] cluster-state live-compat runner에 path-param metric/index route shape case를 추가할지 검토
+  - [x] cluster-state live-compat fixture에 path-param fail-closed route shape case를 추가할지 검토
+  - [x] `GET /_cluster/settings` parity 구현 전 route registration/source visibility를 먼저 조사할지 검토
+  - [x] `GET /_cluster/settings` route-registration source를 workspace-visible module/file로 분리
+  - [x] `GET /_cluster/settings` live route hook/response builder symbol을 workspace-visible source로 노출
+  - [x] `GET /_cluster/settings` concrete live route call-site를 canonical hook symbol에 연결
+  - [x] `GET /_cluster/settings` literal runtime registry wiring에서 canonical hook symbol을 consume
+  - [x] `GET /_cluster/settings` parity 구현 전에 bounded response contract를 source-owned helper로 추출
+  - [x] `GET /_cluster/settings` parity 구현 전에 unsupported parameter/fail-closed bucket를 source-owned helper로 추출
+  - [x] `GET /_cluster/settings` parity 구현 전에 canonical response builder가 param reject helper를 consume하도록 정리
+  - [x] `GET /_cluster/settings` parity 구현 전에 request-shaped live invoke helper를 source-owned file로 추출
+  - [x] `GET /_cluster/settings` parity 구현 전에 request-shaped invoke helper를 canonical hook path와 reconcile
+  - [x] `GET /_cluster/settings` parity 구현 전에 persisted cluster-settings state를 request-shaped helper input으로 연결
+  - [x] `GET /_cluster/settings` parity 구현 전에 live route hook이 persisted-state adapter를 consume하도록 정리
+  - [x] `GET /_cluster/settings` parity 구현 전에 canonical registry entry가 persisted-state-backed hook path를 가리키는지 재확인
+  - [x] `GET /_cluster/settings` parity blocker로 generated route inventory와 live route symbol visibility 재확인
+  - [x] `GET /_cluster/settings` live REST surface를 generated inventory 수준으로 먼저 노출
+  - [x] `GET /_cluster/settings` parity 구현 전 source-owned route table이 concrete runtime registry wiring으로 이어지는지 재확인
+  - [x] `GET /_cluster/settings` parity 구현 전에 persisted-state-backed hook path를 live response contract note와 합칠지 검토
+  - [x] `GET /_cluster/settings` parity blocker로 concrete live REST handler extraction 필요성을 재확인
+  - [x] `GET /_cluster/settings` concrete live REST handler path를 workspace-visible source로 추출
+  - [x] `GET /_cluster/settings` parity 구현 전 source-owned dispatch record가 literal runtime dispatch table과 같은지 재확인
+  - [x] `GET /_cluster/settings` parity blocker로 concrete live REST handler body missing 상태를 재확인
+  - [x] `GET /_cluster/settings` concrete live REST handler body를 workspace-visible source로 추출
+  - [x] `GET /_cluster/settings` parity blocker로 concrete runtime route registration missing 상태를 재확인
+  - [x] `GET /_cluster/settings` concrete runtime route registration이 source-owned handler body를 consume하도록 노출
+  - [x] `GET /_cluster/settings` parity blocker로 real `/_cluster/settings` traffic routing 미증명 상태를 재확인
+  - [x] `GET /_cluster/settings` real traffic가 source-owned runtime registration body에 도달하도록 노출
+  - [x] `GET /_cluster/settings` parity scaffold로 live-compat fixture/runner 추가
+  - [x] `GET /_cluster/settings` readback/fail-closed surface를 OpenSearch와 비교하는 통합 테스트 연결
+  - [x] `GET /_cluster/settings` live-compat fixture에 path-param 또는 optional param case를 확장할지 검토
+  - [x] `GET /_cluster/settings` live-compat fixture에 additional readback param family(`local` 등)를 더 넣을지 검토
+  - [x] `GET /_cluster/settings` parity blocker로 live route가 아직 generated-inventory `planned` 상태임을 재확인
+  - [x] `GET /_cluster/settings` live readback surface를 generated-inventory `planned`에서 runnable subset으로 승격
+  - [x] `GET /_cluster/settings` runnable subset wording(`persistent`/`transient`)을 live-compat report note에도 반영할지 검토
+  - [x] `GET /_cluster/settings` parity blocker로 runnable subset이 아직 live route parity로 승격되지 않았음을 재확인
+  - [x] `GET /_cluster/settings` runnable subset을 actual live route response semantics로 승격
+  - [x] `GET /_cluster/settings` actual live route response semantics wording을 compat fixture note에도 반영할지 검토
+  - [x] `GET /_cluster/settings` parity blocker로 route status가 여전히 generated-inventory `planned`임을 재확인
+  - [x] `GET /_cluster/settings` route status를 runnable subset evidence에 맞게 재평가
+  - [x] `GET /_cluster/settings` parity blocker로 route parity gate가 아직 열리지 않았음을 재확인
+  - [x] `GET /_cluster/settings` route parity gate를 여는 최소 live-route evidence를 정의
+  - [x] `GET /_cluster/settings` parity blocker로 route parity gate의 첫 criterion이 아직 비어 있음을 재확인
+  - [x] real `GET /_cluster/settings` traffic이 source-owned runtime registration body에 도달하도록 노출
+  - [x] `GET /_cluster/settings` parity blocker로 actual route activation이 아직 없음을 재확인
+  - [x] `GET /_cluster/settings` actual route activation을 source-owned live readback semantics에 연결
+  - [x] `GET /_cluster/settings` parity 구현
+  - [x] `PUT /_cluster/settings` persistent/transient mutation parity 구현
+  - [x] `PUT /_cluster/settings` live mutation route activation을 source-owned bounded semantics에 연결
+  - [x] cluster settings read/write를 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] `GET /_cluster/pending_tasks` parity 구현
+  - [x] `GET /_cluster/pending_tasks` live route activation을 source-owned bounded task-array semantics에 연결
+  - [x] `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel` parity 구현
+  - [x] `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel` live route activation을 source-owned bounded task-registry semantics에 연결
+  - [x] `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel` actual traffic proof를 local route activation test로 추가
+  - [x] task/pending-task 응답 shape와 cancellation failure shape를 OpenSearch와 비교하는 테스트 추가
+  - [x] task/pending-task compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`의 supported subset 구현
+  - [x] `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats` live route activation을 source-owned bounded summary semantics에 연결
+  - [x] `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats` actual traffic proof를 local route activation test로 추가
+  - [x] stats 계열 route의 field presence와 numeric semantics를 OpenSearch와 비교하는 테스트 추가
+  - [x] stats compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] `GET /_cluster/allocation/explain` parity 보강
+  - [x] `GET /_cluster/allocation/explain` live route activation을 source-owned bounded explanation semantics에 연결
+  - [x] `GET /_cluster/allocation/explain` actual traffic proof를 local route activation test로 추가
+  - [x] allocation explain happy-path/unassigned-path를 OpenSearch와 비교하는 테스트 추가
+  - [x] allocation explain compat runner를 phase-a acceptance entrypoint에 연결
+- [x] Phase A index lifecycle and metadata parity
+  - [x] index lifecycle/metadata API family가 source-owned helper 수준이 아니라 `os-node` runtime dispatch/service layer까지 연결되었는지 명시적으로 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 index/metadata family의 실제 `SteelNode` HTTP/runtime path 검증 재개
+  - [x] `tools/run-phase-a-acceptance-harness.sh --mode local --scope index-metadata` preset 추가
+  - [x] index lifecycle/mapping/settings/alias/template/data-stream-rollover scoped runtime-backed acceptance full pass 확보
+  - [x] `HEAD /{index}` 구현
+  - [x] `HEAD /{index}` broad-selector fail-closed local route activation evidence 추가
+  - [x] `PUT /{index}` create-index body(settings/mappings/aliases) parity 보강
+  - [x] `PUT /{index}` live create route activation을 source-owned bounded body semantics에 연결
+  - [x] `GET /{index}` wildcard/comma expansion과 metadata readback parity 보강
+  - [x] `DELETE /{index}` wildcard/error-path parity 보강
+  - [x] `DELETE /{index}` wildcard/error-path local route activation evidence 추가
+  - [x] index create/get/head/delete 응답과 에러 shape를 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] index lifecycle compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] `GET /_mapping`, `GET /{index}/_mapping` 구현
+  - [x] `GET /_mapping`, `GET /{index}/_mapping` live route activation을 source-owned bounded mapping semantics에 연결
+  - [x] `PUT /{index}/_mapping` 구현
+  - [x] `PUT /{index}/_mapping` live route activation을 source-owned bounded update semantics에 연결
+  - [x] mapping read/update happy-path와 incompatible update 실패를 OpenSearch와 비교하는 테스트 추가
+  - [x] mapping compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] `GET /_settings`, `GET /{index}/_settings` 구현
+  - [x] `GET /_settings`, `GET /{index}/_settings` live route activation을 source-owned bounded settings semantics에 연결
+  - [x] `PUT /{index}/_settings` mutable setting update 구현
+  - [x] `PUT /{index}/_settings` live route activation을 source-owned bounded mutable settings semantics에 연결
+  - [x] settings read/update 응답과 validation failure를 OpenSearch와 비교하는 테스트 추가
+  - [x] settings compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] alias read API 응답 shape를 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] alias read compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] alias read APIs parity 보강
+  - [x] alias read APIs live route activation을 source-owned bounded alias semantics에 연결
+  - [x] alias mutation APIs(`PUT/POST /{index}/_alias/{name}`, `POST /_aliases`, `DELETE /{index}/_alias/{name}`) parity 구현
+  - [x] alias mutation APIs live route activation을 source-owned bounded mutation semantics에 연결
+  - [x] alias wildcard/write-index/filter/routing subset을 OpenSearch와 비교하는 테스트 추가
+  - [x] component/composable template route family 구현
+  - [x] component/composable template live route activation을 source-owned bounded template semantics에 연결
+  - [x] component/composable template actual traffic proof를 local route activation test로 추가
+  - [x] legacy template route family 구현
+  - [x] legacy template live route activation을 source-owned bounded legacy-template semantics에 연결
+  - [x] legacy template actual traffic proof를 local route activation test로 추가
+  - [x] template CRUD/readback을 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] template compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] data stream APIs를 구현하거나 명시적 fail-closed contract를 확정
+  - [x] data stream fail-closed local route activation evidence 추가
+  - [x] rollover APIs를 구현하거나 명시적 fail-closed contract를 확정
+  - [x] rollover fail-closed local route activation evidence 추가
+  - [x] data stream/rollover unsupported 또는 supported 동작을 OpenSearch와 비교하는 테스트 추가
+  - [x] data stream/rollover compat runner를 phase-a acceptance entrypoint에 연결
+- [x] Phase A document and write-path parity
+  - [x] document/write-path API family가 source-owned helper 수준이 아니라 `os-node` runtime dispatch/service layer까지 연결되었는지 명시적으로 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 document/write-path family의 실제 `SteelNode` HTTP/runtime path 검증 재개
+  - [x] `PUT /{index}/_doc/{id}` version/seq_no/primary_term/routing/realtime semantics 보강
+  - [x] `PUT /{index}/_doc/{id}` live route activation을 source-owned bounded write semantics에 연결
+  - [x] `PUT /{index}/_doc/{id}` actual traffic proof를 local route activation test로 추가
+  - [x] `POST /{index}/_doc` auto-id generation parity 보강
+  - [x] `POST /{index}/_doc` live route activation을 source-owned generated-id semantics에 연결
+  - [x] `POST /{index}/_doc` actual traffic proof를 local route activation test로 추가
+  - [x] `GET /{index}/_doc/{id}` source filtering and not-found semantics 보강
+  - [x] `GET /{index}/_doc/{id}` live route activation을 source-owned bounded read semantics에 연결
+  - [x] `GET /{index}/_doc/{id}` actual traffic proof를 local route activation test로 추가
+  - [x] `DELETE /{index}/_doc/{id}` HTTP route parity 구현
+  - [x] `DELETE /{index}/_doc/{id}` live route activation을 source-owned bounded delete semantics에 연결
+  - [x] `DELETE /{index}/_doc/{id}` actual traffic proof를 local route activation test로 추가
+  - [x] `POST /{index}/_update/{id}` partial update/upsert/retry_on_conflict subset 구현
+  - [x] `POST /{index}/_update/{id}` live route activation을 source-owned bounded update semantics에 연결
+  - [x] `POST /{index}/_update/{id}` actual traffic proof를 local route activation test로 추가
+  - [x] single-document CRUD happy-path와 version-conflict/not-found 에러를 OpenSearch와 비교하는 테스트 추가
+  - [x] single-document CRUD compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] refresh policy와 visibility timing semantics 보강
+  - [x] `POST /{index}/_refresh` response shape와 post-refresh visibility를 OpenSearch와 비교하는 테스트 추가
+  - [x] refresh compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] `_bulk` and `/{index}/_bulk` metadata parity 보강
+  - [x] bulk item별 index/create/update/delete semantics 보강
+  - [x] bulk partial failure/error item shape를 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] bulk compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] optimistic concurrency(`if_seq_no`, `if_primary_term`) semantics 구현
+  - [x] optimistic concurrency success/conflict cases를 OpenSearch와 비교하는 테스트 추가
+  - [x] routing semantics 구현
+  - [x] custom routing index/get/delete/search visibility를 OpenSearch와 비교하는 테스트 추가
+  - [x] routing compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] replica apply path, retry-safe mapping update, durability/visibility invariants 검증 강화
+  - [x] `tools/run-phase-a-acceptance-harness.sh --mode local --scope document-write-path` preset으로 single-doc/refresh/bulk/routing runtime-backed compare full pass 확보
+  - [x] multi-node Steelsearch write-path integration tests 추가
+- [x] Phase A search parity
+  - [x] search API family가 source-owned helper 수준이 아니라 `os-node` runtime dispatch/service layer까지 연결되었는지 명시적으로 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 search family의 실제 `SteelNode` HTTP/runtime path 검증 재개
+  - [x] `tools/run-phase-a-acceptance-harness.sh --mode local --scope search` preset 추가 및 runtime-backed search compare baseline 확보
+  - [x] search scoped runtime-backed compare에서 `10 passed / 79 failed / 8 skipped` baseline을 search/aggregation/alias/cat/knn concrete drift bucket으로 분해
+  - [x] search fixture prerequisite readback/runtime drift 정리
+    - [x] `cluster_health`
+    - [x] `get_index_aliases_and_settings`
+    - [x] `get_alias_readback`
+    - [x] `get_aliases_readback`
+    - [x] `wildcard_alias_readback`
+    - [x] `cluster_stats_shape`
+    - [x] `get_document`
+    - [x] `get_document_via_alias`
+    - [x] `index_document_via_alias`
+    - [x] `missing_index_error_type`
+  - [x] `_search` core query semantics/runtime drift 정리
+    - [x] `bulk_match_search`
+    - [x] `bool_filter_range`
+    - [x] `match_query_scoring_order_total_hits`
+    - [x] `term_query_total_hits_exactness`
+    - [x] `sorted_paginated_search_window`
+    - [x] `track_total_hits_true_search`
+    - [x] `alias_match_search`
+    - [x] `wildcard_match_search`
+    - [x] `ignore_unavailable_multi_target_search`
+    - [x] `missing_index_search_error`
+    - [x] `malformed_search_body_parse_exception`
+  - [x] unsupported search option fail-closed/runtime drift 정리
+    - [x] `highlight_option_fail_closed`
+    - [x] `suggest_option_fail_closed`
+    - [x] `scroll_option_fail_closed`
+    - [x] `pit_option_fail_closed`
+    - [x] `runtime_mappings_fail_closed`
+    - [x] `allow_no_indices_empty_wildcard_search`
+    - [x] `expand_wildcards_closed_fail_closed`
+    - [x] `highlight_fail_closed`
+    - [x] `rescore_fail_closed`
+    - [x] `collapse_fail_closed`
+    - [x] `suggest_fail_closed`
+    - [x] `pit_fail_closed`
+    - [x] `search_after_fail_closed`
+    - [x] `scroll_fail_closed`
+    - [x] `track_total_hits_fail_closed`
+    - [x] `terminate_after_fail_closed`
+    - [x] `timeout_fail_closed`
+    - [x] `explain_fail_closed`
+    - [x] `profile_fail_closed`
+    - [x] `stored_fields_fail_closed`
+    - [x] `docvalue_fields_fail_closed`
+    - [x] `query_string_fail_closed`
+    - [x] `simple_query_string_fail_closed`
+    - [x] `function_score_fail_closed`
+    - [x] `script_score_fail_closed`
+    - [x] `nested_query_fail_closed`
+    - [x] `geo_distance_fail_closed`
+    - [x] `regexp_query_fail_closed`
+    - [x] `fuzzy_query_fail_closed`
+    - [x] `more_like_this_fail_closed`
+    - [x] `span_query_fail_closed`
+    - [x] `disallow_no_indices_empty_wildcard_fail_closed`
+    - [x] `expand_wildcards_open_search`
+  - [x] aggregation runtime/fail-closed drift 정리
+    - [x] `terms_aggregation`
+    - [x] `metric_aggregations`
+    - [x] `stats_metric_aggregation`
+    - [x] `filter_aggregations`
+    - [x] `top_hits_aggregation`
+    - [x] `top_hits_sorted_aggregation`
+    - [x] `composite_aggregation`
+    - [x] `significant_terms_aggregation`
+    - [x] `geo_bounds_aggregation`
+    - [x] `sum_bucket_pipeline_aggregation`
+    - [x] `date_histogram_aggregation_fail_closed`
+    - [x] `histogram_aggregation_fail_closed`
+    - [x] `range_aggregation_fail_closed`
+    - [x] `cardinality_aggregation_fail_closed`
+    - [x] `terms_order_option_fail_closed`
+    - [x] `significant_terms_background_filter_fail_closed`
+  - [x] k-NN/vector operational drift 정리
+    - [x] `knn_search`
+    - [x] `knn_cosinesimil_search`
+    - [x] `knn_innerproduct_search`
+    - [x] `knn_stats_shape`
+    - [x] `knn_warmup_budget_failure`
+    - [x] `knn_warmup_clear_cache_telemetry_shape`
+    - [x] `knn_unsupported_method_engine_fail_closed`
+    - [x] `knn_unsupported_mode_fail_closed`
+    - [x] `knn_unsupported_method_parameters_fail_closed`
+  - [x] cat API readback drift 정리
+    - [x] `cat_indices_json`
+    - [x] `cat_indices_text_parameters_skip`
+  - [x] search scoped acceptance full-pass blocker 정리
+    - [x] OpenSearch target의 `create:vectors-compat`, `create:vectors-cosine-compat`, `create:vectors-innerproduct-compat` setup failure 원인 확정
+    - [x] k-NN plugin-capable OpenSearch target을 요구사항으로 고정하거나, non-k-NN target에서도 통과 가능한 degraded search preset 분리
+  - [x] `_search` request/response parity matrix를 query family별로 문서화
+  - [x] currently supported query subset(term/match/bool/range 등)의 semantics gap을 정리
+  - [x] supported query subset의 scoring/hit ordering/total hits semantics를 OpenSearch와 비교하는 테스트 추가
+  - [x] sort, pagination, `from`/`size`, `track_total_hits` parity 보강
+  - [x] sort/pagination/track_total_hits를 OpenSearch와 비교하는 테스트 추가
+  - [x] aggregation supported subset의 response shape와 numeric semantics 보강
+  - [x] supported aggregations(metrics/filter/top_hits/composite 등)을 OpenSearch와 비교하는 테스트 추가
+  - [x] shard failure reporting and partial search failure semantics 보강
+  - [x] search error-path(parse_exception, unsupported query, missing index 등)를 OpenSearch와 비교하는 테스트 추가
+  - [x] highlight/suggest/scroll/PIT/profile/explain/rescore/collapse/storeddocvalue options에 대해 구현 또는 fail-closed contract 확정
+  - [x] unsupported search options의 fail-closed 응답이 OpenSearch와 호환되는지 비교 테스트 추가
+- [x] Phase A search parity
+- [x] Phase A snapshot and migration parity
+  - [x] snapshot/migration API family가 source-owned helper/local harness 수준이 아니라 `os-node` runtime dispatch/service layer 또는 실제 `SteelNode` HTTP path까지 연결되었는지 명시적으로 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 snapshot/migration family의 실제 `SteelNode` HTTP/runtime path 검증 재개
+  - [x] repository registration/readback/verification route parity 보강
+  - [x] repository registration/readback/verification live route activation을 source-owned bounded repository semantics에 연결
+  - [x] repository registration/readback/verification actual traffic proof blocker로 concrete `/_snapshot` REST handler visibility 조사
+  - [x] repository registration/readback/verification concrete live REST handler path를 workspace-visible source로 추출
+  - [x] repository registration/readback/verification actual traffic proof blocker로 actual `/_snapshot` route activation 부재 재확인
+  - [x] repository registration/readback/verification actual `/_snapshot` route activation을 source-owned runtime dispatch table에 연결
+  - [x] repository registration/readback/verification actual traffic proof blocker로 `SteelNode::handle_rest_request(...)` snapshot call-site 부재 재확인
+  - [x] repository registration/readback/verification `SteelNode::handle_rest_request(...)` snapshot call-site를 workspace-visible source로 추출
+  - [x] repository registration/readback/verification actual traffic proof blocker로 snapshot repository local route harness 부재 재확인
+  - [x] repository registration/readback/verification snapshot repository local route activation harness를 workspace-visible source로 추출
+  - [x] repository registration/readback/verification actual traffic proof를 local route activation test로 추가
+  - [x] snapshot create/status/restore route parity 보강
+  - [x] snapshot create/status/restore live route activation을 source-owned bounded lifecycle semantics에 연결
+  - [x] snapshot create/status/restore actual traffic proof를 local route activation test로 추가
+  - [x] snapshot delete/cleanup route parity 구현
+  - [x] snapshot delete/cleanup live route activation을 source-owned bounded cleanup semantics에 연결
+  - [x] snapshot delete/cleanup actual traffic proof를 local route activation test로 추가
+  - [x] snapshot lifecycle happy-path와 representative failure cases를 OpenSearch와 비교하는 통합 테스트 추가
+  - [x] snapshot lifecycle compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] restore validation, stale/corrupt metadata fail-closed behavior 보강
+  - [x] restore failure-path를 source-owned stale/corrupt/incompatible validation classes에 연결
+  - [x] restore failure-path를 OpenSearch와 비교하는 테스트 또는 transcript 기반 비교 추가
+  - [x] migration/cutover rehearsal 절차 문서화
+  - [x] OpenSearch source cluster에서 export 후 Steelsearch import/search verification 통합 테스트 추가
+  - [x] `--scope snapshot-migration` preset을 phase-a acceptance entrypoint와 rehearsal에 추가
+  - [x] `--scope snapshot-migration` runtime-backed clean exit 확인
+- [x] Phase A snapshot and migration parity
+  - [x] migration/cutover integration runner를 phase-a acceptance entrypoint에 연결
+  - [x] local OpenSearch `path.repo` mismatch를 degraded-source snapshot skip으로 분리
+- [x] Phase A vector and ML replacement subset 정리
+  - [x] vector/ML subset은 compat fixture만으로 완료 처리하지 않고, `os-node` runtime-connected query/mapping path 또는 explicit fail-closed live route evidence가 있는지 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 vector/ML family의 실제 runtime-connected query/mapping path 검증 재개
+  - [x] `knn_vector` mapping supported subset contract 확정
+  - [x] `knn` query and hybrid search supported subset contract 확정
+  - [x] vector search happy-path를 OpenSearch k-NN plugin과 비교하는 통합 테스트 추가
+  - [x] vector search compat runner를 phase-a acceptance entrypoint에 연결
+  - [x] unsupported vector/ML parameters의 fail-closed error shape를 OpenSearch와 비교하는 테스트 추가
+  - [x] `--scope vector-ml` preset을 phase-a acceptance entrypoint와 rehearsal에 추가
+  - [x] `--scope vector-ml` runtime-backed clean exit 확인
+  - [x] local OpenSearch k-NN plugin 부재를 degraded-source vector skip으로 분리
+- [x] Phase A transport/admin coverage for standalone replacement
+  - [x] transport/admin coverage는 REST helper 존재만으로 완료 처리하지 않고, `os-node` runtime state model과 실제 service/dispatch path 연결이 있는지 검증
+  - [x] 공통 `os-node` runtime API blocker 해소 후 transport/admin family의 실제 service/dispatch path 검증 재개
+  - [x] standalone Steelsearch cluster 운영에 필요한 내부 transport/admin action 목록 재분류
+  - [x] cluster health/state/settings/task/stats 계열 server-side transport handlers 구현 여부 점검
+  - [x] REST path가 내부 transport 또는 service layer와 일관된 상태 모델을 쓰는지 검증
+  - [x] Steelsearch multi-node internal transport integration tests 추가
+  - [x] multi-node transport/admin integration runner를 phase-a acceptance entrypoint에 연결
+  - [x] `--scope transport-admin` preset을 phase-a acceptance entrypoint와 rehearsal에 추가
+  - [x] `--scope transport-admin` runtime-backed clean exit 확인
+- [x] Phase A release gate evidence 정리
+  - [x] release gate evidence는 runtime-connected family만 집계하고, helper-only/local-harness-only 항목은 별도 blocker note와 함께 제외
+  - [x] spec별 supported/unsupported/fail-closed matrix를 최신화
+  - [x] OpenSearch 비교 테스트 결과를 저장하는 evidence 문서 포맷 정의
+  - [x] replacement-critical regression suite 목록 고정
+  - [x] Phase A 완료 판정 체크리스트 작성
+  - [x] release gate test plan에 runtime wiring verification, compile gate, acceptance harness success artifact를 필수 evidence로 명시
+  - [x] `runtime-precheck-report.json`을 replacement-critical regression suite와 canonical evidence format에 반영
+  - [x] `os-node` runtime API 부재 blocker 해소 후 `cargo check -p os-node --features development-runtime --bin steelsearch` 재검증
+  - [x] `tools/run-phase-a-acceptance-harness.sh --mode local` 성공 기준으로 Phase A 실행 검증 재수행
+  - [x] full local acceptance에서 `cluster-health-compat` clean-start drift(`status`, `active_primary_shards`, `active_shards`, `unassigned_shards`)를 OpenSearch baseline과 맞추기
+  - [x] full local acceptance에서 `cluster-settings-compat` dotted-key mutation readback을 OpenSearch nested response shape와 맞추기

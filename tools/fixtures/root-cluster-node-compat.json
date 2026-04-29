@@ -1,0 +1,35 @@
+{
+  "name": "root-cluster-node-compat",
+  "cases": [
+    {
+      "name": "get_root_identity_shape",
+      "method": "GET",
+      "path": "/",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "name",
+          "cluster_name",
+          "cluster_uuid",
+          "version",
+          "tagline"
+        ],
+        "body_exact": {
+          "tagline": "The OpenSearch Project: https://opensearch.org/"
+        },
+        "body_paths_equal": [
+          "tagline"
+        ]
+      }
+    },
+    {
+      "name": "head_root_liveness",
+      "method": "HEAD",
+      "path": "/",
+      "compare": {
+        "expected_status": 200,
+        "expected_body_text": ""
+      }
+    }
+  ]
+}

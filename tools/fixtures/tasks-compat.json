@@ -1,0 +1,40 @@
+{
+  "name": "tasks-compat",
+  "cases": [
+    {
+      "name": "get_cluster_pending_tasks_shape",
+      "method": "GET",
+      "path": "/_cluster/pending_tasks",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "tasks"
+        ]
+      }
+    },
+    {
+      "name": "get_tasks_list_shape",
+      "method": "GET",
+      "path": "/_tasks",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
+      }
+    },
+    {
+      "name": "reject_unknown_task_cancel_shape",
+      "method": "POST",
+      "path": "/_tasks/_cancel?task_id=node-a:999",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes",
+          "node_failures"
+        ],
+        "body_paths_equal": []
+      }
+    }
+  ]
+}

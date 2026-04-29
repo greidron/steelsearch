@@ -1,0 +1,11 @@
+target
+.git
+.gradle
+build
+supports
+tools
+docker-compose*.yml
+**/__pycache__
+**/*.pyc
+target-docker-rehearsal
+docker-data

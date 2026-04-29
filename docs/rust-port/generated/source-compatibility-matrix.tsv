@@ -1,0 +1,755 @@
+surface	status	category	identifier	detail	source	line
+rest_route	planned	GET	/_ingest/processor/grok		/home/ubuntu/OpenSearch/modules/ingest-common/src/main/java/org/opensearch/ingest/common/GrokProcessorGetAction.java	162
+rest_route	planned	GET	/_msearch/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	75
+rest_route	planned	POST	/_msearch/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	76
+rest_route	planned	GET	/{index}/_msearch/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	77
+rest_route	planned	POST	/{index}/_msearch/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	78
+rest_route	planned	GET	/_render/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestRenderSearchTemplateAction.java	56
+rest_route	planned	POST	/_render/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestRenderSearchTemplateAction.java	57
+rest_route	planned	GET	/_render/template/{id}		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestRenderSearchTemplateAction.java	58
+rest_route	planned	POST	/_render/template/{id}		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestRenderSearchTemplateAction.java	59
+rest_route	planned	GET	/_search/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	68
+rest_route	planned	POST	/_search/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	69
+rest_route	planned	GET	/{index}/_search/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	70
+rest_route	planned	POST	/{index}/_search/template		/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	71
+rest_route	planned	GET	/_scripts/painless/_context		/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessContextAction.java	215
+rest_route	planned	GET	/_scripts/painless/_execute		/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
+rest_route	planned	POST	/_scripts/painless/_execute		/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
+rest_route	planned		"/_opensearch_dashboards" + route.getPath(		/home/ubuntu/OpenSearch/modules/opensearch-dashboards/src/main/java/org/opensearch/dashboards/OpenSearchDashboardsModulePlugin.java	176
+rest_route	planned	GET	"/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	112
+rest_route	planned	POST	"/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	113
+rest_route	planned	GET	"/{index}/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	114
+rest_route	planned	POST	"/{index}/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	115
+rest_route	planned	POST	/{index}/_delete_by_query		/home/ubuntu/OpenSearch/modules/reindex/src/main/java/org/opensearch/index/reindex/RestDeleteByQueryAction.java	57
+rest_route	planned	POST	/_reindex		/home/ubuntu/OpenSearch/modules/reindex/src/main/java/org/opensearch/index/reindex/RestReindexAction.java	62
+rest_route	planned	POST	/_update_by_query/{taskId}/_rethrottle		/home/ubuntu/OpenSearch/modules/reindex/src/main/java/org/opensearch/index/reindex/RestRethrottleAction.java	60
+rest_route	planned	POST	/_delete_by_query/{taskId}/_rethrottle		/home/ubuntu/OpenSearch/modules/reindex/src/main/java/org/opensearch/index/reindex/RestRethrottleAction.java	61
+rest_route	planned	POST	/_reindex/{taskId}/_rethrottle		/home/ubuntu/OpenSearch/modules/reindex/src/main/java/org/opensearch/index/reindex/RestRethrottleAction.java	62
+rest_route	planned	POST	/{index}/_update_by_query		/home/ubuntu/OpenSearch/modules/reindex/src/main/java/org/opensearch/index/reindex/RestUpdateByQueryAction.java	58
+rest_route	out-of-scope	GET	/_flight/stats		/home/ubuntu/OpenSearch/plugins/arrow-flight-rpc/src/main/java/org/opensearch/arrow/flight/stats/FlightStatsRestHandler.java	39
+rest_route	out-of-scope	GET	/_flight/stats/{nodeId}		/home/ubuntu/OpenSearch/plugins/arrow-flight-rpc/src/main/java/org/opensearch/arrow/flight/stats/FlightStatsRestHandler.java	40
+rest_route	out-of-scope	GET	/_nodes/flight/stats		/home/ubuntu/OpenSearch/plugins/arrow-flight-rpc/src/main/java/org/opensearch/arrow/flight/stats/FlightStatsRestHandler.java	41
+rest_route	out-of-scope	GET	/_nodes/{nodeId}/flight/stats		/home/ubuntu/OpenSearch/plugins/arrow-flight-rpc/src/main/java/org/opensearch/arrow/flight/stats/FlightStatsRestHandler.java	42
+rest_route	out-of-scope	GET	/_cat/example		/home/ubuntu/OpenSearch/plugins/examples/rest-handler/src/main/java/org/opensearch/example/resthandler/ExampleCatAction.java	60
+rest_route	out-of-scope	POST	/_cat/example		/home/ubuntu/OpenSearch/plugins/examples/rest-handler/src/main/java/org/opensearch/example/resthandler/ExampleCatAction.java	60
+rest_route	out-of-scope	PUT	/_steelsearch/persistent_task/{task_id}		/home/ubuntu/OpenSearch/plugins/persistent-task-live-fixture/src/main/java/org/opensearch/example/persistenttask/RestPersistentTaskLiveFixtureAction.java	38
+rest_route	out-of-scope	DELETE	/_steelsearch/persistent_task/{task_id}		/home/ubuntu/OpenSearch/plugins/persistent-task-live-fixture/src/main/java/org/opensearch/example/persistenttask/RestPersistentTaskLiveFixtureAction.java	39
+rest_route	out-of-scope	POST	/test/_stream		/home/ubuntu/OpenSearch/plugins/transport-reactor-netty4/src/internalClusterTest/java/org/opensearch/http/reactor/netty4/ReactorNetty4StreamingTracingIT.java	100
+rest_route	out-of-scope	POST	_wlm/workload_group/		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestCreateWorkloadGroupAction.java	59
+rest_route	out-of-scope	PUT	_wlm/workload_group/		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestCreateWorkloadGroupAction.java	59
+rest_route	out-of-scope	DELETE	_wlm/workload_group/{name}		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestDeleteWorkloadGroupAction.java	51
+rest_route	out-of-scope	GET	_wlm/workload_group/		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestGetWorkloadGroupAction.java	51
+rest_route	out-of-scope	GET	_wlm/workload_group/{name}		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestGetWorkloadGroupAction.java	51
+rest_route	out-of-scope	POST	_wlm/workload_group/{name}		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestUpdateWorkloadGroupAction.java	59
+rest_route	out-of-scope	PUT	_wlm/workload_group/{name}		/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestUpdateWorkloadGroupAction.java	59
+rest_route	planned	GET	/_field_caps		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java	61
+rest_route	planned	POST	/_field_caps		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java	62
+rest_route	planned	GET	/{index}/_field_caps		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java	63
+rest_route	planned	POST	/{index}/_field_caps		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java	64
+rest_route	implemented	GET	/		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestMainAction.java	63
+rest_route	implemented	HEAD	/		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestMainAction.java	63
+rest_route	planned	POST	/_cluster/voting_config_exclusions		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestAddVotingConfigExclusionAction.java	75
+rest_route	planned	POST	/_tasks/_cancel		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCancelTasksAction.java	71
+rest_route	planned	POST	/_tasks/{task_id}/_cancel		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCancelTasksAction.java	71
+rest_route	planned	POST	/_snapshot/{repository}/_cleanup		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCleanupRepositoryAction.java	60
+rest_route	planned	DELETE	/_cluster/voting_config_exclusions		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClearVotingConfigExclusionsAction.java	57
+rest_route	planned	PUT	/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCloneSnapshotAction.java	62
+rest_route	planned	GET	/_cluster/allocation/explain		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterAllocationExplainAction.java	65
+rest_route	planned	POST	/_cluster/allocation/explain		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterAllocationExplainAction.java	65
+rest_route	planned	DELETE	/_cluster/routing/awareness/weights		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterDeleteWeightedRoutingAction.java	41
+rest_route	planned	DELETE	/_cluster/routing/awareness/{attribute}/weights		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterDeleteWeightedRoutingAction.java	42
+rest_route	planned	GET	/_cluster/settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetSettingsAction.java	82
+rest_route	planned	GET	/_cluster/routing/awareness/{attribute}/weights		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetWeightedRoutingAction.java	38
+rest_route	stubbed	GET	/_cluster/health		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java	69
+rest_route	planned	GET	/_cluster/health/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java	69
+rest_route	planned	PUT	/_cluster/routing/awareness/{attribute}/weights		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterPutWeightedRoutingAction.java	38
+rest_route	planned	POST	/_cluster/reroute		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterRerouteAction.java	95
+rest_route	planned	GET	/_search_shards		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java	64
+rest_route	planned	POST	/_search_shards		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java	65
+rest_route	planned	GET	/{index}/_search_shards		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java	66
+rest_route	planned	POST	/{index}/_search_shards		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java	67
+rest_route	planned	GET	/_cluster/state		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStateAction.java	95
+rest_route	planned	GET	/_cluster/state/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStateAction.java	96
+rest_route	planned	GET	/_cluster/state/{metric}/{indices}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStateAction.java	97
+rest_route	planned	GET	/_cluster/stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStatsAction.java	70
+rest_route	planned	GET	/_cluster/stats/nodes/{nodeId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStatsAction.java	71
+rest_route	planned	GET	/_cluster/stats/{metric}/nodes/{nodeId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStatsAction.java	72
+rest_route	planned	GET	/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStatsAction.java	73
+rest_route	planned	PUT	/_cluster/settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterUpdateSettingsAction.java	67
+rest_route	planned	POST	/_snapshot/{repository}/{snapshot}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCreateSnapshotAction.java	63
+rest_route	planned	PUT	/_snapshot/{repository}/{snapshot}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCreateSnapshotAction.java	63
+rest_route	planned	PUT	/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestDecommissionAction.java	35
+rest_route	planned	DELETE	/_cluster/decommission/awareness		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestDeleteDecommissionStateAction.java	33
+rest_route	planned	DELETE	/_snapshot/{repository}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestDeleteRepositoryAction.java	60
+rest_route	planned	DELETE	/_snapshot/{repository}/{snapshot}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestDeleteSnapshotAction.java	61
+rest_route	planned	DELETE	/_scripts/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestDeleteStoredScriptAction.java	58
+rest_route	planned	GET	/_cluster/decommission/awareness/{awareness_attribute_name}/_status		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetDecommissionStateAction.java	33
+rest_route	planned	GET	/_snapshot		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetRepositoriesAction.java	76
+rest_route	planned	GET	/_snapshot/{repository}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetRepositoriesAction.java	76
+rest_route	planned	GET	/_script_context		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetScriptContextAction.java	57
+rest_route	planned	GET	/_script_language		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetScriptLanguageAction.java	57
+rest_route	planned	GET	/_snapshot/{repository}/{snapshot}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetSnapshotsAction.java	61
+rest_route	planned	GET	/_scripts/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetStoredScriptAction.java	58
+rest_route	planned	GET	/_tasks/{task_id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetTaskAction.java	58
+rest_route	planned	GET	/_tasks		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestListTasksAction.java	75
+rest_route	planned	GET	/_nodes/hot_threads		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesHotThreadsAction.java	114
+rest_route	planned	GET	/_nodes/{nodeId}/hot_threads		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesHotThreadsAction.java	114
+rest_route	planned	GET	/_nodes		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesInfoAction.java	71
+rest_route	planned	GET	/_nodes/{nodeId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesInfoAction.java	73
+rest_route	planned	GET	/_nodes/{nodeId}/{metrics}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesInfoAction.java	74
+rest_route	planned	GET	/_nodes/{nodeId}/info/{metrics}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesInfoAction.java	76
+rest_route	planned	GET	/_nodes/stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java	70
+rest_route	planned	GET	/_nodes/{nodeId}/stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java	71
+rest_route	planned	GET	/_nodes/stats/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java	72
+rest_route	planned	GET	/_nodes/{nodeId}/stats/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java	73
+rest_route	planned	GET	/_nodes/stats/{metric}/{index_metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java	74
+rest_route	planned	GET	/_nodes/{nodeId}/stats/{metric}/{index_metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java	75
+rest_route	planned	GET	/_nodes/usage		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesUsageAction.java	68
+rest_route	planned	GET	/_nodes/{nodeId}/usage		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesUsageAction.java	69
+rest_route	planned	GET	/_nodes/usage/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesUsageAction.java	70
+rest_route	planned	GET	/_nodes/{nodeId}/usage/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesUsageAction.java	71
+rest_route	planned	GET	/_cluster/pending_tasks		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPendingClusterTasksAction.java	59
+rest_route	planned	POST	/_filecache/prune		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPruneCacheAction.java	36
+rest_route	planned	POST	/_snapshot/{repository}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutRepositoryAction.java	63
+rest_route	planned	PUT	/_snapshot/{repository}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutRepositoryAction.java	63
+rest_route	planned	POST	/_scripts/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutStoredScriptAction.java	65
+rest_route	planned	PUT	/_scripts/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutStoredScriptAction.java	66
+rest_route	planned	POST	/_scripts/{id}/{context}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutStoredScriptAction.java	67
+rest_route	planned	PUT	/_scripts/{id}/{context}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutStoredScriptAction.java	68
+rest_route	planned	POST	/_nodes/reload_secure_settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestReloadSecureSettingsAction.java	89
+rest_route	planned	POST	/_nodes/{nodeId}/reload_secure_settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestReloadSecureSettingsAction.java	89
+rest_route	planned	GET	/_remote/info		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRemoteClusterInfoAction.java	56
+rest_route	planned	GET	/_remotestore/metadata/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRemoteStoreMetadataAction.java	34
+rest_route	planned	GET	/_remotestore/metadata/{index}/{shard_id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRemoteStoreMetadataAction.java	34
+rest_route	planned	GET	/_remotestore/stats/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRemoteStoreStatsAction.java	35
+rest_route	planned	GET	/_remotestore/stats/{index}/{shard_id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRemoteStoreStatsAction.java	35
+rest_route	planned	POST	/_remotestore/_restore		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRestoreRemoteStoreAction.java	32
+rest_route	planned	POST	/_snapshot/{repository}/{snapshot}/_restore		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestRestoreSnapshotAction.java	60
+rest_route	planned	GET	/_snapshot/{repository}/{snapshot}/{index}/_status		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java	64
+rest_route	planned	GET	/_snapshot/{repository}/{snapshot}/_status		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java	65
+rest_route	planned	GET	/_snapshot/{repository}/_status		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java	66
+rest_route	planned	GET	/_snapshot/_status		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java	67
+rest_route	planned	POST	/_snapshot/{repository}/_verify		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestVerifyRepositoryAction.java	60
+rest_route	planned	GET	_wlm/stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	62
+rest_route	planned	GET	_wlm/{nodeId}/stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	63
+rest_route	planned	GET	_wlm/stats/{workloadGroupId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	64
+rest_route	planned	GET	_wlm/{nodeId}/stats/{workloadGroupId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	65
+rest_route	planned	GET	_list/wlm_stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	66
+rest_route	planned	GET	_list/wlm_stats/{nodeId}/stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	67
+rest_route	planned	GET	_list/wlm_stats/stats/{workloadGroupId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	68
+rest_route	planned	GET	_list/wlm_stats/{nodeId}/stats/{workloadGroupId}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestWlmStatsAction.java	69
+rest_route	planned	DELETE	/_dangling/{index_uuid}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/dangling/RestDeleteDanglingIndexAction.java	62
+rest_route	planned	POST	/_dangling/{index_uuid}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/dangling/RestImportDanglingIndexAction.java	61
+rest_route	planned	GET	/_dangling		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/dangling/RestListDanglingIndicesAction.java	55
+rest_route	planned	PUT	/{index}/_block/{block}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestAddIndexBlockAction.java	62
+rest_route	planned	GET	/_analyze		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestAnalyzeAction.java	78
+rest_route	planned	POST	/_analyze		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestAnalyzeAction.java	79
+rest_route	planned	GET	/{index}/_analyze		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestAnalyzeAction.java	80
+rest_route	planned	POST	/{index}/_analyze		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestAnalyzeAction.java	81
+rest_route	planned	POST	/_cache/clear		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestClearIndicesCacheAction.java	59
+rest_route	planned	POST	/{index}/_cache/clear		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestClearIndicesCacheAction.java	59
+rest_route	planned	POST	/_close		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCloseIndexAction.java	63
+rest_route	planned	POST	/{index}/_close		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCloseIndexAction.java	63
+rest_route	planned	PUT	/_data_stream/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCreateDataStreamAction.java	58
+rest_route	stubbed	PUT	/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCreateIndexAction.java	66
+rest_route	planned	GET	/_data_stream/_stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDataStreamsStatsAction.java	61
+rest_route	planned	GET	/_data_stream/{name}/_stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDataStreamsStatsAction.java	62
+rest_route	planned	DELETE	/_component_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComponentTemplateAction.java	59
+rest_route	planned	DELETE	/_index_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComposableIndexTemplateAction.java	59
+rest_route	planned	DELETE	/_data_stream/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteDataStreamAction.java	59
+rest_route	planned	DELETE	/		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
+rest_route	stubbed	DELETE	/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
+rest_route	planned	DELETE	/_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexTemplateAction.java	58
+rest_route	planned	GET	/_flush		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	62
+rest_route	planned	POST	/_flush		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	63
+rest_route	planned	GET	/{index}/_flush		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	64
+rest_route	planned	POST	/{index}/_flush		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	65
+rest_route	planned	POST	/_forcemerge		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestForceMergeAction.java	64
+rest_route	planned	POST	/{index}/_forcemerge		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestForceMergeAction.java	64
+rest_route	planned	GET	/_alias		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	77
+rest_route	planned	GET	/_aliases		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	78
+rest_route	planned	GET	/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	79
+rest_route	planned	HEAD	/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	80
+rest_route	planned	GET	/{index}/_alias		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	81
+rest_route	planned	HEAD	/{index}/_alias		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	82
+rest_route	planned	GET	/{index}/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	83
+rest_route	planned	HEAD	/{index}/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java	84
+rest_route	planned	GET	/_component_template		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComponentTemplateAction.java	66
+rest_route	planned	GET	/_component_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComponentTemplateAction.java	67
+rest_route	planned	HEAD	/_component_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComponentTemplateAction.java	68
+rest_route	planned	GET	/_index_template		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComposableIndexTemplateAction.java	66
+rest_route	planned	GET	/_index_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComposableIndexTemplateAction.java	67
+rest_route	planned	HEAD	/_index_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComposableIndexTemplateAction.java	68
+rest_route	planned	GET	/_data_stream		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetDataStreamsAction.java	58
+rest_route	planned	GET	/_data_stream/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetDataStreamsAction.java	58
+rest_route	planned	GET	/_mapping/field/{fields}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetFieldMappingAction.java	73
+rest_route	planned	GET	/{index}/_mapping/field/{fields}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetFieldMappingAction.java	73
+rest_route	planned	GET	/_template		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java	69
+rest_route	planned	GET	/_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java	69
+rest_route	planned	HEAD	/_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java	69
+rest_route	stubbed	GET	/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java	65
+rest_route	planned	HEAD	/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java	65
+rest_route	planned	GET	/{index}/ingestion/_state		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIngestionStateAction.java	40
+rest_route	planned	GET	/_mapping		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java	85
+rest_route	planned	GET	/_mappings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java	86
+rest_route	planned	GET	/{index}/_mapping		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java	87
+rest_route	planned	GET	/{index}/_mappings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java	88
+rest_route	planned	GET	/_settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java	64
+rest_route	planned	GET	/_settings/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java	65
+rest_route	planned	GET	/{index}/_settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java	66
+rest_route	planned	GET	/{index}/_settings/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java	67
+rest_route	planned	GET	/{index}/_setting/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java	68
+rest_route	planned	DELETE	/{index}/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexDeleteAliasesAction.java	61
+rest_route	planned	DELETE	/{index}/_aliases/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexDeleteAliasesAction.java	61
+rest_route	planned	POST	/{index}/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	66
+rest_route	planned	PUT	/{index}/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	67
+rest_route	planned	POST	/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	68
+rest_route	planned	PUT	/_alias/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	69
+rest_route	planned	POST	/{index}/_aliases/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	70
+rest_route	planned	PUT	/{index}/_aliases/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	71
+rest_route	planned	POST	/_aliases/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	72
+rest_route	planned	PUT	/_aliases/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	73
+rest_route	planned	PUT	/{index}/_alias		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	74
+rest_route	planned	PUT	/{index}/_aliases		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	75
+rest_route	planned	PUT	/_alias		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	76
+rest_route	planned	POST	/_aliases		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesAliasesAction.java	65
+rest_route	planned	GET	/_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesSegmentsAction.java	59
+rest_route	planned	GET	/{index}/_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesSegmentsAction.java	59
+rest_route	planned	GET	/_shard_stores		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesShardStoresAction.java	65
+rest_route	planned	GET	/{index}/_shard_stores		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesShardStoresAction.java	65
+rest_route	planned	GET	/_stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesStatsAction.java	70
+rest_route	planned	GET	/_stats/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesStatsAction.java	71
+rest_route	planned	GET	/{index}/_stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesStatsAction.java	72
+rest_route	planned	GET	/{index}/_stats/{metric}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesStatsAction.java	73
+rest_route	planned	POST	/_open		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestOpenIndexAction.java	67
+rest_route	planned	POST	/{index}/_open		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestOpenIndexAction.java	67
+rest_route	planned	POST	/{index}/ingestion/_pause		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPauseIngestionAction.java	40
+rest_route	planned	POST	/_component_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutComponentTemplateAction.java	61
+rest_route	planned	PUT	/_component_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutComponentTemplateAction.java	61
+rest_route	planned	POST	/_index_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutComposableIndexTemplateAction.java	61
+rest_route	planned	PUT	/_index_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutComposableIndexTemplateAction.java	61
+rest_route	planned	POST	/_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutIndexTemplateAction.java	65
+rest_route	planned	PUT	/_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutIndexTemplateAction.java	65
+rest_route	planned	POST	/{index}/_mapping		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	69
+rest_route	planned	PUT	/{index}/_mapping		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	70
+rest_route	planned	POST	/{index}/_mappings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	71
+rest_route	planned	PUT	/{index}/_mappings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	72
+rest_route	planned	GET	/_recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRecoveryAction.java	59
+rest_route	planned	GET	/{index}/_recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRecoveryAction.java	59
+rest_route	planned	GET	/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	64
+rest_route	planned	POST	/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	65
+rest_route	planned	GET	/{index}/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	66
+rest_route	planned	POST	/{index}/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	67
+rest_route	planned	POST	/{index}/_shrink/{target}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResizeHandler.java	142
+rest_route	planned	PUT	/{index}/_shrink/{target}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResizeHandler.java	142
+rest_route	planned	POST	/{index}/_split/{target}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResizeHandler.java	166
+rest_route	planned	PUT	/{index}/_split/{target}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResizeHandler.java	166
+rest_route	planned	POST	/{index}/_clone/{target}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResizeHandler.java	190
+rest_route	planned	PUT	/{index}/_clone/{target}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResizeHandler.java	190
+rest_route	planned	GET	/_resolve/index/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResolveIndexAction.java	60
+rest_route	planned	POST	/{index}/ingestion/_resume		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestResumeIngestionAction.java	37
+rest_route	planned	POST	/{index}/_rollover		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRolloverIndexAction.java	63
+rest_route	planned	POST	/{index}/_rollover/{new_index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRolloverIndexAction.java	63
+rest_route	planned	POST	/{index}/_scale		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestScaleIndexAction.java	35
+rest_route	planned	POST	/_index_template/_simulate_index/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSimulateIndexTemplateAction.java	61
+rest_route	planned	POST	/_index_template/_simulate		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSimulateTemplateAction.java	60
+rest_route	planned	POST	/_index_template/_simulate/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSimulateTemplateAction.java	60
+rest_route	planned	GET	/_flush/synced		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSyncedFlushAction.java	74
+rest_route	planned	POST	/_flush/synced		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSyncedFlushAction.java	75
+rest_route	planned	GET	/{index}/_flush/synced		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSyncedFlushAction.java	76
+rest_route	planned	POST	/{index}/_flush/synced		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestSyncedFlushAction.java	77
+rest_route	planned	PUT	/_settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestUpdateSettingsAction.java	65
+rest_route	planned	PUT	/{index}/_settings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestUpdateSettingsAction.java	65
+rest_route	planned	POST	/_upgrade		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestUpgradeAction.java	59
+rest_route	planned	POST	/{index}/_upgrade		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestUpgradeAction.java	59
+rest_route	planned	GET	/_upgrade		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestUpgradeStatusAction.java	59
+rest_route	planned	GET	/{index}/_upgrade		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestUpgradeStatusAction.java	59
+rest_route	planned	GET	/_validate/query		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestValidateQueryAction.java	69
+rest_route	planned	POST	/_validate/query		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestValidateQueryAction.java	70
+rest_route	planned	GET	/{index}/_validate/query		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestValidateQueryAction.java	71
+rest_route	planned	POST	/{index}/_validate/query		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestValidateQueryAction.java	72
+rest_route	planned	GET	/_cat/aliases		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestAliasAction.java	61
+rest_route	planned	GET	/_cat/aliases/{alias}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestAliasAction.java	61
+rest_route	planned	GET	/_cat/allocation		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestAllocationAction.java	72
+rest_route	planned	GET	/_cat/allocation/{nodes}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestAllocationAction.java	72
+rest_route	planned	GET	/_cat		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestCatAction.java	69
+rest_route	planned	GET	/_cat/recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestCatRecoveryAction.java	72
+rest_route	planned	GET	/_cat/recovery/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestCatRecoveryAction.java	72
+rest_route	planned	GET	/_cat/count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestCountAction.java	65
+rest_route	planned	GET	/_cat/count/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestCountAction.java	65
+rest_route	planned	GET	/_cat/fielddata		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestFielddataAction.java	60
+rest_route	planned	GET	/_cat/fielddata/{fields}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestFielddataAction.java	60
+rest_route	planned	GET	/_cat/health		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestHealthAction.java	58
+rest_route	planned	GET	/_cat/indices		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestIndicesAction.java	117
+rest_route	planned	GET	/_cat/indices/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestIndicesAction.java	117
+rest_route	planned	GET	/_cat/nodeattrs		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestNodeAttrsAction.java	69
+rest_route	planned	GET	/_cat/nodes		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestNodesAction.java	98
+rest_route	planned	GET	/_cat/pending_tasks		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPendingClusterTasksAction.java	61
+rest_route	planned	GET	/_cat/pit_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java	49
+rest_route	planned	GET	/_cat/pit_segments/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java	49
+rest_route	planned	GET	/_cat/plugins		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPluginsAction.java	68
+rest_route	planned	GET	/_cat/repositories		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestRepositoriesAction.java	61
+rest_route	planned	GET	/_cat/segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestSegmentsAction.java	81
+rest_route	planned	GET	/_cat/segments/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestSegmentsAction.java	81
+rest_route	planned	GET	/_cat/shards		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestShardsAction.java	92
+rest_route	planned	GET	/_cat/shards/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestShardsAction.java	92
+rest_route	planned	GET	/_cat/snapshots		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestSnapshotAction.java	68
+rest_route	planned	GET	/_cat/snapshots/{repository}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestSnapshotAction.java	68
+rest_route	planned	GET	/_cat/tasks		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestTasksAction.java	79
+rest_route	planned	GET	/_cat/templates		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestTemplatesAction.java	66
+rest_route	planned	GET	/_cat/templates/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestTemplatesAction.java	66
+rest_route	planned	GET	/_cat/thread_pool		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestThreadPoolAction.java	81
+rest_route	planned	GET	/_cat/thread_pool/{thread_pool_patterns}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestThreadPoolAction.java	81
+rest_route	planned	POST	/_bulk		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkAction.java	77
+rest_route	planned	POST	/{index}/_bulk		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkAction.java	77
+rest_route	planned	PUT	/_bulk		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkAction.java	77
+rest_route	planned	PUT	/{index}/_bulk		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkAction.java	77
+rest_route	planned	POST	/_bulk/stream		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkStreamingAction.java	77
+rest_route	planned	PUT	/_bulk/stream		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkStreamingAction.java	78
+rest_route	planned	POST	/{index}/_bulk/stream		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkStreamingAction.java	79
+rest_route	planned	PUT	/{index}/_bulk/stream		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkStreamingAction.java	80
+rest_route	planned	DELETE	/{index}/_doc/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestDeleteAction.java	60
+rest_route	stubbed	GET	/{index}/_doc/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetAction.java	71
+rest_route	planned	HEAD	/{index}/_doc/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetAction.java	71
+rest_route	planned	GET	/{index}/_source/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetSourceAction.java	70
+rest_route	planned	HEAD	/{index}/_source/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetSourceAction.java	70
+rest_route	planned	POST	/{index}/_doc/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestIndexAction.java	65
+rest_route	stubbed	PUT	/{index}/_doc/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestIndexAction.java	65
+rest_route	planned	POST	/{index}/_create/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestIndexAction.java	87
+rest_route	planned	PUT	/{index}/_create/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestIndexAction.java	87
+rest_route	planned	POST	/{index}/_doc		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestIndexAction.java	124
+rest_route	planned	GET	/_mget		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiGetAction.java	68
+rest_route	planned	GET	/{index}/_mget		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiGetAction.java	68
+rest_route	planned	POST	/_mget		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiGetAction.java	68
+rest_route	planned	POST	/{index}/_mget		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiGetAction.java	68
+rest_route	planned	GET	/_mtermvectors		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiTermVectorsAction.java	62
+rest_route	planned	POST	/_mtermvectors		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiTermVectorsAction.java	63
+rest_route	planned	GET	/{index}/_mtermvectors		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiTermVectorsAction.java	64
+rest_route	planned	POST	/{index}/_mtermvectors		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiTermVectorsAction.java	65
+rest_route	planned	GET	/{index}/_termvectors		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java	68
+rest_route	planned	POST	/{index}/_termvectors		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java	69
+rest_route	planned	GET	/{index}/_termvectors/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java	70
+rest_route	planned	POST	/{index}/_termvectors/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java	71
+rest_route	planned	POST	/{index}/_update/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestUpdateAction.java	64
+rest_route	planned	DELETE	/_ingest/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestDeletePipelineAction.java	58
+rest_route	planned	GET	/_ingest/pipeline		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestGetPipelineAction.java	61
+rest_route	planned	GET	/_ingest/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestGetPipelineAction.java	61
+rest_route	planned	PUT	/_ingest/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestPutPipelineAction.java	62
+rest_route	planned	GET	/_ingest/pipeline/{id}/_simulate		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	63
+rest_route	planned	POST	/_ingest/pipeline/{id}/_simulate		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	64
+rest_route	planned	GET	/_ingest/pipeline/_simulate		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	65
+rest_route	planned	POST	/_ingest/pipeline/_simulate		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	66
+rest_route	planned	GET	/_list/indices		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
+rest_route	planned	GET	/_list/indices/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
+rest_route	planned	GET	/_list		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestListAction.java	45
+rest_route	planned	GET	/_list/shards		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestShardsListAction.java	35
+rest_route	planned	GET	/_list/shards/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestShardsListAction.java	35
+rest_route	planned	DELETE	/_search/scroll		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestClearScrollAction.java	58
+rest_route	planned	DELETE	/_search/scroll/{scroll_id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestClearScrollAction.java	58
+rest_route	planned	GET	/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	71
+rest_route	planned	POST	/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	72
+rest_route	planned	GET	/{index}/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	73
+rest_route	planned	POST	/{index}/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	74
+rest_route	planned	POST	/{index}/_search/point_in_time		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCreatePitAction.java	54
+rest_route	planned	DELETE	/_search/point_in_time		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
+rest_route	planned	DELETE	/_search/point_in_time/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
+rest_route	planned	DELETE	/_search/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeleteSearchPipelineAction.java	35
+rest_route	planned	GET	/{index}/_explain/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestExplainAction.java	62
+rest_route	planned	POST	/{index}/_explain/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestExplainAction.java	62
+rest_route	planned	GET	/_search/point_in_time/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetAllPitsAction.java	88
+rest_route	planned	GET	/_search/pipeline		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetSearchPipelineAction.java	36
+rest_route	planned	GET	/_search/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetSearchPipelineAction.java	36
+rest_route	planned	GET	/_msearch		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java	96
+rest_route	planned	POST	/_msearch		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java	97
+rest_route	planned	GET	/{index}/_msearch		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java	98
+rest_route	planned	POST	/{index}/_msearch		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java	99
+rest_route	planned	PUT	/_search/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestPutSearchPipelineAction.java	38
+rest_route	planned	GET	/_search		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java	125
+rest_route	planned	POST	/_search		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java	126
+rest_route	planned	GET	/{index}/_search		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java	127
+rest_route	planned	POST	/{index}/_search		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java	128
+rest_route	planned	GET	/_search/scroll		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	70
+rest_route	planned	POST	/_search/scroll		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	71
+rest_route	planned	GET	/_search/scroll/{scroll_id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	72
+rest_route	planned	POST	/_search/scroll/{scroll_id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	73
+rest_route	planned	POST	"/{index}/_tier/" + targetTier		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestBaseTierAction.java	39
+rest_route	planned	POST	/_tier/_cancel/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestCancelTierAction.java	39
+rest_route	planned	GET	/{index}/_tier		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestGetTieringStatusAction.java	37
+rest_route	planned	GET	/_tier/all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestListTieringStatusAction.java	39
+rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestClearCacheHandler.java	58
+rest_route	planned	DELETE	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestDeleteModelHandler.java	47
+rest_route	planned	GET	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestGetModelHandler.java	46
+rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	98
+rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	99
+rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/stats/"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	100
+rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/stats/{stat}"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	101
+rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + URL_PATH		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNWarmupHandler.java	61
+rest_route	planned	GET	String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestSearchModelHandler.java	57
+rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestSearchModelHandler.java	58
+rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java	73
+rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java	74
+transport_action	planned	action	MainAction.INSTANCE	TransportMainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	656
+transport_action	planned	action	NodesInfoAction.INSTANCE	TransportNodesInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	657
+transport_action	planned	action	RemoteInfoAction.INSTANCE	TransportRemoteInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	658
+transport_action	planned	action	NodesStatsAction.INSTANCE	TransportNodesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	659
+transport_action	planned	action	WlmStatsAction.INSTANCE	TransportWlmStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	660
+transport_action	planned	action	RemoteStoreStatsAction.INSTANCE	TransportRemoteStoreStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	661
+transport_action	planned	action	RemoteStoreMetadataAction.INSTANCE	TransportRemoteStoreMetadataAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	662
+transport_action	planned	action	NodesUsageAction.INSTANCE	TransportNodesUsageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	663
+transport_action	planned	action	NodesHotThreadsAction.INSTANCE	TransportNodesHotThreadsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	664
+transport_action	planned	action	ListTasksAction.INSTANCE	TransportListTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	665
+transport_action	planned	action	GetTaskAction.INSTANCE	TransportGetTaskAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	666
+transport_action	planned	action	CancelTasksAction.INSTANCE	TransportCancelTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	667
+transport_action	planned	action	AddVotingConfigExclusionsAction.INSTANCE	TransportAddVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	669
+transport_action	planned	action	ClearVotingConfigExclusionsAction.INSTANCE	TransportClearVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	670
+transport_action	planned	action	ClusterAllocationExplainAction.INSTANCE	TransportClusterAllocationExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	671
+transport_action	planned	action	ClusterStatsAction.INSTANCE	TransportClusterStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	672
+transport_action	planned	action	ClusterStateAction.INSTANCE	TransportClusterStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	673
+transport_action	planned	action	GetTermVersionAction.INSTANCE	TransportGetTermVersionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	674
+transport_action	planned	action	ClusterHealthAction.INSTANCE	TransportClusterHealthAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	675
+transport_action	planned	action	ClusterUpdateSettingsAction.INSTANCE	TransportClusterUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	676
+transport_action	planned	action	ClusterRerouteAction.INSTANCE	TransportClusterRerouteAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	677
+transport_action	planned	action	ClusterSearchShardsAction.INSTANCE	TransportClusterSearchShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	678
+transport_action	planned	action	PendingClusterTasksAction.INSTANCE	TransportPendingClusterTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	679
+transport_action	planned	action	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	680
+transport_action	planned	action	PutRepositoryAction.INSTANCE	TransportPutRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	681
+transport_action	planned	action	GetRepositoriesAction.INSTANCE	TransportGetRepositoriesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	682
+transport_action	planned	action	DeleteRepositoryAction.INSTANCE	TransportDeleteRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	683
+transport_action	planned	action	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	684
+transport_action	planned	action	CleanupRepositoryAction.INSTANCE	TransportCleanupRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	685
+transport_action	planned	action	GetSnapshotsAction.INSTANCE	TransportGetSnapshotsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	686
+transport_action	planned	action	DeleteSnapshotAction.INSTANCE	TransportDeleteSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	687
+transport_action	planned	action	CreateSnapshotAction.INSTANCE	TransportCreateSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	688
+transport_action	planned	action	CloneSnapshotAction.INSTANCE	TransportCloneSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	689
+transport_action	planned	action	RestoreSnapshotAction.INSTANCE	TransportRestoreSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	690
+transport_action	planned	action	SnapshotsStatusAction.INSTANCE	TransportSnapshotsStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	691
+transport_action	planned	action	ClusterAddWeightedRoutingAction.INSTANCE	TransportAddWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	693
+transport_action	planned	action	ClusterGetWeightedRoutingAction.INSTANCE	TransportGetWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	694
+transport_action	planned	action	ClusterDeleteWeightedRoutingAction.INSTANCE	TransportDeleteWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	695
+transport_action	planned	action	IndicesStatsAction.INSTANCE	TransportIndicesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	696
+transport_action	planned	action	CatShardsAction.INSTANCE	TransportCatShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	697
+transport_action	planned	action	IndicesSegmentsAction.INSTANCE	TransportIndicesSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	698
+transport_action	planned	action	IndicesShardStoresAction.INSTANCE	TransportIndicesShardStoresAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	699
+transport_action	planned	action	CreateIndexAction.INSTANCE	TransportCreateIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	700
+transport_action	planned	action	ResizeAction.INSTANCE	TransportResizeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	701
+transport_action	planned	action	RolloverAction.INSTANCE	TransportRolloverAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	702
+transport_action	planned	action	DeleteIndexAction.INSTANCE	TransportDeleteIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	703
+transport_action	planned	action	GetIndexAction.INSTANCE	TransportGetIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	704
+transport_action	planned	action	OpenIndexAction.INSTANCE	TransportOpenIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	705
+transport_action	planned	action	CloseIndexAction.INSTANCE	TransportCloseIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	706
+transport_action	planned	action	IndicesExistsAction.INSTANCE	TransportIndicesExistsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	707
+transport_action	planned	action	AddIndexBlockAction.INSTANCE	TransportAddIndexBlockAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	708
+transport_action	planned	action	GetMappingsAction.INSTANCE	TransportGetMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	709
+transport_action	planned	action	GetFieldMappingsAction.INSTANCE	TransportGetFieldMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	710
+transport_action	planned	action	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	715
+transport_action	planned	action	AutoPutMappingAction.INSTANCE	TransportAutoPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	716
+transport_action	planned	action	IndicesAliasesAction.INSTANCE	TransportIndicesAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	717
+transport_action	planned	action	UpdateSettingsAction.INSTANCE	TransportUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	718
+transport_action	planned	action	ScaleIndexAction.INSTANCE	TransportScaleIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	719
+transport_action	planned	action	AnalyzeAction.INSTANCE	TransportAnalyzeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	720
+transport_action	planned	action	PutIndexTemplateAction.INSTANCE	TransportPutIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	721
+transport_action	planned	action	GetIndexTemplatesAction.INSTANCE	TransportGetIndexTemplatesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	722
+transport_action	planned	action	DeleteIndexTemplateAction.INSTANCE	TransportDeleteIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	723
+transport_action	planned	action	PutComponentTemplateAction.INSTANCE	TransportPutComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	724
+transport_action	planned	action	GetComponentTemplateAction.INSTANCE	TransportGetComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	725
+transport_action	planned	action	DeleteComponentTemplateAction.INSTANCE	TransportDeleteComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	726
+transport_action	planned	action	PutComposableIndexTemplateAction.INSTANCE	TransportPutComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	727
+transport_action	planned	action	GetComposableIndexTemplateAction.INSTANCE	TransportGetComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	728
+transport_action	planned	action	DeleteComposableIndexTemplateAction.INSTANCE	TransportDeleteComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	729
+transport_action	planned	action	SimulateIndexTemplateAction.INSTANCE	TransportSimulateIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	730
+transport_action	planned	action	SimulateTemplateAction.INSTANCE	TransportSimulateTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	731
+transport_action	planned	action	ValidateQueryAction.INSTANCE	TransportValidateQueryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	732
+transport_action	planned	action	RefreshAction.INSTANCE	TransportRefreshAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	733
+transport_action	planned	action	FlushAction.INSTANCE	TransportFlushAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	734
+transport_action	planned	action	ForceMergeAction.INSTANCE	TransportForceMergeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	735
+transport_action	planned	action	UpgradeAction.INSTANCE	TransportUpgradeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	736
+transport_action	planned	action	UpgradeStatusAction.INSTANCE	TransportUpgradeStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	737
+transport_action	planned	action	UpgradeSettingsAction.INSTANCE	TransportUpgradeSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	738
+transport_action	planned	action	ClearIndicesCacheAction.INSTANCE	TransportClearIndicesCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	739
+transport_action	planned	action	GetAliasesAction.INSTANCE	TransportGetAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	740
+transport_action	planned	action	GetSettingsAction.INSTANCE	TransportGetSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	741
+transport_action	planned	action	IndexAction.INSTANCE	TransportIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	743
+transport_action	planned	action	GetAction.INSTANCE	TransportGetAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	744
+transport_action	planned	action	TermVectorsAction.INSTANCE	TransportTermVectorsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	745
+transport_action	planned	action	MultiTermVectorsAction.INSTANCE	TransportMultiTermVectorsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	746
+transport_action	planned	action	DeleteAction.INSTANCE	TransportDeleteAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	751
+transport_action	planned	action	UpdateAction.INSTANCE	TransportUpdateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	752
+transport_action	planned	action	MultiGetAction.INSTANCE	TransportMultiGetAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	753
+transport_action	planned	action	BulkAction.INSTANCE	TransportBulkAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	754
+transport_action	planned	action	SearchAction.INSTANCE	TransportSearchAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	755
+transport_action	planned	action	StreamSearchAction.INSTANCE	StreamTransportSearchAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	757
+transport_action	planned	action	SearchScrollAction.INSTANCE	TransportSearchScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	759
+transport_action	planned	action	MultiSearchAction.INSTANCE	TransportMultiSearchAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	760
+transport_action	planned	action	ExplainAction.INSTANCE	TransportExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	761
+transport_action	planned	action	ClearScrollAction.INSTANCE	TransportClearScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	762
+transport_action	planned	action	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
+transport_action	planned	action	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
+transport_action	planned	action	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
+transport_action	planned	action	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766
+transport_action	planned	action	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769
+transport_action	planned	action	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
+transport_action	planned	action	DeleteStoredScriptAction.INSTANCE	TransportDeleteStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	771
+transport_action	planned	action	GetScriptContextAction.INSTANCE	TransportGetScriptContextAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	772
+transport_action	planned	action	GetScriptLanguageAction.INSTANCE	TransportGetScriptLanguageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	773
+transport_action	planned	action	FieldCapabilitiesAction.INSTANCE	TransportFieldCapabilitiesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	775
+transport_action	planned	action	PutPipelineAction.INSTANCE	PutPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	781
+transport_action	planned	action	GetPipelineAction.INSTANCE	GetPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	782
+transport_action	planned	action	DeletePipelineAction.INSTANCE	DeletePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	783
+transport_action	planned	action	SimulatePipelineAction.INSTANCE	SimulatePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	784
+transport_action	planned	action	CreateDataStreamAction.INSTANCE	CreateDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	789
+transport_action	planned	action	DeleteDataStreamAction.INSTANCE	DeleteDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	790
+transport_action	planned	action	GetDataStreamAction.INSTANCE	GetDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	791
+transport_action	planned	action	ResolveIndexAction.INSTANCE	ResolveIndexAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	792
+transport_action	planned	action	DataStreamsStatsAction.INSTANCE	DataStreamsStatsAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	793
+transport_action	planned	action	CreateViewAction.INSTANCE	CreateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	796
+transport_action	planned	action	DeleteViewAction.INSTANCE	DeleteViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	797
+transport_action	planned	action	GetViewAction.INSTANCE	GetViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	798
+transport_action	planned	action	UpdateViewAction.INSTANCE	UpdateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	799
+transport_action	planned	action	ListViewNamesAction.INSTANCE	ListViewNamesAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	800
+transport_action	planned	action	SearchViewAction.INSTANCE	SearchViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	801
+transport_action	planned	action	StartPersistentTaskAction.INSTANCE	StartPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	804
+transport_action	planned	action	UpdatePersistentTaskStatusAction.INSTANCE	UpdatePersistentTaskStatusAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	805
+transport_action	planned	action	CompletionPersistentTaskAction.INSTANCE	CompletionPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	806
+transport_action	planned	action	RemovePersistentTaskAction.INSTANCE	RemovePersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	807
+transport_action	planned	action	RetentionLeaseActions.Add.INSTANCE	RetentionLeaseActions.Add.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	810
+transport_action	planned	action	RetentionLeaseActions.Renew.INSTANCE	RetentionLeaseActions.Renew.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	811
+transport_action	planned	action	RetentionLeaseActions.Remove.INSTANCE	RetentionLeaseActions.Remove.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	812
+transport_action	planned	action	ListDanglingIndicesAction.INSTANCE	TransportListDanglingIndicesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	815
+transport_action	planned	action	ImportDanglingIndexAction.INSTANCE	TransportImportDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	816
+transport_action	planned	action	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	817
+transport_action	planned	action	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818
+transport_action	planned	action	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	821
+transport_action	planned	action	DeletePitAction.INSTANCE	TransportDeletePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	822
+transport_action	planned	action	PitSegmentsAction.INSTANCE	TransportPitSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	823
+transport_action	planned	action	GetAllPitsAction.INSTANCE	TransportGetAllPitsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	824
+transport_action	planned	action	RestoreRemoteStoreAction.INSTANCE	TransportRestoreRemoteStoreAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	827
+transport_action	planned	action	ExtensionProxyAction.INSTANCE	ExtensionProxyTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	831
+transport_action	planned	action	DecommissionAction.INSTANCE	TransportDecommissionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	835
+transport_action	planned	action	GetDecommissionStateAction.INSTANCE	TransportGetDecommissionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	836
+transport_action	planned	action	DeleteDecommissionStateAction.INSTANCE	TransportDeleteDecommissionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	837
+transport_action	planned	action	PutSearchPipelineAction.INSTANCE	PutSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	840
+transport_action	planned	action	GetSearchPipelineAction.INSTANCE	GetSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	841
+transport_action	planned	action	DeleteSearchPipelineAction.INSTANCE	DeleteSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	842
+transport_action	planned	action	PauseIngestionAction.INSTANCE	TransportPauseIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	845
+transport_action	planned	action	ResumeIngestionAction.INSTANCE	TransportResumeIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	846
+transport_action	planned	action	GetIngestionStateAction.INSTANCE	TransportGetIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	847
+transport_action	planned	action	UpdateIngestionStateAction.INSTANCE	TransportUpdateIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	848
+transport_action	planned	action	ListTieringStatusAction.INSTANCE	TransportListTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	852
+transport_action	planned	action	GetTieringStatusAction.INSTANCE	TransportGetTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	853
+transport_action	planned	action	KNNStatsAction.INSTANCE	KNNStatsTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	348
+transport_action	planned	action	KNNWarmupAction.INSTANCE	KNNWarmupTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	349
+transport_action	planned	action	UpdateModelMetadataAction.INSTANCE	UpdateModelMetadataTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	350
+transport_action	planned	action	TrainingJobRouteDecisionInfoAction.INSTANCE	TrainingJobRouteDecisionInfoTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	351
+transport_action	planned	action	GetModelAction.INSTANCE	GetModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	352
+transport_action	planned	action	DeleteModelAction.INSTANCE	DeleteModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	353
+transport_action	planned	action	TrainingJobRouterAction.INSTANCE	TrainingJobRouterTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	354
+transport_action	planned	action	TrainingModelAction.INSTANCE	TrainingModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	355
+transport_action	planned	action	RemoveModelFromCacheAction.INSTANCE	RemoveModelFromCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	356
+transport_action	planned	action	SearchModelAction.INSTANCE	SearchModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	357
+transport_action	planned	action	UpdateModelGraveyardAction.INSTANCE	UpdateModelGraveyardTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	358
+transport_action	planned	action	ClearCacheAction.INSTANCE	ClearCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	359
+search_registration	planned	aggregation	new AggregationSpec(AvgAggregationBuilder.NAME, AvgAggregationBuilder::new, AvgAggregationBuilder.PARSER).addResultReader( InternalAvg::new ).setAggregatorRegistrar(AvgAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	406
+search_registration	planned	aggregation	new AggregationSpec( WeightedAvgAggregationBuilder.NAME, WeightedAvgAggregationBuilder::new, WeightedAvgAggregationBuilder.PARSER ).addResultReader(InternalWeightedAvg::new).setAggregatorRegistrar(WeightedAvgAggregationBuilder::registerUsage), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	412
+search_registration	planned	aggregation	new AggregationSpec(SumAggregationBuilder.NAME, SumAggregationBuilder::new, SumAggregationBuilder.PARSER).addResultReader( InternalSum::new ).setAggregatorRegistrar(SumAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	420
+search_registration	planned	aggregation	new AggregationSpec(MinAggregationBuilder.NAME, MinAggregationBuilder::new, MinAggregationBuilder.PARSER).addResultReader( InternalMin::new ).setAggregatorRegistrar(MinAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	426
+search_registration	planned	aggregation	new AggregationSpec(MaxAggregationBuilder.NAME, MaxAggregationBuilder::new, MaxAggregationBuilder.PARSER).addResultReader( InternalMax::new ).setAggregatorRegistrar(MaxAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	432
+search_registration	planned	aggregation	new AggregationSpec(StatsAggregationBuilder.NAME, StatsAggregationBuilder::new, StatsAggregationBuilder.PARSER).addResultReader( InternalStats::new ).setAggregatorRegistrar(StatsAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	438
+search_registration	planned	aggregation	new AggregationSpec( ExtendedStatsAggregationBuilder.NAME, ExtendedStatsAggregationBuilder::new, ExtendedStatsAggregationBuilder.PARSER ).addResultReader(InternalExtendedStats::new).setAggregatorRegistrar(ExtendedStatsAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	444
+search_registration	planned	aggregation	new AggregationSpec(ValueCountAggregationBuilder.NAME, ValueCountAggregationBuilder::new, ValueCountAggregationBuilder.PARSER) .addResultReader(InternalValueCount::new) .setAggregatorRegistrar(ValueCountAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	452
+search_registration	planned	aggregation	new AggregationSpec( PercentilesAggregationBuilder.NAME, PercentilesAggregationBuilder::new, PercentilesAggregationBuilder::parse ).addResultReader(InternalTDigestPercentiles.NAME, InternalTDigestPercentiles::new) .addResultReader(InternalHDRPercentiles.NAME, InternalHDRPercentiles::new) .setAggregatorRegistrar(PercentilesAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	458
+search_registration	planned	aggregation	new AggregationSpec( PercentileRanksAggregationBuilder.NAME, PercentileRanksAggregationBuilder::new, PercentileRanksAggregationBuilder::parse ).addResultReader(InternalTDigestPercentileRanks.NAME, InternalTDigestPercentileRanks::new) .addResultReader(InternalHDRPercentileRanks.NAME, InternalHDRPercentileRanks::new) .setAggregatorRegistrar(PercentileRanksAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	468
+search_registration	planned	aggregation	new AggregationSpec( MedianAbsoluteDeviationAggregationBuilder.NAME, MedianAbsoluteDeviationAggregationBuilder::new, MedianAbsoluteDeviationAggregationBuilder.PARSER ).addResultReader(InternalMedianAbsoluteDeviation::new) .setAggregatorRegistrar(MedianAbsoluteDeviationAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	478
+search_registration	planned	aggregation	new AggregationSpec( CardinalityAggregationBuilder.NAME, CardinalityAggregationBuilder::new, CardinalityAggregationBuilder.PARSER ).addResultReader(InternalCardinality::new).setAggregatorRegistrar(CardinalityAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	487
+search_registration	planned	aggregation	new AggregationSpec(GlobalAggregationBuilder.NAME, GlobalAggregationBuilder::new, GlobalAggregationBuilder::parse) .addResultReader(InternalGlobal::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	495
+search_registration	planned	aggregation	new AggregationSpec(MissingAggregationBuilder.NAME, MissingAggregationBuilder::new, MissingAggregationBuilder.PARSER) .addResultReader(InternalMissing::new) .setAggregatorRegistrar(MissingAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	500
+search_registration	planned	aggregation	new AggregationSpec(FilterAggregationBuilder.NAME, FilterAggregationBuilder::new, FilterAggregationBuilder::parse) .addResultReader(InternalFilter::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	506
+search_registration	planned	aggregation	new AggregationSpec(FiltersAggregationBuilder.NAME, FiltersAggregationBuilder::new, FiltersAggregationBuilder::parse) .addResultReader(InternalFilters::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	511
+search_registration	planned	aggregation	new AggregationSpec( AdjacencyMatrixAggregationBuilder.NAME, AdjacencyMatrixAggregationBuilder::new, AdjacencyMatrixAggregationBuilder::parse ).addResultReader(InternalAdjacencyMatrix::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	516
+search_registration	planned	aggregation	new AggregationSpec(SamplerAggregationBuilder.NAME, SamplerAggregationBuilder::new, SamplerAggregationBuilder::parse) .addResultReader(InternalSampler.NAME, InternalSampler::new) .addResultReader(UnmappedSampler.NAME, UnmappedSampler::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	524
+search_registration	planned	aggregation	new AggregationSpec( DiversifiedAggregationBuilder.NAME, DiversifiedAggregationBuilder::new, DiversifiedAggregationBuilder.PARSER ).setAggregatorRegistrar(DiversifiedAggregationBuilder::registerAggregators) /* Reuses result readers from SamplerAggregator*/, builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	530
+search_registration	planned	aggregation	new AggregationSpec(TermsAggregationBuilder.NAME, TermsAggregationBuilder::new, TermsAggregationBuilder.PARSER).addResultReader( StringTerms.NAME, StringTerms::new ) .addResultReader(UnmappedTerms.NAME, UnmappedTerms::new) .addResultReader(LongTerms.NAME, LongTerms::new) .addResultReader(DoubleTerms.NAME, DoubleTerms::new) .addResultReader(UnsignedLongTerms.NAME, UnsignedLongTerms::new) .setAggregatorRegistrar(TermsAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	539
+search_registration	planned	aggregation	new AggregationSpec(RareTermsAggregationBuilder.NAME, RareTermsAggregationBuilder::new, RareTermsAggregationBuilder.PARSER) .addResultReader(StringRareTerms.NAME, StringRareTerms::new) .addResultReader(UnmappedRareTerms.NAME, UnmappedRareTerms::new) .addResultReader(LongRareTerms.NAME, LongRareTerms::new) .setAggregatorRegistrar(RareTermsAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	551
+search_registration	planned	aggregation	new AggregationSpec( SignificantTermsAggregationBuilder.NAME, SignificantTermsAggregationBuilder::new, SignificantTermsAggregationBuilder::parse ).addResultReader(SignificantStringTerms.NAME, SignificantStringTerms::new) .addResultReader(SignificantLongTerms.NAME, SignificantLongTerms::new) .addResultReader(UnmappedSignificantTerms.NAME, UnmappedSignificantTerms::new) .setAggregatorRegistrar(SignificantTermsAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	559
+search_registration	planned	aggregation	new AggregationSpec( SignificantTextAggregationBuilder.NAME, SignificantTextAggregationBuilder::new, SignificantTextAggregationBuilder::parse ), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	570
+search_registration	planned	aggregation	new AggregationSpec(RangeAggregationBuilder.NAME, RangeAggregationBuilder::new, RangeAggregationBuilder.PARSER).addResultReader( InternalRange::new ).setAggregatorRegistrar(RangeAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	578
+search_registration	planned	aggregation	new AggregationSpec(DateRangeAggregationBuilder.NAME, DateRangeAggregationBuilder::new, DateRangeAggregationBuilder.PARSER) .addResultReader(InternalDateRange::new) .setAggregatorRegistrar(DateRangeAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	584
+search_registration	planned	aggregation	new AggregationSpec(IpRangeAggregationBuilder.NAME, IpRangeAggregationBuilder::new, IpRangeAggregationBuilder.PARSER) .addResultReader(InternalBinaryRange::new) .setAggregatorRegistrar(IpRangeAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	590
+search_registration	planned	aggregation	new AggregationSpec(HistogramAggregationBuilder.NAME, HistogramAggregationBuilder::new, HistogramAggregationBuilder.PARSER) .addResultReader(InternalHistogram::new) .setAggregatorRegistrar(HistogramAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	596
+search_registration	planned	aggregation	new AggregationSpec( DateHistogramAggregationBuilder.NAME, DateHistogramAggregationBuilder::new, DateHistogramAggregationBuilder.PARSER ).addResultReader(InternalDateHistogram::new).setAggregatorRegistrar(DateHistogramAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	602
+search_registration	planned	aggregation	new AggregationSpec( AutoDateHistogramAggregationBuilder.NAME, AutoDateHistogramAggregationBuilder::new, AutoDateHistogramAggregationBuilder.PARSER ).addResultReader(InternalAutoDateHistogram::new) .setAggregatorRegistrar(AutoDateHistogramAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	610
+search_registration	planned	aggregation	new AggregationSpec( VariableWidthHistogramAggregationBuilder.NAME, VariableWidthHistogramAggregationBuilder::new, VariableWidthHistogramAggregationBuilder.PARSER ).addResultReader(InternalVariableWidthHistogram::new) .setAggregatorRegistrar(VariableWidthHistogramAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	619
+search_registration	planned	aggregation	new AggregationSpec( GeoDistanceAggregationBuilder.NAME, GeoDistanceAggregationBuilder::new, GeoDistanceAggregationBuilder::parse ).addResultReader(InternalGeoDistance::new).setAggregatorRegistrar(GeoDistanceAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	628
+search_registration	planned	aggregation	new AggregationSpec(NestedAggregationBuilder.NAME, NestedAggregationBuilder::new, NestedAggregationBuilder::parse) .addResultReader(InternalNested::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	636
+search_registration	planned	aggregation	new AggregationSpec( ReverseNestedAggregationBuilder.NAME, ReverseNestedAggregationBuilder::new, ReverseNestedAggregationBuilder::parse ).addResultReader(InternalReverseNested::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	641
+search_registration	planned	aggregation	new AggregationSpec(TopHitsAggregationBuilder.NAME, TopHitsAggregationBuilder::new, TopHitsAggregationBuilder::parse) .addResultReader(InternalTopHits::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	649
+search_registration	planned	aggregation	new AggregationSpec( GeoCentroidAggregationBuilder.NAME, GeoCentroidAggregationBuilder::new, GeoCentroidAggregationBuilder.PARSER ).addResultReader(InternalGeoCentroid::new).setAggregatorRegistrar(GeoCentroidAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	654
+search_registration	planned	aggregation	new AggregationSpec( ScriptedMetricAggregationBuilder.NAME, ScriptedMetricAggregationBuilder::new, ScriptedMetricAggregationBuilder.PARSER ).addResultReader(InternalScriptedMetric::new), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	662
+search_registration	planned	aggregation	new AggregationSpec(CompositeAggregationBuilder.NAME, CompositeAggregationBuilder::new, CompositeAggregationBuilder.PARSER) .addResultReader(InternalComposite::new) .setAggregatorRegistrar(reg -> CompositeAggregationBuilder.registerAggregators(reg, plugins)), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	670
+search_registration	planned	aggregation	new AggregationSpec(MultiTermsAggregationBuilder.NAME, MultiTermsAggregationBuilder::new, MultiTermsAggregationBuilder.PARSER) .addResultReader(InternalMultiTerms::new) .setAggregatorRegistrar(MultiTermsAggregationFactory::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	676
+search_registration	planned	aggregation	agg, builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	682
+search_registration	planned	aggregation	AggregationSpec spec, ValuesSourceRegistry.Builder builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	694
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( DerivativePipelineAggregationBuilder.NAME, DerivativePipelineAggregationBuilder::new, DerivativePipelineAggregationBuilder::parse ).addResultReader(InternalDerivative::new)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	718
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( MaxBucketPipelineAggregationBuilder.NAME, MaxBucketPipelineAggregationBuilder::new, MaxBucketPipelineAggregationBuilder.PARSER ) // This bucket is used by many pipeline aggreations. .addResultReader(InternalBucketMetricValue.NAME, InternalBucketMetricValue::new)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	725
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( MinBucketPipelineAggregationBuilder.NAME, MinBucketPipelineAggregationBuilder::new, MinBucketPipelineAggregationBuilder.PARSER ) /* Uses InternalBucketMetricValue */		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	734
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( AvgBucketPipelineAggregationBuilder.NAME, AvgBucketPipelineAggregationBuilder::new, AvgBucketPipelineAggregationBuilder.PARSER ) // This bucket is used by many pipeline aggreations. .addResultReader(InternalSimpleValue.NAME, InternalSimpleValue::new)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	742
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( SumBucketPipelineAggregationBuilder.NAME, SumBucketPipelineAggregationBuilder::new, SumBucketPipelineAggregationBuilder.PARSER ) /* Uses InternalSimpleValue */		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	751
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( StatsBucketPipelineAggregationBuilder.NAME, StatsBucketPipelineAggregationBuilder::new, StatsBucketPipelineAggregationBuilder.PARSER ).addResultReader(InternalStatsBucket::new)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	759
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( ExtendedStatsBucketPipelineAggregationBuilder.NAME, ExtendedStatsBucketPipelineAggregationBuilder::new, new ExtendedStatsBucketParser() ).addResultReader(InternalExtendedStatsBucket::new)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	766
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( PercentilesBucketPipelineAggregationBuilder.NAME, PercentilesBucketPipelineAggregationBuilder::new, PercentilesBucketPipelineAggregationBuilder.PARSER ).addResultReader(InternalPercentilesBucket::new)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	773
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( MovAvgPipelineAggregationBuilder.NAME, MovAvgPipelineAggregationBuilder::new, (XContentParser parser, String name) -> MovAvgPipelineAggregationBuilder.parse( movingAverageModelParserRegistry, name, parser ) )/* Uses InternalHistogram for buckets */		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	780
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( CumulativeSumPipelineAggregationBuilder.NAME, CumulativeSumPipelineAggregationBuilder::new, CumulativeSumPipelineAggregationBuilder.PARSER )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	791
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( BucketScriptPipelineAggregationBuilder.NAME, BucketScriptPipelineAggregationBuilder::new, BucketScriptPipelineAggregationBuilder.PARSER )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	798
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( BucketSelectorPipelineAggregationBuilder.NAME, BucketSelectorPipelineAggregationBuilder::new, BucketSelectorPipelineAggregationBuilder::parse )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	805
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( BucketSortPipelineAggregationBuilder.NAME, BucketSortPipelineAggregationBuilder::new, BucketSortPipelineAggregationBuilder::parse )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	812
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( SerialDiffPipelineAggregationBuilder.NAME, SerialDiffPipelineAggregationBuilder::new, SerialDiffPipelineAggregationBuilder::parse )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	819
+search_registration	planned	pipeline_aggregation	new PipelineAggregationSpec( MovFnPipelineAggregationBuilder.NAME, MovFnPipelineAggregationBuilder::new, MovFnPipelineAggregationBuilder.PARSER )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	826
+search_registration	planned	pipeline_aggregation	PipelineAggregationSpec spec		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	837
+search_registration	planned	suggester	new SuggesterSpec<>( TermSuggestionBuilder.SUGGESTION_NAME, TermSuggestionBuilder::new, TermSuggestionBuilder::fromXContent, TermSuggestion::new )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	884
+search_registration	planned	suggester	new SuggesterSpec<>( PhraseSuggestionBuilder.SUGGESTION_NAME, PhraseSuggestionBuilder::new, PhraseSuggestionBuilder::fromXContent, PhraseSuggestion::new )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	893
+search_registration	planned	suggester	new SuggesterSpec<>( CompletionSuggestionBuilder.SUGGESTION_NAME, CompletionSuggestionBuilder::new, CompletionSuggestionBuilder::fromXContent, CompletionSuggestion::new )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	902
+search_registration	planned	suggester	SuggesterSpec<?> suggester		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	914
+search_registration	planned	score_function	new ScoreFunctionSpec<>( ScriptScoreFunctionBuilder.NAME, ScriptScoreFunctionBuilder::new, ScriptScoreFunctionBuilder::fromXContent )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	948
+search_registration	planned	score_function	new ScoreFunctionSpec<>(GaussDecayFunctionBuilder.NAME, GaussDecayFunctionBuilder::new, GaussDecayFunctionBuilder.PARSER)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	956
+search_registration	planned	score_function	new ScoreFunctionSpec<>(LinearDecayFunctionBuilder.NAME, LinearDecayFunctionBuilder::new, LinearDecayFunctionBuilder.PARSER)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	959
+search_registration	planned	score_function	new ScoreFunctionSpec<>( ExponentialDecayFunctionBuilder.NAME, ExponentialDecayFunctionBuilder::new, ExponentialDecayFunctionBuilder.PARSER )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	962
+search_registration	planned	score_function	new ScoreFunctionSpec<>( RandomScoreFunctionBuilder.NAME, RandomScoreFunctionBuilder::new, RandomScoreFunctionBuilder::fromXContent )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	969
+search_registration	planned	score_function	new ScoreFunctionSpec<>( FieldValueFactorFunctionBuilder.NAME, FieldValueFactorFunctionBuilder::new, FieldValueFactorFunctionBuilder::fromXContent )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	976
+search_registration	planned	score_function	ScoreFunctionSpec<?> scoreFunction		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	991
+search_registration	planned	fetch_subphase	new ExplainPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1069
+search_registration	planned	fetch_subphase	new FetchDocValuesPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1070
+search_registration	planned	fetch_subphase	new ScriptFieldsPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1071
+search_registration	planned	fetch_subphase	new FetchSourcePhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1072
+search_registration	planned	fetch_subphase	new FetchFieldsPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1073
+search_registration	planned	fetch_subphase	new FetchVersionPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1074
+search_registration	planned	fetch_subphase	new SeqNoPrimaryTermPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1075
+search_registration	planned	fetch_subphase	new MatchedQueriesPhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1076
+search_registration	planned	fetch_subphase	new HighlightPhase(highlighters)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1077
+search_registration	planned	fetch_subphase	new FetchScorePhase()		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1078
+search_registration	planned	fetch_subphase	FetchSubPhase subPhase		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1093
+search_registration	planned	query	new QuerySpec<>(MatchQueryBuilder.NAME, MatchQueryBuilder::new, MatchQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1102
+search_registration	planned	query	new QuerySpec<>(MatchPhraseQueryBuilder.NAME, MatchPhraseQueryBuilder::new, MatchPhraseQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1103
+search_registration	planned	query	new QuerySpec<>( MatchPhrasePrefixQueryBuilder.NAME, MatchPhrasePrefixQueryBuilder::new, MatchPhrasePrefixQueryBuilder::fromXContent )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1104
+search_registration	planned	query	new QuerySpec<>(MultiMatchQueryBuilder.NAME, MultiMatchQueryBuilder::new, MultiMatchQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1111
+search_registration	planned	query	new QuerySpec<>(NestedQueryBuilder.NAME, NestedQueryBuilder::new, NestedQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1112
+search_registration	planned	query	new QuerySpec<>(DisMaxQueryBuilder.NAME, DisMaxQueryBuilder::new, DisMaxQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1113
+search_registration	planned	query	new QuerySpec<>(IdsQueryBuilder.NAME, IdsQueryBuilder::new, IdsQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1114
+search_registration	planned	query	new QuerySpec<>(MatchAllQueryBuilder.NAME, MatchAllQueryBuilder::new, MatchAllQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1115
+search_registration	planned	query	new QuerySpec<>(QueryStringQueryBuilder.NAME, QueryStringQueryBuilder::new, QueryStringQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1116
+search_registration	planned	query	new QuerySpec<>(BoostingQueryBuilder.NAME, BoostingQueryBuilder::new, BoostingQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1117
+search_registration	planned	query	new QuerySpec<>(BoolQueryBuilder.NAME, BoolQueryBuilder::new, BoolQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1118
+search_registration	planned	query	new QuerySpec<>(TermQueryBuilder.NAME, TermQueryBuilder::new, TermQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1119
+search_registration	planned	query	new QuerySpec<>(TermsQueryBuilder.NAME, TermsQueryBuilder::new, TermsQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1120
+search_registration	planned	query	new QuerySpec<>(FuzzyQueryBuilder.NAME, FuzzyQueryBuilder::new, FuzzyQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1121
+search_registration	planned	query	new QuerySpec<>(RegexpQueryBuilder.NAME, RegexpQueryBuilder::new, RegexpQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1122
+search_registration	planned	query	new QuerySpec<>(RangeQueryBuilder.NAME, RangeQueryBuilder::new, RangeQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1123
+search_registration	planned	query	new QuerySpec<>(PrefixQueryBuilder.NAME, PrefixQueryBuilder::new, PrefixQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1124
+search_registration	planned	query	new QuerySpec<>(WildcardQueryBuilder.NAME, WildcardQueryBuilder::new, WildcardQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1125
+search_registration	planned	query	new QuerySpec<>(CombinedFieldsQueryBuilder.NAME, CombinedFieldsQueryBuilder::new, CombinedFieldsQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1126
+search_registration	planned	query	new QuerySpec<>(ConstantScoreQueryBuilder.NAME, ConstantScoreQueryBuilder::new, ConstantScoreQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1129
+search_registration	planned	query	new QuerySpec<>(SpanTermQueryBuilder.NAME, SpanTermQueryBuilder::new, SpanTermQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1132
+search_registration	planned	query	new QuerySpec<>(SpanNotQueryBuilder.NAME, SpanNotQueryBuilder::new, SpanNotQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1133
+search_registration	planned	query	new QuerySpec<>(SpanWithinQueryBuilder.NAME, SpanWithinQueryBuilder::new, SpanWithinQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1134
+search_registration	planned	query	new QuerySpec<>(SpanContainingQueryBuilder.NAME, SpanContainingQueryBuilder::new, SpanContainingQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1135
+search_registration	planned	query	new QuerySpec<>( FieldMaskingSpanQueryBuilder.SPAN_FIELD_MASKING_FIELD, FieldMaskingSpanQueryBuilder::new, FieldMaskingSpanQueryBuilder::fromXContent )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1138
+search_registration	planned	query	new QuerySpec<>(SpanFirstQueryBuilder.NAME, SpanFirstQueryBuilder::new, SpanFirstQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1145
+search_registration	planned	query	new QuerySpec<>(SpanNearQueryBuilder.NAME, SpanNearQueryBuilder::new, SpanNearQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1146
+search_registration	planned	query	new QuerySpec<>(SpanGapQueryBuilder.NAME, SpanGapQueryBuilder::new, SpanGapQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1147
+search_registration	planned	query	new QuerySpec<>(SpanOrQueryBuilder.NAME, SpanOrQueryBuilder::new, SpanOrQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1148
+search_registration	planned	query	new QuerySpec<>(MoreLikeThisQueryBuilder.NAME, MoreLikeThisQueryBuilder::new, MoreLikeThisQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1149
+search_registration	planned	query	new QuerySpec<>(WrapperQueryBuilder.NAME, WrapperQueryBuilder::new, WrapperQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1152
+search_registration	planned	query	new QuerySpec<>( new ParseField(CommonTermsQueryBuilder.NAME).withAllDeprecated(COMMON_TERMS_QUERY_DEPRECATION_MSG), CommonTermsQueryBuilder::new, CommonTermsQueryBuilder::fromXContent )		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1153
+search_registration	planned	query	new QuerySpec<>(SpanMultiTermQueryBuilder.NAME, SpanMultiTermQueryBuilder::new, SpanMultiTermQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1160
+search_registration	planned	query	new QuerySpec<>(FunctionScoreQueryBuilder.NAME, FunctionScoreQueryBuilder::new, FunctionScoreQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1163
+search_registration	planned	query	new QuerySpec<>(ScriptScoreQueryBuilder.NAME, ScriptScoreQueryBuilder::new, ScriptScoreQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1166
+search_registration	planned	query	new QuerySpec<>(SimpleQueryStringBuilder.NAME, SimpleQueryStringBuilder::new, SimpleQueryStringBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1167
+search_registration	planned	query	new QuerySpec<>(ScriptQueryBuilder.NAME, ScriptQueryBuilder::new, ScriptQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1170
+search_registration	planned	query	new QuerySpec<>(GeoDistanceQueryBuilder.NAME, GeoDistanceQueryBuilder::new, GeoDistanceQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1171
+search_registration	planned	query	new QuerySpec<>(GeoBoundingBoxQueryBuilder.NAME, GeoBoundingBoxQueryBuilder::new, GeoBoundingBoxQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1172
+search_registration	planned	query	new QuerySpec<>(GeoPolygonQueryBuilder.NAME, GeoPolygonQueryBuilder::new, GeoPolygonQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1175
+search_registration	planned	query	new QuerySpec<>(ExistsQueryBuilder.NAME, ExistsQueryBuilder::new, ExistsQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1176
+search_registration	planned	query	new QuerySpec<>(MatchNoneQueryBuilder.NAME, MatchNoneQueryBuilder::new, MatchNoneQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1177
+search_registration	planned	query	new QuerySpec<>(TermsSetQueryBuilder.NAME, TermsSetQueryBuilder::new, TermsSetQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1178
+search_registration	planned	query	new QuerySpec<>(IntervalQueryBuilder.NAME, IntervalQueryBuilder::new, IntervalQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1179
+search_registration	planned	query	new QuerySpec<>(DistanceFeatureQueryBuilder.NAME, DistanceFeatureQueryBuilder::new, DistanceFeatureQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1180
+search_registration	planned	query	new QuerySpec<>(MatchBoolPrefixQueryBuilder.NAME, MatchBoolPrefixQueryBuilder::new, MatchBoolPrefixQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1183
+search_registration	planned	query	new QuerySpec<>(TemplateQueryBuilder.NAME, TemplateQueryBuilder::new, TemplateQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1186
+search_registration	planned	query	new QuerySpec<>(GeoShapeQueryBuilder.NAME, GeoShapeQueryBuilder::new, GeoShapeQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1188
+search_registration	planned	query	QuerySpec<?> spec		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1255
+node_runtime	planned	service	PluginsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	554
+node_runtime	planned	service	IdentityService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	621
+node_runtime	planned	service	RemoteStoreNodeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	636
+node_runtime	planned	service	ResourceWatcherService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	639
+node_runtime	planned	module	ScriptModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	658
+node_runtime	planned	module	AnalysisModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	660
+node_runtime	planned	module	SettingsModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	670
+node_runtime	planned	service	NetworkService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	678
+node_runtime	planned	module	TelemetryModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	700
+node_runtime	planned	service	LocalClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	731
+node_runtime	planned	service	ClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	733
+node_runtime	planned	service	ConsistentSettingsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	740
+node_runtime	planned	service	SystemTemplatesService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	744
+node_runtime	planned	service	UsageService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	754
+node_runtime	planned	service	FsHealthService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	761
+node_runtime	planned	service	InternalSnapshotsInfoService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	769
+node_runtime	planned	module	ClusterModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	786
+node_runtime	planned	module	IndicesModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	798
+node_runtime	planned	module	SearchModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	801
+node_runtime	planned	module	GatewayModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	819
+node_runtime	planned	registry	NamedWriteableRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	831
+node_runtime	planned	registry	NamedXContentRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	832
+node_runtime	planned	service	MetaStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	841
+node_runtime	planned	service	PersistedClusterStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	842
+node_runtime	planned	service	RemoteClusterStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	861
+node_runtime	planned	service	RemoteStorePinnedTimestampService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	879
+node_runtime	planned	service	BatchedRerouteService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	960
+node_runtime	planned	registry	DataFormatRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	969
+node_runtime	planned	service	TaskResourceTrackingService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	978
+node_runtime	planned	module	CacheModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	991
+node_runtime	planned	service	IndicesService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	994
+node_runtime	planned	service	IngestService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1034
+node_runtime	planned	service	MonitorService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1055
+node_runtime	planned	service	MetadataCreateIndexService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1072
+node_runtime	planned	service	MetadataCreateDataStreamService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1094
+node_runtime	planned	service	ViewService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1100
+node_runtime	planned	service	WorkloadGroupResourceUsageTrackerService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1149
+node_runtime	planned	service	WorkloadGroupService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1157
+node_runtime	planned	service	WorkloadGroupTaskCancellationService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1158
+node_runtime	planned	module	ActionModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1192
+node_runtime	planned	service	ResourceUsageCollectorService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1217
+node_runtime	planned	service	AdmissionControlService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1223
+node_runtime	planned	module	NetworkModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1259
+node_runtime	planned	service	MetadataIndexUpgradeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1280
+node_runtime	planned	service	SystemIndexMetadataUpgradeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1289
+node_runtime	planned	service	TemplateUpgradeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1291
+node_runtime	planned	service	StreamTransportService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1317
+node_runtime	planned	registry	PersistedStateRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1343
+node_runtime	planned	service	ResponseCollectorService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1345
+node_runtime	planned	service	SearchTransportService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1346
+node_runtime	planned	service	StreamSearchTransportService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1351
+node_runtime	planned	service	IndexingPressureService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1357
+node_runtime	planned	service	SearchBackpressureService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1367
+node_runtime	planned	module	RepositoriesModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1376
+node_runtime	planned	service	SnapshotsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1392
+node_runtime	planned	service	SnapshotShardsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1402
+node_runtime	planned	service	RestoreService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1416
+node_runtime	planned	service	RemoteStoreRestoreService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1428
+node_runtime	planned	module	DiscoveryModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1452
+node_runtime	planned	service	SearchPipelineService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1473
+node_runtime	planned	service	TaskCancellationMonitoringService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1488
+node_runtime	planned	service	NodeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1494
+node_runtime	planned	registry	PersistentTasksExecutorRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1560
+node_runtime	planned	service	PersistentTasksClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1561
+node_runtime	planned	service	PersistentTasksService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1568
+node_runtime	planned	registry	MappingTransformerRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1572
+node_runtime	planned	controller	SearchPhaseController		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1624
+node_runtime	planned	service	PeerRecoverySourceService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1642
+node_runtime	planned	service	PeerRecoveryTargetService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1644
+node_runtime	planned	service	SegmentReplicationTargetService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1647
+node_runtime	planned	service	SegmentReplicationSourceService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1658
+node_runtime	planned	service	TransportService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1765
+node_runtime	planned	service	TaskCancellationService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1852
+node_runtime	planned	service	HierarchyCircuitBreakerService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2231
+node_runtime	planned	service	NoneCircuitBreakerService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2233
+node_runtime	planned	service	SearchService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2273
+node_runtime	planned	service	ScriptService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2294
+node_runtime	planned	service	InternalClusterInfoService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2319

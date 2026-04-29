@@ -1,0 +1,83 @@
+{
+  "name": "settings-compat",
+  "cases": [
+    {
+      "name": "create_index_for_settings_cases",
+      "method": "PUT",
+      "path": "/logs-compat-settings-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_replicas": 1,
+            "refresh_interval": "5s"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_settings_happy_path",
+      "method": "GET",
+      "path": "/logs-compat-settings-000001/_settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-settings-000001.settings.index.number_of_replicas",
+          "logs-compat-settings-000001.settings.index.refresh_interval"
+        ]
+      }
+    },
+    {
+      "name": "put_settings_bounded_update",
+      "method": "PUT",
+      "path": "/logs-compat-settings-000001/_settings",
+      "body": {
+        "index": {
+          "number_of_replicas": 0,
+          "refresh_interval": "1s"
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_settings_after_update",
+      "method": "GET",
+      "path": "/logs-compat-settings-000001/_settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-settings-000001.settings.index.number_of_replicas",
+          "logs-compat-settings-000001.settings.index.refresh_interval"
+        ],
+        "body_paths_equal": [
+          "logs-compat-settings-000001.settings.index.refresh_interval"
+        ]
+      }
+    },
+    {
+      "name": "put_settings_validation_failure",
+      "method": "PUT",
+      "path": "/logs-compat-settings-000001/_settings",
+      "body": {
+        "index": {
+          "number_of_shards": 9
+        }
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type"
+        ]
+      }
+    }
+  ]
+}

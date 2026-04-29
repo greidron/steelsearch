@@ -6,6 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 os-engine = { path = "../os-engine" }
+os-plugin-knn = { path = "../os-plugin-knn" }
+os-query-dsl = { path = "../os-query-dsl" }
+serde = { workspace = true }
 serde_json.workspace = true
+
+[[bench]]
+name = "deterministic_baselines"
+path = "benchmarks/deterministic_baselines.rs"
+harness = false

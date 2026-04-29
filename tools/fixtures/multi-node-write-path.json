@@ -1,0 +1,132 @@
+{
+  "name": "multi-node-write-path",
+  "cases": [
+    {
+      "name": "create_shared_index_on_node_a",
+      "target": "node_a",
+      "method": "PUT",
+      "path": "/multi-node-write-000001",
+      "body": {},
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "write_document_on_node_a",
+      "target": "node_a",
+      "method": "PUT",
+      "path": "/multi-node-write-000001/_doc/doc-1?routing=tenant-a",
+      "body": {
+        "message": "replicated"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "refresh_on_node_a",
+      "target": "node_a",
+      "method": "POST",
+      "path": "/multi-node-write-000001/_refresh",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_shards.total",
+          "_shards.successful",
+          "_shards.failed"
+        ]
+      }
+    },
+    {
+      "name": "read_document_from_node_b_after_refresh",
+      "target": "node_b",
+      "method": "GET",
+      "path": "/multi-node-write-000001/_doc/doc-1?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_exact": {
+          "_index": "multi-node-write-000001",
+          "_id": "doc-1",
+          "found": true,
+          "_source.message": "replicated"
+        }
+      }
+    },
+    {
+      "name": "update_document_on_node_b",
+      "target": "node_b",
+      "method": "POST",
+      "path": "/multi-node-write-000001/_update/doc-1?routing=tenant-a&refresh=wait_for",
+      "body": {
+        "doc": {
+          "message": "updated-on-b"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_exact": {
+          "_index": "multi-node-write-000001",
+          "_id": "doc-1",
+          "result": "updated"
+        }
+      }
+    },
+    {
+      "name": "read_updated_document_from_node_a",
+      "target": "node_a",
+      "method": "GET",
+      "path": "/multi-node-write-000001/_doc/doc-1?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_exact": {
+          "_index": "multi-node-write-000001",
+          "_id": "doc-1",
+          "found": true,
+          "_source.message": "updated-on-b"
+        }
+      }
+    },
+    {
+      "name": "delete_document_on_node_a",
+      "target": "node_a",
+      "method": "DELETE",
+      "path": "/multi-node-write-000001/_doc/doc-1?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_exact": {
+          "_index": "multi-node-write-000001",
+          "_id": "doc-1",
+          "result": "deleted"
+        }
+      }
+    },
+    {
+      "name": "refresh_after_delete_on_node_a",
+      "target": "node_a",
+      "method": "POST",
+      "path": "/multi-node-write-000001/_refresh",
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "missing_document_from_node_b_after_delete",
+      "target": "node_b",
+      "method": "GET",
+      "path": "/multi-node-write-000001/_doc/doc-1?routing=tenant-a",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_exact": {
+          "_index": "multi-node-write-000001",
+          "_id": "doc-1",
+          "found": false
+        }
+      }
+    }
+  ]
+}

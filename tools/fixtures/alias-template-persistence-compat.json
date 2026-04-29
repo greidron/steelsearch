@@ -1,0 +1,155 @@
+{
+  "name": "alias-template-persistence-compat",
+  "description": "Steelsearch/OpenSearch fixture for alias and template registry persistence across restart and snapshot restore workflows.",
+  "version": 1,
+  "requires": {
+    "steelsearch": {
+      "development_metadata_store": true,
+      "snapshot_repository": "development filesystem repository"
+    },
+    "opensearch": {
+      "snapshot_repository": "registered fs repository with path.repo access"
+    }
+  },
+  "stable_fields": {
+    "component_template_get": [
+      "component_template[0].name",
+      "component_template[0].component_template.template.settings.index.number_of_shards",
+      "component_template[0].component_template.template.aliases.steelsearch-live-alias"
+    ],
+    "index_template_get": [
+      "index_template[0].name",
+      "index_template[0].index_template.index_patterns",
+      "index_template[0].index_template.composed_of",
+      "index_template[0].index_template.template.settings.index.number_of_replicas"
+    ],
+    "index_get": [
+      "steelsearch-template-000001.aliases.steelsearch-live-alias",
+      "steelsearch-template-000001.aliases.steelsearch-template-alias",
+      "steelsearch-template-000001.aliases.steelsearch-write.is_write_index",
+      "steelsearch-template-000001.settings.index.number_of_shards",
+      "steelsearch-template-000001.settings.index.number_of_replicas"
+    ],
+    "snapshot_restore": [
+      "snapshot.state",
+      "snapshot.indices",
+      "restored_template.name",
+      "restored_index.aliases"
+    ]
+  },
+  "requests": [
+    {
+      "name": "put_component_template",
+      "method": "PUT",
+      "path": "/_component_template/steelsearch-live-component",
+      "body": {
+        "version": 7,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1
+            }
+          },
+          "mappings": {
+            "properties": {
+              "component_field": {
+                "type": "keyword"
+              }
+            }
+          },
+          "aliases": {
+            "steelsearch-live-alias": {}
+          }
+        },
+        "_meta": {
+          "fixture": "alias-template-persistence-compat"
+        }
+      }
+    },
+    {
+      "name": "put_index_template",
+      "method": "PUT",
+      "path": "/_index_template/steelsearch-live-template",
+      "body": {
+        "index_patterns": [
+          "steelsearch-template-*"
+        ],
+        "composed_of": [
+          "steelsearch-live-component"
+        ],
+        "priority": 501,
+        "version": 11,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          },
+          "aliases": {
+            "steelsearch-template-alias": {}
+          }
+        },
+        "_meta": {
+          "fixture": "alias-template-persistence-compat"
+        }
+      }
+    },
+    {
+      "name": "create_index",
+      "method": "PUT",
+      "path": "/steelsearch-template-000001",
+      "body": {
+        "aliases": {
+          "steelsearch-write": {
+            "is_write_index": true
+          }
+        }
+      }
+    },
+    {
+      "name": "get_component_template",
+      "method": "GET",
+      "path": "/_component_template/steelsearch-live-component"
+    },
+    {
+      "name": "get_index_template",
+      "method": "GET",
+      "path": "/_index_template/steelsearch-live-template"
+    },
+    {
+      "name": "get_index",
+      "method": "GET",
+      "path": "/steelsearch-template-000001"
+    },
+    {
+      "name": "create_snapshot",
+      "method": "PUT",
+      "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot"
+    },
+    {
+      "name": "delete_index_template",
+      "method": "DELETE",
+      "path": "/_index_template/steelsearch-live-template"
+    },
+    {
+      "name": "delete_index",
+      "method": "DELETE",
+      "path": "/steelsearch-template-000001"
+    },
+    {
+      "name": "restore_snapshot",
+      "method": "POST",
+      "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot/_restore"
+    },
+    {
+      "name": "get_restored_index_template",
+      "method": "GET",
+      "path": "/_index_template/steelsearch-live-template"
+    },
+    {
+      "name": "get_restored_index",
+      "method": "GET",
+      "path": "/steelsearch-template-000001"
+    }
+  ]
+}

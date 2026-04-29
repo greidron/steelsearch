@@ -10,6 +10,9 @@ import org.opensearch.action.admin.cluster.state.ClusterStateAction;
 import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
 import org.opensearch.action.admin.cluster.state.ClusterStateResponse;
 import org.opensearch.cluster.ClusterName;
+import org.opensearch.cluster.coordination.CoordinationMetadata;
+import org.opensearch.cluster.coordination.CoordinationMetadata.VotingConfigExclusion;
+import org.opensearch.cluster.coordination.CoordinationMetadata.VotingConfiguration;
 import org.opensearch.cluster.RepositoryCleanupInProgress;
 import org.opensearch.cluster.RestoreInProgress;
 import org.opensearch.cluster.SnapshotDeletionsInProgress;
@@ -91,6 +94,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 
 public final class OpenSearchWireFixture {
@@ -108,6 +112,8 @@ public final class OpenSearchWireFixture {
         emit("cluster_state_request_default", serializeClusterStateRequestDefault());
         emit("cluster_state_transport_request_default", serializeClusterStateTransportRequestDefault(3L));
         emit("cluster_state_response_minimal", serializeClusterStateResponseMinimal());
+        emit("cluster_state_publication_empty_before_state", serializeClusterStatePublicationEmptyBeforeState());
+        emit("cluster_state_publication_empty_after_state", serializeClusterStatePublicationEmptyAfterState());
         emit("cluster_state_publication_diff_empty", serializeClusterStatePublicationDiffEmpty());
         emit(
             "cluster_state_publication_diff_delete_custom",
@@ -116,6 +122,14 @@ public final class OpenSearchWireFixture {
         emit(
             "cluster_state_publication_diff_upsert_custom",
             serializeClusterStatePublicationDiffUpsertCustom()
+        );
+        emit(
+            "cluster_state_publication_upsert_custom_before_state",
+            serializeClusterStatePublicationUpsertCustomBeforeState()
+        );
+        emit(
+            "cluster_state_publication_upsert_custom_after_state",
+            serializeClusterStatePublicationUpsertCustomAfterState()
         );
         emit(
             "cluster_state_publication_diff_upsert_custom_snapshots_entry",
@@ -210,12 +224,28 @@ public final class OpenSearchWireFixture {
             serializeClusterStatePublicationDiffUpsertRoutingIndex()
         );
         emit(
+            "cluster_state_publication_upsert_routing_before_state",
+            serializeClusterStatePublicationUpsertRoutingBeforeState()
+        );
+        emit(
+            "cluster_state_publication_upsert_routing_after_state",
+            serializeClusterStatePublicationUpsertRoutingAfterState()
+        );
+        emit(
             "cluster_state_publication_diff_named_routing_index",
             serializeClusterStatePublicationDiffNamedRoutingIndex()
         );
         emit(
             "cluster_state_publication_diff_upsert_metadata_template",
             serializeClusterStatePublicationDiffUpsertMetadataTemplate()
+        );
+        emit(
+            "cluster_state_publication_upsert_metadata_template_before_state",
+            serializeClusterStatePublicationUpsertMetadataTemplateBeforeState()
+        );
+        emit(
+            "cluster_state_publication_upsert_metadata_template_after_state",
+            serializeClusterStatePublicationUpsertMetadataTemplateAfterState()
         );
         emit(
             "cluster_state_publication_diff_named_metadata_template",
@@ -318,9 +348,17 @@ public final class OpenSearchWireFixture {
         emit("cluster_state_response_snapshots_custom_clone", serializeClusterStateResponseSnapshotsCustomClone());
         emit("cluster_state_response_snapshots_custom_user_metadata", serializeClusterStateResponseSnapshotsCustomUserMetadata());
         emit("cluster_state_response_single_node", serializeClusterStateResponseSingleNode());
+        emit(
+            "cluster_state_response_acceptance_single_node_full",
+            serializeClusterStateResponseAcceptanceSingleNodeFull()
+        );
         emit("cluster_state_response_global_block", serializeClusterStateResponseGlobalBlock());
         emit("cluster_state_response_index_block", serializeClusterStateResponseIndexBlock());
         emit("cluster_state_response_metadata_settings", serializeClusterStateResponseMetadataSettings());
+        emit(
+            "cluster_state_response_coordination_metadata",
+            serializeClusterStateResponseCoordinationMetadata()
+        );
         emit("cluster_state_response_consistent_setting_hashes", serializeClusterStateResponseConsistentSettingHashes());
         emit("cluster_state_response_index_graveyard_tombstone", serializeClusterStateResponseIndexGraveyardTombstone());
         emit("cluster_state_response_component_template", serializeClusterStateResponseComponentTemplate());
@@ -451,12 +489,28 @@ public final class OpenSearchWireFixture {
     private static byte[] serializeClusterStateResponseMinimal() throws IOException {
         ClusterName clusterName = new ClusterName("fixture-cluster");
         ClusterState clusterState = ClusterState.builder(clusterName).version(7L).stateUUID("fixture-state-uuid").build();
+        return serializeClusterStateResponse(clusterName, clusterState);
+    }
+
+    private static byte[] serializeClusterStateResponse(ClusterName clusterName, ClusterState clusterState) throws IOException {
         ClusterStateResponse response = new ClusterStateResponse(clusterName, clusterState, false);
         try (BytesStreamOutput out = new BytesStreamOutput()) {
             out.setVersion(Version.CURRENT);
             response.writeTo(out);
             return BytesReference.toBytes(out.bytes());
         }
+    }
+
+    private static byte[] serializeClusterStatePublicationEmptyBeforeState() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        ClusterState before = ClusterState.builder(clusterName).version(1L).stateUUID("fixture-diff-from").build();
+        return serializeClusterStateResponse(clusterName, before);
+    }
+
+    private static byte[] serializeClusterStatePublicationEmptyAfterState() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        ClusterState after = ClusterState.builder(clusterName).version(2L).stateUUID("fixture-diff-to").build();
+        return serializeClusterStateResponse(clusterName, after);
     }
 
     private static byte[] serializeClusterStatePublicationDiffEmpty() throws IOException {
@@ -478,17 +532,37 @@ public final class OpenSearchWireFixture {
     }
 
     private static byte[] serializeClusterStatePublicationDiffUpsertCustom() throws IOException {
+        return serializeClusterStatePublicationDiff(
+            clusterStatePublicationUpsertCustomBefore(),
+            clusterStatePublicationUpsertCustomAfter()
+        );
+    }
+
+    private static byte[] serializeClusterStatePublicationUpsertCustomBeforeState() throws IOException {
         ClusterName clusterName = new ClusterName("fixture-cluster");
-        ClusterState before = ClusterState.builder(clusterName)
+        return serializeClusterStateResponse(clusterName, clusterStatePublicationUpsertCustomBefore());
+    }
+
+    private static byte[] serializeClusterStatePublicationUpsertCustomAfterState() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return serializeClusterStateResponse(clusterName, clusterStatePublicationUpsertCustomAfter());
+    }
+
+    private static ClusterState clusterStatePublicationUpsertCustomBefore() {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return ClusterState.builder(clusterName)
             .version(1L)
             .stateUUID("fixture-diff-upsert-custom-from")
             .build();
-        ClusterState after = ClusterState.builder(clusterName)
+    }
+
+    private static ClusterState clusterStatePublicationUpsertCustomAfter() {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return ClusterState.builder(clusterName)
             .version(2L)
             .stateUUID("fixture-diff-upsert-custom-to")
             .putCustom(SnapshotsInProgress.TYPE, SnapshotsInProgress.EMPTY)
             .build();
-        return serializeClusterStatePublicationDiff(before, after);
     }
 
     private static byte[] serializeClusterStatePublicationDiffUpsertCustomSnapshotsEntry() throws IOException {
@@ -640,21 +714,41 @@ public final class OpenSearchWireFixture {
     }
 
     private static byte[] serializeClusterStatePublicationDiffUpsertRoutingIndex() throws IOException {
+        return serializeClusterStatePublicationDiff(
+            clusterStatePublicationUpsertRoutingBefore(),
+            clusterStatePublicationUpsertRoutingAfter()
+        );
+    }
+
+    private static byte[] serializeClusterStatePublicationUpsertRoutingBeforeState() throws IOException {
         ClusterName clusterName = new ClusterName("fixture-cluster");
-        IndexRoutingTable indexRouting = IndexRoutingTable.builder(
-            new Index("fixture-upsert-routing-index", "fixture-upsert-routing-index-uuid")
-        ).build();
-        ClusterState before = ClusterState.builder(clusterName)
+        return serializeClusterStateResponse(clusterName, clusterStatePublicationUpsertRoutingBefore());
+    }
+
+    private static byte[] serializeClusterStatePublicationUpsertRoutingAfterState() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return serializeClusterStateResponse(clusterName, clusterStatePublicationUpsertRoutingAfter());
+    }
+
+    private static ClusterState clusterStatePublicationUpsertRoutingBefore() {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return ClusterState.builder(clusterName)
             .version(1L)
             .stateUUID("fixture-diff-upsert-routing-from")
             .routingTable(RoutingTable.builder().version(1L).build())
             .build();
-        ClusterState after = ClusterState.builder(clusterName)
+    }
+
+    private static ClusterState clusterStatePublicationUpsertRoutingAfter() {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        IndexRoutingTable indexRouting = IndexRoutingTable.builder(
+            new Index("fixture-upsert-routing-index", "fixture-upsert-routing-index-uuid")
+        ).build();
+        return ClusterState.builder(clusterName)
             .version(2L)
             .stateUUID("fixture-diff-upsert-routing-to")
             .routingTable(RoutingTable.builder().version(2L).add(indexRouting).build())
             .build();
-        return serializeClusterStatePublicationDiff(before, after);
     }
 
     private static byte[] serializeClusterStatePublicationDiffNamedRoutingIndex() throws IOException {
@@ -733,6 +827,32 @@ public final class OpenSearchWireFixture {
     }
 
     private static byte[] serializeClusterStatePublicationDiffUpsertMetadataTemplate() throws IOException {
+        return serializeClusterStatePublicationDiff(
+            clusterStatePublicationUpsertMetadataTemplateBefore(),
+            clusterStatePublicationUpsertMetadataTemplateAfter()
+        );
+    }
+
+    private static byte[] serializeClusterStatePublicationUpsertMetadataTemplateBeforeState() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return serializeClusterStateResponse(clusterName, clusterStatePublicationUpsertMetadataTemplateBefore());
+    }
+
+    private static byte[] serializeClusterStatePublicationUpsertMetadataTemplateAfterState() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return serializeClusterStateResponse(clusterName, clusterStatePublicationUpsertMetadataTemplateAfter());
+    }
+
+    private static ClusterState clusterStatePublicationUpsertMetadataTemplateBefore() {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        return ClusterState.builder(clusterName)
+            .version(1L)
+            .stateUUID("fixture-diff-upsert-template-from")
+            .metadata(Metadata.builder().build())
+            .build();
+    }
+
+    private static ClusterState clusterStatePublicationUpsertMetadataTemplateAfter() {
         ClusterName clusterName = new ClusterName("fixture-cluster");
         IndexTemplateMetadata template = IndexTemplateMetadata.builder("fixture-upsert-template")
             .patterns(Collections.singletonList("fixture-upsert-*"))
@@ -741,17 +861,11 @@ public final class OpenSearchWireFixture {
             .version(10)
             .build();
         Metadata metadata = Metadata.builder().put(template).build();
-        ClusterState before = ClusterState.builder(clusterName)
-            .version(1L)
-            .stateUUID("fixture-diff-upsert-template-from")
-            .metadata(Metadata.builder().build())
-            .build();
-        ClusterState after = ClusterState.builder(clusterName)
+        return ClusterState.builder(clusterName)
             .version(2L)
             .stateUUID("fixture-diff-upsert-template-to")
             .metadata(metadata)
             .build();
-        return serializeClusterStatePublicationDiff(before, after);
     }
 
     private static byte[] serializeClusterStatePublicationDiffNamedMetadataTemplate() throws IOException {
@@ -2049,6 +2163,143 @@ public final class OpenSearchWireFixture {
         }
     }
 
+    private static byte[] serializeClusterStateResponseAcceptanceSingleNodeFull() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-acceptance-cluster");
+        DiscoveryNode node = new DiscoveryNode(
+            "fixture-acceptance-node",
+            "fixture-acceptance-node-id",
+            "fixture-acceptance-ephemeral-id",
+            "127.0.0.1",
+            "127.0.0.1",
+            new TransportAddress(InetAddress.getByName("127.0.0.1"), 9300),
+            Collections.emptyMap(),
+            Collections.singleton(DiscoveryNodeRole.CLUSTER_MANAGER_ROLE),
+            Version.CURRENT
+        );
+        DiscoveryNodes nodes = DiscoveryNodes.builder()
+            .add(node)
+            .clusterManagerNodeId("fixture-acceptance-node-id")
+            .localNodeId("fixture-acceptance-node-id")
+            .build();
+
+        Settings indexSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_INDEX_UUID, "fixture-acceptance-index-uuid")
+            .put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT)
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            .build();
+        IndexMetadata indexMetadata = IndexMetadata.builder("fixture-acceptance-index")
+            .settings(indexSettings)
+            .numberOfShards(1)
+            .numberOfReplicas(0)
+            .putMapping("{\"properties\":{\"title\":{\"type\":\"keyword\"},\"body\":{\"type\":\"text\"}}}")
+            .putAlias(AliasMetadata.builder("fixture-acceptance-alias"))
+            .build();
+
+        IndexTemplateMetadata legacyTemplate = IndexTemplateMetadata.builder("fixture-acceptance-template")
+            .patterns(Collections.singletonList("fixture-acceptance-*"))
+            .order(10)
+            .settings(Settings.builder().put("index.number_of_shards", 1).build())
+            .putMapping("_doc", "{\"properties\":{\"title\":{\"type\":\"keyword\"}}}")
+            .putAlias(AliasMetadata.builder("fixture-acceptance-template-alias").build())
+            .version(11)
+            .build();
+        Template template = new Template(
+            Settings.builder().put("index.number_of_shards", 1).build(),
+            new CompressedXContent("{\"properties\":{\"body\":{\"type\":\"text\"}}}"),
+            Collections.singletonMap(
+                "fixture-acceptance-component-alias",
+                AliasMetadata.builder("fixture-acceptance-component-alias").build()
+            )
+        );
+        ComponentTemplate componentTemplate = new ComponentTemplate(
+            template,
+            12L,
+            Collections.<String, Object>singletonMap("fixture-meta-key", "fixture-meta-value")
+        );
+        ComponentTemplateMetadata componentTemplateMetadata = new ComponentTemplateMetadata(
+            Collections.singletonMap("fixture-acceptance-component", componentTemplate)
+        );
+        ComposableIndexTemplate composableTemplate = new ComposableIndexTemplate(
+            Collections.singletonList("fixture-acceptance-compose-*"),
+            template,
+            Collections.singletonList("fixture-acceptance-component"),
+            13L,
+            14L,
+            Collections.<String, Object>singletonMap("fixture-template-meta", "fixture-template-meta-value")
+        );
+        ComposableIndexTemplateMetadata composableTemplateMetadata = new ComposableIndexTemplateMetadata(
+            Collections.singletonMap("fixture-acceptance-composable", composableTemplate)
+        );
+
+        PipelineConfiguration pipeline = new PipelineConfiguration(
+            "fixture-acceptance-pipeline",
+            new BytesArray("{\"description\":\"fixture acceptance pipeline\",\"processors\":[]}"),
+            MediaTypeRegistry.JSON
+        );
+        IngestMetadata ingestMetadata = new IngestMetadata(Collections.singletonMap("fixture-acceptance-pipeline", pipeline));
+        StoredScriptSource scriptSource = new StoredScriptSource(
+            "painless",
+            "return params.value;",
+            Collections.singletonMap("content_type", "application/json")
+        );
+        ScriptMetadata scriptMetadata = new ScriptMetadata.Builder(null)
+            .storeScript("fixture-acceptance-script", scriptSource)
+            .build();
+        RepositoryMetadata repository = new RepositoryMetadata(
+            "fixture-acceptance-repository",
+            "fs",
+            Settings.builder().put("location", "/tmp/fixture-acceptance-repository").build()
+        );
+        RepositoriesMetadata repositoriesMetadata = new RepositoriesMetadata(Collections.singletonList(repository));
+        Metadata metadata = Metadata.builder()
+            .put(indexMetadata, false)
+            .put(legacyTemplate)
+            .putCustom(ComponentTemplateMetadata.TYPE, componentTemplateMetadata)
+            .putCustom(ComposableIndexTemplateMetadata.TYPE, composableTemplateMetadata)
+            .putCustom(IngestMetadata.TYPE, ingestMetadata)
+            .putCustom(ScriptMetadata.TYPE, scriptMetadata)
+            .putCustom(RepositoriesMetadata.TYPE, repositoriesMetadata)
+            .build();
+
+        ShardId shardId = new ShardId(indexMetadata.getIndex(), 0);
+        ShardRouting startedShard = ShardRouting.newUnassigned(
+            shardId,
+            true,
+            RecoverySource.EmptyStoreRecoverySource.INSTANCE,
+            new UnassignedInfo(UnassignedInfo.Reason.INDEX_CREATED, "fixture acceptance started shard")
+        ).initialize("fixture-acceptance-node-id", null, -1L).moveToStarted();
+        IndexShardRoutingTable shardRoutingTable = new IndexShardRoutingTable.Builder(shardId).addShard(startedShard).build();
+        IndexRoutingTable indexRoutingTable = IndexRoutingTable.builder(indexMetadata.getIndex()).addIndexShard(shardRoutingTable).build();
+        RoutingTable routingTable = RoutingTable.builder().add(indexRoutingTable).build();
+        ClusterBlock indexBlock = new ClusterBlock(
+            44,
+            "fixture-acceptance-index-block-uuid",
+            "fixture acceptance index block",
+            false,
+            false,
+            false,
+            RestStatus.FORBIDDEN,
+            EnumSet.of(ClusterBlockLevel.READ, ClusterBlockLevel.METADATA_READ)
+        );
+
+        ClusterState clusterState = ClusterState.builder(clusterName)
+            .version(50L)
+            .stateUUID("fixture-acceptance-single-node-full-state")
+            .nodes(nodes)
+            .metadata(metadata)
+            .routingTable(routingTable)
+            .blocks(ClusterBlocks.builder().addIndexBlock("fixture-acceptance-index", indexBlock).build())
+            .putCustom(RepositoryCleanupInProgress.TYPE, fixtureRepositoryCleanupInProgress(50L))
+            .build();
+        ClusterStateResponse response = new ClusterStateResponse(clusterName, clusterState, false);
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            out.setVersion(Version.CURRENT);
+            response.writeTo(out);
+            return BytesReference.toBytes(out.bytes());
+        }
+    }
+
     private static byte[] serializeClusterStateResponseGlobalBlock() throws IOException {
         ClusterName clusterName = new ClusterName("fixture-cluster");
         ClusterBlock block = new ClusterBlock(
@@ -2108,6 +2359,37 @@ public final class OpenSearchWireFixture {
         ClusterState clusterState = ClusterState.builder(clusterName)
             .version(18L)
             .stateUUID("fixture-state-with-metadata-settings")
+            .metadata(metadata)
+            .build();
+        ClusterStateResponse response = new ClusterStateResponse(clusterName, clusterState, false);
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            out.setVersion(Version.CURRENT);
+            response.writeTo(out);
+            return BytesReference.toBytes(out.bytes());
+        }
+    }
+
+    private static byte[] serializeClusterStateResponseCoordinationMetadata() throws IOException {
+        ClusterName clusterName = new ClusterName("fixture-cluster");
+        CoordinationMetadata coordinationMetadata = CoordinationMetadata.builder()
+            .term(23L)
+            .lastCommittedConfiguration(
+                new VotingConfiguration(new LinkedHashSet<>(Arrays.asList("fixture-node-1", "fixture-node-2")))
+            )
+            .lastAcceptedConfiguration(
+                new VotingConfiguration(new LinkedHashSet<>(Arrays.asList("fixture-node-2")))
+            )
+            .addVotingConfigExclusion(new VotingConfigExclusion("fixture-node-3", "fixture-node-name-3"))
+            .build();
+        Metadata metadata = Metadata.builder()
+            .coordinationMetadata(coordinationMetadata)
+            .transientSettings(Settings.builder().put("fixture.transient.coordination", "coordination-transient").build())
+            .persistentSettings(Settings.builder().put("fixture.persistent.coordination", "coordination-persistent").build())
+            .hashesOfConsistentSettings(Collections.singletonMap("fixture.secure.coordination", "coordination-hash"))
+            .build();
+        ClusterState clusterState = ClusterState.builder(clusterName)
+            .version(30L)
+            .stateUUID("fixture-state-with-coordination-metadata")
             .metadata(metadata)
             .build();
         ClusterStateResponse response = new ClusterStateResponse(clusterName, clusterState, false);

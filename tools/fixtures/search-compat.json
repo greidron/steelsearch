@@ -1,0 +1,2201 @@
+{
+  "manifest": {
+    "version": 1,
+    "description": "Steelsearch/OpenSearch supported search compatibility fixture manifest.",
+    "index_settings": [
+      {
+        "index": "logs-compat",
+        "features": ["single_shard", "no_replicas", "text", "keyword", "long", "date", "geo_point"]
+      },
+      {
+        "index": "vectors-compat",
+        "features": ["single_shard", "no_replicas", "knn", "knn_vector"]
+      },
+      {
+        "index": "vectors-cosine-compat",
+        "features": ["single_shard", "no_replicas", "knn", "knn_vector", "cosinesimil"]
+      },
+      {
+        "index": "vectors-innerproduct-compat",
+        "features": ["single_shard", "no_replicas", "knn", "knn_vector", "innerproduct"]
+      }
+    ],
+    "mappings": [
+      {
+        "index": "logs-compat",
+        "fields": {
+          "message": "text",
+          "service": "keyword",
+          "level": "keyword",
+          "tag": "keyword",
+          "bytes": "long",
+          "ts": "date",
+          "location": "geo_point"
+        }
+      },
+      {
+        "index": "vectors-compat",
+        "fields": {
+          "title": "text",
+          "category": "keyword",
+          "embedding": "knn_vector:3"
+        }
+      },
+      {
+        "index": "vectors-cosine-compat",
+        "fields": {
+          "title": "text",
+          "category": "keyword",
+          "embedding": "knn_vector:3:cosinesimil"
+        }
+      },
+      {
+        "index": "vectors-innerproduct-compat",
+        "fields": {
+          "title": "text",
+          "category": "keyword",
+          "embedding": "knn_vector:3:innerproduct"
+        }
+      }
+    ],
+    "aliases": [
+      {
+        "alias": "logs-compat-read",
+        "index": "logs-compat",
+        "status": "executable",
+        "reason": "Created during fixture setup and verified through GET index alias metadata."
+      },
+      {
+        "alias": "vectors-compat-read",
+        "index": "vectors-compat",
+        "status": "executable",
+        "reason": "Created during fixture setup and verified through GET index alias metadata."
+      },
+      {
+        "alias": "vectors-cosine-compat-read",
+        "index": "vectors-cosine-compat",
+        "status": "executable",
+        "reason": "Created during fixture setup and verified through GET index alias metadata."
+      },
+      {
+        "alias": "vectors-innerproduct-compat-read",
+        "index": "vectors-innerproduct-compat",
+        "status": "executable",
+        "reason": "Created during fixture setup and verified through GET index alias metadata."
+      }
+    ],
+    "documents": [
+      {
+        "index": "logs-compat",
+        "ids": ["log-1", "log-2", "log-3"]
+      },
+      {
+        "index": "vectors-compat",
+        "ids": ["vec-a", "vec-b", "vec-c"]
+      },
+      {
+        "index": "vectors-cosine-compat",
+        "ids": ["vec-a", "vec-b", "vec-c"]
+      },
+      {
+        "index": "vectors-innerproduct-compat",
+        "ids": ["vec-a", "vec-b", "vec-c"]
+      }
+    ],
+    "bulk_payloads": [
+      {
+        "name": "logs_bulk",
+        "index": "logs-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": ["log-1", "log-2", "log-3"]
+      },
+      {
+        "name": "vectors_bulk",
+        "index": "vectors-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": ["vec-a", "vec-b", "vec-c"]
+      },
+      {
+        "name": "vectors_cosine_bulk",
+        "index": "vectors-cosine-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": ["vec-a", "vec-b", "vec-c"]
+      },
+      {
+        "name": "vectors_innerproduct_bulk",
+        "index": "vectors-innerproduct-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": ["vec-a", "vec-b", "vec-c"]
+      }
+    ],
+    "search_requests": [
+      "bulk_match_search",
+      "bool_filter_range",
+      "knn_search",
+      "knn_cosinesimil_search",
+      "knn_innerproduct_search",
+      "knn_stats_shape",
+      "knn_warmup_budget_failure",
+      "knn_warmup_clear_cache_telemetry_shape",
+      "knn_unsupported_method_engine_fail_closed",
+      "knn_unsupported_mode_fail_closed",
+      "knn_unsupported_method_parameters_fail_closed"
+    ],
+    "aggregation_requests": [
+      "terms_aggregation",
+      "metric_aggregations",
+      "filter_aggregations",
+      "top_hits_aggregation",
+      "composite_aggregation",
+      "significant_terms_aggregation",
+      "geo_bounds_aggregation",
+      "sum_bucket_pipeline_aggregation",
+      "scripted_metric_placeholder_aggregation",
+      "plugin_aggregation"
+    ],
+    "knn_mappings": [
+      {
+        "index": "vectors-compat",
+        "field": "embedding",
+        "dimension": 3
+      },
+      {
+        "index": "vectors-cosine-compat",
+        "field": "embedding",
+        "dimension": 3,
+        "space_type": "cosinesimil",
+        "engine": "lucene"
+      },
+      {
+        "index": "vectors-innerproduct-compat",
+        "field": "embedding",
+        "dimension": 3,
+        "space_type": "innerproduct",
+        "engine": "lucene"
+      }
+    ],
+    "vector_documents": [
+      {
+        "index": "vectors-compat",
+        "ids": ["vec-a", "vec-b", "vec-c"],
+        "field": "embedding"
+      },
+      {
+        "index": "vectors-cosine-compat",
+        "ids": ["vec-a", "vec-b", "vec-c"],
+        "field": "embedding"
+      },
+      {
+        "index": "vectors-innerproduct-compat",
+        "ids": ["vec-a", "vec-b", "vec-c"],
+        "field": "embedding"
+      }
+    ],
+    "expected_error_cases": [
+      {
+        "name": "missing_document_shape",
+        "request": "GET /logs-compat/_doc/missing",
+        "expected_status": 404,
+        "stable_fields": ["found", "_id"]
+      },
+      {
+        "name": "bad_knn_vector_dimension",
+        "request": "POST /vectors-compat/_search",
+        "status": "planned",
+        "expected_status": 400,
+        "reason": "Executable comparison is added with error normalization to avoid vendor-specific message text."
+      },
+      {
+        "name": "knn_unsupported_method_engine_fail_closed",
+        "request": "POST /vectors-unsupported-engine-compat/_search",
+        "expected_status": 400,
+        "stable_fields": ["error.type", "error.reason"]
+      },
+      {
+        "name": "knn_unsupported_mode_fail_closed",
+        "request": "POST /vectors-unsupported-mode-compat/_search",
+        "expected_status": 400,
+        "stable_fields": ["error.type", "error.reason"]
+      },
+      {
+        "name": "knn_unsupported_method_parameters_fail_closed",
+        "request": "POST /vectors-unsupported-method-params-compat/_search",
+        "expected_status": 400,
+        "stable_fields": ["error.type", "error.reason"]
+      },
+      {
+        "name": "knn_warmup_budget_failure",
+        "request": "POST /_plugins/_knn/warmup/vectors-compat",
+        "expected_status": 400,
+        "stable_fields": ["error.type", "error.reason"]
+      }
+    ]
+  },
+  "indices": [
+    {
+      "name": "logs-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "message": { "type": "text" },
+            "service": { "type": "keyword" },
+            "level": { "type": "keyword" },
+            "tag": { "type": "keyword" },
+            "bytes": { "type": "long" },
+            "ts": { "type": "date" },
+            "location": { "type": "geo_point" }
+          }
+        }
+      }
+    },
+    {
+      "name": "vectors-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "title": { "type": "text" },
+            "category": { "type": "keyword" },
+            "embedding": {
+              "type": "knn_vector",
+              "dimension": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "vectors-cosine-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "title": { "type": "text" },
+            "category": { "type": "keyword" },
+            "embedding": {
+              "type": "knn_vector",
+              "dimension": 3,
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "cosinesimil"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "vectors-innerproduct-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "title": { "type": "text" },
+            "category": { "type": "keyword" },
+            "embedding": {
+              "type": "knn_vector",
+              "dimension": 3,
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "innerproduct"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "aliases": [
+    {
+      "index": "logs-compat",
+      "alias": "logs-compat-read",
+      "body": {}
+    },
+    {
+      "index": "vectors-compat",
+      "alias": "vectors-compat-read",
+      "body": {}
+    },
+    {
+      "index": "vectors-cosine-compat",
+      "alias": "vectors-cosine-compat-read",
+      "body": {}
+    },
+    {
+      "index": "vectors-innerproduct-compat",
+      "alias": "vectors-innerproduct-compat-read",
+      "body": {}
+    }
+  ],
+  "bulk": [
+    {
+      "index": "logs-compat",
+      "documents": [
+        {
+          "_id": "log-1",
+          "_source": {
+            "message": "checkout service accepted payment",
+            "service": "checkout",
+            "level": "info",
+            "tag": "payment",
+            "bytes": 120,
+            "ts": "2026-04-22T00:00:00Z",
+            "location": { "lat": 37.78, "lon": -122.41 }
+          }
+        },
+        {
+          "_id": "log-2",
+          "_source": {
+            "message": "checkout service payment timeout",
+            "service": "checkout",
+            "level": "warn",
+            "tag": "payment",
+            "bytes": 300,
+            "ts": "2026-04-22T00:01:00Z",
+            "location": { "lat": 37.79, "lon": -122.4 }
+          }
+        },
+        {
+          "_id": "log-3",
+          "_source": {
+            "message": "catalog service refreshed product cache",
+            "service": "catalog",
+            "level": "info",
+            "tag": "cache",
+            "bytes": 80,
+            "ts": "2026-04-22T00:02:00Z",
+            "location": { "lat": 37.77, "lon": -122.42 }
+          }
+        }
+      ]
+    },
+    {
+      "index": "vectors-compat",
+      "documents": [
+        {
+          "_id": "vec-a",
+          "_source": {
+            "title": "red apple",
+            "category": "fruit",
+            "embedding": [1.0, 0.0, 0.0]
+          }
+        },
+        {
+          "_id": "vec-b",
+          "_source": {
+            "title": "green apple",
+            "category": "fruit",
+            "embedding": [0.9, 0.1, 0.0]
+          }
+        },
+        {
+          "_id": "vec-c",
+          "_source": {
+            "title": "blue car",
+            "category": "vehicle",
+            "embedding": [0.0, 1.0, 0.0]
+          }
+        }
+      ]
+    },
+    {
+      "index": "vectors-cosine-compat",
+      "documents": [
+        {
+          "_id": "vec-a",
+          "_source": {
+            "title": "red apple",
+            "category": "fruit",
+            "embedding": [1.0, 0.0, 0.0]
+          }
+        },
+        {
+          "_id": "vec-b",
+          "_source": {
+            "title": "green apple",
+            "category": "fruit",
+            "embedding": [0.9, 0.1, 0.0]
+          }
+        },
+        {
+          "_id": "vec-c",
+          "_source": {
+            "title": "blue car",
+            "category": "vehicle",
+            "embedding": [0.0, 1.0, 0.0]
+          }
+        }
+      ]
+    },
+    {
+      "index": "vectors-innerproduct-compat",
+      "documents": [
+        {
+          "_id": "vec-a",
+          "_source": {
+            "title": "red apple",
+            "category": "fruit",
+            "embedding": [1.0, 0.0, 0.0]
+          }
+        },
+        {
+          "_id": "vec-b",
+          "_source": {
+            "title": "green apple",
+            "category": "fruit",
+            "embedding": [0.9, 0.1, 0.0]
+          }
+        },
+        {
+          "_id": "vec-c",
+          "_source": {
+            "title": "blue car",
+            "category": "vehicle",
+            "embedding": [0.0, 1.0, 0.0]
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "root_info",
+      "area": "operational",
+      "method": "GET",
+      "path": "/",
+      "extract": "root_info"
+    },
+    {
+      "name": "cluster_health",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "extract": "cluster_health"
+    },
+    {
+      "name": "head_index",
+      "area": "index",
+      "method": "HEAD",
+      "path": "/logs-compat",
+      "extract": "status_only"
+    },
+    {
+      "name": "get_index",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-compat",
+      "extract": "get_index"
+    },
+    {
+      "name": "get_index_aliases_and_settings",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-compat",
+      "extract": "index_metadata"
+    },
+    {
+      "name": "get_alias_readback",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_alias/logs-compat-read",
+      "extract": "alias_metadata"
+    },
+    {
+      "name": "get_aliases_readback",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_aliases",
+      "extract": "alias_metadata"
+    },
+    {
+      "name": "wildcard_alias_readback",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_alias/*-compat-read",
+      "extract": "alias_metadata"
+    },
+    {
+      "name": "create_data_stream_fail_closed",
+      "area": "data_stream",
+      "method": "PUT",
+      "path": "/_data_stream/logs-compat-ds",
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-data-streams",
+      "reason": "Steelsearch does not implement OpenSearch data streams yet and fails closed with an explicit compatibility error."
+    },
+    {
+      "name": "get_data_stream_fail_closed",
+      "area": "data_stream",
+      "method": "GET",
+      "path": "/_data_stream/logs-compat-ds",
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-data-streams",
+      "reason": "Steelsearch keeps data stream read APIs explicit and unsupported until backing-index generation and lifecycle semantics exist."
+    },
+    {
+      "name": "rollover_fail_closed",
+      "area": "data_stream",
+      "method": "POST",
+      "path": "/logs-compat-read/_rollover",
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-data-streams",
+      "reason": "Steelsearch does not yet implement rollover aliases or data stream generation updates."
+    },
+    {
+      "name": "wildcard_index_read_expansion",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-*",
+      "extract": "get_index"
+    },
+    {
+      "name": "cat_indices_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices?format=json",
+      "extract": "cat_indices"
+    },
+    {
+      "name": "cat_indices_text_parameters_skip",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices?v=true",
+      "extract": "status_only",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "unsupported-query-parameters",
+      "reason": "OpenSearch cat text formatting and verbose column rendering are intentionally skipped until Steelsearch implements non-JSON cat output."
+    },
+    {
+      "name": "cluster_health_wait_parameters_skip",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/health?wait_for_status=green&timeout=1s",
+      "extract": "cluster_health",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "unsupported-query-parameters",
+      "reason": "Steelsearch reports current health but does not yet implement OpenSearch wait_for_status or timeout blocking semantics."
+    },
+    {
+      "name": "node_stats_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/stats",
+      "extract": "node_stats"
+    },
+    {
+      "name": "cluster_stats_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/stats",
+      "extract": "cluster_stats"
+    },
+    {
+      "name": "index_stats_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_stats",
+      "extract": "index_stats"
+    },
+    {
+      "name": "tasks_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_tasks",
+      "extract": "tasks"
+    },
+    {
+      "name": "allocation_explain_development_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/allocation/explain",
+      "extract": "allocation_explain",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-comparison",
+      "reason": "Steelsearch exposes a development allocation decision without requiring the OpenSearch request body yet."
+    },
+    {
+      "name": "get_document",
+      "area": "document",
+      "method": "GET",
+      "path": "/logs-compat/_doc/log-2",
+      "extract": "get_document"
+    },
+    {
+      "name": "get_document_via_alias",
+      "area": "document",
+      "method": "GET",
+      "path": "/logs-compat-read/_doc/log-2",
+      "extract": "get_document"
+    },
+    {
+      "name": "index_document_via_alias",
+      "area": "document",
+      "method": "PUT",
+      "path": "/logs-compat-read/_doc/log-alias?refresh=true",
+      "body": {
+        "message": "alias write compatibility smoke",
+        "service": "alias",
+        "level": "info",
+        "bytes": 1,
+        "ts": "2026-04-22T00:03:00Z"
+      },
+      "extract": "status_only"
+    },
+    {
+      "name": "bulk_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "bool_filter_range",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "filter": [
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              },
+              {
+                "range": {
+                  "bytes": {
+                    "gte": 100
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "match_query_scoring_order_total_hits",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "payment timeout"
+          }
+        }
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "term_query_total_hits_exactness",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": "cache"
+          }
+        }
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "sorted_paginated_search_window",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ],
+        "from": 1,
+        "size": 1
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "track_total_hits_true_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        },
+        "size": 1,
+        "track_total_hits": true
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "alias_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat-read/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "wildcard_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "ignore_unavailable_multi_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat,missing-compat/_search?ignore_unavailable=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "allow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-*/_search?allow_no_indices=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "missing_index_search_error",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response"
+    },
+    {
+      "name": "malformed_search_body_parse_exception",
+      "area": "search",
+      "extract": "error_response",
+      "steps": [
+        {
+          "name": "malformed-raw-search",
+          "method": "POST",
+          "path": "/logs-compat/_search",
+          "body": "{\"query\":{\"match\":{\"message\":\"checkout\"}}",
+          "raw": true,
+          "expected_status": 400,
+          "extract": "error_response"
+        }
+      ]
+    },
+    {
+      "name": "highlight_option_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "highlight": {
+          "fields": {
+            "message": {}
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-options",
+      "reason": "Steelsearch fail-closes highlight until fetch-subphase and fragment rendering semantics match OpenSearch."
+    },
+    {
+      "name": "suggest_option_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "suggest": {
+          "message-suggest": {
+            "text": "checkout",
+            "term": {
+              "field": "message"
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-options",
+      "reason": "Steelsearch fail-closes suggest until completion/term/phrase suggestion semantics are implemented."
+    },
+    {
+      "name": "scroll_option_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-options",
+      "reason": "Steelsearch fail-closes scroll until stateful traversal semantics are implemented."
+    },
+    {
+      "name": "pit_option_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "pit-placeholder",
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-options",
+      "reason": "Steelsearch fail-closes PIT until point-in-time snapshot lifecycle semantics are implemented."
+    },
+    {
+      "name": "runtime_mappings_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "runtime_mappings": {
+          "computed_level": {
+            "type": "keyword",
+            "script": {
+              "source": "emit(doc['level'].value)"
+            }
+          }
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-options",
+      "reason": "Steelsearch fail-closes runtime_mappings until runtime field execution semantics are implemented."
+    },
+    {
+      "name": "disallow_no_indices_empty_wildcard_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-*/_search?allow_no_indices=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 404,
+      "skip_scope": "unsupported-search-target-option",
+      "reason": "Steelsearch now fails closed when allow_no_indices=false and a wildcard target resolves no indices."
+    },
+    {
+      "name": "expand_wildcards_open_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search?expand_wildcards=open",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "expand_wildcards_none_empty_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search?expand_wildcards=none&allow_no_indices=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "unsupported-search-target-option",
+      "reason": "Steelsearch treats expand_wildcards=none as an empty target set when allow_no_indices=true."
+    },
+    {
+      "name": "expand_wildcards_closed_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search?expand_wildcards=closed",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-target-option",
+      "reason": "Steelsearch rejects closed wildcard expansion until closed-index engine state is implemented."
+    },
+    {
+      "name": "highlight_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "highlight": { "fields": { "message": {} } }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects highlight requests until highlight response parity is implemented."
+    },
+    {
+      "name": "rescore_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "rescore": { "window_size": 10 }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects rescore requests until rescore execution and response parity are implemented."
+    },
+    {
+      "name": "collapse_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "collapse": { "field": "service" }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects field collapse until grouped hit response semantics are implemented."
+    },
+    {
+      "name": "suggest_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "suggest": {
+          "message-suggest": {
+            "text": "pay",
+            "term": { "field": "message" }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects suggesters until suggestion execution and response parity are implemented."
+    },
+    {
+      "name": "pit_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "pit": { "id": "pit-id" }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects PIT search until point-in-time lifecycle APIs and reader pinning exist."
+    },
+    {
+      "name": "search_after_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "search_after": [1]
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects search_after until sort value validation and pagination semantics are complete."
+    },
+    {
+      "name": "scroll_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": { "match_all": {} }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-feature",
+      "reason": "Steelsearch rejects scroll search until scroll context lifecycle and cleanup APIs are implemented."
+    },
+    {
+      "name": "track_total_hits_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "track_total_hits": false
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects track_total_hits until total-hit threshold response parity is implemented."
+    },
+    {
+      "name": "terminate_after_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "terminate_after": 1
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects terminate_after until early termination and shard metadata parity are implemented."
+    },
+    {
+      "name": "timeout_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "timeout": "1s"
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects search timeout until partial timeout accounting and response parity are implemented."
+    },
+    {
+      "name": "explain_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "explain": true
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects explain until per-hit explanation response parity is implemented."
+    },
+    {
+      "name": "profile_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "profile": true
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects profile until query/profile tree response parity is implemented."
+    },
+    {
+      "name": "stored_fields_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "stored_fields": ["message"]
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects stored_fields until field loading response parity is implemented."
+    },
+    {
+      "name": "docvalue_fields_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": { "match_all": {} },
+        "docvalue_fields": ["ts"]
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-search-response-option",
+      "reason": "Steelsearch rejects docvalue_fields until docvalue field formatting parity is implemented."
+    },
+    {
+      "name": "query_string_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout AND payment"
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects query_string until analyzer, default-field, and syntax parity are implemented."
+    },
+    {
+      "name": "simple_query_string_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment"
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects simple_query_string until syntax, operator, and field expansion parity are implemented."
+    },
+    {
+      "name": "function_score_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": { "match_all": {} }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects function_score until score functions, boosts, and score-mode parity are implemented."
+    },
+    {
+      "name": "script_score_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "script_score": {
+            "query": { "match_all": {} },
+            "script": { "source": "1" }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects script_score until script execution, sandboxing, and scoring parity are implemented."
+    },
+    {
+      "name": "nested_query_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "events",
+            "query": { "match_all": {} }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects nested queries until nested document indexing and inner-hit parity are implemented."
+    },
+    {
+      "name": "geo_distance_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "1km",
+            "location": {
+              "lat": 0,
+              "lon": 0
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects geo_distance until geo-point indexing and distance calculation parity are implemented."
+    },
+    {
+      "name": "regexp_query_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": "check.*"
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects regexp queries until automaton and rewrite semantics match OpenSearch."
+    },
+    {
+      "name": "fuzzy_query_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": "paymnt"
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects fuzzy queries until edit-distance, prefix, rewrite, and scoring parity are implemented."
+    },
+    {
+      "name": "more_like_this_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "more_like_this": {
+            "fields": ["message"],
+            "like": "checkout"
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects more_like_this until term-vector selection and similarity scoring parity are implemented."
+    },
+    {
+      "name": "span_query_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "span_term": {
+            "message": "checkout"
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-query-dsl",
+      "reason": "Steelsearch rejects span queries until positional query execution and span response parity are implemented."
+    },
+    {
+      "name": "terms_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "extract": "terms_aggregation"
+    },
+    {
+      "name": "metric_aggregations",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "min_bytes": { "min": { "field": "bytes" } },
+          "max_bytes": { "max": { "field": "bytes" } },
+          "sum_bytes": { "sum": { "field": "bytes" } },
+          "avg_bytes": { "avg": { "field": "bytes" } },
+          "count_bytes": { "value_count": { "field": "bytes" } }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "stats_metric_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_stats": {
+            "stats": {
+              "field": "bytes"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "filter_aggregations",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "checkout_only": {
+            "filter": { "term": { "service": "checkout" } }
+          },
+          "by_level": {
+            "filters": {
+              "filters": {
+                "infos": { "term": { "level": "info" } },
+                "warnings": { "term": { "level": "warn" } }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "top_hits_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "sample": {
+            "top_hits": {
+              "size": 3
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "top_hits_sorted_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "latest_checkout": {
+            "top_hits": {
+              "size": 1,
+              "sort": [
+                {
+                  "ts": {
+                    "order": "desc"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "composite_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service_level": {
+            "composite": {
+              "size": 10,
+              "sources": [
+                {
+                  "service": {
+                    "terms": {
+                      "field": "service"
+                    }
+                  }
+                },
+                {
+                  "level": {
+                    "terms": {
+                      "field": "level"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "significant_terms_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "interesting_services": {
+            "significant_terms": {
+              "field": "service",
+              "size": 2
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "geo_bounds_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "viewport": {
+            "geo_bounds": {
+              "field": "location"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "sum_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "service_doc_total": {
+            "sum_bucket": {
+              "buckets_path": "by_service>_count"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "scripted_metric_placeholder_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "custom_metric": {
+            "scripted_metric": {
+              "map_script": "return params.value",
+              "params": {
+                "value": {
+                  "count": 7
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "scripted-metric-placeholder",
+      "reason": "Steelsearch currently exposes scripted_metric as an explicit placeholder value surface rather than executing OpenSearch scripts."
+    },
+    {
+      "name": "plugin_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "custom_plugin": {
+            "plugin": {
+              "name": "example-plugin",
+              "kind": "example_metric",
+              "params": {
+                "field": "service"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-plugin-aggregation",
+      "reason": "Steelsearch plugin aggregations are extension surfaces and do not correspond to a native OpenSearch aggregation request."
+    },
+    {
+      "name": "date_histogram_aggregation_fail_closed",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-aggregation",
+      "reason": "Steelsearch rejects date_histogram until bucket rounding and date interval parity are implemented."
+    },
+    {
+      "name": "histogram_aggregation_fail_closed",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-aggregation",
+      "reason": "Steelsearch rejects histogram until numeric bucket boundary parity is implemented."
+    },
+    {
+      "name": "range_aggregation_fail_closed",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "byte_ranges": {
+            "range": {
+              "field": "bytes",
+              "ranges": [
+                { "to": 100 }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-aggregation",
+      "reason": "Steelsearch rejects range aggregations until range bucket semantics are implemented."
+    },
+    {
+      "name": "cardinality_aggregation_fail_closed",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "services": {
+            "cardinality": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-aggregation",
+      "reason": "Steelsearch rejects cardinality until approximate unique-count parity is implemented."
+    },
+    {
+      "name": "terms_order_option_fail_closed",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": { "_count": "desc" }
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-aggregation-option",
+      "reason": "Steelsearch rejects terms.order until deterministic bucket ordering parity is implemented."
+    },
+    {
+      "name": "significant_terms_background_filter_fail_closed",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "sig": {
+            "significant_terms": {
+              "field": "service",
+              "background_filter": { "match_all": {} }
+            }
+          }
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-aggregation-option",
+      "reason": "Steelsearch rejects significant_terms.background_filter until background-set parity is implemented."
+    },
+    {
+      "name": "knn_search",
+      "area": "knn",
+      "method": "POST",
+      "path": "/vectors-compat/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [1.0, 0.0, 0.0],
+              "k": 2
+            }
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "knn_cosinesimil_search",
+      "area": "knn",
+      "method": "POST",
+      "path": "/vectors-cosine-compat/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [1.0, 0.0, 0.0],
+              "k": 2
+            }
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "knn_innerproduct_search",
+      "area": "knn",
+      "method": "POST",
+      "path": "/vectors-innerproduct-compat/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [1.0, 0.0, 0.0],
+              "k": 2
+            }
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits"
+    },
+    {
+      "name": "knn_stats_shape",
+      "area": "knn",
+      "method": "GET",
+      "path": "/_plugins/_knn/stats",
+      "extract": "knn_stats_shape"
+    },
+    {
+      "name": "knn_warmup_budget_failure",
+      "area": "knn",
+      "method": "POST",
+      "path": "/_plugins/_knn/warmup/vectors-compat",
+      "body": {
+        "vector_segment_count": 1,
+        "native_memory_bytes": 536870913
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-knn-memory-breaker",
+      "reason": "Steelsearch exposes Rust-native k-NN memory breaker accounting; OpenSearch uses JVM/native plugin internals with non-portable byte accounting."
+    },
+    {
+      "name": "knn_warmup_clear_cache_telemetry_shape",
+      "area": "knn",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-knn-cache-telemetry",
+      "reason": "Steelsearch reports Rust-native warmup bytes and clear-cache released bytes that are intentionally not matched field-for-field against OpenSearch plugin internals.",
+      "extract": "knn_clear_cache_response",
+      "steps": [
+        {
+          "name": "warmup-vectors",
+          "method": "POST",
+          "path": "/_plugins/_knn/warmup/vectors-compat",
+          "body": {
+            "vector_segment_count": 2,
+            "native_memory_bytes": 64,
+            "model_cache_bytes": 16,
+            "quantization_cache_bytes": 8
+          },
+          "expected_status": 200,
+          "extract": "knn_warmup_response"
+        },
+        {
+          "name": "stats-after-warmup",
+          "method": "GET",
+          "path": "/_plugins/_knn/stats",
+          "expected_status": 200,
+          "extract": "knn_stats_accounting"
+        },
+        {
+          "name": "clear-cache-vectors",
+          "method": "POST",
+          "path": "/_plugins/_knn/clear_cache/vectors-compat",
+          "expected_status": 200,
+          "extract": "knn_clear_cache_response"
+        }
+      ]
+    },
+    {
+      "name": "knn_unsupported_method_engine_fail_closed",
+      "area": "knn",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-knn-production-option",
+      "reason": "Steelsearch parses OpenSearch k-NN engine declarations for compatibility but rejects FAISS execution in the Rust-native production path.",
+      "extract": "error_response",
+      "steps": [
+        {
+          "name": "delete-index",
+          "method": "DELETE",
+          "path": "/vectors-unsupported-engine-compat"
+        },
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/vectors-unsupported-engine-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "knn": true,
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+              }
+            },
+            "mappings": {
+              "properties": {
+                "embedding": {
+                  "type": "knn_vector",
+                  "dimension": 3,
+                  "method": {
+                    "name": "hnsw",
+                    "engine": "faiss",
+                    "space_type": "l2"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "index-doc",
+          "method": "POST",
+          "path": "/vectors-unsupported-engine-compat/_bulk",
+          "expected_status": 200,
+          "raw": true,
+          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/vectors-unsupported-engine-compat/_search",
+          "expected_status": 400,
+          "body": {
+            "query": {
+              "knn": {
+                "embedding": {
+                  "vector": [1.0, 0.0, 0.0],
+                  "k": 1
+                }
+              }
+            }
+          },
+          "extract": "error_response"
+        }
+      ]
+    },
+    {
+      "name": "knn_unsupported_mode_fail_closed",
+      "area": "knn",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-knn-production-option",
+      "reason": "Steelsearch rejects on_disk k-NN execution until compressed/on-disk vector semantics are implemented.",
+      "extract": "error_response",
+      "steps": [
+        {
+          "name": "delete-index",
+          "method": "DELETE",
+          "path": "/vectors-unsupported-mode-compat"
+        },
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/vectors-unsupported-mode-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "knn": true,
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+              }
+            },
+            "mappings": {
+              "properties": {
+                "embedding": {
+                  "type": "knn_vector",
+                  "dimension": 3,
+                  "mode": "on_disk"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "index-doc",
+          "method": "POST",
+          "path": "/vectors-unsupported-mode-compat/_bulk",
+          "expected_status": 200,
+          "raw": true,
+          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/vectors-unsupported-mode-compat/_search",
+          "expected_status": 400,
+          "body": {
+            "query": {
+              "knn": {
+                "embedding": {
+                  "vector": [1.0, 0.0, 0.0],
+                  "k": 1
+                }
+              }
+            }
+          },
+          "extract": "error_response"
+        }
+      ]
+    },
+    {
+      "name": "knn_unsupported_method_parameters_fail_closed",
+      "area": "knn",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "unsupported-knn-production-option",
+      "reason": "Steelsearch rejects k-NN method parameters before execution because current native scoring does not yet honor HNSW construction/search parameters.",
+      "extract": "error_response",
+      "steps": [
+        {
+          "name": "delete-index",
+          "method": "DELETE",
+          "path": "/vectors-unsupported-method-params-compat"
+        },
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/vectors-unsupported-method-params-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "knn": true,
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+              }
+            },
+            "mappings": {
+              "properties": {
+                "embedding": {
+                  "type": "knn_vector",
+                  "dimension": 3,
+                  "method": {
+                    "name": "hnsw",
+                    "engine": "lucene",
+                    "space_type": "l2",
+                    "parameters": {
+                      "ef_construction": 128,
+                      "m": 16
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "index-doc",
+          "method": "POST",
+          "path": "/vectors-unsupported-method-params-compat/_bulk",
+          "expected_status": 200,
+          "raw": true,
+          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/vectors-unsupported-method-params-compat/_search",
+          "expected_status": 400,
+          "body": {
+            "query": {
+              "knn": {
+                "embedding": {
+                  "vector": [1.0, 0.0, 0.0],
+                  "k": 1
+                }
+              }
+            }
+          },
+          "extract": "error_response"
+        }
+      ]
+    },
+    {
+      "name": "missing_document_shape",
+      "area": "error",
+      "method": "GET",
+      "path": "/logs-compat/_doc/missing",
+      "extract": "get_document"
+    },
+    {
+      "name": "missing_index_error_type",
+      "area": "error",
+      "method": "POST",
+      "path": "/missing-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response"
+    }
+  ]
+}

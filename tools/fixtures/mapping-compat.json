@@ -1,0 +1,85 @@
+{
+  "name": "mapping-compat",
+  "cases": [
+    {
+      "name": "create_index_for_mapping_cases",
+      "method": "PUT",
+      "path": "/logs-compat-mapping-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            }
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_mapping_happy_path",
+      "method": "GET",
+      "path": "/logs-compat-mapping-000001/_mapping",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-mapping-000001.mappings.properties.message.type"
+        ]
+      }
+    },
+    {
+      "name": "put_mapping_bounded_update",
+      "method": "PUT",
+      "path": "/logs-compat-mapping-000001/_mapping",
+      "body": {
+        "properties": {
+          "level": {
+            "type": "keyword"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_mapping_after_update",
+      "method": "GET",
+      "path": "/logs-compat-mapping-000001/_mapping",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-mapping-000001.mappings.properties.level.type"
+        ],
+        "body_paths_equal": [
+          "logs-compat-mapping-000001.mappings.properties.level.type"
+        ]
+      }
+    },
+    {
+      "name": "put_mapping_incompatible_update_failure",
+      "method": "PUT",
+      "path": "/logs-compat-mapping-000001/_mapping",
+      "body": {
+        "properties": {
+          "message": {
+            "type": "long"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type"
+        ]
+      }
+    }
+  ]
+}

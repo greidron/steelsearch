@@ -1,9 +1,79 @@
-# Java Fixture Plan
+# Java Fixture Workflow
 
-This directory will hold a small Java program that emits OpenSearch transport
-bytes using the real Java implementation from `/home/ubuntu/OpenSearch`.
+This directory contains a small Java program that emits OpenSearch transport
+bytes using the real Java implementation from a local OpenSearch checkout. The
+generated fixture file is the Rust test source of truth for wire and
+cluster-state compatibility.
 
-The first fixture set should cover:
+## Files
+
+- `src/org/opensearch/transport/OpenSearchWireFixture.java`: Java fixture
+  generator compiled against OpenSearch classes.
+- `opensearch-wire-fixtures.txt`: checked-in generated fixture output consumed
+  by Rust tests.
+- `../../tools/run-java-fixture.sh`: reproducible wrapper that resolves the
+  OpenSearch classpath, compiles the generator into a temporary output
+  directory, and prints fixture lines to stdout.
+- `../../tools/print-opensearch-classpath.init.gradle`: Gradle init script used
+  by the wrapper to ask the OpenSearch build for the server runtime classpath.
+
+## Requirements
+
+- A local OpenSearch checkout. By default the wrapper uses
+  `/home/ubuntu/OpenSearch`; override with `OPENSEARCH_ROOT=/path/to/OpenSearch`.
+- The OpenSearch checkout must be at the compatibility target revision for the
+  fixtures being updated. Record any intentional target change in
+  `docs/rust-port/compatibility-targets.md`.
+- JDK and Gradle requirements are inherited from the OpenSearch checkout.
+
+## Reproduce Existing Output
+
+From the SteelSearch repository root:
+
+```bash
+OPENSEARCH_ROOT=/home/ubuntu/OpenSearch \
+  tools/run-java-fixture.sh > /tmp/opensearch-wire-fixtures.txt
+
+diff -u fixtures/java/opensearch-wire-fixtures.txt /tmp/opensearch-wire-fixtures.txt
+```
+
+An empty diff means the checked-in fixtures are reproducible from the local
+OpenSearch checkout.
+
+## Update Fixtures
+
+When fixture behavior intentionally changes, regenerate and then run the Rust
+fixture tests:
+
+```bash
+OPENSEARCH_ROOT=/home/ubuntu/OpenSearch \
+  tools/run-java-fixture.sh > fixtures/java/opensearch-wire-fixtures.txt
+
+cargo test -p os-cluster-state --test java_fixtures
+```
+
+If transport framing or handshake bytes changed, also run the affected
+transport and wire tests before committing:
+
+```bash
+cargo test -p os-transport -p os-wire
+```
+
+## Reproducibility Notes
+
+- The wrapper writes compiled fixture classes under
+  `OUT_DIR=/tmp/opensearch-fixture-classes` by default. Override `OUT_DIR` only
+  when isolating concurrent fixture runs.
+- The Java generator should avoid wall-clock timestamps, random UUIDs, temporary
+  paths that vary per machine, and map/set iteration orders that are not stable.
+- New fixture lines should use deterministic names and values so changes in
+  `opensearch-wire-fixtures.txt` are meaningful in review.
+- Keep this README updated when adding a new fixture command, environment
+  variable, or OpenSearch checkout requirement.
+
+## Fixture Coverage
+
+The fixture set covers:
 
 - `TcpHeader`
 - Java `StreamOutput.writeString`
@@ -37,20 +107,3 @@ The first fixture set should cover:
 
 The Rust side should treat these fixture bytes as the compatibility source of
 truth for the wire and cluster-state milestones.
-
-## Current Workflow
-
-1. Build the required OpenSearch classes:
-
-```bash
-cd /home/ubuntu/OpenSearch
-./gradlew :libs:opensearch-core:classes :server:classes
-```
-
-2. Emit the fixtures:
-
-```bash
-/home/ubuntu/steelsearch/tools/run-java-fixture.sh
-```
-
-3. Compare the output with `opensearch-wire-fixtures.txt`.

@@ -1,0 +1,191 @@
+{
+  "name": "single-doc-crud-compat",
+  "cases": [
+    {
+      "name": "create_single_doc_index",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001",
+      "body": {},
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_single_doc_explicit_id",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-1?routing=tenant-a",
+      "body": {
+        "message": "hello",
+        "level": "info"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "_version",
+          "result",
+          "_seq_no",
+          "_primary_term"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_filtered_source",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-1?_source_includes=message,level&routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_absent": [
+          "_source.payload"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
+      "name": "post_single_doc_generated_id",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_doc?routing=tenant-a",
+      "body": {
+        "message": "generated"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "_version",
+          "result",
+          "_seq_no",
+          "_primary_term"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_optimistic_concurrency_success",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-1?if_seq_no=0&if_primary_term=1&routing=tenant-a",
+      "body": {
+        "message": "hello-updated",
+        "level": "info"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "_version",
+          "result",
+          "_seq_no",
+          "_primary_term"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "delete_single_doc_existing",
+      "method": "DELETE",
+      "path": "/single-doc-compat-000001/_doc/doc-1?routing=tenant-a&refresh=wait_for",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "_version",
+          "result",
+          "_seq_no",
+          "_primary_term"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_missing_error",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/missing-doc?routing=tenant-a",
+      "body": {
+        "doc": {
+          "message": "missing"
+        }
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_version_conflict_error",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-1?if_seq_no=0&if_primary_term=1&routing=tenant-a",
+      "body": {
+        "message": "conflict"
+      },
+      "compare": {
+        "expected_status": 409,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_not_found_shape",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/missing-doc?routing=tenant-a",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "name": "bulk-compat",
+  "cases": [
+    {
+      "name": "create_bulk_compat_index",
+      "method": "PUT",
+      "path": "/bulk-compat-000001",
+      "body": {},
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "seed_existing_bulk_doc",
+      "method": "PUT",
+      "path": "/bulk-compat-000001/_doc/doc-1",
+      "body": {
+        "message": "seed"
+      },
+      "compare": {
+        "expected_status": 201
+      }
+    },
+    {
+      "name": "global_bulk_partial_failure_item_shape",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-2\"}}\n{\"message\":\"created\"}\n{\"create\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-1\"}}\n{\"message\":\"conflict\"}\n{\"delete\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"missing-doc\"}}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result",
+          "items.1.create.status",
+          "items.1.create.error.type",
+          "items.2.delete.status",
+          "items.2.delete.result"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result",
+          "items.1.create.status",
+          "items.1.create.error.type",
+          "items.2.delete.status",
+          "items.2.delete.result"
+        ]
+      }
+    },
+    {
+      "name": "index_scoped_bulk_default_target_update_upsert_shape",
+      "method": "POST",
+      "path": "/bulk-compat-000001/_bulk",
+      "body": "{\"index\":{\"_id\":\"doc-3\"}}\n{\"message\":\"default-target\"}\n{\"update\":{\"_id\":\"doc-4\"}}\n{\"doc\":{\"message\":\"upserted\"},\"doc_as_upsert\":true}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index._index",
+          "items.0.index.result",
+          "items.1.update._index",
+          "items.1.update.result"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index._index",
+          "items.0.index.result",
+          "items.1.update._index",
+          "items.1.update.result"
+        ]
+      }
+    }
+  ]
+}

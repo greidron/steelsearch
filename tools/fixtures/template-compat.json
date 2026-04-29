@@ -1,0 +1,165 @@
+{
+  "name": "template-compat",
+  "cases": [
+    {
+      "name": "put_component_template_bounded_subset",
+      "method": "PUT",
+      "path": "/_component_template/logs-component-compat",
+      "template_name": "logs-component-compat",
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        },
+        "version": 1
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_component_template_readback",
+      "method": "GET",
+      "path": "/_component_template/logs-component-compat",
+      "template_name": "logs-component-compat",
+      "extract": "component_template_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "name",
+          "template.settings.index.number_of_replicas",
+          "version"
+        ],
+        "body_paths_equal": [
+          "name",
+          "version"
+        ]
+      }
+    },
+    {
+      "name": "put_index_template_bounded_subset",
+      "method": "PUT",
+      "path": "/_index_template/logs-template-compat",
+      "template_name": "logs-template-compat",
+      "body": {
+        "index_patterns": [
+          "logs-*"
+        ],
+        "composed_of": [
+          "logs-component-compat"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1
+            }
+          }
+        },
+        "priority": 10
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_index_template_readback",
+      "method": "GET",
+      "path": "/_index_template/logs-template-compat",
+      "template_name": "logs-template-compat",
+      "extract": "index_template_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "name",
+          "index_patterns",
+          "composed_of",
+          "template.settings.index.number_of_shards",
+          "priority"
+        ],
+        "body_paths_equal": [
+          "name",
+          "index_patterns",
+          "composed_of",
+          "priority"
+        ]
+      }
+    },
+    {
+      "name": "put_legacy_template_bounded_subset",
+      "method": "PUT",
+      "path": "/_template/logs-legacy-compat",
+      "template_name": "logs-legacy-compat",
+      "body": {
+        "index_patterns": [
+          "logs-*"
+        ],
+        "order": 5,
+        "settings": {
+          "index": {
+            "number_of_replicas": 0
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_legacy_template_readback",
+      "method": "GET",
+      "path": "/_template/logs-legacy-compat",
+      "template_name": "logs-legacy-compat",
+      "extract": "legacy_template_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "name",
+          "index_patterns",
+          "order",
+          "settings.index.number_of_replicas"
+        ],
+        "body_paths_equal": [
+          "name",
+          "index_patterns",
+          "order"
+        ]
+      }
+    },
+    {
+      "name": "delete_component_template_bounded_subset",
+      "method": "DELETE",
+      "path": "/_component_template/logs-component-compat",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "delete_index_template_bounded_subset",
+      "method": "DELETE",
+      "path": "/_index_template/logs-template-compat",
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "delete_legacy_template_bounded_subset",
+      "method": "DELETE",
+      "path": "/_template/logs-legacy-compat",
+      "compare": {
+        "expected_status": 200
+      }
+    }
+  ]
+}

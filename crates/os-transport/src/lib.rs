@@ -1,9 +1,11 @@
 //! Transport layer scaffolding for OpenSearch-compatible TCP communication.
 
+pub mod action;
 pub mod compression;
 pub mod error;
 pub mod frame;
 pub mod handshake;
+pub mod internal_transport;
 pub mod variable_header;
 
 use bytes::BytesMut;
@@ -37,7 +39,7 @@ impl TransportMessage {
 mod tests {
     use super::{TransportMessage, PING_FRAME};
     use bytes::BytesMut;
-    use os_core::Version;
+    use os_core::OPENSEARCH_3_0_0;
     use os_wire::TransportStatus;
 
     #[test]
@@ -50,7 +52,7 @@ mod tests {
         let message = TransportMessage {
             request_id: 7,
             status: TransportStatus::request().with_handshake(),
-            version: Version::from_id(3000099),
+            version: OPENSEARCH_3_0_0,
             variable_header: BytesMut::from(&b"abc"[..]),
             body: BytesMut::from(&b"body"[..]),
         };

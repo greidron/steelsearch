@@ -62,7 +62,7 @@ pub fn read_exception(
                 false,
             )?
         }
-        other => return Err(TransportErrorDecodeError::UnsupportedExceptionKey(other)),
+        other => read_unknown_transport_exception(input, other)?,
     };
 
     Ok(Some(error))
@@ -85,6 +85,21 @@ fn read_jvm_exception(
         message,
         cause,
     })
+}
+
+fn read_unknown_transport_exception(
+    input: &mut StreamInput,
+    key: i32,
+) -> Result<TransportError, TransportErrorDecodeError> {
+    let _remaining_payload = input.read_bytes(input.remaining() as usize)?;
+
+    let error = TransportError {
+        class_name: "org.opensearch.transport.UnknownTransportException".to_string(),
+        message: Some(format!("unsupported transport exception key {key}")),
+        cause: None,
+    };
+
+    Ok(error)
 }
 
 fn read_opensearch_exception(
@@ -242,6 +257,95 @@ mod tests {
             "java.lang.IllegalStateException"
         );
         assert!(error.summary().contains("missing handler"));
+    }
+
+    #[test]
+    fn maps_unknown_exception_key_to_unknown_transport_exception() {
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_vint(999);
+        output.write_optional_string(Some("unsupported payload"));
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.transport.UnknownTransportException"
+        );
+        assert!(
+            error
+                .message
+                .as_deref()
+                .expect("should include fallback message")
+                .contains("unsupported transport exception key 999")
+        );
+        assert_eq!(error.cause, None);
+    }
+
+    #[test]
+    fn maps_unknown_exception_key_with_nonnormal_payload_to_unknown_transport_exception() {
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_vint(999);
+        output.write_vint(17);
+        output.write_vint(42);
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.transport.UnknownTransportException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("unsupported transport exception key 999")
+        );
+    }
+
+    #[test]
+    fn maps_action_not_found_exception_id_to_transport_exception_class() {
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_vint(0);
+        output.write_vint(101);
+        output.write_optional_string(Some("missing action"));
+        output.write_bool(false);
+        write_empty_stack_trace(&mut output);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_optional_string(Some("internal:transport/foobar"));
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.transport.ActionNotFoundTransportException"
+        );
+        assert_eq!(error.message.as_deref(), Some("missing action"));
+    }
+
+    #[test]
+    fn maps_transport_serialization_exception_id_to_transport_exception_class() {
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_vint(0);
+        output.write_vint(102);
+        output.write_optional_string(Some("failed to serialize request"));
+        output.write_bool(false);
+        write_empty_stack_trace(&mut output);
+        output.write_vint(0);
+        output.write_vint(0);
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.transport.TransportSerializationException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("failed to serialize request")
+        );
     }
 
     fn write_empty_stack_trace(output: &mut StreamOutput) {

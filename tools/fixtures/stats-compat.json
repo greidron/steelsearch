@@ -1,0 +1,51 @@
+{
+  "name": "stats-compat",
+  "cases": [
+    {
+      "name": "get_nodes_stats_shape",
+      "method": "GET",
+      "path": "/_nodes/stats",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_stats_shape_and_numeric_subset",
+      "method": "GET",
+      "path": "/_cluster/stats",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "indices",
+          "nodes",
+          "nodes.count",
+          "nodes.count.total"
+        ],
+        "body_paths_equal": [
+          "nodes.count.total"
+        ]
+      }
+    },
+    {
+      "name": "get_index_stats_shape_and_numeric_subset",
+      "method": "GET",
+      "path": "/_stats",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_all",
+          "_all.total",
+          "_all.total.docs",
+          "_all.total.docs.count",
+          "indices"
+        ],
+        "body_paths_equal": [
+          "_all.total.docs.count"
+        ]
+      }
+    }
+  ]
+}

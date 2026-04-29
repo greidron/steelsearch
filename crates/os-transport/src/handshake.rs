@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use os_core::Version;
+use os_core::{Version, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS};
 use os_stream::{StreamInput, StreamInputError, StreamOutput};
 use os_wire::TransportStatus;
 use std::collections::{BTreeMap, BTreeSet};
@@ -113,7 +113,8 @@ impl DiscoveryNode {
         let host_name = input.read_string()?;
         let host_address = input.read_string()?;
         let address = TransportAddress::read(input)?;
-        let stream_address = if stream_version.id() >= 137_237_827 {
+        let stream_address = if stream_version.on_or_after(OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS)
+        {
             if input.read_bool()? {
                 Some(TransportAddress::read(input)?)
             } else {
@@ -217,13 +218,12 @@ mod tests {
     };
     use crate::frame::{decode_frame, DecodedFrame};
     use crate::variable_header::RequestVariableHeader;
-    use os_core::Version;
+    use os_core::{Version, OPENSEARCH_3_0_0, OPENSEARCH_3_7_0_TRANSPORT};
     use os_stream::{StreamInput, StreamOutput};
 
     #[test]
     fn builds_tcp_handshake_request() {
-        let mut frame =
-            build_tcp_handshake_request(1, Version::from_id(3000099), Version::from_id(3000099));
+        let mut frame = build_tcp_handshake_request(1, OPENSEARCH_3_0_0, OPENSEARCH_3_0_0);
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected message frame");
         };
@@ -234,12 +234,12 @@ mod tests {
         let mut body = StreamInput::new(message.body.freeze());
         assert_eq!(body.read_string().unwrap(), "");
         let mut version_bytes = StreamInput::new(body.read_bytes_reference().unwrap());
-        assert_eq!(version_bytes.read_vint().unwrap(), 3000099);
+        assert_eq!(version_bytes.read_vint().unwrap(), OPENSEARCH_3_0_0.id());
     }
 
     #[test]
     fn builds_transport_handshake_request() {
-        let mut frame = build_transport_handshake_request(2, Version::from_id(3000099));
+        let mut frame = build_transport_handshake_request(2, OPENSEARCH_3_0_0);
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected message frame");
         };
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn decodes_transport_handshake_response_body() {
-        let version = Version::from_id(137287827);
+        let version = OPENSEARCH_3_7_0_TRANSPORT;
         let mut body = StreamOutput::new();
         body.write_bool(true);
         body.write_string("node-a");

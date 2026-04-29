@@ -1,16 +1,21 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bytes::{Bytes, BytesMut};
+use flate2::write::DeflateEncoder;
+use flate2::Compression;
 use os_core::Version;
 use os_stream::StreamInput;
+use os_transport::compression::DEFLATE_HEADER;
+use os_transport::TransportMessage;
 use os_transport::frame::{decode_frame, DecodedFrame};
 use os_transport::handshake::{
     build_tcp_handshake_request, build_transport_handshake_request, TCP_HANDSHAKE_ACTION,
     TRANSPORT_HANDSHAKE_ACTION,
 };
 use os_transport::variable_header::RequestVariableHeader;
-use os_wire::TcpHeader;
+use os_wire::{TcpHeader, TransportStatus};
 use std::collections::BTreeMap;
+use std::io::Write;
 
 fn fixtures() -> BTreeMap<&'static str, Vec<u8>> {
     include_str!("../../../fixtures/java/opensearch-wire-fixtures.txt")
@@ -87,6 +92,42 @@ fn java_transport_handshake_fixture_matches_rust_builder() {
     let rust_bytes = build_transport_handshake_request(header.request_id, header.version);
 
     assert_eq!(&rust_bytes[..], &java_bytes[..]);
+}
+
+#[test]
+fn java_transport_handshake_compressed_frame_decodes_with_rust_frame_codec() {
+    let fixtures = fixtures();
+    let java_bytes = fixtures.get("transport_handshake_request").unwrap().clone();
+
+    let header = TcpHeader::decode(&java_bytes[..TcpHeader::HEADER_SIZE]).unwrap();
+    let var_end = TcpHeader::HEADER_SIZE + header.variable_header_size as usize;
+    let body = &java_bytes[var_end..];
+
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(body).unwrap();
+    let compressed_payload = encoder.finish().unwrap();
+    let mut compressed_body = Vec::with_capacity(DEFLATE_HEADER.len() + compressed_payload.len());
+    compressed_body.extend_from_slice(DEFLATE_HEADER);
+    compressed_body.extend_from_slice(&compressed_payload);
+
+    let message = TransportMessage {
+        request_id: header.request_id,
+        status: TransportStatus::request().with_compress(),
+        version: header.version,
+        variable_header: BytesMut::from(&java_bytes[TcpHeader::HEADER_SIZE..var_end]),
+        body: BytesMut::from(&compressed_body[..]),
+    };
+    let mut frame = os_transport::frame::encode_message(&message);
+
+    let DecodedFrame::Message(decoded) = decode_frame(&mut frame).unwrap().unwrap() else {
+        panic!("expected message frame");
+    };
+
+    assert_eq!(decoded.request_id, header.request_id);
+    assert!(decoded.status.is_compressed());
+    assert!(decoded.status.is_request());
+    assert_eq!(decoded.variable_header, message.variable_header);
+    assert_eq!(&decoded.body[..], body);
 }
 
 #[test]

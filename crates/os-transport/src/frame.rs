@@ -99,7 +99,7 @@ mod tests {
     use bytes::BytesMut;
     use flate2::write::DeflateEncoder;
     use flate2::Compression;
-    use os_core::Version;
+    use os_core::OPENSEARCH_3_0_0;
     use os_wire::TransportStatus;
     use std::io::Write;
 
@@ -122,7 +122,7 @@ mod tests {
         let message = TransportMessage {
             request_id: 123,
             status: TransportStatus::request().with_handshake(),
-            version: Version::from_id(3000099),
+            version: OPENSEARCH_3_0_0,
             variable_header: BytesMut::from(&b"headers"[..]),
             body: BytesMut::from(&b"payload"[..]),
         };
@@ -148,7 +148,7 @@ mod tests {
         let message = TransportMessage {
             request_id: 123,
             status: TransportStatus::response().with_compress(),
-            version: Version::from_id(3000099),
+            version: OPENSEARCH_3_0_0,
             variable_header: BytesMut::from(&b"headers"[..]),
             body: compressed_body,
         };
