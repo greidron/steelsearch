@@ -11,6 +11,12 @@ ROOT = Path("/home/ubuntu/steelsearch")
 REST_TSV = ROOT / "docs/rust-port/generated/source-rest-routes.tsv"
 TRANSPORT_TSV = ROOT / "docs/rust-port/generated/source-transport-actions.tsv"
 OUT_DIR = ROOT / "docs/api-spec/generated"
+GENERATED_ARTIFACTS = [
+    OUT_DIR / "rest-routes.md",
+    OUT_DIR / "transport-actions.md",
+    OUT_DIR / "route-evidence-matrix.md",
+    OUT_DIR / "openapi.json",
+]
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:
@@ -390,15 +396,228 @@ def render_route_evidence_matrix(rows: list[dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
-def literal_openapi_path(path: str) -> bool:
-    return (
-        path.startswith("/")
-        and '"' not in path
-        and " " not in path
-        and "+" not in path
-        and "(" not in path
-        and ")" not in path
-    )
+OPENAPI_PATH_NORMALIZATION = {
+    "/ + ENDPOINT": "/_rank_eval",
+    "/{index}/ + ENDPOINT": "/{index}/_rank_eval",
+    "_wlm/workload_group/": "/_wlm/workload_group",
+    "_wlm/workload_group/{name}": "/_wlm/workload_group/{name}",
+    "_wlm/stats": "/_wlm/stats",
+    "_wlm/{nodeId}/stats": "/_wlm/{nodeId}/stats",
+    "_wlm/stats/{workloadGroupId}": "/_wlm/stats/{workloadGroupId}",
+    "_wlm/{nodeId}/stats/{workloadGroupId}": "/_wlm/{nodeId}/stats/{workloadGroupId}",
+    "_list/wlm_stats": "/_list/wlm_stats",
+    "_list/wlm_stats/{nodeId}/stats": "/_list/wlm_stats/{nodeId}/stats",
+    "_list/wlm_stats/stats/{workloadGroupId}": "/_list/wlm_stats/stats/{workloadGroupId}",
+    "_list/wlm_stats/{nodeId}/stats/{workloadGroupId}": "/_list/wlm_stats/{nodeId}/stats/{workloadGroupId}",
+    "/{index}/_tier/ + targetTier": "/{index}/_tier/{targetTier}",
+    'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)': "/_plugins/_knn/clear_cache/{index}",
+    'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': "/_plugins/_knn/models/{model_id}",
+    'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"': "/_plugins/_knn/{nodeId}/stats",
+    'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"': "/_plugins/_knn/{nodeId}/stats/{stat}",
+    'KNNPlugin.KNN_BASE_URI + "/stats/"': "/_plugins/_knn/stats",
+    'KNNPlugin.KNN_BASE_URI + "/stats/{stat}"': "/_plugins/_knn/stats/{stat}",
+    "KNNPlugin.KNN_BASE_URI + URL_PATH": "/_plugins/_knn/warmup",
+    'String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)': "/_plugins/_knn/models/_search",
+    'String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': "/_plugins/_knn/models/{model_id}/_train",
+    'String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)': "/_plugins/_knn/models/_train",
+}
+
+
+def normalize_openapi_path(path: str) -> str | None:
+    normalized = OPENAPI_PATH_NORMALIZATION.get(path, path)
+    normalized = normalized.rstrip("/") or "/"
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized
+    if (
+        '"' in normalized
+        or " " in normalized
+        or "+" in normalized
+        or "(" in normalized
+        or ")" in normalized
+    ):
+        return None
+    return normalized
+
+
+def openapi_tags() -> list[dict[str, str]]:
+    return [
+        {
+            "name": "root-cluster-node",
+            "description": "Root, cluster, node, cat, task, and operational admin routes.",
+        },
+        {
+            "name": "index-and-metadata",
+            "description": "Index lifecycle, mappings, settings, aliases, templates, and data streams.",
+        },
+        {
+            "name": "document-and-bulk",
+            "description": "Single-document CRUD, bulk, refresh, and write-path routes.",
+        },
+        {
+            "name": "search",
+            "description": "Search, search session, query validation, and rank-eval routes.",
+        },
+        {
+            "name": "vector-and-ml",
+            "description": "k-NN and ML/model-serving plugin routes.",
+        },
+        {
+            "name": "snapshot-migration-interop",
+            "description": "Snapshot, migration, repository, ingest, and script-adjacent routes.",
+        },
+        {
+            "name": "misc",
+            "description": "Source-derived routes that do not fit the primary family buckets.",
+        },
+    ]
+
+
+def parameter_schema_for(name: str) -> dict:
+    integer_like = {
+        "shard",
+        "from",
+        "size",
+        "k",
+        "num_candidates",
+        "pre_filter_shard_size",
+    }
+    boolean_like = {
+        "pretty",
+        "human",
+        "v",
+        "local",
+        "include_defaults",
+        "ignore_unavailable",
+        "allow_no_indices",
+        "track_total_hits",
+    }
+    if name in integer_like:
+        return {"type": "integer"}
+    if name in boolean_like:
+        return {"type": "boolean"}
+    return {"type": "string"}
+
+
+def path_parameters(path: str) -> list[dict]:
+    parameters = []
+    for segment in path.split("/"):
+        if segment.startswith("{") and segment.endswith("}"):
+            name = segment[1:-1]
+            parameters.append(
+                {
+                    "name": name,
+                    "in": "path",
+                    "required": True,
+                    "schema": parameter_schema_for(name),
+                }
+            )
+    return parameters
+
+
+def query_parameters(path: str, method: str) -> list[dict]:
+    params: list[dict] = []
+    if method in {"get", "post"} and (path == "/_search" or "/_search" in path):
+        params.extend(
+            [
+                {"name": "from", "in": "query", "required": False, "schema": {"type": "integer"}},
+                {"name": "size", "in": "query", "required": False, "schema": {"type": "integer"}},
+                {
+                    "name": "track_total_hits",
+                    "in": "query",
+                    "required": False,
+                    "schema": {"type": "boolean"},
+                },
+            ]
+        )
+    if "/_cluster/health" in path:
+        params.extend(
+            [
+                {"name": "wait_for_status", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "timeout", "in": "query", "required": False, "schema": {"type": "string"}},
+            ]
+        )
+    if "/_snapshot" in path:
+        params.append(
+            {"name": "ignore_unavailable", "in": "query", "required": False, "schema": {"type": "boolean"}}
+        )
+    deduped = []
+    seen = set()
+    for param in params:
+        key = (param["name"], param["in"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(param)
+    return deduped
+
+
+def operation_id(method: str, path: str) -> str:
+    pieces = []
+    for segment in path.strip("/").split("/"):
+        if not segment:
+            continue
+        if segment.startswith("{") and segment.endswith("}"):
+            pieces.append("by_" + segment[1:-1].replace("-", "_"))
+        else:
+            pieces.append(
+                segment.replace("-", "_").replace(".", "_").replace("*", "wildcard")
+            )
+    suffix = "_".join(pieces) if pieces else "root"
+    return f"{method}_{suffix}"
+
+
+def request_body_for(path: str, method: str) -> dict | None:
+    if method not in {"post", "put"}:
+        return None
+    if path in {"/_bulk", "/_bulk/stream"} or path.endswith("/_bulk"):
+        return {
+            "required": False,
+            "content": {
+                "application/x-ndjson": {
+                    "schema": {"$ref": "#/components/schemas/BulkNdjsonRequest"}
+                }
+            },
+        }
+    return {
+        "required": False,
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/OpenSearchJsonRequest"}
+            }
+        },
+    }
+
+
+def responses_for(path: str, method: str) -> dict:
+    success_schema = {"$ref": "#/components/schemas/OpenSearchSuccessEnvelope"}
+    if method == "head":
+        success_schema = {"$ref": "#/components/schemas/EmptySuccessResponse"}
+    elif path.startswith("/_cat"):
+        success_schema = {"$ref": "#/components/schemas/CatApiResponse"}
+    return {
+        "200": {
+            "description": "Successful response envelope",
+            "content": {
+                "application/json": {"schema": success_schema},
+                "text/plain": {"schema": {"type": "string"}},
+            },
+        },
+        "400": {
+            "description": "OpenSearch-shaped fail-closed error",
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/OpenSearchErrorResponse"}
+                }
+            },
+        },
+        "404": {
+            "description": "Not found",
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/OpenSearchErrorResponse"}
+                }
+            },
+        },
+    }
 
 
 def generate_openapi(rows: list[dict[str, str]]) -> dict:
@@ -414,15 +633,69 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
             ),
         },
         "servers": [{"url": "/"}],
+        "tags": openapi_tags(),
+        "components": {
+            "schemas": {
+                "OpenSearchJsonRequest": {"type": "object", "additionalProperties": True},
+                "BulkNdjsonRequest": {"type": "string", "description": "NDJSON bulk request body."},
+                "OpenSearchSuccessEnvelope": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "description": "Generic OpenSearch-shaped success response."
+                },
+                "EmptySuccessResponse": {
+                    "type": "object",
+                    "description": "Bodyless or empty success response."
+                },
+                "CatApiResponse": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                    ],
+                    "description": "Cat API text or JSON response."
+                },
+                "OpenSearchErrorCause": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["type", "reason"],
+                    "additionalProperties": True,
+                },
+                "OpenSearchErrorBody": {
+                    "type": "object",
+                    "properties": {
+                        "root_cause": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/OpenSearchErrorCause"},
+                        },
+                        "type": {"type": "string"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["type", "reason"],
+                    "additionalProperties": True,
+                },
+                "OpenSearchErrorResponse": {
+                    "type": "object",
+                    "properties": {
+                        "error": {"$ref": "#/components/schemas/OpenSearchErrorBody"},
+                        "status": {"type": "integer"},
+                    },
+                    "required": ["error", "status"],
+                    "additionalProperties": True,
+                },
+            }
+        },
         "paths": {},
     }
     paths: dict[str, dict] = {}
     for row in rows:
         method = row["method"].lower()
-        path = row["path_or_expression"]
+        path = normalize_openapi_path(row["path_or_expression"])
         if method not in {"get", "put", "post", "delete", "head"}:
             continue
-        if not literal_openapi_path(path):
+        if path is None:
             continue
         family = rest_family(row)
         profile, entrypoint = rest_evidence_owner(row)
@@ -430,12 +703,10 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
         path_item[method] = {
             "summary": rest_meaning(row["method"], path, row["source"]),
             "description": rest_gap(row["status"], family, path),
+            "operationId": operation_id(method, path),
             "tags": [family],
-            "responses": {
-                "200": {"description": "Successful response envelope"},
-                "400": {"description": "OpenSearch-shaped fail-closed error"},
-                "404": {"description": "Not found"},
-            },
+            "parameters": path_parameters(path) + query_parameters(path, method),
+            "responses": responses_for(path, method),
             "x-steelsearch-status": row["status"],
             "x-steelsearch-family": family,
             "x-evidence-profile": profile,
@@ -443,6 +714,9 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
             "x-opensearch-source": row["source"],
             "x-opensearch-source-line": row["line"],
         }
+        request_body = request_body_for(path, method)
+        if request_body is not None:
+            path_item[method]["requestBody"] = request_body
     spec["paths"] = dict(sorted(paths.items()))
     return spec
 

@@ -241,6 +241,10 @@ Current status:
   - [openapi.json](/home/ubuntu/steelsearch/docs/api-spec/generated/openapi.json)
 - generated route evidence matrix exists:
   - [route-evidence-matrix.md](/home/ubuntu/steelsearch/docs/api-spec/generated/route-evidence-matrix.md)
+- generated artifact drift gate exists:
+  - `tools/check-generated-api-spec.sh`
+- Phase A, Phase B, and Phase C harnesses now treat that generated API spec
+  gate as part of the release/audit path.
 - server now serves:
   - `GET /openapi.json`
   - `GET /docs`
@@ -255,6 +259,10 @@ Operationally:
 - starting the server exposes a live OpenAPI document and Swagger UI page;
 - API documentation still lives primarily in `docs/api-spec/*`, but there is
   now a generated machine-readable spec and served browser UI.
+- generated OpenAPI is also tied to a direct drift gate:
+  - regenerate the artifacts
+  - diff the committed generated files
+  - run the release-auditable artifact test
 
 ## 6. Current Known Gaps
 
@@ -262,6 +270,8 @@ Operationally:
 - API comparison proof still exists mainly at family/profile granularity.
 - `docs/api-spec/generated/rest-routes.md` is still a generated inventory and
   should not be read as the release-gate source of truth for milestone claims.
+- `utoipa` remains a targeted proof of concept rather than the primary source
+  of truth for the whole server surface.
 
 ## 7. Recommended Next Follow-Up
 

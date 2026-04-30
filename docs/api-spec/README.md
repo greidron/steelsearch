@@ -69,6 +69,14 @@ Generated artifacts that complement the hand-written specs:
 - [Generated Route Evidence Matrix](./generated/route-evidence-matrix.md)
 - `docs/api-spec/generated/openapi.json`
 
+Canonical drift gate for these generated artifacts:
+
+- `tools/check-generated-api-spec.sh`
+
+That drift gate is also wired into the major harness entrypoints so generated
+OpenAPI drift blocks profile-backed release evidence rather than remaining a
+documentation-only concern.
+
 `Phase A` and `Phase A-1` should be read differently:
 
 - `Phase A` proves runtime-backed standalone replacement for an initial declared

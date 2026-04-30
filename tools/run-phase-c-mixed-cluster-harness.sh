@@ -5,6 +5,25 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${PHASE_C_WORK_DIR:-${ROOT_DIR}/target/phase-c-mixed-cluster}"
 mkdir -p "${WORK_DIR}"
 
+GENERATED_API_SPEC_LOG="${WORK_DIR}/generated-api-spec.log"
+GENERATED_API_SPEC_REPORT="${WORK_DIR}/generated-api-spec-report.json"
+if bash "${ROOT_DIR}/tools/check-generated-api-spec.sh" >"${GENERATED_API_SPEC_LOG}" 2>&1; then
+  python3 - "${GENERATED_API_SPEC_REPORT}" "${GENERATED_API_SPEC_LOG}" <<'PY'
+import json
+import sys
+report_path, log_path = sys.argv[1:3]
+with open(report_path, "w", encoding="utf-8") as fh:
+    json.dump({
+        "command": "bash tools/check-generated-api-spec.sh",
+        "log_path": log_path,
+        "summary": {"passed": True},
+    }, fh, indent=2, sort_keys=True)
+PY
+else
+  cat "${GENERATED_API_SPEC_LOG}" >&2 || true
+  exit 1
+fi
+
 PHASE_C_JOIN_WORK_DIR="${WORK_DIR}/join" \
   bash "${ROOT_DIR}/tools/run_mixed_cluster_join_profile.sh" >"${WORK_DIR}/mixed-cluster-join-report.json"
 
@@ -30,6 +49,7 @@ import sys
 
 work_dir = sys.argv[1]
 report_files = [
+    "generated-api-spec-report.json",
     "mixed-cluster-join-report.json",
     "mixed-cluster-publication-report.json",
     "mixed-cluster-allocation-report.json",

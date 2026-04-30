@@ -5,6 +5,27 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${PHASE_B_WORK_DIR:-${ROOT_DIR}/target/phase-b-interop}"
 mkdir -p "${WORK_DIR}"
 
+run_generated_api_spec_gate() {
+  local report_path="${WORK_DIR}/generated-api-spec-report.json"
+  local log_path="${WORK_DIR}/generated-api-spec.log"
+  if bash "${ROOT_DIR}/tools/check-generated-api-spec.sh" >"${log_path}" 2>&1; then
+    python3 - "$report_path" "$log_path" <<'PY'
+import json
+import sys
+report_path, log_path = sys.argv[1:3]
+with open(report_path, "w", encoding="utf-8") as fh:
+    json.dump({
+        "command": "bash tools/check-generated-api-spec.sh",
+        "log_path": log_path,
+        "summary": {"passed": True},
+    }, fh, indent=2, sort_keys=True)
+PY
+  else
+    cat "${log_path}" >&2 || true
+    return 1
+  fi
+}
+
 cleanup() {
   if [[ -n "${OPENSEARCH_PID:-}" ]]; then
     kill "${OPENSEARCH_PID}" >/dev/null 2>&1 || true
@@ -76,6 +97,8 @@ if [[ -z "${OPENSEARCH_BASE_URL:-}" || -z "${OPENSEARCH_TRANSPORT_ADDR:-}" ]]; t
   export OPENSEARCH_TRANSPORT_ADDR="${HOST}:${OPENSEARCH_TRANSPORT_PORT}"
 fi
 
+run_generated_api_spec_gate
+
 PHASE_B_INTEROP_WORK_DIR="${WORK_DIR}/handshake" \
   bash "${ROOT_DIR}/tools/probe_interop_handshake_profile.sh" >"${WORK_DIR}/interop-handshake-report.json"
 
@@ -112,6 +135,7 @@ import sys
 
 work_dir = sys.argv[1]
 report_files = [
+    "generated-api-spec-report.json",
     "interop-handshake-report.json",
     "interop-cluster-state-cache-report.json",
     "interop-read-forwarding-report.json",

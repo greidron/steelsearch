@@ -41,6 +41,31 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
     assert_eq!(cluster_health_get["x-steelsearch-family"], "root-cluster-node");
     assert!(cluster_health_get["x-evidence-profile"].is_string());
     assert!(cluster_health_get["x-evidence-entrypoint"].is_string());
+    assert_eq!(cluster_health_get["operationId"], "get__cluster_health");
+    assert_eq!(
+        cluster_health_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/OpenSearchSuccessEnvelope"
+    );
+
+    let search_get = &paths["/_search"]["get"];
+    let search_params = search_get["parameters"]
+        .as_array()
+        .expect("search parameters should be array");
+    assert!(search_params.iter().any(|param| param["name"] == "from"));
+    assert!(search_params.iter().any(|param| param["name"] == "size"));
+    assert!(search_params
+        .iter()
+        .any(|param| param["name"] == "track_total_hits"));
+
+    let bulk_post = &paths["/_bulk"]["post"];
+    assert_eq!(
+        bulk_post["requestBody"]["content"]["application/x-ndjson"]["schema"]["$ref"],
+        "#/components/schemas/BulkNdjsonRequest"
+    );
+
+    let tags = openapi["tags"].as_array().expect("openapi tags should be array");
+    assert!(tags.iter().any(|tag| tag["name"] == "root-cluster-node"));
+    assert!(tags.iter().any(|tag| tag["name"] == "search"));
 
     let route_matrix =
         fs::read_to_string(route_matrix_path).expect("generated route evidence matrix should exist");

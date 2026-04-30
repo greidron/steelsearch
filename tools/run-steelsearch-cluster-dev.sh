@@ -5,8 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER_NAME="${STEELSEARCH_CLUSTER_NAME:-steelsearch-dev}"
 NODE_COUNT="${STEELSEARCH_NODE_COUNT:-3}"
 WORK_DIR="${STEELSEARCH_CLUSTER_WORK_DIR:-$(mktemp -d -t steelsearch-cluster-dev.XXXXXX)}"
-HTTP_HOST="${STEELSEARCH_HTTP_HOST:-127.0.0.1}"
-TRANSPORT_HOST="${STEELSEARCH_TRANSPORT_HOST:-127.0.0.1}"
+HTTP_HOST="${STEELSEARCH_HTTP_HOST:-0.0.0.0}"
+TRANSPORT_HOST="${STEELSEARCH_TRANSPORT_HOST:-0.0.0.0}"
+HTTP_ACCESS_HOST="${STEELSEARCH_HTTP_ACCESS_HOST:-127.0.0.1}"
+TRANSPORT_ACCESS_HOST="${STEELSEARCH_TRANSPORT_ACCESS_HOST:-127.0.0.1}"
 MANIFEST="${WORK_DIR}/cluster.json"
 PIDS=()
 
@@ -50,12 +52,12 @@ done
 
 seed_hosts=()
 for ((i = 0; i < NODE_COUNT; i++)); do
-  seed_hosts+=("${TRANSPORT_HOST}:${transport_ports[$i]}")
+  seed_hosts+=("${TRANSPORT_ACCESS_HOST}:${transport_ports[$i]}")
 done
 seed_csv="$(IFS=,; echo "${seed_hosts[*]}")"
 
 mkdir -p "${WORK_DIR}"
-python3 - "${MANIFEST}" "${CLUSTER_NAME}" "${HTTP_HOST}" "${TRANSPORT_HOST}" "${WORK_DIR}" "${seed_csv}" "${http_ports[*]}" "${transport_ports[*]}" <<'PY'
+python3 - "${MANIFEST}" "${CLUSTER_NAME}" "${HTTP_ACCESS_HOST}" "${TRANSPORT_ACCESS_HOST}" "${WORK_DIR}" "${seed_csv}" "${http_ports[*]}" "${transport_ports[*]}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -107,7 +109,7 @@ for ((i = 0; i < NODE_COUNT; i++)); do
   node_dir="${WORK_DIR}/node-${node_number}"
   mkdir -p "${node_dir}/data" "${node_dir}/logs"
 
-  echo "starting steel-node-${node_number}: http://${HTTP_HOST}:${http_port} transport ${TRANSPORT_HOST}:${transport_port}" >&2
+  echo "starting steel-node-${node_number}: bind http://${HTTP_HOST}:${http_port} access http://${HTTP_ACCESS_HOST}:${http_port} bind transport ${TRANSPORT_HOST}:${transport_port} access transport ${TRANSPORT_ACCESS_HOST}:${transport_port}" >&2
   if [[ "${STEELSEARCH_CLUSTER_DRY_RUN:-0}" == "1" ]]; then
     continue
   fi
@@ -141,7 +143,7 @@ for ((i = 0; i < NODE_COUNT; i++)); do
   http_port="${http_ports[$i]}"
   ready=0
   for _ in {1..80}; do
-    if curl -fsS "http://${HTTP_HOST}:${http_port}/_steelsearch/dev/cluster" >/dev/null 2>&1; then
+    if curl -fsS "http://${HTTP_ACCESS_HOST}:${http_port}/_steelsearch/dev/cluster" >/dev/null 2>&1; then
       ready=1
       break
     fi
@@ -152,7 +154,7 @@ for ((i = 0; i < NODE_COUNT; i++)); do
     tail -80 "${WORK_DIR}/node-$((i + 1))/logs/stderr.log" >&2 || true
     exit 1
   fi
-  curl -fsS "http://${HTTP_HOST}:${http_port}/_steelsearch/dev/cluster"
+  curl -fsS "http://${HTTP_ACCESS_HOST}:${http_port}/_steelsearch/dev/cluster"
   echo
 done
 

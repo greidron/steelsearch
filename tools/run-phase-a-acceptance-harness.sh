@@ -117,6 +117,7 @@ export COMPARE_DIR="${COMPARE_DIR:-${WORK_DIR}/compare}"
 export REHEARSAL_DIR="${REHEARSAL_DIR:-${WORK_DIR}/rehearsal}"
 mkdir -p "${COMPARE_DIR}" "${REHEARSAL_DIR}"
 export RUNTIME_PRECHECK_REPORT="${RUNTIME_PRECHECK_REPORT:-${COMPARE_DIR}/runtime-precheck-report.json}"
+export GENERATED_API_SPEC_REPORT="${GENERATED_API_SPEC_REPORT:-${COMPARE_DIR}/generated-api-spec-report.json}"
 export SEARCH_COMPAT_REPORT="${SEARCH_COMPAT_REPORT:-${COMPARE_DIR}/search-compat-report.json}"
 export CLUSTER_HEALTH_COMPAT_REPORT="${CLUSTER_HEALTH_COMPAT_REPORT:-${COMPARE_DIR}/cluster-health-compat-report.json}"
 export ALLOCATION_EXPLAIN_COMPAT_REPORT="${ALLOCATION_EXPLAIN_COMPAT_REPORT:-${COMPARE_DIR}/allocation-explain-compat-report.json}"
@@ -141,6 +142,7 @@ export VECTOR_SEARCH_COMPAT_REPORT="${VECTOR_SEARCH_COMPAT_REPORT:-${COMPARE_DIR
 export ML_MODEL_SURFACE_COMPAT_REPORT="${ML_MODEL_SURFACE_COMPAT_REPORT:-${COMPARE_DIR}/ml-model-surface-compat-report.json}"
 export MULTI_NODE_TRANSPORT_ADMIN_REPORT="${MULTI_NODE_TRANSPORT_ADMIN_REPORT:-${COMPARE_DIR}/multi-node-transport-admin-report.json}"
 export SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}"
+export RUN_GENERATED_API_SPEC_CHECK="${RUN_GENERATED_API_SPEC_CHECK:-1}"
 export RUN_RUNTIME_PRECHECK="${RUN_RUNTIME_PRECHECK:-1}"
 export RUN_OPENSEARCH_COMPARISON="${RUN_OPENSEARCH_COMPARISON:-1}"
 export RUN_CLUSTER_HEALTH_COMPAT="${RUN_CLUSTER_HEALTH_COMPAT:-1}"
@@ -363,6 +365,40 @@ fi
 
 if [[ "${MODE}" == "ci" ]]; then
   export CI="${CI:-true}"
+fi
+
+if [[ "${RUN_GENERATED_API_SPEC_CHECK}" != "0" ]]; then
+  GENERATED_API_SPEC_LOG="${REHEARSAL_DIR}/generated-api-spec.log"
+  GENERATED_API_SPEC_COMMAND="bash tools/check-generated-api-spec.sh"
+  echo "Running generated API spec gate: ${GENERATED_API_SPEC_COMMAND}"
+  if ${GENERATED_API_SPEC_COMMAND} >"${GENERATED_API_SPEC_LOG}" 2>&1; then
+    cat >"${GENERATED_API_SPEC_REPORT}" <<EOF
+{
+  "kind": "generated-api-spec",
+  "gate": "pass",
+  "command": "${GENERATED_API_SPEC_COMMAND}",
+  "log_path": "${GENERATED_API_SPEC_LOG}",
+  "notes": [
+    "Generated REST route reference, transport reference, route evidence matrix, and OpenAPI artifact are in sync.",
+    "Release-auditable generated API spec drift test passed."
+  ]
+}
+EOF
+  else
+    cat >"${GENERATED_API_SPEC_REPORT}" <<EOF
+{
+  "kind": "generated-api-spec",
+  "gate": "fail",
+  "command": "${GENERATED_API_SPEC_COMMAND}",
+  "log_path": "${GENERATED_API_SPEC_LOG}",
+  "notes": [
+    "Generated API spec artifacts drifted from the checked-in versions or the release-auditable artifact test failed."
+  ]
+}
+EOF
+    echo "Generated API spec gate failed; see ${GENERATED_API_SPEC_LOG}" >&2
+    exit 1
+  fi
 fi
 
 if [[ "${RUN_RUNTIME_PRECHECK}" != "0" ]]; then

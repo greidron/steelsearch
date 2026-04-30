@@ -184,6 +184,8 @@ Treat `Phase A-1` as complete only when all of the following are true:
   - `vector-search-compat-report.json`
   - `ml-model-surface-compat-report.json`
   - `multi-node-transport-admin-report.json`
+- generated API spec artifacts are drift-free:
+  - `tools/check-generated-api-spec.sh`
 - `docs/api-spec/*` describe already-live standalone-critical families as
   current standalone contracts or explicit later-phase defers, not as
   development subsets.

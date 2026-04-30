@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST="${STEELSEARCH_HTTP_HOST:-127.0.0.1}"
-TRANSPORT_HOST="${STEELSEARCH_TRANSPORT_HOST:-127.0.0.1}"
+HOST="${STEELSEARCH_HTTP_HOST:-0.0.0.0}"
+TRANSPORT_HOST="${STEELSEARCH_TRANSPORT_HOST:-0.0.0.0}"
+HTTP_ACCESS_HOST="${STEELSEARCH_HTTP_ACCESS_HOST:-127.0.0.1}"
+TRANSPORT_ACCESS_HOST="${STEELSEARCH_TRANSPORT_ACCESS_HOST:-127.0.0.1}"
 WORK_DIR="${STEELSEARCH_WORK_DIR:-$(mktemp -d -t steelsearch-dev.XXXXXX)}"
 
 find_free_port() {
@@ -35,8 +37,10 @@ export STEELSEARCH_DATA_PATH="${STEELSEARCH_DATA_PATH:-${WORK_DIR}/data}"
 export STEELSEARCH_LOG_PATH="${STEELSEARCH_LOG_PATH:-${WORK_DIR}/logs}"
 
 echo "Steelsearch work dir: ${WORK_DIR}" >&2
-echo "Steelsearch URL: http://${HOST}:${PORT}" >&2
-echo "Steelsearch transport: ${TRANSPORT_HOST}:${TRANSPORT_PORT}" >&2
+echo "Steelsearch bind URL: http://${HOST}:${PORT}" >&2
+echo "Steelsearch access URL: http://${HTTP_ACCESS_HOST}:${PORT}" >&2
+echo "Steelsearch transport bind: ${TRANSPORT_HOST}:${TRANSPORT_PORT}" >&2
+echo "Steelsearch transport access: ${TRANSPORT_ACCESS_HOST}:${TRANSPORT_PORT}" >&2
 
 exec cargo run -p os-node --features development-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" -- \
   --http.host "${HOST}" \
