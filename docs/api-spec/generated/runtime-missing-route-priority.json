@@ -1,0 +1,510 @@
+{
+  "document-and-bulk": [
+    {
+      "method": "GET",
+      "path": "/_mget"
+    },
+    {
+      "method": "GET",
+      "path": "/_mtermvectors"
+    },
+    {
+      "method": "GET",
+      "path": "/_refresh"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_mget"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_mtermvectors"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_refresh"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_source/{id}"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_termvectors"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_termvectors/{id}"
+    }
+  ],
+  "index-and-metadata": [
+    {
+      "method": "GET",
+      "path": "/_mapping/field/{fields}"
+    },
+    {
+      "method": "GET",
+      "path": "/_mappings"
+    },
+    {
+      "method": "GET",
+      "path": "/_recovery"
+    },
+    {
+      "method": "GET",
+      "path": "/_segments"
+    },
+    {
+      "method": "GET",
+      "path": "/_settings/{name}"
+    },
+    {
+      "method": "GET",
+      "path": "/_stats/{metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_mapping/field/{fields}"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_mappings"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_recovery"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_segments"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_settings/{name}"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_stats"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_stats/{metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_analyze"
+    },
+    {
+      "method": "GET",
+      "path": "/_flush"
+    },
+    {
+      "method": "GET",
+      "path": "/_flush/synced"
+    },
+    {
+      "method": "GET",
+      "path": "/_resolve/index/{name}"
+    },
+    {
+      "method": "GET",
+      "path": "/_shard_stores"
+    },
+    {
+      "method": "GET",
+      "path": "/_upgrade"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_analyze"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_flush"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_flush/synced"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_setting/{name}"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_shard_stores"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_upgrade"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/ingestion/_state"
+    }
+  ],
+  "misc": [
+    {
+      "method": "GET",
+      "path": "/_field_caps"
+    },
+    {
+      "method": "GET",
+      "path": "/_list"
+    },
+    {
+      "method": "GET",
+      "path": "/_list/indices"
+    },
+    {
+      "method": "GET",
+      "path": "/_list/indices/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_list/shards"
+    },
+    {
+      "method": "GET",
+      "path": "/_list/shards/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_tier/all"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_field_caps"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_tier"
+    }
+  ],
+  "root-cluster-node": [
+    {
+      "method": "GET",
+      "path": "/_cat/allocation"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/allocation/{nodes}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/count/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/fielddata"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/fielddata/{fields}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/indices/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/nodeattrs"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/pending_tasks"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/pit_segments"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/recovery"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/recovery/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/repositories"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/segments"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/segments/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/shards"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/shards/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/snapshots"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/snapshots/{repository}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/tasks"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/templates"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/templates/{name}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/thread_pool"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat/thread_pool/{thread_pool_patterns}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/_status"
+    },
+    {
+      "method": "GET",
+      "path": "/_cluster/routing/awareness/{attribute}/weights"
+    },
+    {
+      "method": "GET",
+      "path": "/_cluster/stats/nodes/{nodeId}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cluster/stats/{metric}/nodes/{nodeId}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/hot_threads"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/stats/{metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/stats/{metric}/{index_metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/usage"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/usage/{metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/hot_threads"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/info/{metrics}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/stats"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/stats/{metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/stats/{metric}/{index_metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/usage"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/usage/{metric}"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/{metrics}"
+    },
+    {
+      "method": "GET",
+      "path": "/_search_shards"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_search_shards"
+    },
+    {
+      "method": "GET",
+      "path": "/_scripts/{id}"
+    },
+    {
+      "method": "GET",
+      "path": "/_cat"
+    },
+    {
+      "method": "GET",
+      "path": "/_dangling"
+    },
+    {
+      "method": "GET",
+      "path": "/_nodes"
+    },
+    {
+      "method": "GET",
+      "path": "/_remote/info"
+    },
+    {
+      "method": "GET",
+      "path": "/_remotestore/metadata/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_remotestore/stats/{index}"
+    },
+    {
+      "method": "GET",
+      "path": "/_script_context"
+    },
+    {
+      "method": "GET",
+      "path": "/_script_language"
+    },
+    {
+      "method": "GET",
+      "path": "/_snapshot/{repository}/{snapshot}/{index}/_status"
+    }
+  ],
+  "search": [
+    {
+      "method": "GET",
+      "path": "/_msearch/template"
+    },
+    {
+      "method": "GET",
+      "path": "/_render/template"
+    },
+    {
+      "method": "GET",
+      "path": "/_render/template/{id}"
+    },
+    {
+      "method": "GET",
+      "path": "/_search/template"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_msearch/template"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_search/template"
+    },
+    {
+      "method": "GET",
+      "path": "/_count"
+    },
+    {
+      "method": "GET",
+      "path": "/_search/pipeline"
+    },
+    {
+      "method": "GET",
+      "path": "/_search/pipeline/{id}"
+    },
+    {
+      "method": "GET",
+      "path": "/_search/point_in_time/_all"
+    },
+    {
+      "method": "GET",
+      "path": "/_search/scroll"
+    },
+    {
+      "method": "GET",
+      "path": "/_search/scroll/{scroll_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/_validate/query"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_count"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_validate/query"
+    },
+    {
+      "method": "GET",
+      "path": "/_msearch"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_explain/{id}"
+    },
+    {
+      "method": "GET",
+      "path": "/{index}/_msearch"
+    }
+  ],
+  "snapshot-migration-interop": [
+    {
+      "method": "GET",
+      "path": "/_ingest/pipeline"
+    },
+    {
+      "method": "GET",
+      "path": "/_ingest/pipeline/_simulate"
+    },
+    {
+      "method": "GET",
+      "path": "/_ingest/pipeline/{id}"
+    },
+    {
+      "method": "GET",
+      "path": "/_ingest/pipeline/{id}/_simulate"
+    },
+    {
+      "method": "GET",
+      "path": "/_ingest/processor/grok"
+    },
+    {
+      "method": "GET",
+      "path": "/_scripts/painless/_context"
+    },
+    {
+      "method": "GET",
+      "path": "/_scripts/painless/_execute"
+    }
+  ]
+}
