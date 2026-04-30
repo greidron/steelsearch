@@ -3,8 +3,8 @@
 ## Milestone Gate
 
 - Primary gate: `Phase A` standalone replacement.
-- Later extension: `Phase B` for read-only or coordinating interop against Java
-  OpenSearch.
+- Later extension: `Phase B` for external read-only/coordinating interop
+  against Java OpenSearch, not peer-node shard execution.
 - Final extension: `Phase C` for same-cluster search routing and shard-phase
   behavior that depends on mixed-node participation.
 

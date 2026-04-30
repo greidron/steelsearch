@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 from collections import defaultdict
+import json
 from pathlib import Path
 
 
@@ -348,11 +349,114 @@ def render_transport_reference(rows: list[dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
+def rest_evidence_owner(row: dict[str, str]) -> tuple[str, str]:
+    family = rest_family(row)
+    status = row["status"]
+    if status in {"planned", "out-of-scope"}:
+        return ("deferred", "no canonical runtime compare owner")
+    if family == "root-cluster-node":
+        return ("root-cluster-node", "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node")
+    if family == "index-and-metadata":
+        return ("index-metadata", "tools/run-phase-a-acceptance-harness.sh --scope index-metadata")
+    if family == "document-and-bulk":
+        return ("document-write-path", "tools/run-phase-a-acceptance-harness.sh --scope document-write-path")
+    if family == "search":
+        return ("search", "tools/run-phase-a-acceptance-harness.sh --scope search")
+    if family == "snapshot-migration-interop":
+        return ("snapshot-migration", "tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration")
+    if family == "vector-and-ml":
+        return ("vector-ml", "tools/run-phase-a-acceptance-harness.sh --scope vector-ml")
+    return ("deferred", "no canonical runtime compare owner")
+
+
+def render_route_evidence_matrix(rows: list[dict[str, str]]) -> str:
+    parts = [
+        "# Generated Route Evidence Matrix",
+        "",
+        "This file maps each source-derived REST route to its current Steelsearch",
+        "status and the canonical comparison/profile owner when one exists.",
+        "",
+        "| family | status | method | path_or_expression | evidence_profile | evidence_entrypoint |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        family = rest_family(row)
+        profile, entrypoint = rest_evidence_owner(row)
+        path = row["path_or_expression"].replace("|", "\\|")
+        parts.append(
+            f"| {family} | {row['status']} | {row['method'] or '(dynamic)'} | `{path}` | `{profile}` | `{entrypoint}` |"
+        )
+    parts.append("")
+    return "\n".join(parts)
+
+
+def literal_openapi_path(path: str) -> bool:
+    return (
+        path.startswith("/")
+        and '"' not in path
+        and " " not in path
+        and "+" not in path
+        and "(" not in path
+        and ")" not in path
+    )
+
+
+def generate_openapi(rows: list[dict[str, str]]) -> dict:
+    spec: dict[str, object] = {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "Steelsearch OpenSearch-Compatible API",
+            "version": "0.1.0",
+            "description": (
+                "Generated OpenAPI companion built from the source-derived REST route "
+                "inventory. This reflects route inventory and evidence ownership, not "
+                "a claim that every listed route is fully implemented."
+            ),
+        },
+        "servers": [{"url": "/"}],
+        "paths": {},
+    }
+    paths: dict[str, dict] = {}
+    for row in rows:
+        method = row["method"].lower()
+        path = row["path_or_expression"]
+        if method not in {"get", "put", "post", "delete", "head"}:
+            continue
+        if not literal_openapi_path(path):
+            continue
+        family = rest_family(row)
+        profile, entrypoint = rest_evidence_owner(row)
+        path_item = paths.setdefault(path, {})
+        path_item[method] = {
+            "summary": rest_meaning(row["method"], path, row["source"]),
+            "description": rest_gap(row["status"], family, path),
+            "tags": [family],
+            "responses": {
+                "200": {"description": "Successful response envelope"},
+                "400": {"description": "OpenSearch-shaped fail-closed error"},
+                "404": {"description": "Not found"},
+            },
+            "x-steelsearch-status": row["status"],
+            "x-steelsearch-family": family,
+            "x-evidence-profile": profile,
+            "x-evidence-entrypoint": entrypoint,
+            "x-opensearch-source": row["source"],
+            "x-opensearch-source-line": row["line"],
+        }
+    spec["paths"] = dict(sorted(paths.items()))
+    return spec
+
+
 def main() -> None:
     rest_rows = read_tsv(REST_TSV)
     transport_rows = read_tsv(TRANSPORT_TSV)
     write_text(OUT_DIR / "rest-routes.md", render_rest_reference(rest_rows))
     write_text(OUT_DIR / "transport-actions.md", render_transport_reference(transport_rows))
+    write_text(OUT_DIR / "route-evidence-matrix.md", render_route_evidence_matrix(rest_rows))
+    write_text(
+        OUT_DIR / "openapi.json",
+        json.dumps(generate_openapi(rest_rows), indent=2, sort_keys=True) + "\n",
+    )
 
 
 if __name__ == "__main__":

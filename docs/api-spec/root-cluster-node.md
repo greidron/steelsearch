@@ -3,9 +3,12 @@
 ## Milestone Gate
 
 - Primary gate: `Phase A` standalone replacement.
-- Later extension: `Phase B` for Java OpenSearch transport/admin interop.
+- Later extension: `Phase B` for external Java OpenSearch transport/admin
+  observer or coordinator interop, not cluster membership.
 - Final extension: `Phase C` for same-cluster coordination, task, and node-role
-  parity where peer-node behavior matters.
+  parity where peer-node behavior matters; read those claims through the
+  canonical mixed-cluster join/publication/failure reports, not through the
+  standalone admin summaries.
 
 ## Root/Cluster/Node Parity Reading Rule
 

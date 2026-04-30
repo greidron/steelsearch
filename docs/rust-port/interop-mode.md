@@ -11,6 +11,14 @@ itself as a discovery node, cluster-manager candidate, ingest node, or data
 node in the Java cluster until the membership and write-path contracts are
 implemented and validated.
 
+Read every `Phase B` claim through that boundary first:
+
+- external coordinator or observer behavior is in scope;
+- peer-node membership, shard ownership, recovery, and publication semantics
+  remain out of scope until `Phase C`, where they are owned by
+  `tools/run-phase-c-mixed-cluster-harness.sh` and the `mixed-cluster-*`
+  report family.
+
 ## Rationale
 
 Joining the cluster is more than speaking the transport stream format. A joined

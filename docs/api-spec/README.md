@@ -7,6 +7,8 @@ It is deliberately split into two layers:
 
 - human-readable API specs in this directory;
 - source-derived machine inventories in `docs/rust-port/generated/`.
+- generated route inventories, evidence matrix, and OpenAPI artifact in
+  `docs/api-spec/generated/`.
 
 ## Scope
 
@@ -20,6 +22,15 @@ These specs answer three questions per API family:
 This directory is not a claim of production parity. It is a compatibility and
 release-gate ledger for standalone replacement plus clearly separated later
 interop and mixed-cluster work.
+
+For later phases, read the boundary this way:
+
+- `Phase B` means external Java OpenSearch interop where Steelsearch acts as a
+  coordinator, observer, or explicitly gated forwarder;
+- `Phase C` means same-cluster peer-node participation, shard lifecycle, and
+  recovery/publication parity. Its canonical evidence owner is
+  `tools/run-phase-c-mixed-cluster-harness.sh` plus the `mixed-cluster-*`
+  report set and `mixed-cluster-reject-ledger.json`.
 
 ## Relationship To Milestones And Tasks
 
@@ -48,6 +59,15 @@ When these sources appear to disagree, interpret them in this order:
 1. `docs/rust-port/milestones.md` for phase intent and completion gate.
 2. `docs/api-spec/` for user-visible compatibility status.
 3. `tasks.md` for the concrete backlog still required to move a status forward.
+
+## Generated Artifacts
+
+Generated artifacts that complement the hand-written specs:
+
+- [Generated REST Route Reference](./generated/rest-routes.md)
+- [Generated Transport Action Reference](./generated/transport-actions.md)
+- [Generated Route Evidence Matrix](./generated/route-evidence-matrix.md)
+- `docs/api-spec/generated/openapi.json`
 
 `Phase A` and `Phase A-1` should be read differently:
 

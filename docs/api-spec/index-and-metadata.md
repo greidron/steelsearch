@@ -6,7 +6,8 @@
 - Later extension: `Phase B` for metadata interop and migration safety against
   Java OpenSearch.
 - Final extension: `Phase C` for same-cluster metadata propagation,
-  allocation-sensitive state, and mixed-node lifecycle parity.
+  allocation-sensitive state, and mixed-node lifecycle parity, owned by the
+  mixed-cluster join/allocation/publication profiles.
 
 ## Index/Metadata Parity Reading Rule
 

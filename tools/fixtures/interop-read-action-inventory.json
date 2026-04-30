@@ -1,0 +1,214 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "actions": [
+    {
+      "surface": "GET /_cluster/health",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/health",
+      "disposition": "implemented",
+      "reason": "Read-only health forwarding is a canonical Phase B observer surface."
+    },
+    {
+      "surface": "cluster:monitor/health",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportClusterHealthAction",
+      "disposition": "implemented",
+      "reason": "Health is safe to observe without cluster membership or shard ownership."
+    },
+    {
+      "surface": "GET /_cluster/state",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/state",
+      "disposition": "implemented",
+      "reason": "Cluster-state fetch and cache refresh are already Phase B baseline evidence."
+    },
+    {
+      "surface": "cluster:monitor/state",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportClusterStateAction",
+      "disposition": "implemented",
+      "reason": "Authoritative metadata read is required for cache refresh and routing plans."
+    },
+    {
+      "surface": "GET /_cluster/settings",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster-state cache",
+      "disposition": "implemented",
+      "reason": "Read-only settings can be projected from cached cluster-state metadata."
+    },
+    {
+      "surface": "GET /_cluster/pending_tasks",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/task",
+      "disposition": "implemented",
+      "reason": "Pending-task observation is an operator-facing read-only surface."
+    },
+    {
+      "surface": "cluster:monitor/task",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportPendingClusterTasksAction",
+      "disposition": "implemented",
+      "reason": "Pending-task listing is safe observer behavior and part of the initial admin scope."
+    },
+    {
+      "surface": "GET /_tasks",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/tasks/lists",
+      "disposition": "implemented",
+      "reason": "Task listing is read-only and operator-facing."
+    },
+    {
+      "surface": "cluster:monitor/tasks/lists",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportListTasksAction",
+      "disposition": "implemented",
+      "reason": "Task list forwarding is safe without same-cluster participation."
+    },
+    {
+      "surface": "GET /_nodes/stats",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/nodes/stats",
+      "disposition": "implemented",
+      "reason": "Node stats are read-only and part of the initial operator admin scope."
+    },
+    {
+      "surface": "cluster:monitor/nodes/stats",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportNodesStatsAction",
+      "disposition": "implemented",
+      "reason": "Node stats forwarding is safe observer behavior."
+    },
+    {
+      "surface": "GET /_cluster/stats",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/stats",
+      "disposition": "implemented",
+      "reason": "Cluster stats are read-only and align with the initial transport/admin parity target."
+    },
+    {
+      "surface": "cluster:monitor/stats",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportClusterStatsAction",
+      "disposition": "implemented",
+      "reason": "Cluster stats forwarding is safe observer behavior."
+    },
+    {
+      "surface": "GET /{index}",
+      "kind": "rest",
+      "family": "metadata-read",
+      "backing": "indices:admin/get",
+      "disposition": "implemented",
+      "reason": "Index metadata readback is a required Phase B metadata observer surface."
+    },
+    {
+      "surface": "indices:admin/get",
+      "kind": "transport",
+      "family": "metadata-read",
+      "backing": "TransportGetIndexAction",
+      "disposition": "implemented",
+      "reason": "Concrete index metadata forwarding is safe and needed for read-only coordination."
+    },
+    {
+      "surface": "GET /_alias",
+      "kind": "rest",
+      "family": "metadata-read",
+      "backing": "indices:admin/aliases/get",
+      "disposition": "implemented",
+      "reason": "Alias readback is metadata-only and part of the initial coordination scope."
+    },
+    {
+      "surface": "indices:admin/aliases/get",
+      "kind": "transport",
+      "family": "metadata-read",
+      "backing": "TransportGetAliasesAction",
+      "disposition": "implemented",
+      "reason": "Alias metadata forwarding is safe in observer mode."
+    },
+    {
+      "surface": "GET /_settings",
+      "kind": "rest",
+      "family": "metadata-read",
+      "backing": "indices:monitor/settings/get",
+      "disposition": "implemented",
+      "reason": "Index settings readback is metadata-only and needed for operator inspection."
+    },
+    {
+      "surface": "indices:monitor/settings/get",
+      "kind": "transport",
+      "family": "metadata-read",
+      "backing": "TransportGetSettingsAction",
+      "disposition": "implemented",
+      "reason": "Index settings forwarding is safe in observer mode."
+    },
+    {
+      "surface": "GET /_data_stream",
+      "kind": "rest",
+      "family": "metadata-read",
+      "backing": "indices:admin/data_stream/get",
+      "disposition": "implemented",
+      "reason": "Data-stream metadata readback is a bounded metadata observer surface."
+    },
+    {
+      "surface": "indices:admin/data_stream/get",
+      "kind": "transport",
+      "family": "metadata-read",
+      "backing": "GetDataStreamAction.TransportAction",
+      "disposition": "implemented",
+      "reason": "Data-stream metadata forwarding is safe without cluster membership."
+    },
+    {
+      "surface": "GET /_cluster/allocation/explain",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/allocation/explain",
+      "disposition": "rejected",
+      "reason": "Explanation routing depends on request decoding and shard-level resolution not yet proven safe in Phase B."
+    },
+    {
+      "surface": "cluster:monitor/allocation/explain",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportClusterAllocationExplainAction",
+      "disposition": "rejected",
+      "reason": "Request/response shape and routing semantics are not yet validated for mixed-mode forwarding."
+    },
+    {
+      "surface": "GET /_nodes/info",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/nodes/info",
+      "disposition": "rejected",
+      "reason": "Node-info forwarding is not part of the initial accepted admin scope and remains fail-closed until explicitly validated."
+    },
+    {
+      "surface": "cluster:monitor/nodes/info",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportNodesInfoAction",
+      "disposition": "rejected",
+      "reason": "Not yet validated as a forwarded observer surface."
+    },
+    {
+      "surface": "cluster:monitor/nodes/liveness",
+      "kind": "transport",
+      "family": "coordination-read",
+      "backing": "TransportLivenessAction",
+      "disposition": "phase_c",
+      "reason": "Node liveness transport participates in peer-node coordination and belongs to same-cluster semantics."
+    }
+  ]
+}

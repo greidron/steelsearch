@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "name": "single_index_two_shards_grouped_by_node",
+      "indices": [
+        "logs-interop"
+      ],
+      "expected_targets": [
+        {
+          "node_id": "node-1",
+          "shards": [
+            {
+              "index_name": "logs-interop",
+              "shard_id": 0
+            }
+          ]
+        },
+        {
+          "node_id": "node-2",
+          "shards": [
+            {
+              "index_name": "logs-interop",
+              "shard_id": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

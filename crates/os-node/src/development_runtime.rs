@@ -35,6 +35,32 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+const GENERATED_OPENAPI_JSON: &str =
+    include_str!("../../../docs/api-spec/generated/openapi.json");
+const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Steelsearch API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: '/openapi.json',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis],
+      layout: "BaseLayout"
+    });
+  </script>
+</body>
+</html>
+"#;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RestServerConfig {
     pub bind_host: String,
@@ -1411,6 +1437,10 @@ impl SteelNode {
         match (request.method, request.path.as_str()) {
             (RestMethod::Get, "/") => Some(build_root_info_response(&self.info)),
             (RestMethod::Head, "/") => Some(RestResponse::empty(200)),
+            (RestMethod::Get, "/openapi.json") => Some(self.handle_openapi_route()),
+            (RestMethod::Get, "/docs") | (RestMethod::Get, "/swagger") | (RestMethod::Get, "/swagger-ui") => {
+                Some(self.handle_swagger_ui_route())
+            }
             (RestMethod::Get, "/_steelsearch/dev/cluster") => Some(self.handle_dev_cluster_route()),
             (RestMethod::Head, "/_all") => Some(RestResponse::opensearch_error_kind(
                 os_rest::RestErrorKind::IllegalArgument,
@@ -1768,6 +1798,17 @@ impl SteelNode {
             return Some(self.handle_tasks_get_route(request));
         }
         None
+    }
+
+    fn handle_openapi_route(&self) -> RestResponse {
+        let body: Value = serde_json::from_str(GENERATED_OPENAPI_JSON)
+            .expect("generated openapi json should parse");
+        RestResponse::json(200, body)
+    }
+
+    fn handle_swagger_ui_route(&self) -> RestResponse {
+        RestResponse::text(200, SWAGGER_UI_HTML)
+            .with_header("content-type", "text/html; charset=utf-8")
     }
 
     fn handle_cluster_state_route(&self, request: &RestRequest) -> RestResponse {
@@ -9721,6 +9762,7 @@ fn query_param_is_true(raw: Option<&String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 
     #[test]
     fn publication_round_state_accepts_main_rs_gateway_replay_fields() {
@@ -9813,5 +9855,38 @@ mod tests {
             ..Default::default()
         };
         assert!(state.has_interrupted_tasks());
+    }
+
+    #[test]
+    fn openapi_route_serves_generated_spec() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/openapi.json"));
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.headers.get("content-type").map(String::as_str),
+            Some("application/json")
+        );
+        assert_eq!(response.body["openapi"], "3.0.3");
+        assert_eq!(response.body["info"]["title"], "Steelsearch OpenSearch-Compatible API");
+    }
+
+    #[test]
+    fn swagger_ui_route_serves_html_shell() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/docs"));
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.headers.get("content-type").map(String::as_str),
+            Some("text/html; charset=utf-8")
+        );
+        let body = response.body.as_str().expect("html body should be string");
+        assert!(body.contains("/openapi.json"));
+        assert!(body.contains("swagger-ui"));
     }
 }

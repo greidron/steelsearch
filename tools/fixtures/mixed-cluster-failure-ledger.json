@@ -1,0 +1,24 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-failure",
+  "cases": [
+    {
+      "name": "publication_mismatch",
+      "expected_error_class": "DiffBaseMismatch",
+      "evidence": "crates/os-cluster-state/src/lib.rs::publication_reject_integration_preserves_cache_and_withholds_ack",
+      "reason": "A restarted or lagging peer must reject a publication diff whose base UUID does not match the cached cluster-state before acknowledging it."
+    },
+    {
+      "name": "routing_hole",
+      "expected_error_class": "MissingStartedShard",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_search_routing_fail_closed_fixture_matches_planner_behavior",
+      "reason": "Mixed-cluster routing must fail closed when reroute planning cannot find a started shard copy."
+    },
+    {
+      "name": "stale_replica",
+      "expected_error_class": "StaleSeqNo",
+      "evidence": "crates/os-transport/src/internal_transport.rs::mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+      "reason": "Replica application must reject stale sequence numbers before partial replication or ownership drift can occur."
+    }
+  ]
+}

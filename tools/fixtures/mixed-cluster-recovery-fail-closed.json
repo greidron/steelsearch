@@ -1,0 +1,22 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-recovery",
+  "cases": [
+    {
+      "name": "unsupported_recovery_source",
+      "index_name": "logs-phase-c-000001",
+      "shard_id": 0,
+      "recovery_source": "Snapshot",
+      "relocation_interrupted": false,
+      "expected_error_class": "UnsupportedRecoverySource"
+    },
+    {
+      "name": "relocation_interrupted",
+      "index_name": "logs-phase-c-000001",
+      "shard_id": 0,
+      "recovery_source": "Peer",
+      "relocation_interrupted": true,
+      "expected_error_class": "RelocationInterrupted"
+    }
+  ]
+}

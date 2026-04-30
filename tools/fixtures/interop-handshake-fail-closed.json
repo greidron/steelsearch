@@ -1,0 +1,26 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "cases": [
+    {
+      "name": "trailing_bytes",
+      "stream_version_id": 137287827,
+      "expected_error": "TrailingBytes"
+    },
+    {
+      "name": "negative_role_count",
+      "stream_version_id": 137287827,
+      "expected_error": "NegativeRoleCount"
+    },
+    {
+      "name": "invalid_ip_length",
+      "stream_version_id": 137287827,
+      "expected_error": "InvalidIpLength"
+    },
+    {
+      "name": "stream_version_gate_mismatch",
+      "stream_version_id": 3000099,
+      "expected_error": "Stream"
+    }
+  ]
+}

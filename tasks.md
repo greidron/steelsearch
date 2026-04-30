@@ -1792,3 +1792,79 @@
     - [x] `docs/api-spec/*` 문서에서 해당 family가 더 이상 bounded subset 종착점처럼 읽히지 않도록 전면 최신화
     - [x] `docs/rust-port/*` 문서에서 stale `MVP`, `development-only subset`, outdated blocker 표현을 제거 또는 갱신
     - [x] `Phase A-1` completion checklist 작성
+- [x] Phase B safe Java OpenSearch interop
+  - [x] `Phase B`를 external transport client / coordinating interop 단계로 정의하는 전용 문서 작성
+  - [x] `Phase B`와 `Phase A-1` / `Phase C`의 경계 규칙을 문서에 명시
+  - [x] `Phase B` validation profile rule, canonical report set, completion checklist를 문서화
+  - [x] Java transport handshake / node identity interop baseline
+    - [x] supported Java OpenSearch version range와 wire-version gate를 문서/fixture 기준으로 고정
+    - [x] live Java source target에 대한 handshake/identity probe runner 추가
+    - [x] incompatible wire version / undecodable handshake fail-closed fixture 추가
+  - [x] cluster-state cache / diff safety
+    - [x] full cluster-state fetch -> local cache refresh interop runner 추가
+    - [x] `from_uuid` mismatch diff reject와 prior-cache 유지 검증 추가
+    - [x] unsupported top-level custom / metadata custom reject 검증과 report 추가
+  - [x] cluster / metadata read forwarding
+    - [x] accepted read-only transport/REST action inventory를 `implemented|rejected|Phase C`로 분류
+    - [x] cluster health/state/settings/tasks/nodes-stats read forwarding integration 추가
+    - [x] missing routing / missing discovery node / unsupported request fail-closed 검증 추가
+  - [x] search forwarding
+    - [x] cached routing-table 기반 search routing plan 구현
+    - [x] accepted `_search` forwarding family와 unsupported query-family reject policy 문서화
+    - [x] representative search forwarding strict compare runner/report 추가
+  - [x] optional safe write forwarding
+    - [x] `java_write_forwarding_validated` safety gate와 config contract 추가
+    - [x] single-doc `index` / `delete` / `update` forwarding happy-path 검증 추가
+    - [x] bounded `_bulk` forwarding happy-path 및 partial-failure reject policy 추가
+    - [x] gate disabled / primary shard unresolved / retry-unsafe case fail-closed 검증 추가
+  - [x] transport action / named writeable compatibility ledger
+    - [x] source-derived transport action inventory에 `Phase B` disposition column 추가
+    - [x] accepted action family별 request/response fixture 또는 live probe 추가
+    - [x] unknown action / unknown named writeable / unsupported plugin payload reject ledger 추가
+  - [x] failure injection profile
+    - [x] remote node unavailable / transport error unwrap interop test 추가
+    - [x] stale cluster-state base / routing-hole / custom-metadata reject interop test 추가
+    - [x] write-forwarding gate off / unsupported write action reject interop test 추가
+  - [x] Phase B release gate
+    - [x] canonical `Phase B` runner와 compare artifact tree 추가
+    - [x] `interop-handshake`, `cluster-state-cache`, `read-forwarding`, `search-forwarding`, `version-gates`, `failure-injection` required reports clean pass
+    - [x] write-forwarding surface를 claim할 경우 `interop-write-forwarding-report.json` clean pass
+    - [x] `docs/api-spec/*`와 `docs/rust-port/*`에서 `Phase B` surface가 coordinator/observer/fail-closed interop로 최신화
+- [x] Phase C same-cluster peer-node compatibility
+  - [x] `Phase C`를 same-cluster peer-node compatibility 단계로 정의하는 전용 문서 작성
+  - [x] `Phase C`와 `Phase B`의 경계 규칙, canonical profiles, report set, completion checklist를 문서화
+  - [x] mixed-cluster join admission baseline
+    - [x] Java discovery/join handshake와 `DiscoveryNode` advertisement contract를 source-derived fixture 기준으로 고정
+    - [x] incompatible cluster UUID / unsupported role advertisement / wire-version mismatch join reject fixture 추가
+    - [x] live mixed-cluster join probe runner 추가
+    - [x] join success / reject artifact를 `mixed-cluster-join-report.json`으로 고정
+  - [x] cluster-state publication/apply/ack parity
+    - [x] publication full-state receive/apply integration test 추가
+    - [x] supported diff apply + ack sequencing integration test 추가
+    - [x] stale publication base / unknown named writeable / unsupported custom reject integration test 추가
+    - [x] publication artifact tree와 `mixed-cluster-publication-report.json` 추가
+  - [x] allocation admission and routing convergence
+    - [x] mixed-cluster shard allocation admission rule 문서/fixture 고정
+    - [x] routing-table convergence probe runner 추가
+    - [x] unsupported shard state / missing allocation id / invalid store contract reject test 추가
+    - [x] `mixed-cluster-allocation-report.json` 추가
+  - [x] peer recovery and relocation
+    - [x] recovery start/chunk/translog/finalize request/response fixture 추가
+    - [x] Java->Steelsearch bounded peer recovery integration runner 추가
+    - [x] relocation interruption / unsupported recovery source fail-closed test 추가
+    - [x] `mixed-cluster-recovery-report.json` 추가
+  - [x] mixed-cluster write replication
+    - [x] replicated `index`/`delete`/`update` bounded action family contract 문서/fixture 고정
+    - [x] seq_no / primary_term / global checkpoint / retention lease parity integration test 추가
+    - [x] stale term/seq_no / unsupported write action / partial replication reject test 추가
+    - [x] `mixed-cluster-write-replication-report.json` 추가
+  - [x] failure handling and restart safety
+    - [x] Java node loss / Steelsearch node loss mixed-cluster failure runner 추가
+    - [x] restart + rejoin + reroute recovery integration test 추가
+    - [x] stale replica / routing-hole / publication mismatch fail-closed ledger 추가
+    - [x] `mixed-cluster-failure-report.json` 추가
+  - [x] Phase C release gate
+    - [x] canonical `Phase C` runner와 compare artifact tree 추가
+    - [x] `mixed-cluster-join`, `publication`, `allocation`, `recovery`, `write-replication`, `failure` required reports clean pass
+    - [x] `mixed-cluster-reject-ledger.json` clean pass
+    - [x] `docs/api-spec/*`와 `docs/rust-port/*`에서 `Phase C` surface가 peer-node mixed-cluster participation으로 최신화

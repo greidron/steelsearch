@@ -1,0 +1,42 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-write-replication",
+  "replicated_action_family": {
+    "user_facing_write_families": [
+      "index",
+      "delete",
+      "update"
+    ],
+    "replica_wire_operation_kinds": [
+      "index",
+      "delete",
+      "noop"
+    ],
+    "update_resolution_policy": "primary_must_resolve_update_to_replica index|delete|noop before transport",
+    "required_request_fields": [
+      "index",
+      "shard_id",
+      "target_node",
+      "primary_node",
+      "allocation_id",
+      "seq_no",
+      "primary_term",
+      "version",
+      "global_checkpoint",
+      "local_checkpoint",
+      "retention_leases",
+      "operation"
+    ],
+    "required_response_fields": [
+      "index",
+      "shard_id",
+      "target_node",
+      "seq_no",
+      "primary_term",
+      "version",
+      "global_checkpoint",
+      "applied",
+      "result"
+    ]
+  }
+}

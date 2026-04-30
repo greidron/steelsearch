@@ -1,0 +1,109 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "accepted_query_families": [
+    {
+      "family": "match_all",
+      "policy": "accepted",
+      "reason": "No shard-local scripting or session state is required."
+    },
+    {
+      "family": "term",
+      "policy": "accepted",
+      "reason": "Deterministic lexical query shape with straightforward request forwarding."
+    },
+    {
+      "family": "range",
+      "policy": "accepted",
+      "reason": "Deterministic lexical query shape with straightforward request forwarding."
+    },
+    {
+      "family": "bool.filter",
+      "policy": "accepted",
+      "reason": "Boolean filter composition remains deterministic and read-only."
+    }
+  ],
+  "accepted_request_options": [
+    "sort",
+    "from",
+    "size",
+    "track_total_hits"
+  ],
+  "rejected_query_families": [
+    {
+      "family": "aggregations",
+      "policy": "rejected",
+      "reason": "Cross-shard reduction policy is not yet validated in Phase B forwarding."
+    },
+    {
+      "family": "highlight",
+      "policy": "rejected",
+      "reason": "Response shaping drift is not yet covered by the forwarding baseline."
+    },
+    {
+      "family": "suggest",
+      "policy": "rejected",
+      "reason": "Named suggestion responses are not yet validated for forwarding."
+    },
+    {
+      "family": "scroll",
+      "policy": "rejected",
+      "reason": "Search session lifecycle requires additional forwarding contracts."
+    },
+    {
+      "family": "pit",
+      "policy": "rejected",
+      "reason": "PIT lifecycle requires additional forwarding contracts."
+    },
+    {
+      "family": "search_after",
+      "policy": "rejected",
+      "reason": "Cursor-style result continuation is deferred until session forwarding exists."
+    },
+    {
+      "family": "rescore",
+      "policy": "rejected",
+      "reason": "Second-pass ranking semantics are not yet part of the forwarding baseline."
+    },
+    {
+      "family": "collapse",
+      "policy": "rejected",
+      "reason": "Collapsed hit shaping is not yet covered by forwarding parity tests."
+    },
+    {
+      "family": "script_score",
+      "policy": "rejected",
+      "reason": "Script execution policy is not yet validated for forwarded search."
+    },
+    {
+      "family": "function_score",
+      "policy": "rejected",
+      "reason": "Score mutation semantics are not yet validated for forwarded search."
+    },
+    {
+      "family": "nested",
+      "policy": "rejected",
+      "reason": "Nested query forwarding is deferred until broader search parity coverage exists."
+    },
+    {
+      "family": "geo_distance",
+      "policy": "rejected",
+      "reason": "Geo query forwarding is deferred until broader search parity coverage exists."
+    },
+    {
+      "family": "knn",
+      "policy": "rejected",
+      "reason": "Vector search forwarding depends on plugin-specific transport policy."
+    },
+    {
+      "family": "hybrid",
+      "policy": "rejected",
+      "reason": "Hybrid lexical/vector forwarding depends on plugin-specific transport policy."
+    },
+    {
+      "family": "runtime_mappings",
+      "policy": "rejected",
+      "reason": "Request-body runtime field policy is not part of the OpenSearch parity baseline."
+    }
+  ]
+}

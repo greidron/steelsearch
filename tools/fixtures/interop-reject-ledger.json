@@ -1,0 +1,24 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "entries": [
+    {
+      "kind": "unknown_transport_action",
+      "disposition": "rejected",
+      "evidence": "crates/os-transport/src/action.rs::shard_search_request_rejects_unknown_transport_action",
+      "reason": "Unknown transport actions must fail closed before request dispatch."
+    },
+    {
+      "kind": "unknown_named_writeable",
+      "disposition": "rejected",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_unsupported_custom_fixture_cases_reject_and_preserve_prior_cache",
+      "reason": "Unsupported named writeables in cluster-state sections must reject and preserve prior cache."
+    },
+    {
+      "kind": "unsupported_plugin_payload",
+      "disposition": "rejected",
+      "evidence": "tools/fixtures/interop-cluster-state-custom-fail-closed.json::unsupported_plugin_metadata_custom_rejects_and_preserves_prior_cache",
+      "reason": "Plugin-defined metadata payloads outside the supported allow-list must fail closed."
+    }
+  ]
+}

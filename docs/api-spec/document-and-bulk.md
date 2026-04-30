@@ -4,9 +4,11 @@
 
 - Primary gate: `Phase A` standalone replacement.
 - Later extension: `Phase B` for interop-oriented migration and forwarding
-  behavior where Java OpenSearch still participates externally.
+  behavior where Java OpenSearch still participates externally and Steelsearch
+  stays behind explicit write-forwarding safety gates.
 - Final extension: `Phase C` for same-cluster write replication, retention
-  lease, and peer-node durability parity.
+  lease, and peer-node durability parity, owned by the mixed-cluster
+  write-replication and failure profiles rather than by standalone routes.
 
 ## Single-Document APIs
 

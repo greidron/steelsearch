@@ -1,0 +1,23 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "source_target": {
+    "family": "Java OpenSearch",
+    "product_version": "3.7.0",
+    "source_commit": "f991609d190dfd91c8a09902053a7bbfe0c27b3e"
+  },
+  "supported_version_range": {
+    "product_version_ids": [
+      3070099
+    ],
+    "transport_version_ids": [
+      137287827
+    ],
+    "minimum_compatible_transport_version_id": 136407827,
+    "discovery_node_stream_address_gate": 137237827
+  },
+  "policy": {
+    "interop_mode": "external_transport_client",
+    "unknown_or_incompatible_wire_behavior": "fail_closed"
+  }
+}

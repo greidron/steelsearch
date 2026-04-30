@@ -1,0 +1,10 @@
+{
+  "cases": [
+    {
+      "name": "search_routing_hole_missing_started_shard",
+      "indices": ["logs-interop"],
+      "state_shape": "missing_started_shard",
+      "expected_error_class": "MissingStartedShard"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "actions": [
+    {
+      "action_name": "cluster:monitor/state",
+      "disposition": "implemented",
+      "evidence_kind": "java_fixture",
+      "request_evidence": "crates/os-cluster-state/tests/java_fixtures.rs::java_cluster_state_transport_request_fixture_matches_rust_builder",
+      "response_evidence": "crates/os-cluster-state/tests/java_fixtures.rs::java_cluster_state_response_fixture_decodes_prefix"
+    },
+    {
+      "action_name": "cluster:monitor/task",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::pending_cluster_tasks_wire_round_trips",
+      "response_evidence": "crates/os-transport/src/action.rs::pending_cluster_tasks_wire_round_trips"
+    }
+  ]
+}

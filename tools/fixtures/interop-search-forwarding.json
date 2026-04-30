@@ -1,0 +1,141 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "index": "interop-search-forwarding",
+  "seed_mapping": {
+    "mappings": {
+      "properties": {
+        "service": {
+          "type": "keyword"
+        },
+        "latency_ms": {
+          "type": "integer"
+        },
+        "level": {
+          "type": "keyword"
+        }
+      }
+    }
+  },
+  "seed_docs": [
+    {
+      "_id": "doc-1",
+      "_source": {
+        "service": "api",
+        "latency_ms": 90,
+        "level": "info"
+      }
+    },
+    {
+      "_id": "doc-2",
+      "_source": {
+        "service": "api",
+        "latency_ms": 210,
+        "level": "warn"
+      }
+    },
+    {
+      "_id": "doc-3",
+      "_source": {
+        "service": "worker",
+        "latency_ms": 150,
+        "level": "info"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "match_all_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 3,
+      "expected_ids": [
+        "doc-1",
+        "doc-2",
+        "doc-3"
+      ]
+    },
+    {
+      "name": "term_search",
+      "body": {
+        "query": {
+          "term": {
+            "service": "api"
+          }
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 2,
+      "expected_ids": [
+        "doc-1",
+        "doc-2"
+      ]
+    },
+    {
+      "name": "range_search",
+      "body": {
+        "query": {
+          "range": {
+            "latency_ms": {
+              "gte": 100
+            }
+          }
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 2,
+      "expected_ids": [
+        "doc-2",
+        "doc-3"
+      ]
+    },
+    {
+      "name": "bool_filter_search",
+      "body": {
+        "query": {
+          "bool": {
+            "filter": [
+              {
+                "term": {
+                  "service": "api"
+                }
+              },
+              {
+                "range": {
+                  "latency_ms": {
+                    "gte": 200
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 1,
+      "expected_ids": [
+        "doc-2"
+      ]
+    }
+  ]
+}

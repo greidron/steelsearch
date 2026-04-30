@@ -964,6 +964,7 @@ mod tests {
         DocumentMetadata, SearchFetchSubphase, SearchFetchSubphaseResult, SearchHit, SearchPhase,
         SearchPhaseResult, SearchResponse, SortSpec,
     };
+    use serde::Deserialize;
     use serde_json::json;
 
     #[test]
@@ -1280,6 +1281,63 @@ mod tests {
         );
     }
 
+    #[derive(Debug, Deserialize)]
+    struct MixedClusterRecoveryWireFixture {
+        recovery_wire_fixture: MixedClusterRecoveryWirePayload,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct MixedClusterRecoveryWirePayload {
+        start_request: SteelsearchRecoveryStartRequestWire,
+        chunk_request: SteelsearchRecoveryChunkRequestWire,
+        translog_request: SteelsearchRecoveryTranslogRequestWire,
+        finalize_request: SteelsearchRecoveryFinalizeRequestWire,
+        response: SteelsearchRecoveryResponseWire,
+    }
+
+    #[test]
+    fn mixed_cluster_recovery_wire_fixture_round_trips_all_claimed_shapes() {
+        let fixture: MixedClusterRecoveryWireFixture = serde_json::from_str(include_str!(
+            "../../../tools/fixtures/mixed-cluster-recovery-wire.json"
+        ))
+        .expect("mixed-cluster recovery wire fixture should deserialize");
+
+        assert_recovery_request_round_trip(
+            build_steelsearch_recovery_start_request_message,
+            read_steelsearch_recovery_start_request_message,
+            fixture.recovery_wire_fixture.start_request,
+        );
+        assert_recovery_request_round_trip(
+            build_steelsearch_recovery_chunk_request_message,
+            read_steelsearch_recovery_chunk_request_message,
+            fixture.recovery_wire_fixture.chunk_request,
+        );
+        assert_recovery_request_round_trip(
+            build_steelsearch_recovery_translog_request_message,
+            read_steelsearch_recovery_translog_request_message,
+            fixture.recovery_wire_fixture.translog_request,
+        );
+        assert_recovery_request_round_trip(
+            build_steelsearch_recovery_finalize_request_message,
+            read_steelsearch_recovery_finalize_request_message,
+            fixture.recovery_wire_fixture.finalize_request,
+        );
+
+        let mut frame = build_steelsearch_recovery_response_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &fixture.recovery_wire_fixture.response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected recovery response message");
+        };
+        assert_eq!(
+            read_steelsearch_recovery_response_message(&message).unwrap(),
+            fixture.recovery_wire_fixture.response
+        );
+    }
+
     #[test]
     fn steelsearch_replica_operation_request_binds_primary_assigned_metadata() {
         let request = SteelsearchReplicaOperationRequestWire {
@@ -1491,5 +1549,26 @@ mod tests {
             PendingClusterTasksResponseWire::read(output.freeze()).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn shard_search_request_rejects_unknown_transport_action() {
+        let message = TransportMessage {
+            request_id: 99,
+            status: TransportStatus::request(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            variable_header: BytesMut::from(
+                &RequestVariableHeader::new("cluster:monitor/health").to_bytes()[..],
+            ),
+            body: BytesMut::new(),
+        };
+
+        match read_steelsearch_shard_search_request_message(&message).unwrap_err() {
+            TransportActionWireError::UnexpectedAction { expected, actual } => {
+                assert_eq!(expected, STEELSEARCH_SHARD_SEARCH_ACTION_NAME);
+                assert_eq!(actual, "cluster:monitor/health");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
     }
 }

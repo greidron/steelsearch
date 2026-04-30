@@ -1,0 +1,10 @@
+{
+  "cases": [
+    {
+      "name": "from_uuid_mismatch_rejects_and_preserves_prior_cache",
+      "expected_previous_state_uuid": "cached-state-uuid",
+      "diff_from_uuid": "stale-base-uuid",
+      "expected_error_class": "DiffBaseMismatch"
+    }
+  ]
+}

@@ -25,3 +25,8 @@ TSV files, see:
 
 - [Generated REST Route Reference](../generated/rest-routes.md)
 - [Generated Transport Action Reference](../generated/transport-actions.md)
+- [Generated Route Evidence Matrix](../generated/route-evidence-matrix.md)
+
+The generated OpenAPI artifact is:
+
+- `docs/api-spec/generated/openapi.json`

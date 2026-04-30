@@ -1,5 +1,7 @@
 use bytes::{Bytes, BytesMut};
-use os_core::{Version, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS};
+use os_core::{
+    Version, OPENSEARCH_3_7_0_TRANSPORT, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS,
+};
 use os_stream::{StreamInput, StreamInputError, StreamOutput};
 use os_wire::TransportStatus;
 use std::collections::{BTreeMap, BTreeSet};
@@ -161,6 +163,53 @@ pub struct DiscoveryNodeRole {
     pub can_contain_data: bool,
 }
 
+pub fn validate_mixed_cluster_join_admission(
+    expected_cluster_uuid: &str,
+    observed_cluster_uuid: &str,
+    transport_version: Version,
+    discovery_node: &DiscoveryNode,
+) -> Result<(), JoinAdmissionError> {
+    if transport_version != OPENSEARCH_3_7_0_TRANSPORT {
+        return Err(JoinAdmissionError::WireVersionMismatch {
+            observed_transport_version_id: transport_version.id(),
+            supported_transport_version_ids: vec![OPENSEARCH_3_7_0_TRANSPORT.id()],
+        });
+    }
+
+    if expected_cluster_uuid != observed_cluster_uuid {
+        return Err(JoinAdmissionError::ClusterUuidMismatch {
+            expected_cluster_uuid: expected_cluster_uuid.to_string(),
+            observed_cluster_uuid: observed_cluster_uuid.to_string(),
+        });
+    }
+
+    for role in &discovery_node.roles {
+        if !is_supported_join_role(role) {
+            return Err(JoinAdmissionError::UnsupportedRoleAdvertisement {
+                role_name: role.name.clone(),
+                abbreviation: role.abbreviation.clone(),
+                can_contain_data: role.can_contain_data,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn is_supported_join_role(role: &DiscoveryNodeRole) -> bool {
+    matches!(
+        (
+            role.name.as_str(),
+            role.abbreviation.as_str(),
+            role.can_contain_data,
+        ),
+        ("cluster_manager", "m", false)
+            | ("data", "d", true)
+            | ("ingest", "i", false)
+            | ("remote_cluster_client", "r", false)
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TransportAddress {
     pub ip: IpAddr,
@@ -204,6 +253,32 @@ pub enum HandshakeDecodeError {
     TrailingBytes(usize),
 }
 
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum JoinAdmissionError {
+    #[error(
+        "join cluster UUID mismatch: expected [{expected_cluster_uuid}] but observed [{observed_cluster_uuid}]"
+    )]
+    ClusterUuidMismatch {
+        expected_cluster_uuid: String,
+        observed_cluster_uuid: String,
+    },
+    #[error(
+        "unsupported DiscoveryNode role advertisement [{role_name}] abbreviation [{abbreviation}] can_contain_data [{can_contain_data}]"
+    )]
+    UnsupportedRoleAdvertisement {
+        role_name: String,
+        abbreviation: String,
+        can_contain_data: bool,
+    },
+    #[error(
+        "unsupported join transport version [{observed_transport_version_id}] expected one of {supported_transport_version_ids:?}"
+    )]
+    WireVersionMismatch {
+        observed_transport_version_id: i32,
+        supported_transport_version_ids: Vec<i32>,
+    },
+}
+
 fn write_version_bytes_reference(output: &mut StreamOutput, version: Version) {
     let mut version_bytes = StreamOutput::new();
     version_bytes.write_vint(version.id());
@@ -213,13 +288,17 @@ fn write_version_bytes_reference(output: &mut StreamOutput, version: Version) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_tcp_handshake_request, build_transport_handshake_request, TCP_HANDSHAKE_ACTION,
-        TRANSPORT_HANDSHAKE_ACTION,
+        build_tcp_handshake_request, build_transport_handshake_request,
+        validate_mixed_cluster_join_admission, DiscoveryNode, DiscoveryNodeRole, JoinAdmissionError,
+        TCP_HANDSHAKE_ACTION, TRANSPORT_HANDSHAKE_ACTION, TransportAddress,
     };
     use crate::frame::{decode_frame, DecodedFrame};
     use crate::variable_header::RequestVariableHeader;
     use os_core::{Version, OPENSEARCH_3_0_0, OPENSEARCH_3_7_0_TRANSPORT};
     use os_stream::{StreamInput, StreamOutput};
+    use serde::Deserialize;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn builds_tcp_handshake_request() {
@@ -296,5 +375,189 @@ mod tests {
         assert_eq!(node.address.port, 9300);
         assert_eq!(node.attributes.get("testattr").unwrap(), "test");
         assert!(node.roles.iter().any(|role| role.name == "data"));
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct FailClosedFixture {
+        cases: Vec<FailClosedCase>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct FailClosedCase {
+        name: String,
+        stream_version_id: i32,
+        expected_error: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct MixedClusterJoinRejectFixture {
+        join_reject_cases: Vec<MixedClusterJoinRejectCase>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct MixedClusterJoinRejectCase {
+        name: String,
+        expected_error_class: String,
+        expected_cluster_uuid: String,
+        observed_cluster_uuid: String,
+        transport_version_id: i32,
+        advertised_roles: Vec<FixtureRole>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct FixtureRole {
+        name: String,
+        abbreviation: String,
+        can_contain_data: bool,
+    }
+
+    fn build_valid_handshake_body(version: Version) -> bytes::Bytes {
+        let mut body = StreamOutput::new();
+        body.write_bool(true);
+        body.write_string("node-a");
+        body.write_string("node-id");
+        body.write_string("ephemeral-id");
+        body.write_string("127.0.0.1");
+        body.write_string("127.0.0.1");
+        body.write_byte(4);
+        for byte in [127, 0, 0, 1] {
+            body.write_byte(byte);
+        }
+        body.write_string("127.0.0.1");
+        body.write_i32(9300);
+        body.write_bool(false);
+        body.write_vint(1);
+        body.write_string("testattr");
+        body.write_string("test");
+        body.write_vint(1);
+        body.write_string("data");
+        body.write_string("d");
+        body.write_bool(true);
+        body.write_vint(version.id());
+        body.write_string("cluster-a");
+        body.write_vint(version.id());
+        body.freeze()
+    }
+
+    #[test]
+    fn interop_handshake_fail_closed_fixture_cases_match_decoder_behavior() {
+        let fixture: FailClosedFixture = serde_json::from_str(include_str!(
+            "../../../tools/fixtures/interop-handshake-fail-closed.json"
+        ))
+        .expect("interop handshake fail-closed fixture should deserialize");
+
+        for case in fixture.cases {
+            let error = match case.name.as_str() {
+                "trailing_bytes" => {
+                    let version = Version::from_id(case.stream_version_id);
+                    let mut bytes = build_valid_handshake_body(version).to_vec();
+                    bytes.extend_from_slice(&[0x99]);
+                    super::TransportHandshakeResponse::read(bytes.into(), version).unwrap_err()
+                }
+                "negative_role_count" => {
+                    let version = Version::from_id(case.stream_version_id);
+                    let mut body = StreamOutput::new();
+                    body.write_bool(true);
+                    body.write_string("node-a");
+                    body.write_string("node-id");
+                    body.write_string("ephemeral-id");
+                    body.write_string("127.0.0.1");
+                    body.write_string("127.0.0.1");
+                    body.write_byte(4);
+                    for byte in [127, 0, 0, 1] {
+                        body.write_byte(byte);
+                    }
+                    body.write_string("127.0.0.1");
+                    body.write_i32(9300);
+                    body.write_bool(false);
+                    body.write_vint(0);
+                    body.write_vint(-1);
+                    super::TransportHandshakeResponse::read(body.freeze(), version).unwrap_err()
+                }
+                "invalid_ip_length" => {
+                    let version = Version::from_id(case.stream_version_id);
+                    let mut body = StreamOutput::new();
+                    body.write_bool(true);
+                    body.write_string("node-a");
+                    body.write_string("node-id");
+                    body.write_string("ephemeral-id");
+                    body.write_string("127.0.0.1");
+                    body.write_string("127.0.0.1");
+                    body.write_byte(5);
+                    for byte in [127, 0, 0, 1, 42] {
+                        body.write_byte(byte);
+                    }
+                    super::TransportHandshakeResponse::read(body.freeze(), version).unwrap_err()
+                }
+                "stream_version_gate_mismatch" => {
+                    let body = build_valid_handshake_body(OPENSEARCH_3_7_0_TRANSPORT);
+                    let old_stream_version = Version::from_id(case.stream_version_id);
+                    super::TransportHandshakeResponse::read(body, old_stream_version).unwrap_err()
+                }
+                other => panic!("unknown fail-closed fixture case: {other}"),
+            };
+
+            let actual = match error {
+                super::HandshakeDecodeError::Stream(_) => "Stream",
+                super::HandshakeDecodeError::InvalidIpLength(_) => "InvalidIpLength",
+                super::HandshakeDecodeError::NegativeRoleCount(_) => "NegativeRoleCount",
+                super::HandshakeDecodeError::TrailingBytes(_) => "TrailingBytes",
+            };
+            assert_eq!(actual, case.expected_error, "case {}", case.name);
+        }
+    }
+
+    #[test]
+    fn mixed_cluster_join_reject_fixture_matches_validator_behavior() {
+        let fixture: MixedClusterJoinRejectFixture = serde_json::from_str(include_str!(
+            "../../../tools/fixtures/mixed-cluster-join-reject.json"
+        ))
+        .expect("mixed-cluster join reject fixture should deserialize");
+
+        for case in fixture.join_reject_cases {
+            let node = fixture_discovery_node(case.advertised_roles);
+            let error = validate_mixed_cluster_join_admission(
+                &case.expected_cluster_uuid,
+                &case.observed_cluster_uuid,
+                Version::from_id(case.transport_version_id),
+                &node,
+            )
+            .expect_err("fixture case should fail closed");
+
+            let actual_class = match error {
+                JoinAdmissionError::ClusterUuidMismatch { .. } => "ClusterUuidMismatch",
+                JoinAdmissionError::UnsupportedRoleAdvertisement { .. } => {
+                    "UnsupportedRoleAdvertisement"
+                }
+                JoinAdmissionError::WireVersionMismatch { .. } => "WireVersionMismatch",
+            };
+            assert_eq!(actual_class, case.expected_error_class, "case {}", case.name);
+        }
+    }
+
+    fn fixture_discovery_node(roles: Vec<FixtureRole>) -> DiscoveryNode {
+        DiscoveryNode {
+            name: "steel-node-1".to_string(),
+            id: "node-1".to_string(),
+            ephemeral_id: "ephemeral-1".to_string(),
+            host_name: "127.0.0.1".to_string(),
+            host_address: "127.0.0.1".to_string(),
+            address: TransportAddress {
+                ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                host: "127.0.0.1".to_string(),
+                port: 9300,
+            },
+            stream_address: None,
+            attributes: BTreeMap::new(),
+            roles: roles
+                .into_iter()
+                .map(|role| DiscoveryNodeRole {
+                    name: role.name,
+                    abbreviation: role.abbreviation,
+                    can_contain_data: role.can_contain_data,
+                })
+                .collect::<BTreeSet<_>>(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        }
     }
 }

@@ -361,6 +361,7 @@ struct DaemonConfig {
     data_path: PathBuf,
     roles: Vec<String>,
     development_security_mode: DevelopmentSecurityMode,
+    java_write_forwarding_validated: bool,
     #[cfg_attr(not(test), allow(dead_code))]
     extension_registry: ExtensionBoundaryRegistry,
     extension_registry_overrides: ExtensionRegistryOverrideConfig,
@@ -544,6 +545,8 @@ where
         .map(|value| parse_daemon_mode(value))
         .transpose()?
         .unwrap_or(DaemonMode::Development);
+    let mut java_write_forwarding_validated =
+        parse_bool_env(vars, "STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED")?.unwrap_or(false);
 
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -615,6 +618,12 @@ where
                     args.next().ok_or("--extensions.manifest requires a value")?,
                 ));
             }
+            "--interop.java_write_forwarding_validated" => {
+                let value = args
+                    .next()
+                    .ok_or("--interop.java_write_forwarding_validated requires a value")?;
+                java_write_forwarding_validated = parse_bool_flag(&value)?;
+            }
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -640,6 +649,7 @@ where
         data_path,
         roles,
         development_security_mode,
+        java_write_forwarding_validated,
         extension_registry,
         extension_registry_overrides,
         extension_manifest_path,
@@ -1599,6 +1609,8 @@ Options:\n\
   --extensions.knn <bool>          Enable k-NN compatibility plugin, default true\n\
   --extensions.ml_commons <bool>   Enable ML Commons compatibility plugin, default true\n\
   --extensions.manifest <path>     Load extension registry overrides from JSON manifest\n\
+  --interop.java_write_forwarding_validated <bool>\n\
+                                    Enable Phase B Java write forwarding gate, default false\n\
   --development.security_mode <mode>\n\
                                     Development security mode, default disabled\n\
   --mode <development|production>  Runtime mode, default development\n\
@@ -1610,6 +1622,7 @@ Environment:\n\
   STEELSEARCH_CLUSTER_NAME, STEELSEARCH_DISCOVERY_SEED_HOSTS,\n\
   STEELSEARCH_DATA_PATH, STEELSEARCH_DEVELOPMENT_SECURITY_MODE,\n\
   STEELSEARCH_ENABLE_KNN_PLUGIN, STEELSEARCH_ENABLE_ML_COMMONS,\n\
+  STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED,\n\
   STEELSEARCH_EXTENSION_MANIFEST,\n\
   STEELSEARCH_MODE"
 }
@@ -1678,6 +1691,7 @@ mod tests {
             config.development_security_mode,
             DevelopmentSecurityMode::Disabled
         );
+        assert!(!config.java_write_forwarding_validated);
         assert!(!config.extension_registry.knn_plugin_enabled);
         assert!(config.extension_registry.ml_commons_enabled);
     }
@@ -1728,6 +1742,7 @@ mod tests {
             config.development_security_mode,
             DevelopmentSecurityMode::Disabled
         );
+        assert!(!config.java_write_forwarding_validated);
         assert!(!config.extension_registry.knn_plugin_enabled);
         assert!(config.extension_registry.ml_commons_enabled);
     }
@@ -1772,6 +1787,43 @@ mod tests {
             config.extension_manifest_path,
             Some(PathBuf::from("/tmp/extensions-env.json"))
         );
+    }
+
+    #[test]
+    fn daemon_config_parses_java_write_forwarding_gate_from_args() {
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--path.data",
+                "/tmp/steel-write-forwarding-gate-args",
+                "--interop.java_write_forwarding_validated",
+                "true",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        assert!(config.java_write_forwarding_validated);
+    }
+
+    #[test]
+    fn daemon_config_parses_java_write_forwarding_gate_from_env() {
+        let vars = BTreeMap::from([
+            (
+                "STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED".to_string(),
+                "true".to_string(),
+            ),
+            (
+                "STEELSEARCH_DATA_PATH".to_string(),
+                "/tmp/steel-write-forwarding-gate-env".to_string(),
+            ),
+        ]);
+
+        let config = daemon_config_from_sources(&vars, std::iter::empty::<String>()).unwrap();
+
+        assert!(config.java_write_forwarding_validated);
     }
 
     #[test]

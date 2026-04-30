@@ -5,7 +5,8 @@
 - Primary gate: `Phase A` for the required standalone vector/ML replacement
   surface owned by the `vector-ml` profile.
 - Later extension: `Phase B` for interop validation where Steelsearch must
-  compare behavior against Java OpenSearch plugin surfaces.
+  compare behavior against Java OpenSearch plugin surfaces as an external
+  coordinator or observer, not a peer vector node.
 - Final extension: `Phase C` only if same-cluster vector/ML behavior requires
   peer-node compatibility rather than standalone API parity.
 

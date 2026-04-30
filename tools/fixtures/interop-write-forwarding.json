@@ -1,0 +1,37 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-write-forwarding",
+  "index": "interop-write-forwarding",
+  "cases": [
+    {
+      "name": "index_doc",
+      "method": "PUT",
+      "path": "/interop-write-forwarding/_doc/doc-1?refresh=true",
+      "body": {
+        "service": "api",
+        "level": "info"
+      },
+      "expected_status": 201,
+      "expected_result": "created"
+    },
+    {
+      "name": "update_doc",
+      "method": "POST",
+      "path": "/interop-write-forwarding/_update/doc-1?refresh=true",
+      "body": {
+        "doc": {
+          "level": "warn"
+        }
+      },
+      "expected_status": 200,
+      "expected_result": "updated"
+    },
+    {
+      "name": "delete_doc",
+      "method": "DELETE",
+      "path": "/interop-write-forwarding/_doc/doc-1?refresh=true",
+      "expected_status": 200,
+      "expected_result": "deleted"
+    }
+  ]
+}

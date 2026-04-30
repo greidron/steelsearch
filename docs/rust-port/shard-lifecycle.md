@@ -195,6 +195,8 @@ reinitialization, and failure side effects.
 
 The next validation step is fixture and integration coverage for:
 
+- initial mixed-cluster allocation admission policy fixture:
+  `tools/fixtures/mixed-cluster-allocation-admission.json`
 - Cluster-state diffs that exercise allocation, relocation, unassignment, and
   split transitions.
 - Java `active()` parity for relocating sources in any future data-node routing

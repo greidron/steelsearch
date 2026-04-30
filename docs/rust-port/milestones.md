@@ -107,11 +107,13 @@ semantics out of scope.
 - `Phase C` starts when work requires same-cluster peer-node participation,
   mixed-node shard lifecycle parity, or Java coordination/publication parity.
 
-## Phase B: Mixed-Cluster Interop
+## Phase B: Safe External Interop
 
 Phase B is the safe interop stage between standalone replacement and true
 same-cluster membership. Steelsearch must be able to interact with a Java
-OpenSearch cluster in controlled ways without pretending to be a full peer node.
+OpenSearch cluster in controlled ways as an external transport client,
+observer, coordinator, or explicitly gated forwarder, without pretending to be
+a full peer node.
 
 ### Definition of Done
 
@@ -136,11 +138,20 @@ OpenSearch cluster in controlled ways without pretending to be a full peer node.
 - Integration tests with a live Java OpenSearch cluster covering both accepted
   and intentionally rejected mixed-mode behaviors.
 
+Detailed design, validation profile rule, report ownership, and completion
+checklist live in
+[phase-b-safe-interop.md](/home/ubuntu/steelsearch/docs/rust-port/phase-b-safe-interop.md).
+
 ## Phase C: Same-Cluster Participation
 
 Phase C is full peer-node compatibility. Steelsearch must be able to join the
 same cluster as Java OpenSearch nodes and participate without violating OpenSearch
 coordination, publication, shard lifecycle, or recovery contracts.
+
+Canonical release-gate evidence for this phase is the
+`tools/run-phase-c-mixed-cluster-harness.sh` runner plus the
+`mixed-cluster-join`, `publication`, `allocation`, `recovery`,
+`write-replication`, `failure`, and reject-ledger artifacts.
 
 ### Definition of Done
 
@@ -162,6 +173,10 @@ coordination, publication, shard lifecycle, or recovery contracts.
 - Recovery, relocation, retention lease, and task lifecycle parity.
 - Same-cluster integration harnesses that exercise steady-state, restart,
   relocation, failure, and recovery scenarios.
+
+Detailed design, validation profile rule, report ownership, and completion
+checklist live in
+[phase-c-peer-node-compat.md](/home/ubuntu/steelsearch/docs/rust-port/phase-c-peer-node-compat.md).
 
 ## Evidence Rules Across All Phases
 

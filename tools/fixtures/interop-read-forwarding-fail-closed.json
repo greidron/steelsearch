@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "name": "missing_cluster_manager_routing",
+      "surface": "GET /_cluster/health",
+      "state_shape": "no_cluster_manager",
+      "expected_error_class": "MissingRouting"
+    },
+    {
+      "name": "missing_discovery_node_for_cluster_manager",
+      "surface": "GET /_cluster/state",
+      "state_shape": "cluster_manager_missing_from_nodes",
+      "expected_error_class": "MissingDiscoveryNode"
+    },
+    {
+      "name": "unsupported_read_forwarding_surface",
+      "surface": "GET /_nodes/info",
+      "state_shape": "single_node",
+      "expected_error_class": "UnsupportedRequest"
+    }
+  ]
+}

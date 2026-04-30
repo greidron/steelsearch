@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "name": "write_forwarding_gate_disabled",
+      "surface": "PUT /interop-write-forwarding/_doc/doc-1",
+      "state_shape": "healthy_primary",
+      "gate_enabled": false,
+      "retry_unsafe": false,
+      "expected_error_class": "GateDisabled"
+    },
+    {
+      "name": "write_forwarding_primary_shard_unresolved",
+      "surface": "DELETE /interop-write-forwarding/_doc/doc-1",
+      "state_shape": "missing_primary",
+      "gate_enabled": true,
+      "retry_unsafe": false,
+      "expected_error_class": "MissingPrimaryShard"
+    },
+    {
+      "name": "write_forwarding_retry_unsafe_update_rejected",
+      "surface": "POST /interop-write-forwarding/_update/doc-1?retry_on_conflict=3",
+      "state_shape": "healthy_primary",
+      "gate_enabled": true,
+      "retry_unsafe": true,
+      "expected_error_class": "RetryUnsafe"
+    },
+    {
+      "name": "write_forwarding_unsupported_action_rejected",
+      "surface": "POST /_reindex",
+      "state_shape": "healthy_primary",
+      "gate_enabled": true,
+      "retry_unsafe": false,
+      "expected_error_class": "UnsupportedRequest"
+    }
+  ]
+}

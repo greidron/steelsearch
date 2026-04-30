@@ -1,0 +1,34 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "scope": "source-derived-transport-actions",
+  "actions": [
+    {
+      "action_name": "cluster:monitor/state",
+      "action_type": "ClusterStateAction",
+      "transport_action": "TransportClusterStateAction",
+      "request_wire_type": "ClusterStateRequest",
+      "response_wire_type": "ClusterStateResponse",
+      "disposition": "implemented",
+      "reason": "Cluster-state fetch and cache refresh are part of the initial Phase B observer baseline."
+    },
+    {
+      "action_name": "cluster:admin/settings/update",
+      "action_type": "ClusterUpdateSettingsAction",
+      "transport_action": "TransportClusterUpdateSettingsAction",
+      "request_wire_type": "ClusterUpdateSettingsRequest",
+      "response_wire_type": "ClusterUpdateSettingsResponse",
+      "disposition": "rejected",
+      "reason": "Cluster-setting mutation is outside the initial read-mostly Phase B contract."
+    },
+    {
+      "action_name": "cluster:monitor/task",
+      "action_type": "PendingClusterTasksAction",
+      "transport_action": "TransportPendingClusterTasksAction",
+      "request_wire_type": "PendingClusterTasksRequest",
+      "response_wire_type": "PendingClusterTasksResponse",
+      "disposition": "implemented",
+      "reason": "Pending-task observer reads are part of the initial Phase B baseline."
+    }
+  ]
+}

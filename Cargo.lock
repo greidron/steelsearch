@@ -138,6 +138,7 @@ dependencies = [
  "os-transport",
  "os-wire",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -146,6 +147,7 @@ name = "os-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

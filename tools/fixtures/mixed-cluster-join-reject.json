@@ -1,0 +1,58 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-join",
+  "join_reject_cases": [
+    {
+      "name": "incompatible_cluster_uuid",
+      "expected_error_class": "ClusterUuidMismatch",
+      "expected_cluster_uuid": "cluster-a",
+      "observed_cluster_uuid": "cluster-b",
+      "transport_version_id": 137287827,
+      "advertised_roles": [
+        {
+          "name": "cluster_manager",
+          "abbreviation": "m",
+          "can_contain_data": false
+        },
+        {
+          "name": "data",
+          "abbreviation": "d",
+          "can_contain_data": true
+        }
+      ]
+    },
+    {
+      "name": "unsupported_role_advertisement",
+      "expected_error_class": "UnsupportedRoleAdvertisement",
+      "expected_cluster_uuid": "cluster-a",
+      "observed_cluster_uuid": "cluster-a",
+      "transport_version_id": 137287827,
+      "advertised_roles": [
+        {
+          "name": "data",
+          "abbreviation": "d",
+          "can_contain_data": true
+        },
+        {
+          "name": "ml",
+          "abbreviation": "l",
+          "can_contain_data": false
+        }
+      ]
+    },
+    {
+      "name": "wire_version_mismatch",
+      "expected_error_class": "WireVersionMismatch",
+      "expected_cluster_uuid": "cluster-a",
+      "observed_cluster_uuid": "cluster-a",
+      "transport_version_id": 137287826,
+      "advertised_roles": [
+        {
+          "name": "data",
+          "abbreviation": "d",
+          "can_contain_data": true
+        }
+      ]
+    }
+  ]
+}

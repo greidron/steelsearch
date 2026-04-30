@@ -1,0 +1,19 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "mode": "cluster-state-cache-seed",
+  "required_keys": [
+    "cluster_state_response_cluster_name",
+    "cluster_state_name",
+    "cluster_state_version",
+    "cluster_state_uuid",
+    "cluster_state_metadata_version",
+    "cluster_state_cluster_uuid"
+  ],
+  "consistency_checks": [
+    {
+      "left": "cluster_state_response_cluster_name",
+      "right": "cluster_state_name"
+    }
+  ]
+}

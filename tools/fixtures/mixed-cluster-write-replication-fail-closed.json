@@ -1,0 +1,101 @@
+{
+  "cases": [
+    {
+      "name": "stale_primary_term_rejected",
+      "kind": "stale_primary_term",
+      "current_primary_term": 10,
+      "local_checkpoint": 120,
+      "request": {
+        "index": "logs-phase-c-000001",
+        "shard_id": 0,
+        "target_node": "node-b",
+        "primary_node": "node-a",
+        "allocation_id": "alloc-b",
+        "seq_no": 128,
+        "primary_term": 9,
+        "version": 21,
+        "global_checkpoint": 120,
+        "local_checkpoint": 123,
+        "retention_leases": [],
+        "operation": {
+          "op_type": "index",
+          "id": "1",
+          "source": {
+            "message": "replicate me"
+          },
+          "noop_reason": null
+        }
+      },
+      "expected_error": "stale_primary_term"
+    },
+    {
+      "name": "stale_seq_no_rejected",
+      "kind": "stale_seq_no",
+      "current_primary_term": 9,
+      "local_checkpoint": 128,
+      "request": {
+        "index": "logs-phase-c-000001",
+        "shard_id": 0,
+        "target_node": "node-b",
+        "primary_node": "node-a",
+        "allocation_id": "alloc-b",
+        "seq_no": 128,
+        "primary_term": 9,
+        "version": 21,
+        "global_checkpoint": 128,
+        "local_checkpoint": 128,
+        "retention_leases": [],
+        "operation": {
+          "op_type": "delete",
+          "id": "1",
+          "source": null,
+          "noop_reason": null
+        }
+      },
+      "expected_error": "stale_seq_no"
+    },
+    {
+      "name": "unsupported_write_action_rejected",
+      "kind": "unsupported_write_action",
+      "request_json": {
+        "index": "logs-phase-c-000001",
+        "shard_id": 0,
+        "target_node": "node-b",
+        "primary_node": "node-a",
+        "allocation_id": "alloc-b",
+        "seq_no": 129,
+        "primary_term": 9,
+        "version": 22,
+        "global_checkpoint": 128,
+        "local_checkpoint": 128,
+        "retention_leases": [],
+        "operation": {
+          "op_type": "update",
+          "id": "1",
+          "source": {
+            "message": "unsupported"
+          },
+          "noop_reason": null
+        }
+      },
+      "expected_error": "unsupported_write_action"
+    },
+    {
+      "name": "partial_replication_response_rejected",
+      "kind": "partial_replication",
+      "response": {
+        "index": "logs-phase-c-000001",
+        "shard_id": 0,
+        "target_node": "node-b",
+        "seq_no": 129,
+        "primary_term": 9,
+        "version": 22,
+        "global_checkpoint": 128,
+        "applied": false,
+        "result": "partial",
+        "failure": "replica unavailable"
+      },
+      "expected_error": "partial_replication"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "cases": [
+    {
+      "name": "stale_cluster_state_base",
+      "expected_error_class": "DiffBaseMismatch",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_cluster_state_diff_fail_closed_fixture_preserves_prior_cache_on_from_uuid_mismatch",
+      "reason": "Cluster-state diffs whose base UUID does not match the cached state must reject without mutating prior cache."
+    },
+    {
+      "name": "remote_node_unavailable",
+      "expected_error_class": "Io",
+      "evidence": "crates/os-transport/src/internal_transport.rs::shard_search_request_to_unavailable_node_returns_io_error",
+      "reason": "Remote node connection failure must surface as a transport-level I/O error."
+    },
+    {
+      "name": "search_routing_hole",
+      "expected_error_class": "MissingStartedShard",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_search_routing_fail_closed_fixture_matches_planner_behavior",
+      "reason": "Search forwarding must fail closed when cached routing has no started shard copy."
+    },
+    {
+      "name": "custom_metadata_reject",
+      "expected_error_class": "UnsupportedNamedWriteable",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_unsupported_custom_fixture_cases_reject_and_preserve_prior_cache",
+      "reason": "Unsupported metadata custom payloads must reject and preserve prior cache."
+    },
+    {
+      "name": "remote_transport_exception_unwrap",
+      "expected_error_class": "RemoteTransportException",
+      "evidence": "crates/os-transport/src/error.rs::decodes_remote_transport_exception_with_cause",
+      "reason": "Remote transport exception payloads must unwrap into a typed outer error with preserved nested cause."
+    },
+    {
+      "name": "write_forwarding_gate_disabled",
+      "expected_error_class": "GateDisabled",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_write_forwarding_fail_closed_fixture_matches_planner_behavior",
+      "reason": "Phase B write forwarding must reject immediately unless the explicit safety gate is enabled."
+    },
+    {
+      "name": "unsupported_write_action",
+      "expected_error_class": "UnsupportedRequest",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_write_forwarding_fail_closed_fixture_matches_planner_behavior",
+      "reason": "Write-forwarding requests outside the bounded Phase B allow-list must fail closed."
+    }
+  ]
+}

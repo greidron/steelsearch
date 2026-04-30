@@ -1,0 +1,60 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-recovery",
+  "recovery_wire_fixture": {
+    "start_request": {
+      "recovery_id": "recovery-1",
+      "index": "logs-phase-c-000001",
+      "shard_id": 0,
+      "source_node": "node-a",
+      "target_node": "node-b",
+      "primary_term": 3,
+      "starting_seq_no": 42,
+      "metadata": {
+        "store_uuid": "store-a"
+      }
+    },
+    "chunk_request": {
+      "recovery_id": "recovery-1",
+      "index": "logs-phase-c-000001",
+      "shard_id": 0,
+      "file_name": "segment_1",
+      "offset": 128,
+      "data": [1, 2, 3, 4],
+      "last_chunk": true,
+      "checksum": "crc32:abcd"
+    },
+    "translog_request": {
+      "recovery_id": "recovery-1",
+      "index": "logs-phase-c-000001",
+      "shard_id": 0,
+      "operations": [
+        {
+          "seq_no": 43,
+          "primary_term": 3,
+          "version": 7,
+          "op_type": "index",
+          "id": "1",
+          "source": {
+            "message": "replicate me"
+          }
+        }
+      ],
+      "max_seq_no": 43
+    },
+    "finalize_request": {
+      "recovery_id": "recovery-1",
+      "index": "logs-phase-c-000001",
+      "shard_id": 0,
+      "allocation_id": "alloc-b",
+      "global_checkpoint": 43,
+      "max_seq_no": 43
+    },
+    "response": {
+      "recovery_id": "recovery-1",
+      "accepted": true,
+      "phase": "finalized",
+      "message": null
+    }
+  }
+}

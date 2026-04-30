@@ -5,7 +5,8 @@
 - Primary gate: `Phase A` standalone replacement, including Steelsearch-native
   snapshot, restore, and migration cutover flows.
 - Later extension: `Phase B` for Java OpenSearch transport interop and
-  read-only/coordinating migration rehearsal.
+  read-only/coordinating migration rehearsal where Java still owns cluster
+  membership and recovery.
 - Final extension: `Phase C` for same-cluster recovery, relocation, and mixed
   snapshot/repository semantics.
 

@@ -1,0 +1,64 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-join",
+  "source_target": {
+    "family": "Java OpenSearch",
+    "product_version": "3.7.0",
+    "source_commit": "f991609d190dfd91c8a09902053a7bbfe0c27b3e"
+  },
+  "join_handshake": {
+    "tcp_handshake_action": "internal:tcp/handshake",
+    "transport_handshake_action": "internal:transport/handshake",
+    "payload_transport_version_ids": [
+      137287827
+    ],
+    "minimum_compatible_transport_version_id": 136407827,
+    "discovery_node_stream_address_gate": 137237827
+  },
+  "discovery_node_advertisement": {
+    "required_identity_fields": [
+      "name",
+      "id",
+      "ephemeral_id",
+      "host_name",
+      "host_address",
+      "address",
+      "attributes",
+      "roles",
+      "version"
+    ],
+    "stream_address_behavior": "optional_on_or_after_gate",
+    "advertised_roles": [
+      {
+        "name": "cluster_manager",
+        "abbreviation": "m",
+        "can_contain_data": false
+      },
+      {
+        "name": "data",
+        "abbreviation": "d",
+        "can_contain_data": true
+      },
+      {
+        "name": "ingest",
+        "abbreviation": "i",
+        "can_contain_data": false
+      },
+      {
+        "name": "remote_cluster_client",
+        "abbreviation": "r",
+        "can_contain_data": false
+      }
+    ],
+    "required_attributes": [
+      "shard_indexing_pressure_enabled"
+    ],
+    "observed_optional_attributes": [
+      "testattr"
+    ]
+  },
+  "policy": {
+    "join_mode": "same_cluster_peer_node",
+    "unknown_or_incompatible_join_behavior": "fail_closed"
+  }
+}

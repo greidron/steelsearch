@@ -1,0 +1,27 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-allocation",
+  "allocation_admission_policy": {
+    "validated_index_family_patterns": [
+      "logs-phase-c-*"
+    ],
+    "required_node_roles": [
+      "data"
+    ],
+    "admitted_shard_states": [
+      "Initializing",
+      "Started"
+    ],
+    "search_target_states": [
+      "Started"
+    ],
+    "admitted_recovery_sources": [
+      "EmptyStore"
+    ],
+    "disallowed_routing_flags": [
+      "search_only"
+    ],
+    "started_shard_requires_allocation_id": true,
+    "ownership_fail_closed_on_missing_allocation_id": true
+  }
+}

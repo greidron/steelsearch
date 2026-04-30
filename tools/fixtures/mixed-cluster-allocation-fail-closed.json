@@ -1,0 +1,27 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-allocation",
+  "cases": [
+    {
+      "name": "unsupported_shard_state",
+      "index_name": "logs-phase-c-000001",
+      "shard_id": 0,
+      "routing_shape": "relocating",
+      "expected_error_class": "UnsupportedShardState"
+    },
+    {
+      "name": "missing_allocation_id",
+      "index_name": "logs-phase-c-000001",
+      "shard_id": 0,
+      "routing_shape": "started_missing_allocation_id",
+      "expected_error_class": "MissingAllocationId"
+    },
+    {
+      "name": "invalid_store_contract",
+      "index_name": "logs-phase-c-000001",
+      "shard_id": 0,
+      "routing_shape": "initializing_peer_recovery",
+      "expected_error_class": "InvalidStoreContract"
+    }
+  ]
+}

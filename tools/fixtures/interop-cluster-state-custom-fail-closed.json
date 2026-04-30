@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "name": "unsupported_metadata_custom_rejects_and_preserves_prior_cache",
+      "decoder": "metadata.custom",
+      "expected_section": "metadata.custom",
+      "custom_name": "unknown_metadata_custom"
+    },
+    {
+      "name": "unsupported_cluster_state_custom_rejects_and_preserves_prior_cache",
+      "decoder": "cluster_state.customs",
+      "expected_section": "cluster_state.customs",
+      "custom_name": "unknown_custom"
+    },
+    {
+      "name": "unsupported_plugin_metadata_custom_rejects_and_preserves_prior_cache",
+      "decoder": "metadata.custom",
+      "expected_section": "metadata.custom",
+      "custom_name": "unknown_plugin_payload"
+    }
+  ]
+}

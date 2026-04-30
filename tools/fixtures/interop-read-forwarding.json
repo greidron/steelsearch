@@ -1,0 +1,79 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-baseline",
+  "cases": [
+    {
+      "name": "cluster_health",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "expected_status": 200,
+      "required_paths": [
+        "status",
+        "number_of_nodes",
+        "number_of_data_nodes",
+        "timed_out"
+      ],
+      "expected_values": {
+        "status": "green",
+        "number_of_nodes": 1,
+        "number_of_data_nodes": 1,
+        "timed_out": false
+      }
+    },
+    {
+      "name": "cluster_state_metadata",
+      "method": "GET",
+      "path": "/_cluster/state/metadata/interop-read-forwarding",
+      "expected_status": 200,
+      "required_paths": [
+        "cluster_name",
+        "metadata.cluster_uuid",
+        "metadata.indices.interop-read-forwarding.state"
+      ],
+      "expected_values": {
+        "metadata.indices.interop-read-forwarding.state": "open"
+      }
+    },
+    {
+      "name": "cluster_settings",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "expected_status": 200,
+      "required_paths": [
+        "persistent",
+        "transient"
+      ]
+    },
+    {
+      "name": "pending_tasks",
+      "method": "GET",
+      "path": "/_cluster/pending_tasks",
+      "expected_status": 200,
+      "required_paths": [
+        "tasks"
+      ]
+    },
+    {
+      "name": "tasks",
+      "method": "GET",
+      "path": "/_tasks",
+      "expected_status": 200,
+      "required_paths": [
+        "nodes"
+      ]
+    },
+    {
+      "name": "nodes_stats",
+      "method": "GET",
+      "path": "/_nodes/stats",
+      "expected_status": 200,
+      "required_paths": [
+        "cluster_name",
+        "nodes"
+      ],
+      "expected_object_sizes": {
+        "nodes": 1
+      }
+    }
+  ]
+}

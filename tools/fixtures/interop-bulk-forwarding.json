@@ -1,0 +1,33 @@
+{
+  "phase": "Phase B",
+  "profile": "interop-write-forwarding",
+  "index": "interop-bulk-forwarding",
+  "happy_path": {
+    "name": "bulk_index_happy_path",
+    "body_lines": [
+      "{\"index\":{\"_index\":\"interop-bulk-forwarding\",\"_id\":\"doc-1\"}}",
+      "{\"service\":\"api\",\"level\":\"info\"}",
+      "{\"index\":{\"_index\":\"interop-bulk-forwarding\",\"_id\":\"doc-2\"}}",
+      "{\"service\":\"worker\",\"level\":\"warn\"}"
+    ],
+    "expected_status": 200,
+    "expected_errors": false,
+    "expected_item_statuses": [
+      201,
+      201
+    ]
+  },
+  "partial_failure_policy": {
+    "name": "bulk_partial_failure_reject_policy",
+    "body_lines": [
+      "{\"create\":{\"_index\":\"interop-bulk-forwarding\",\"_id\":\"conflict-doc\"}}",
+      "{\"service\":\"api\",\"level\":\"info\"}",
+      "{\"create\":{\"_index\":\"interop-bulk-forwarding\",\"_id\":\"conflict-doc\"}}",
+      "{\"service\":\"api\",\"level\":\"warn\"}"
+    ],
+    "expected_status": 200,
+    "expected_source_errors": true,
+    "policy": "rejected",
+    "reason": "Phase B forwarding must fail closed on bulk partial-failure envelopes instead of proxying mixed success/error items."
+  }
+}

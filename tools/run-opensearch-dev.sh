@@ -20,6 +20,11 @@ if [[ -n "${OPENSEARCH_HTTP_PORT:-}" ]]; then
 else
   PORT="$(find_free_port)"
 fi
+if [[ -n "${OPENSEARCH_TRANSPORT_PORT:-}" ]]; then
+  TRANSPORT_PORT="${OPENSEARCH_TRANSPORT_PORT}"
+else
+  TRANSPORT_PORT="9300"
+fi
 WORK_DIR="${OPENSEARCH_WORK_DIR:-$(mktemp -d -t opensearch-dev.XXXXXX)}"
 REPO_DIR="${OPENSEARCH_REPO_DIR:-/tmp}"
 CLUSTER_NAME="${OPENSEARCH_CLUSTER_NAME:-opensearch-dev}"
@@ -41,6 +46,7 @@ echo "OpenSearch work dir: ${WORK_DIR}" >&2
 echo "OpenSearch cluster: ${CLUSTER_NAME}" >&2
 echo "OpenSearch node: ${NODE_NAME}" >&2
 echo "OpenSearch URL: http://${HOST}:${PORT}" >&2
+echo "OpenSearch transport: ${HOST}:${TRANSPORT_PORT}" >&2
 
 cd "${OPENSEARCH_ROOT}"
 exec ./gradlew run \
@@ -50,6 +56,7 @@ exec ./gradlew run \
   -Dpath.repo="${REPO_DIR}" \
   -Dhttp.host="${HOST}" \
   -Dhttp.port="${PORT}" \
+  -Dtransport.port="${TRANSPORT_PORT}" \
   -Dcluster.name="${CLUSTER_NAME}" \
   -Dnode.name="${NODE_NAME}" \
   -Dopensearch.plugins.security.disabled=true

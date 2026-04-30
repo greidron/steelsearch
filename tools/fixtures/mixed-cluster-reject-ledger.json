@@ -1,0 +1,42 @@
+{
+  "phase": "Phase C",
+  "profile": "mixed-cluster-reject-ledger",
+  "cases": [
+    {
+      "name": "join_membership_reject",
+      "expected_error_class": "JoinAdmissionError",
+      "evidence": "crates/os-transport/src/handshake.rs::mixed_cluster_join_reject_fixture_matches_validator_behavior",
+      "reason": "Mixed-cluster join must fail closed on cluster UUID mismatch, unsupported role advertisement, or wire-version mismatch."
+    },
+    {
+      "name": "publication_mismatch",
+      "expected_error_class": "DiffBaseMismatch",
+      "evidence": "crates/os-cluster-state/src/lib.rs::publication_reject_integration_preserves_cache_and_withholds_ack",
+      "reason": "Followers must reject publication diffs whose base UUID does not match the cached state."
+    },
+    {
+      "name": "allocation_invalid_store_contract",
+      "expected_error_class": "InvalidStoreContract",
+      "evidence": "crates/os-cluster-state/src/lib.rs::mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+      "reason": "Mixed-cluster allocation must reject shard routings whose recovery source or store contract is not admitted."
+    },
+    {
+      "name": "recovery_relocation_interrupted",
+      "expected_error_class": "RelocationInterrupted",
+      "evidence": "crates/os-cluster-state/src/lib.rs::mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+      "reason": "Peer recovery must fail closed when relocation is interrupted."
+    },
+    {
+      "name": "routing_hole",
+      "expected_error_class": "MissingStartedShard",
+      "evidence": "crates/os-cluster-state/src/lib.rs::interop_search_routing_fail_closed_fixture_matches_planner_behavior",
+      "reason": "Mixed-cluster routing must fail closed when no started shard copy can be found."
+    },
+    {
+      "name": "stale_replica",
+      "expected_error_class": "StaleSeqNo",
+      "evidence": "crates/os-transport/src/internal_transport.rs::mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+      "reason": "Replica replication must reject stale sequence numbers before partial application."
+    }
+  ]
+}
