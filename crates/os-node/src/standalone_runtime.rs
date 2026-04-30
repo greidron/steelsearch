@@ -10740,4 +10740,21 @@ mod tests {
         assert!(segments_text.contains("logs-000001"));
         assert!(!segments_text.contains("metrics-000001"));
     }
+
+    #[test]
+    fn cat_routes_reject_unsupported_methods_with_no_handler_envelope() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_cat/shards"));
+        assert_eq!(response.status, 404);
+        assert_eq!(response.body["error"]["type"], "no_handler_found_exception");
+        assert_eq!(
+            response.body["error"]["reason"],
+            "no handler found for uri [/_cat/shards] and method [POST]"
+        );
+        assert_eq!(response.body["status"], 404);
+    }
 }
