@@ -1614,11 +1614,29 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_cat/health" {
             return Some(self.handle_cat_health_route(request));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/nodes" {
+            return Some(self.handle_cat_nodes_route(request));
+        }
+        if request.method == RestMethod::Get && request.path == "/_cat/nodeattrs" {
+            return Some(self.handle_cat_nodeattrs_route(request));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/indices" {
-            return Some(self.handle_cat_indices_route(request));
+            return Some(self.handle_cat_indices_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/indices/") {
+            return Some(self.handle_cat_indices_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/indices/")),
+            ));
         }
         if request.method == RestMethod::Get && request.path == "/_cat/count" {
-            return Some(self.handle_cat_count_route(request));
+            return Some(self.handle_cat_count_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/count/") {
+            return Some(self.handle_cat_count_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/count/")),
+            ));
         }
         if request.method == RestMethod::Get && request.path == "/_cat/plugins" {
             return Some(self.handle_cat_plugins_route(request));
@@ -5701,7 +5719,7 @@ impl SteelNode {
         }))
     }
 
-    fn handle_cat_indices_route(&self, request: &RestRequest) -> RestResponse {
+    fn handle_cat_indices_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let created_indices = self
             .created_indices_state
             .lock()
@@ -5713,6 +5731,9 @@ impl SteelNode {
             .expect("documents state lock poisoned");
         let mut rows = Vec::new();
         for index in created_indices {
+            if target.is_some_and(|pattern| !wildcard_match(pattern, &index)) {
+                continue;
+            }
             let doc_count = docs
                 .keys()
                 .filter(|key| key.starts_with(&format!("{index}:")))
@@ -5727,6 +5748,12 @@ impl SteelNode {
                 "store.size": "0b"
             }));
         }
+        rows.sort_by(|left, right| {
+            left["index"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["index"].as_str().unwrap_or_default())
+        });
         if request.query_params.get("format").is_some_and(|value| value == "json") {
             return RestResponse::json(200, Value::Array(rows));
         }
@@ -5827,12 +5854,24 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
-    fn handle_cat_count_route(&self, request: &RestRequest) -> RestResponse {
+    fn handle_cat_count_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let docs = self
             .documents_state
             .lock()
             .expect("documents state lock poisoned");
-        let count = docs.len().to_string();
+        let count = docs
+            .keys()
+            .filter(|key| {
+                target
+                    .map(|pattern| {
+                        key.split_once(':')
+                            .map(|(index, _)| wildcard_match(pattern, index))
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(true)
+            })
+            .count()
+            .to_string();
         let row = serde_json::json!({
             "epoch": "0",
             "timestamp": "00:00:00",
@@ -5852,6 +5891,143 @@ impl SteelNode {
             row["timestamp"].as_str().unwrap_or("00:00:00"),
             row["count"].as_str().unwrap_or("0"),
         ));
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_nodes_route(&self, request: &RestRequest) -> RestResponse {
+        let nodes = self
+            .cluster_view
+            .as_ref()
+            .map(|view| view.nodes.clone())
+            .unwrap_or_else(|| {
+                vec![DevelopmentClusterNode {
+                    node_id: self.info.name.clone(),
+                    node_name: self.info.name.clone(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                }]
+            });
+        let mut rows = Vec::new();
+        for node in nodes {
+            let (ip, port) = node
+                .transport_address
+                .rsplit_once(':')
+                .map(|(host, value)| (host.to_string(), value.to_string()))
+                .unwrap_or_else(|| ("127.0.0.1".to_string(), "9300".to_string()));
+            let role_summary = if node.roles.iter().any(|role| role == "cluster_manager") {
+                "dim"
+            } else if node.roles.iter().any(|role| role == "data") {
+                "di"
+            } else {
+                "-"
+            };
+            rows.push(serde_json::json!({
+                "id": node.node_id,
+                "pid": "1",
+                "ip": ip,
+                "port": port,
+                "http_address": node.http_address.unwrap_or("-".to_string()),
+                "version": self.info.version.to_string(),
+                "heap.current": "0b",
+                "heap.max": "0b",
+                "ram.current": "0b",
+                "disk.total": "0b",
+                "node.role": role_summary,
+                "master": if node.local { "*" } else { "-" },
+                "name": node.node_name,
+            }));
+        }
+        rows.sort_by(|left, right| {
+            left["name"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["name"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("id pid ip port http_address version heap.current heap.max ram.current disk.total node.role master name".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {} {} {} {} {} {}",
+                row["id"].as_str().unwrap_or(""),
+                row["pid"].as_str().unwrap_or("1"),
+                row["ip"].as_str().unwrap_or("127.0.0.1"),
+                row["port"].as_str().unwrap_or("9300"),
+                row["http_address"].as_str().unwrap_or("-"),
+                row["version"].as_str().unwrap_or(""),
+                row["heap.current"].as_str().unwrap_or("0b"),
+                row["heap.max"].as_str().unwrap_or("0b"),
+                row["ram.current"].as_str().unwrap_or("0b"),
+                row["disk.total"].as_str().unwrap_or("0b"),
+                row["node.role"].as_str().unwrap_or("-"),
+                row["master"].as_str().unwrap_or("-"),
+                row["name"].as_str().unwrap_or(""),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_nodeattrs_route(&self, request: &RestRequest) -> RestResponse {
+        let nodes = self
+            .cluster_view
+            .as_ref()
+            .map(|view| view.nodes.clone())
+            .unwrap_or_else(|| {
+                vec![DevelopmentClusterNode {
+                    node_id: self.info.name.clone(),
+                    node_name: self.info.name.clone(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                }]
+            });
+        let mut rows = Vec::new();
+        for node in nodes {
+            let ip = node
+                .transport_address
+                .rsplit_once(':')
+                .map(|(host, _)| host.to_string())
+                .unwrap_or_else(|| "127.0.0.1".to_string());
+            rows.push(serde_json::json!({
+                "node": node.node_name,
+                "host": ip,
+                "ip": ip,
+                "attr": "roles",
+                "value": node.roles.join(","),
+            }));
+        }
+        rows.sort_by(|left, right| {
+            left["node"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["node"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("node host ip attr value".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {}",
+                row["node"].as_str().unwrap_or(""),
+                row["host"].as_str().unwrap_or("127.0.0.1"),
+                row["ip"].as_str().unwrap_or("127.0.0.1"),
+                row["attr"].as_str().unwrap_or("roles"),
+                row["value"].as_str().unwrap_or(""),
+            ));
+        }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
@@ -10156,5 +10332,135 @@ mod tests {
         let text_body = text_response.body.as_str().expect("cat health text body");
         assert!(text_body.contains("epoch timestamp cluster status"));
         assert!(text_body.contains("steelsearch-dev"));
+    }
+
+    #[test]
+    fn cat_nodes_and_nodeattrs_routes_serve_json_and_text_views() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-node-a".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-node-b".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string(), "ingest".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+
+        let mut nodes_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
+        nodes_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let nodes_json_response = node.handle_rest_request(nodes_json_request);
+        assert_eq!(nodes_json_response.status, 200);
+        assert_eq!(nodes_json_response.body[0]["name"], "steel-node-a");
+        assert_eq!(nodes_json_response.body[1]["master"], "-");
+
+        let mut nodes_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
+        nodes_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let nodes_text_response = node.handle_rest_request(nodes_text_request);
+        let nodes_text = nodes_text_response.body.as_str().expect("cat nodes text body");
+        assert!(nodes_text.contains("id pid ip port http_address version"));
+        assert!(nodes_text.contains("steel-node-a"));
+        assert!(nodes_text.contains("steel-node-b"));
+
+        let mut attrs_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
+        attrs_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let attrs_json_response = node.handle_rest_request(attrs_json_request);
+        assert_eq!(attrs_json_response.status, 200);
+        assert_eq!(attrs_json_response.body[0]["attr"], "roles");
+        assert_eq!(attrs_json_response.body[0]["value"], "cluster_manager,data");
+
+        let mut attrs_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
+        attrs_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let attrs_text_response = node.handle_rest_request(attrs_text_request);
+        let attrs_text = attrs_text_response.body.as_str().expect("cat nodeattrs text body");
+        assert!(attrs_text.contains("node host ip attr value"));
+        assert!(attrs_text.contains("steel-node-a"));
+    }
+
+    #[test]
+    fn cat_targeted_count_and_indices_routes_filter_by_index_pattern() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        {
+            let mut created_indices = node
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned");
+            created_indices.insert("logs-000001".to_string());
+            created_indices.insert("metrics-000001".to_string());
+        }
+        {
+            let mut documents = node
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            documents.insert(
+                "logs-000001:doc-1".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message": "log doc"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "metrics-000001:doc-1".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message": "metric doc"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let mut count_json_request = RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        count_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let count_json_response = node.handle_rest_request(count_json_request);
+        assert_eq!(count_json_response.status, 200);
+        assert_eq!(count_json_response.body[0]["count"], "1");
+
+        let mut indices_text_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
+        indices_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let indices_text_response = node.handle_rest_request(indices_text_request);
+        let indices_text = indices_text_response.body.as_str().expect("cat indices text body");
+        assert!(indices_text.contains("logs-000001"));
+        assert!(!indices_text.contains("metrics-000001"));
     }
 }

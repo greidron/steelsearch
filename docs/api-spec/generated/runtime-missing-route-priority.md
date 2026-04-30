@@ -6,11 +6,8 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 - `/_cat/allocation` (GET)
 - `/_cat/allocation/{nodes}` (GET)
-- `/_cat/count/{index}` (GET)
 - `/_cat/fielddata` (GET)
 - `/_cat/fielddata/{fields}` (GET)
-- `/_cat/indices/{index}` (GET)
-- `/_cat/nodeattrs` (GET)
 - `/_cat/pending_tasks` (GET)
 - `/_cat/pit_segments` (GET)
 - `/_cat/pit_segments/_all` (GET)

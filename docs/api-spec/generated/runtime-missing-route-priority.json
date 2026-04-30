@@ -192,23 +192,11 @@
     },
     {
       "method": "GET",
-      "path": "/_cat/count/{index}"
-    },
-    {
-      "method": "GET",
       "path": "/_cat/fielddata"
     },
     {
       "method": "GET",
       "path": "/_cat/fielddata/{fields}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/indices/{index}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/nodeattrs"
     },
     {
       "method": "GET",

@@ -1873,19 +1873,15 @@
   - [x] canonical planned/stubbed inventory를 runtime-backed route ledger로 재분류 (`docs/api-spec/generated/runtime-route-ledger.{json,md}` 생성)
   - [x] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
   - [x] runtime-backed ledger의 `missing-route` 항목을 family별 구현 우선순위로 재정렬하고 false positive를 제거 (`docs/api-spec/generated/runtime-missing-route-priority.{json,md}` 생성, implemented-read 항목은 `[x]`로 재분류)
-  - [x] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가 (`tools/fixtures/runtime-stateful-probe.json`, `tools/probe_stateful_route_ledger.py`, `docs/api-spec/generated/runtime-stateful-route-probe-report.json`)
-  - [x] stateful probe fixture coverage를 root/index/document/search/snapshot/vector family 전반으로 확장하고 `stateful-route-present` 항목을 승격 대상으로 재분류
+  - [ ] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
   - [ ] root/cluster/node runtime route parity
     - [ ] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [ ] runtime-backed summary: implemented-read=25, missing-route=55, requires-stateful-probe=36, unprobeable-expression=10
+    - [ ] runtime-backed summary: implemented-read=3, missing-route=52, requires-stateful-probe=33, unprobeable-expression=10
     - [ ] `/_cat/allocation` (GET) [missing-route]
     - [ ] `/_cat/allocation/{nodes}` (GET) [missing-route]
-    - [ ] `/_cat/count/{index}` (GET) [missing-route]
     - [ ] `/_cat/fielddata` (GET) [missing-route]
     - [ ] `/_cat/fielddata/{fields}` (GET) [missing-route]
-    - [ ] `/_cat/indices/{index}` (GET) [missing-route]
-    - [ ] `/_cat/nodeattrs` (GET) [missing-route]
     - [ ] `/_cat/pending_tasks` (GET) [missing-route]
     - [ ] `/_cat/pit_segments` (GET) [missing-route]
     - [ ] `/_cat/pit_segments/_all` (GET) [missing-route]
@@ -1939,18 +1935,16 @@
     - [ ] `/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}` (PUT) [requires-stateful-probe]
     - [ ] `/_cluster/reroute` (POST) [requires-stateful-probe]
     - [ ] `/_cluster/routing/awareness/weights` (DELETE) [requires-stateful-probe]
-    - [ ] `/_cluster/settings` (GET, PUT) [requires-stateful-probe]
     - [ ] `/_cluster/voting_config_exclusions` (DELETE, POST) [requires-stateful-probe]
     - [ ] `/_nodes/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_nodes/{nodeId}/reload_secure_settings` (POST) [requires-stateful-probe]
-    - [ ] `/_tasks/_cancel` (POST) [requires-stateful-probe]
     - [ ] `/_tasks/{task_id}/_cancel` (POST) [requires-stateful-probe]
     - [ ] `/_scripts/{id}/{context}` (POST, PUT) [requires-stateful-probe]
     - [ ] `/` (DELETE) [requires-stateful-probe]
     - [ ] `/_dangling/{index_uuid}` (DELETE, POST) [requires-stateful-probe]
     - [ ] `/_filecache/prune` (POST) [requires-stateful-probe]
     - [ ] `/_remotestore/_restore` (POST) [requires-stateful-probe]
-    - [ ] `/_snapshot/{repository}` (DELETE, GET, POST, PUT) [requires-stateful-probe]
+    - [ ] `/_snapshot/{repository}` (DELETE, GET, POST) [requires-stateful-probe]
     - [ ] `/_snapshot/{repository}/_cleanup` (POST) [requires-stateful-probe]
     - [ ] `/_snapshot/{repository}/_verify` (POST) [requires-stateful-probe]
     - [ ] `/_snapshot/{repository}/{snapshot}` (DELETE, GET, POST, PUT) [requires-stateful-probe]
@@ -1966,6 +1960,9 @@
     - [ ] `_wlm/stats/{workloadGroupId}` (GET) [unprobeable-expression]
     - [ ] `_wlm/{nodeId}/stats` (GET) [unprobeable-expression]
     - [ ] `_wlm/{nodeId}/stats/{workloadGroupId}` (GET) [unprobeable-expression]
+    - [x] `/_cat/count/{index}` (GET) [implemented-read]
+    - [x] `/_cat/indices/{index}` (GET) [implemented-read]
+    - [x] `/_cat/nodeattrs` (GET) [implemented-read]
     - [x] `/_cat/aliases` (GET) [implemented-read]
     - [x] `/_cat/aliases/{alias}` (GET) [implemented-read]
     - [x] `/_cat/count` (GET) [implemented-read]
@@ -1983,14 +1980,14 @@
     - [x] `/_nodes/stats` (GET) [implemented-read]
     - [x] `/_tasks` (GET) [implemented-read]
     - [x] `/_tasks/{task_id}` (GET) [implemented-read]
-    - [x] `/_snapshot` (GET) [implemented-read]
-    - [x] `/_snapshot/_status` (GET) [implemented-read]
-    - [x] `/_snapshot/{repository}/_status` (GET) [implemented-read]
-    - [x] `/_snapshot/{repository}/{snapshot}/_status` (GET) [implemented-read]
+    - [ ] `/_snapshot` (GET) [unknown]
+    - [ ] `/_snapshot/_status` (GET) [unknown]
+    - [ ] `/_snapshot/{repository}/_status` (GET) [unknown]
+    - [ ] `/_snapshot/{repository}/{snapshot}/_status` (GET) [unknown]
   - [ ] index/metadata runtime route parity
     - [ ] unit test plan: index/template/alias/data-stream state mutation과 readback을 unit test로 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` fixture에 OpenSearch compare와 setup/teardown 추가
-    - [ ] runtime-backed summary: implemented-read=28, missing-route=26, requires-stateful-probe=64, unprobeable-expression=0
+    - [ ] runtime-backed summary: implemented-read=0, missing-route=26, requires-stateful-probe=63, unprobeable-expression=0
     - [ ] `/_mapping/field/{fields}` (GET) [missing-route]
     - [ ] `/_mappings` (GET) [missing-route]
     - [ ] `/_recovery` (GET) [missing-route]
@@ -2035,7 +2032,7 @@
     - [ ] `/_index_template/{name}` (DELETE, GET, HEAD, POST, PUT) [requires-stateful-probe]
     - [ ] `/_open` (POST) [requires-stateful-probe]
     - [ ] `/_template/{name}` (DELETE, GET, HEAD, POST, PUT) [requires-stateful-probe]
-    - [ ] `/{index}` (DELETE, GET, HEAD, PUT) [requires-stateful-probe]
+    - [ ] `/{index}` (DELETE, GET, HEAD) [requires-stateful-probe]
     - [ ] `/{index}/_alias` (GET, HEAD, PUT) [requires-stateful-probe]
     - [ ] `/{index}/_alias/{name}` (DELETE, GET, HEAD, POST, PUT) [requires-stateful-probe]
     - [ ] `/{index}/_aliases` (PUT) [requires-stateful-probe]
@@ -2053,18 +2050,18 @@
     - [ ] `/{index}/_split/{target}` (POST, PUT) [requires-stateful-probe]
     - [ ] `/{index}/ingestion/_pause` (POST) [requires-stateful-probe]
     - [ ] `/{index}/ingestion/_resume` (POST) [requires-stateful-probe]
-    - [x] `/_data_stream/_stats` (GET) [implemented-read]
-    - [x] `/_data_stream/{name}/_stats` (GET) [implemented-read]
-    - [x] `/_mapping` (GET) [implemented-read]
-    - [x] `/_stats` (GET) [implemented-read]
-    - [x] `/_component_template` (GET) [implemented-read]
-    - [x] `/_data_stream` (GET) [implemented-read]
-    - [x] `/_index_template` (GET) [implemented-read]
-    - [x] `/_template` (GET) [implemented-read]
+    - [ ] `/_data_stream/_stats` (GET) [unknown]
+    - [ ] `/_data_stream/{name}/_stats` (GET) [unknown]
+    - [ ] `/_mapping` (GET) [unknown]
+    - [ ] `/_stats` (GET) [unknown]
+    - [ ] `/_component_template` (GET) [unknown]
+    - [ ] `/_data_stream` (GET) [unknown]
+    - [ ] `/_index_template` (GET) [unknown]
+    - [ ] `/_template` (GET) [unknown]
   - [ ] document/bulk runtime route parity
     - [ ] unit test plan: single-doc, bulk, refresh, by-query family의 happy-path/error-path를 unit test로 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope document-write-path`와 stateful compare fixture로 OpenSearch parity 검증
-    - [ ] runtime-backed summary: implemented-read=3, missing-route=9, requires-stateful-probe=29, unprobeable-expression=0
+    - [ ] runtime-backed summary: implemented-read=0, missing-route=9, requires-stateful-probe=28, unprobeable-expression=0
     - [ ] `/_mget` (GET, POST) [missing-route]
     - [ ] `/_mtermvectors` (GET, POST) [missing-route]
     - [ ] `/_refresh` (GET, POST) [missing-route]
@@ -2080,7 +2077,7 @@
     - [ ] `/_reindex` (POST) [requires-stateful-probe]
     - [ ] `/_reindex/{taskId}/_rethrottle` (POST) [requires-stateful-probe]
     - [ ] `/_update_by_query/{taskId}/_rethrottle` (POST) [requires-stateful-probe]
-    - [ ] `/{index}/_bulk` (POST, PUT) [requires-stateful-probe]
+    - [ ] `/{index}/_bulk` (PUT) [requires-stateful-probe]
     - [ ] `/{index}/_bulk/stream` (POST, PUT) [requires-stateful-probe]
     - [ ] `/{index}/_create/{id}` (POST, PUT) [requires-stateful-probe]
     - [ ] `/{index}/_delete_by_query` (POST) [requires-stateful-probe]
@@ -2091,7 +2088,7 @@
   - [ ] search runtime route parity
     - [ ] unit test plan: query/session/template/scroll/PIT/count/explain route dispatch와 validation을 unit test로 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope search` 및 `--scope search-execution` fixture에 OpenSearch compare 추가
-    - [ ] runtime-backed summary: implemented-read=2, missing-route=18, requires-stateful-probe=26, unprobeable-expression=2
+    - [ ] runtime-backed summary: implemented-read=0, missing-route=18, requires-stateful-probe=25, unprobeable-expression=2
     - [ ] `/_msearch/template` (GET, POST) [missing-route]
     - [ ] `/_render/template` (GET, POST) [missing-route]
     - [ ] `/_render/template/{id}` (GET, POST) [missing-route]
@@ -2112,10 +2109,10 @@
     - [ ] `/{index}/_msearch` (GET, POST) [missing-route]
     - [ ] `/_search` (GET, POST) [requires-stateful-probe]
     - [ ] `/_search/point_in_time` (DELETE) [requires-stateful-probe]
-    - [ ] `/{index}/_search` (GET, POST) [requires-stateful-probe]
     - [ ] `/{index}/_search/point_in_time` (POST) [requires-stateful-probe]
     - [ ] `/ + ENDPOINT` (GET, POST) [requires-stateful-probe]
     - [ ] `/{index}/ + ENDPOINT` (GET, POST) [requires-stateful-probe]
+    - [ ] `/{index}/_search` (GET) [unknown]
   - [ ] snapshot/migration helper runtime route parity
     - [ ] unit test plan: ingest/painless helper route의 request validation과 transcript shape를 unit test로 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` fixture에 OpenSearch compare 추가
@@ -2130,9 +2127,8 @@
   - [ ] vector/ML runtime route parity
     - [ ] unit test plan: plugin route path normalization과 request validation을 unit test로 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope vector-ml` 또는 dedicated plugin compare runner로 OpenSearch surface compare 추가
-    - [ ] runtime-backed summary: implemented-read=0, missing-route=0, requires-stateful-probe=5, unprobeable-expression=7
+    - [ ] runtime-backed summary: implemented-read=0, missing-route=0, requires-stateful-probe=4, unprobeable-expression=7
     - [ ] `String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)` (GET, POST) [requires-stateful-probe]
-    - [ ] `String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)` (POST) [requires-stateful-probe]
     - [ ] `String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)` (POST) [requires-stateful-probe]
     - [ ] `String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)` (DELETE, GET) [requires-stateful-probe]
     - [ ] `String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)` (POST) [requires-stateful-probe]

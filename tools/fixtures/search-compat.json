@@ -819,6 +819,51 @@
       "extract": "cat_health"
     },
     {
+      "name": "cat_nodes_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodes?format=json",
+      "extract": "cat_nodes"
+    },
+    {
+      "name": "cat_nodes_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodes?v=true",
+      "accept": "text/plain",
+      "extract": "cat_nodes"
+    },
+    {
+      "name": "cat_nodeattrs_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?format=json",
+      "extract": "cat_nodeattrs"
+    },
+    {
+      "name": "cat_nodeattrs_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?v=true",
+      "accept": "text/plain",
+      "extract": "cat_nodeattrs"
+    },
+    {
+      "name": "cat_indices_targeted_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-*?v=true",
+      "accept": "text/plain",
+      "extract": "cat_indices_text"
+    },
+    {
+      "name": "cat_count_targeted_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count/logs-*?format=json",
+      "extract": "cat_count"
+    },
+    {
       "name": "cluster_health_wait_parameters",
       "area": "operational",
       "method": "GET",

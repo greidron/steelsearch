@@ -61,6 +61,18 @@ CAT_HEALTH_REQUIRED_COLUMNS = {
     "max_task_wait_time",
     "active_shards_percent",
 }
+CAT_NODES_REQUIRED_COLUMNS = {
+    "ip",
+    "node.role",
+    "name",
+}
+CAT_NODEATTRS_REQUIRED_COLUMNS = {
+    "node",
+    "host",
+    "ip",
+    "attr",
+    "value",
+}
 VOLATILE_RESPONSE_KEYS = {
     "_primary_term",
     "_seq_no",
@@ -784,6 +796,46 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "cluster_present": bool(cluster),
             "health_status": health_status,
             "required_columns_present": sorted(CAT_HEALTH_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_nodes":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            node_names = {row.get("name") for row in rows if isinstance(row, dict)}
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            header = lines[0].split() if lines else []
+            columns = set(header)
+            node_names = set()
+            for line in lines[1:]:
+                parts = line.split()
+                if parts:
+                    node_names.add(parts[-1])
+        return {
+            "status": response["status"],
+            "node_count": len(node_names),
+            "required_columns_present": sorted(CAT_NODES_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_nodeattrs":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            node_names = {row.get("node") for row in rows if isinstance(row, dict)}
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            header = lines[0].split() if lines else []
+            columns = set(header)
+            node_names = set()
+            for line in lines[1:]:
+                parts = line.split()
+                if parts:
+                    node_names.add(parts[0])
+        return {
+            "status": response["status"],
+            "node_count": len(node_names),
+            "required_columns_present": sorted(CAT_NODEATTRS_REQUIRED_COLUMNS & columns),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}
