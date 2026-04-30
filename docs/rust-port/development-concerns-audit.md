@@ -243,8 +243,9 @@ Current status:
   - `GET /docs`
   - `GET /swagger`
   - `GET /swagger-ui`
-- Swagger UI is currently served as an HTML shell that loads
-  `swagger-ui-dist` from CDN.
+- Swagger UI assets are now served locally:
+  - `GET /swagger-ui/swagger-ui.css`
+  - `GET /swagger-ui/swagger-ui-bundle.js`
 
 Operationally:
 
@@ -255,7 +256,6 @@ Operationally:
 ## 6. Current Known Gaps
 
 - No canonical percentage-based coverage gate in CI/local tooling yet.
-- Swagger UI currently depends on CDN assets rather than vendored local assets.
 - API comparison proof still exists mainly at family/profile granularity.
 - `docs/api-spec/generated/rest-routes.md` is still a generated inventory and
   should not be read as the release-gate source of truth for milestone claims.
@@ -268,4 +268,5 @@ the next highest-value additions are:
 1. wire `cargo llvm-cov` into CI and define an explicit threshold policy;
 2. harden the generated OpenAPI so it becomes part of a release-auditable
    route contract rather than only an inventory-derived spec;
-3. vendor Swagger UI assets locally if offline/self-contained serving matters.
+3. harden the local Swagger/OpenAPI serving path as part of release-facing
+   documentation rather than only developer-facing runtime support.

@@ -37,17 +37,21 @@ use std::time::Duration;
 
 const GENERATED_OPENAPI_JSON: &str =
     include_str!("../../../docs/api-spec/generated/openapi.json");
+const SWAGGER_UI_CSS: &str =
+    include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui.css");
+const SWAGGER_UI_BUNDLE_JS: &str =
+    include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui-bundle.js");
 const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Steelsearch API Docs</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <link rel="stylesheet" href="/swagger-ui/swagger-ui.css" />
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="/swagger-ui/swagger-ui-bundle.js"></script>
   <script>
     window.ui = SwaggerUIBundle({
       url: '/openapi.json',
@@ -1441,6 +1445,10 @@ impl SteelNode {
             (RestMethod::Get, "/docs") | (RestMethod::Get, "/swagger") | (RestMethod::Get, "/swagger-ui") => {
                 Some(self.handle_swagger_ui_route())
             }
+            (RestMethod::Get, "/swagger-ui/swagger-ui.css") => Some(self.handle_swagger_ui_css_route()),
+            (RestMethod::Get, "/swagger-ui/swagger-ui-bundle.js") => {
+                Some(self.handle_swagger_ui_bundle_route())
+            }
             (RestMethod::Get, "/_steelsearch/dev/cluster") => Some(self.handle_dev_cluster_route()),
             (RestMethod::Head, "/_all") => Some(RestResponse::opensearch_error_kind(
                 os_rest::RestErrorKind::IllegalArgument,
@@ -1809,6 +1817,15 @@ impl SteelNode {
     fn handle_swagger_ui_route(&self) -> RestResponse {
         RestResponse::text(200, SWAGGER_UI_HTML)
             .with_header("content-type", "text/html; charset=utf-8")
+    }
+
+    fn handle_swagger_ui_css_route(&self) -> RestResponse {
+        RestResponse::text(200, SWAGGER_UI_CSS).with_header("content-type", "text/css; charset=utf-8")
+    }
+
+    fn handle_swagger_ui_bundle_route(&self) -> RestResponse {
+        RestResponse::text(200, SWAGGER_UI_BUNDLE_JS)
+            .with_header("content-type", "application/javascript; charset=utf-8")
     }
 
     fn handle_cluster_state_route(&self, request: &RestRequest) -> RestResponse {
@@ -9887,6 +9904,26 @@ mod tests {
         );
         let body = response.body.as_str().expect("html body should be string");
         assert!(body.contains("/openapi.json"));
-        assert!(body.contains("swagger-ui"));
+        assert!(body.contains("/swagger-ui/swagger-ui.css"));
+        assert!(body.contains("/swagger-ui/swagger-ui-bundle.js"));
+    }
+
+    #[test]
+    fn swagger_ui_bundle_route_serves_local_asset() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/swagger-ui/swagger-ui-bundle.js",
+        ));
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.headers.get("content-type").map(String::as_str),
+            Some("application/javascript; charset=utf-8")
+        );
+        let body = response.body.as_str().expect("javascript body should be string");
+        assert!(body.contains("SwaggerUIBundle"));
     }
 }
