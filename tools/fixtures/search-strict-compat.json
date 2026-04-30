@@ -320,6 +320,13 @@
       }
     ]
   },
+  "aliases": [
+    {
+      "index": "logs-compat",
+      "alias": "logs-compat-read",
+      "body": {}
+    }
+  ],
   "indices": [
     {
       "name": "logs-compat",
@@ -332,30 +339,30 @@
         },
         "mappings": {
           "properties": {
-        "message": {
-          "type": "text"
-        },
-        "service_suggest": {
-          "type": "completion"
-        },
-        "events": {
-          "type": "nested",
-          "properties": {
-            "kind": {
+            "message": {
+              "type": "text"
+            },
+            "service_suggest": {
+              "type": "completion"
+            },
+            "events": {
+              "type": "nested",
+              "properties": {
+                "kind": {
+                  "type": "keyword"
+                },
+                "status": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "labels": {
               "type": "keyword"
             },
-            "status": {
-              "type": "keyword"
-            }
-          }
-        },
-        "labels": {
-          "type": "keyword"
-        },
-        "service": {
-          "type": "keyword",
-          "store": true
-        },
+            "service": {
+              "type": "keyword",
+              "store": true
+            },
             "level": {
               "type": "keyword"
             },
@@ -374,116 +381,6 @@
           }
         }
       }
-    },
-    {
-      "name": "vectors-compat",
-      "body": {
-        "settings": {
-          "index": {
-            "knn": true,
-            "number_of_shards": 1,
-            "number_of_replicas": 0
-          }
-        },
-        "mappings": {
-          "properties": {
-            "title": {
-              "type": "text"
-            },
-            "category": {
-              "type": "keyword"
-            },
-            "embedding": {
-              "type": "knn_vector",
-              "dimension": 3
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "vectors-cosine-compat",
-      "body": {
-        "settings": {
-          "index": {
-            "knn": true,
-            "number_of_shards": 1,
-            "number_of_replicas": 0
-          }
-        },
-        "mappings": {
-          "properties": {
-            "title": {
-              "type": "text"
-            },
-            "category": {
-              "type": "keyword"
-            },
-            "embedding": {
-              "type": "knn_vector",
-              "dimension": 3,
-              "method": {
-                "name": "hnsw",
-                "engine": "lucene",
-                "space_type": "cosinesimil"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "vectors-innerproduct-compat",
-      "body": {
-        "settings": {
-          "index": {
-            "knn": true,
-            "number_of_shards": 1,
-            "number_of_replicas": 0
-          }
-        },
-        "mappings": {
-          "properties": {
-            "title": {
-              "type": "text"
-            },
-            "category": {
-              "type": "keyword"
-            },
-            "embedding": {
-              "type": "knn_vector",
-              "dimension": 3,
-              "method": {
-                "name": "hnsw",
-                "engine": "lucene",
-                "space_type": "innerproduct"
-              }
-            }
-          }
-        }
-      }
-    }
-  ],
-  "aliases": [
-    {
-      "index": "logs-compat",
-      "alias": "logs-compat-read",
-      "body": {}
-    },
-    {
-      "index": "vectors-compat",
-      "alias": "vectors-compat-read",
-      "body": {}
-    },
-    {
-      "index": "vectors-cosine-compat",
-      "alias": "vectors-cosine-compat-read",
-      "body": {}
-    },
-    {
-      "index": "vectors-innerproduct-compat",
-      "alias": "vectors-innerproduct-compat-read",
-      "body": {}
     }
   ],
   "bulk": [
@@ -493,19 +390,19 @@
         {
           "_id": "log-1",
           "_source": {
-        "message": "checkout service accepted payment",
-        "events": [
-          {
-            "kind": "payment",
-            "status": "accepted"
-          }
-        ],
-        "labels": [
-          "payment",
-          "checkout"
-        ],
-        "service_suggest": "checkout",
-        "service": "checkout",
+            "message": "checkout service accepted payment",
+            "events": [
+              {
+                "kind": "payment",
+                "status": "accepted"
+              }
+            ],
+            "labels": [
+              "payment",
+              "checkout"
+            ],
+            "service_suggest": "checkout",
+            "service": "checkout",
             "level": "info",
             "tag": "payment",
             "bytes": 120,
@@ -519,19 +416,19 @@
         {
           "_id": "log-2",
           "_source": {
-        "message": "checkout service payment timeout",
-        "events": [
-          {
-            "kind": "payment",
-            "status": "timeout"
-          }
-        ],
-        "labels": [
-          "payment",
-          "timeout"
-        ],
-        "service_suggest": "checkout",
-        "service": "checkout",
+            "message": "checkout service payment timeout",
+            "events": [
+              {
+                "kind": "payment",
+                "status": "timeout"
+              }
+            ],
+            "labels": [
+              "payment",
+              "timeout"
+            ],
+            "service_suggest": "checkout",
+            "service": "checkout",
             "level": "warn",
             "tag": "payment",
             "bytes": 300,
@@ -545,19 +442,19 @@
         {
           "_id": "log-3",
           "_source": {
-        "message": "catalog service refreshed product cache",
-        "events": [
-          {
-            "kind": "cache",
-            "status": "refreshed"
-          }
-        ],
-        "labels": [
-          "catalog",
-          "cache"
-        ],
-        "service_suggest": "catalog",
-        "service": "catalog",
+            "message": "catalog service refreshed product cache",
+            "events": [
+              {
+                "kind": "cache",
+                "status": "refreshed"
+              }
+            ],
+            "labels": [
+              "catalog",
+              "cache"
+            ],
+            "service_suggest": "catalog",
+            "service": "catalog",
             "level": "info",
             "tag": "cache",
             "bytes": 80,
@@ -569,146 +466,9 @@
           }
         }
       ]
-    },
-    {
-      "index": "vectors-compat",
-      "documents": [
-        {
-          "_id": "vec-a",
-          "_source": {
-            "title": "red apple",
-            "category": "fruit",
-            "embedding": [
-              1.0,
-              0.0,
-              0.0
-            ]
-          }
-        },
-        {
-          "_id": "vec-b",
-          "_source": {
-            "title": "green apple",
-            "category": "fruit",
-            "embedding": [
-              0.9,
-              0.1,
-              0.0
-            ]
-          }
-        },
-        {
-          "_id": "vec-c",
-          "_source": {
-            "title": "blue car",
-            "category": "vehicle",
-            "embedding": [
-              0.0,
-              1.0,
-              0.0
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "index": "vectors-cosine-compat",
-      "documents": [
-        {
-          "_id": "vec-a",
-          "_source": {
-            "title": "red apple",
-            "category": "fruit",
-            "embedding": [
-              1.0,
-              0.0,
-              0.0
-            ]
-          }
-        },
-        {
-          "_id": "vec-b",
-          "_source": {
-            "title": "green apple",
-            "category": "fruit",
-            "embedding": [
-              0.9,
-              0.1,
-              0.0
-            ]
-          }
-        },
-        {
-          "_id": "vec-c",
-          "_source": {
-            "title": "blue car",
-            "category": "vehicle",
-            "embedding": [
-              0.0,
-              1.0,
-              0.0
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "index": "vectors-innerproduct-compat",
-      "documents": [
-        {
-          "_id": "vec-a",
-          "_source": {
-            "title": "red apple",
-            "category": "fruit",
-            "embedding": [
-              1.0,
-              0.0,
-              0.0
-            ]
-          }
-        },
-        {
-          "_id": "vec-b",
-          "_source": {
-            "title": "green apple",
-            "category": "fruit",
-            "embedding": [
-              0.9,
-              0.1,
-              0.0
-            ]
-          }
-        },
-        {
-          "_id": "vec-c",
-          "_source": {
-            "title": "blue car",
-            "category": "vehicle",
-            "embedding": [
-              0.0,
-              1.0,
-              0.0
-            ]
-          }
-        }
-      ]
     }
   ],
   "cases": [
-    {
-      "name": "root_info",
-      "area": "operational",
-      "method": "GET",
-      "path": "/",
-      "extract": "root_info"
-    },
-    {
-      "name": "cluster_health",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_cluster/health",
-      "extract": "cluster_health"
-    },
     {
       "name": "head_index",
       "area": "index",
@@ -787,52 +547,6 @@
       "path": "/_cat/count?v=true",
       "accept": "text/plain",
       "extract": "cat_count"
-    },
-    {
-      "name": "cluster_health_wait_parameters",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_cluster/health?wait_for_status=green&timeout=1s",
-      "extract": "cluster_health"
-    },
-    {
-      "name": "node_stats_shape",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_nodes/stats",
-      "extract": "node_stats"
-    },
-    {
-      "name": "cluster_stats_shape",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_cluster/stats",
-      "extract": "cluster_stats"
-    },
-    {
-      "name": "index_stats_shape",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_stats",
-      "extract": "index_stats"
-    },
-    {
-      "name": "tasks_shape",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_tasks",
-      "extract": "tasks"
-    },
-    {
-      "name": "allocation_explain_development_shape",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_cluster/allocation/explain",
-      "extract": "allocation_explain",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-comparison",
-      "reason": "Steelsearch exposes a development allocation decision without requiring the OpenSearch request body yet."
     },
     {
       "name": "get_document",
@@ -1360,8 +1074,8 @@
       "extract": "error_response",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-search-target-option",
-      "reason": "Steelsearch rejects closed wildcard expansion until closed-index engine state is implemented."
+      "skip_scope": "out-of-phase-defer",
+      "reason": "Closed-index engine state is intentionally deferred out of Phase A-1 lexical strict parity; the current search strict fixture keeps this as an explicit out-of-phase defer."
     },
     {
       "name": "highlight_match_all_search",
@@ -2641,372 +2355,6 @@
         }
       },
       "extract": "aggregations"
-    },
-    {
-      "name": "knn_search",
-      "area": "knn",
-      "method": "POST",
-      "path": "/vectors-compat/_search",
-      "body": {
-        "query": {
-          "knn": {
-            "embedding": {
-              "vector": [
-                1.0,
-                0.0,
-                0.0
-              ],
-              "k": 2
-            }
-          }
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "knn_cosinesimil_search",
-      "area": "knn",
-      "method": "POST",
-      "path": "/vectors-cosine-compat/_search",
-      "body": {
-        "query": {
-          "knn": {
-            "embedding": {
-              "vector": [
-                1.0,
-                0.0,
-                0.0
-              ],
-              "k": 2
-            }
-          }
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "knn_innerproduct_search",
-      "area": "knn",
-      "method": "POST",
-      "path": "/vectors-innerproduct-compat/_search",
-      "body": {
-        "query": {
-          "knn": {
-            "embedding": {
-              "vector": [
-                1.0,
-                0.0,
-                0.0
-              ],
-              "k": 2
-            }
-          }
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "knn_stats_shape",
-      "area": "knn",
-      "method": "GET",
-      "path": "/_plugins/_knn/stats",
-      "extract": "knn_stats_shape"
-    },
-    {
-      "name": "knn_warmup_budget_failure",
-      "area": "knn",
-      "method": "POST",
-      "path": "/_plugins/_knn/warmup/vectors-compat",
-      "body": {
-        "vector_segment_count": 1,
-        "native_memory_bytes": 536870913
-      },
-      "extract": "error_response",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-knn-memory-breaker",
-      "reason": "Steelsearch exposes Rust-native k-NN memory breaker accounting; OpenSearch uses JVM/native plugin internals with non-portable byte accounting."
-    },
-    {
-      "name": "knn_warmup_clear_cache_telemetry_shape",
-      "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-knn-cache-telemetry",
-      "reason": "Steelsearch reports Rust-native warmup bytes and clear-cache released bytes that are intentionally not matched field-for-field against OpenSearch plugin internals.",
-      "extract": "knn_clear_cache_response",
-      "steps": [
-        {
-          "name": "warmup-vectors",
-          "method": "POST",
-          "path": "/_plugins/_knn/warmup/vectors-compat",
-          "body": {
-            "vector_segment_count": 2,
-            "native_memory_bytes": 64,
-            "model_cache_bytes": 16,
-            "quantization_cache_bytes": 8
-          },
-          "expected_status": 200,
-          "extract": "knn_warmup_response"
-        },
-        {
-          "name": "stats-after-warmup",
-          "method": "GET",
-          "path": "/_plugins/_knn/stats",
-          "expected_status": 200,
-          "extract": "knn_stats_accounting"
-        },
-        {
-          "name": "clear-cache-vectors",
-          "method": "POST",
-          "path": "/_plugins/_knn/clear_cache/vectors-compat",
-          "expected_status": 200,
-          "extract": "knn_clear_cache_response"
-        }
-      ]
-    },
-    {
-      "name": "knn_unsupported_method_engine_fail_closed",
-      "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-knn-production-option",
-      "reason": "Steelsearch parses OpenSearch k-NN engine declarations for compatibility but rejects FAISS execution in the Rust-native production path.",
-      "extract": "error_response",
-      "steps": [
-        {
-          "name": "delete-index",
-          "method": "DELETE",
-          "path": "/vectors-unsupported-engine-compat"
-        },
-        {
-          "name": "create-index",
-          "method": "PUT",
-          "path": "/vectors-unsupported-engine-compat",
-          "expected_status": 200,
-          "body": {
-            "settings": {
-              "index": {
-                "knn": true,
-                "number_of_shards": 1,
-                "number_of_replicas": 0
-              }
-            },
-            "mappings": {
-              "properties": {
-                "embedding": {
-                  "type": "knn_vector",
-                  "dimension": 3,
-                  "method": {
-                    "name": "hnsw",
-                    "engine": "faiss",
-                    "space_type": "l2"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "index-doc",
-          "method": "POST",
-          "path": "/vectors-unsupported-engine-compat/_bulk",
-          "expected_status": 200,
-          "raw": true,
-          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
-        },
-        {
-          "name": "refresh",
-          "method": "POST",
-          "path": "/_refresh",
-          "expected_status": 200,
-          "body": {}
-        },
-        {
-          "name": "search",
-          "method": "POST",
-          "path": "/vectors-unsupported-engine-compat/_search",
-          "expected_status": 400,
-          "body": {
-            "query": {
-              "knn": {
-                "embedding": {
-                  "vector": [
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  "k": 1
-                }
-              }
-            }
-          },
-          "extract": "error_response"
-        }
-      ]
-    },
-    {
-      "name": "knn_unsupported_mode_fail_closed",
-      "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-knn-production-option",
-      "reason": "Steelsearch rejects on_disk k-NN execution until compressed/on-disk vector semantics are implemented.",
-      "extract": "error_response",
-      "steps": [
-        {
-          "name": "delete-index",
-          "method": "DELETE",
-          "path": "/vectors-unsupported-mode-compat"
-        },
-        {
-          "name": "create-index",
-          "method": "PUT",
-          "path": "/vectors-unsupported-mode-compat",
-          "expected_status": 200,
-          "body": {
-            "settings": {
-              "index": {
-                "knn": true,
-                "number_of_shards": 1,
-                "number_of_replicas": 0
-              }
-            },
-            "mappings": {
-              "properties": {
-                "embedding": {
-                  "type": "knn_vector",
-                  "dimension": 3,
-                  "mode": "on_disk"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "index-doc",
-          "method": "POST",
-          "path": "/vectors-unsupported-mode-compat/_bulk",
-          "expected_status": 200,
-          "raw": true,
-          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
-        },
-        {
-          "name": "refresh",
-          "method": "POST",
-          "path": "/_refresh",
-          "expected_status": 200,
-          "body": {}
-        },
-        {
-          "name": "search",
-          "method": "POST",
-          "path": "/vectors-unsupported-mode-compat/_search",
-          "expected_status": 400,
-          "body": {
-            "query": {
-              "knn": {
-                "embedding": {
-                  "vector": [
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  "k": 1
-                }
-              }
-            }
-          },
-          "extract": "error_response"
-        }
-      ]
-    },
-    {
-      "name": "knn_unsupported_method_parameters_fail_closed",
-      "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-knn-production-option",
-      "reason": "Steelsearch rejects k-NN method parameters before execution because current native scoring does not yet honor HNSW construction/search parameters.",
-      "extract": "error_response",
-      "steps": [
-        {
-          "name": "delete-index",
-          "method": "DELETE",
-          "path": "/vectors-unsupported-method-params-compat"
-        },
-        {
-          "name": "create-index",
-          "method": "PUT",
-          "path": "/vectors-unsupported-method-params-compat",
-          "expected_status": 200,
-          "body": {
-            "settings": {
-              "index": {
-                "knn": true,
-                "number_of_shards": 1,
-                "number_of_replicas": 0
-              }
-            },
-            "mappings": {
-              "properties": {
-                "embedding": {
-                  "type": "knn_vector",
-                  "dimension": 3,
-                  "method": {
-                    "name": "hnsw",
-                    "engine": "lucene",
-                    "space_type": "l2",
-                    "parameters": {
-                      "ef_construction": 128,
-                      "m": 16
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "index-doc",
-          "method": "POST",
-          "path": "/vectors-unsupported-method-params-compat/_bulk",
-          "expected_status": 200,
-          "raw": true,
-          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
-        },
-        {
-          "name": "refresh",
-          "method": "POST",
-          "path": "/_refresh",
-          "expected_status": 200,
-          "body": {}
-        },
-        {
-          "name": "search",
-          "method": "POST",
-          "path": "/vectors-unsupported-method-params-compat/_search",
-          "expected_status": 400,
-          "body": {
-            "query": {
-              "knn": {
-                "embedding": {
-                  "vector": [
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  "k": 1
-                }
-              }
-            }
-          },
-          "extract": "error_response"
-        }
-      ]
     },
     {
       "name": "missing_document_shape",

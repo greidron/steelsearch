@@ -1,7 +1,11 @@
 # Snapshot Restore Failure Transcript Template
 
-Use this sheet when comparing representative pre-restore failure paths between
-Steelsearch and OpenSearch.
+Use this sheet as a human-readable companion when comparing representative
+pre-restore failure paths between Steelsearch and OpenSearch.
+
+The canonical Phase A-1 comparison now lives in
+`tools/fixtures/snapshot-lifecycle-compat.json` via normalized executable
+restore-failure cases. This transcript is no longer the primary gate artifact.
 
 ## Canonical comparison anchors
 

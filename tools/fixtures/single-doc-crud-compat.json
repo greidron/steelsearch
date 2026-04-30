@@ -5,6 +5,16 @@
       "name": "create_single_doc_index",
       "method": "PUT",
       "path": "/single-doc-compat-000001",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/single-doc-compat-000001?ignore_unavailable=true"
+        },
+        {
+          "method": "DELETE",
+          "path": "/single-doc-alias-write-000001,single-doc-alias-write-000002?ignore_unavailable=true"
+        }
+      ],
       "body": {},
       "compare": {
         "expected_status": 200
@@ -16,7 +26,10 @@
       "path": "/single-doc-compat-000001/_doc/doc-1?routing=tenant-a",
       "body": {
         "message": "hello",
-        "level": "info"
+        "level": "info",
+        "payload": {
+          "tenant": "tenant-a"
+        }
       },
       "compare": {
         "expected_status": 201,
@@ -39,6 +52,99 @@
       "name": "get_single_doc_filtered_source",
       "method": "GET",
       "path": "/single-doc-compat-000001/_doc/doc-1?_source_includes=message,level&routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_absent": [
+          "_source.payload"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_source_false",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-1?_source=false&routing=tenant-a&realtime=false",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found"
+        ],
+        "body_paths_absent": [
+          "_source"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_external_version_success",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-ext?version=7&version_type=external&routing=tenant-a&refresh=wait_for",
+      "body": {
+        "message": "external-version",
+        "level": "debug",
+        "payload": {
+          "tenant": "tenant-a",
+          "kind": "ext"
+        }
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "_version",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "_version",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_external_version_conflict",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-ext?version=7&version_type=external&routing=tenant-a",
+      "body": {
+        "message": "external-version-conflict"
+      },
+      "compare": {
+        "expected_status": 409,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_source_excludes",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-ext?_source_excludes=payload&routing=tenant-a&realtime=false",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
@@ -84,6 +190,61 @@
       }
     },
     {
+      "name": "put_single_doc_for_delete_optimistic_concurrency",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-delete-cas?routing=tenant-a",
+      "body": {
+        "message": "delete-cas"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "delete_single_doc_optimistic_concurrency_success",
+      "method": "DELETE",
+      "path": "/single-doc-compat-000001/_doc/doc-delete-cas?routing=tenant-a&if_seq_no=3&if_primary_term=1",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "delete_single_doc_optimistic_concurrency_conflict",
+      "method": "DELETE",
+      "path": "/single-doc-compat-000001/_doc/doc-delete-cas?routing=tenant-a&if_seq_no=3&if_primary_term=1",
+      "compare": {
+        "expected_status": 409,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "put_single_doc_optimistic_concurrency_success",
       "method": "PUT",
       "path": "/single-doc-compat-000001/_doc/doc-1?if_seq_no=0&if_primary_term=1&routing=tenant-a",
@@ -105,6 +266,351 @@
           "_index",
           "_id",
           "result"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_optimistic_concurrency_success",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a&if_seq_no=5&if_primary_term=1",
+      "body": {
+        "doc": {
+          "message": "hello-updated-once",
+          "level": "info"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_optimistic_concurrency_conflict",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a&if_seq_no=5&if_primary_term=1",
+      "body": {
+        "doc": {
+          "message": "hello-updated-conflict"
+        }
+      },
+      "compare": {
+        "expected_status": 409,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_doc_patch_success",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a",
+      "body": {
+        "doc": {
+          "message": "hello-updated",
+          "level": "warn"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "_version",
+          "result",
+          "_seq_no",
+          "_primary_term"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_after_update_patch",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-1?routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_detect_noop",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a",
+      "body": {
+        "doc": {
+          "message": "hello-updated",
+          "level": "warn"
+        },
+        "detect_noop": true
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_script_assignment",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a&retry_on_conflict=3",
+      "body": {
+        "script": {
+          "source": "ctx._source.level = params.level",
+          "params": {
+            "level": "error"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_after_script_update",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-1?routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_doc_as_upsert_create",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-upsert?routing=tenant-a",
+      "body": {
+        "doc": {
+          "message": "doc-as-upsert",
+          "level": "info"
+        },
+        "doc_as_upsert": true
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_doc_as_upsert_created",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-upsert?routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_scripted_upsert_create",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-scripted-upsert?routing=tenant-a",
+      "body": {
+        "script": {
+          "source": "ctx._source.level = params.level",
+          "params": {
+            "level": "trace"
+          }
+        },
+        "upsert": {
+          "message": "scripted-upsert"
+        },
+        "scripted_upsert": true
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_scripted_upsert_created",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-scripted-upsert?routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
+      "name": "create_single_doc_alias_write_indices",
+      "method": "PUT",
+      "path": "/single-doc-alias-write-000001",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/single-doc-alias-write-000002",
+          "body": {}
+        },
+        {
+          "method": "POST",
+          "path": "/_aliases",
+          "body": {
+            "actions": [
+              {
+                "add": {
+                  "index": "single-doc-alias-write-000001",
+                  "alias": "single-doc-write",
+                  "is_write_index": false
+                }
+              },
+              {
+                "add": {
+                  "index": "single-doc-alias-write-000002",
+                  "alias": "single-doc-write",
+                  "is_write_index": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "body": {},
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_single_doc_via_write_alias",
+      "method": "PUT",
+      "path": "/single-doc-write/_doc/alias-doc?refresh=wait_for",
+      "body": {
+        "message": "alias-write"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_via_alias_write_target",
+      "method": "GET",
+      "path": "/single-doc-write/_doc/alias-doc?realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
         ]
       }
     },
@@ -184,6 +690,150 @@
           "_index",
           "_id",
           "found"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_auto_creates_missing_index",
+      "method": "PUT",
+      "path": "/single-doc-auto-create-000001/_doc/doc-1?refresh=wait_for",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/single-doc-auto-create-000001?ignore_unavailable=true"
+        }
+      ],
+      "body": {
+        "message": "auto-created-index"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "head_auto_created_index_exists_after_write",
+      "method": "HEAD",
+      "path": "/single-doc-auto-create-000001",
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_single_doc_via_ambiguous_alias_rejected",
+      "method": "PUT",
+      "path": "/single-doc-ambiguous-write/_doc/doc-1",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/single-doc-ambiguous-000001,single-doc-ambiguous-000002?ignore_unavailable=true"
+        },
+        {
+          "method": "PUT",
+          "path": "/single-doc-ambiguous-000001",
+          "body": {}
+        },
+        {
+          "method": "PUT",
+          "path": "/single-doc-ambiguous-000002",
+          "body": {}
+        },
+        {
+          "method": "POST",
+          "path": "/_aliases",
+          "body": {
+            "actions": [
+              {
+                "add": {
+                  "index": "single-doc-ambiguous-000001",
+                  "alias": "single-doc-ambiguous-write"
+                }
+              },
+              {
+                "add": {
+                  "index": "single-doc-ambiguous-000002",
+                  "alias": "single-doc-ambiguous-write"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "body": {
+        "message": "ambiguous-alias"
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "post_single_doc_into_data_stream_target",
+      "method": "POST",
+      "path": "/single-doc-write-ds/_doc?refresh=wait_for",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/_data_stream/single-doc-write-ds"
+        },
+        {
+          "method": "DELETE",
+          "path": "/_index_template/single-doc-write-ds-template"
+        },
+        {
+          "method": "PUT",
+          "path": "/_index_template/single-doc-write-ds-template",
+          "body": {
+            "index_patterns": [
+              "single-doc-write-ds*"
+            ],
+            "data_stream": {},
+            "template": {
+              "mappings": {
+                "properties": {
+                  "@timestamp": {
+                    "type": "date"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/_data_stream/single-doc-write-ds"
+        }
+      ],
+      "body": {
+        "@timestamp": "2024-01-01T00:00:00Z",
+        "message": "data-stream-write"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "result"
         ]
       }
     }

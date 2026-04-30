@@ -5,6 +5,12 @@
       "name": "create_refresh_compat_index",
       "method": "PUT",
       "path": "/refresh-compat-000001",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/refresh-compat-000001?ignore_unavailable=true"
+        }
+      ],
       "body": {},
       "compare": {
         "expected_status": 200
@@ -84,6 +90,129 @@
       "name": "get_doc_after_wait_for_visibility",
       "method": "GET",
       "path": "/refresh-compat-000001/_doc/doc-2?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "write_doc_with_immediate_refresh_true_policy",
+      "method": "PUT",
+      "path": "/refresh-compat-000001/_doc/doc-3?routing=tenant-a&refresh=true",
+      "body": {
+        "message": "refresh-true-visible"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_doc_after_refresh_true_visibility",
+      "method": "GET",
+      "path": "/refresh-compat-000001/_doc/doc-3?routing=tenant-a&realtime=false",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "update_doc_with_immediate_refresh_true_policy",
+      "method": "POST",
+      "path": "/refresh-compat-000001/_update/doc-3?routing=tenant-a&refresh=true",
+      "body": {
+        "doc": {
+          "message": "refresh-true-updated"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_updated_doc_after_refresh_true_visibility",
+      "method": "GET",
+      "path": "/refresh-compat-000001/_doc/doc-3?routing=tenant-a&realtime=false",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "bulk_write_with_refresh_true_policy",
+      "method": "POST",
+      "path": "/_bulk?refresh=true",
+      "body": "{\"index\":{\"_index\":\"refresh-compat-000001\",\"_id\":\"doc-bulk\",\"routing\":\"tenant-a\"}}\n{\"message\":\"bulk-refresh-visible\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result"
+        ]
+      }
+    },
+    {
+      "name": "get_bulk_doc_after_refresh_true_visibility",
+      "method": "GET",
+      "path": "/refresh-compat-000001/_doc/doc-bulk?routing=tenant-a&realtime=false",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [

@@ -5,6 +5,12 @@
       "name": "create_routing_compat_index",
       "method": "PUT",
       "path": "/routing-compat-000001",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/routing-compat-000001,routing-alias-000001,routing-alias-000002?ignore_unavailable=true"
+        }
+      ],
       "body": {},
       "compare": {
         "expected_status": 200
@@ -101,6 +107,175 @@
         "query": {
           "term": {
             "message": "tenant-a-doc"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "hits.total.value"
+        ],
+        "body_paths_absent": [
+          "hits.hits.0._id"
+        ],
+        "body_paths_equal": [
+          "hits.total.value"
+        ]
+      }
+    },
+    {
+      "name": "create_alias_routing_indices",
+      "method": "POST",
+      "path": "/_aliases",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/routing-alias-000001",
+          "body": {}
+        },
+        {
+          "method": "PUT",
+          "path": "/routing-alias-000002",
+          "body": {}
+        }
+      ],
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "index": "routing-alias-000001",
+              "alias": "routing-write",
+              "is_write_index": true,
+              "routing": "tenant-a"
+            }
+          },
+          {
+            "add": {
+              "index": "routing-alias-000002",
+              "alias": "routing-search",
+              "search_routing": "tenant-b"
+            }
+          }
+        ]
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_document_via_alias_default_index_routing",
+      "method": "PUT",
+      "path": "/routing-write/_doc/doc-alias",
+      "body": {
+        "message": "alias-routed"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_document_via_alias_default_index_routing",
+      "method": "GET",
+      "path": "/routing-write/_doc/doc-alias",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "get_document_via_concrete_index_matching_alias_routing",
+      "method": "GET",
+      "path": "/routing-alias-000001/_doc/doc-alias?routing=tenant-a",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "put_document_for_alias_search_routing",
+      "method": "PUT",
+      "path": "/routing-alias-000002/_doc/doc-search?routing=tenant-b",
+      "body": {
+        "message": "alias-search-routed"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "search_via_alias_default_search_routing_hits",
+      "method": "GET",
+      "path": "/routing-search/_search",
+      "body": {
+        "query": {
+          "term": {
+            "message": "alias-search-routed"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "hits.total.value"
+        ],
+        "body_paths_absent": [
+          "hits.hits.0._id"
+        ],
+        "body_paths_equal": [
+          "hits.total.value"
+        ]
+      }
+    },
+    {
+      "name": "search_via_alias_explicit_routing_override_is_empty",
+      "method": "GET",
+      "path": "/routing-search/_search?routing=tenant-a",
+      "body": {
+        "query": {
+          "term": {
+            "message": "alias-search-routed"
           }
         }
       },

@@ -6,8 +6,9 @@ pub const INDEX_STATS_ROUTE_PATH: &str = "/_stats";
 pub const STATS_ROUTE_FAMILY: &str = "stats_summary_readback";
 
 pub const NODES_STATS_RESPONSE_FIELDS: [&str; 1] = ["nodes"];
-pub const CLUSTER_STATS_RESPONSE_FIELDS: [&str; 3] = ["cluster_name", "indices", "nodes"];
-pub const INDEX_STATS_RESPONSE_FIELDS: [&str; 2] = ["_all", "indices"];
+pub const CLUSTER_STATS_RESPONSE_FIELDS: [&str; 5] =
+    ["cluster_name", "status", "indices", "nodes", "fs"];
+pub const INDEX_STATS_RESPONSE_FIELDS: [&str; 3] = ["_shards", "_all", "indices"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StatsRouteRegistryEntry {
@@ -108,21 +109,26 @@ mod tests {
     fn cluster_and_index_stats_responses_keep_bounded_top_level_fields() {
         let cluster = build_cluster_stats_response(&serde_json::json!({
             "cluster_name": "steelsearch-dev",
+            "status": "yellow",
             "indices": { "count": 1 },
             "nodes": { "count": { "total": 1 } },
+            "fs": { "total_in_bytes": 0 },
             "status": "drop-me"
         }));
         let index = build_index_stats_response(&serde_json::json!({
+            "_shards": { "total": 1, "successful": 1, "failed": 0 },
             "_all": { "primaries": {} },
             "indices": { "logs-000001": {} },
             "shards": "drop-me"
         }));
 
         assert!(cluster.get("cluster_name").is_some());
+        assert!(cluster.get("status").is_some());
         assert!(cluster.get("indices").is_some());
         assert!(cluster.get("nodes").is_some());
-        assert!(cluster.get("status").is_none());
+        assert!(cluster.get("fs").is_some());
         assert!(index.get("_all").is_some());
+        assert!(index.get("_shards").is_some());
         assert!(index.get("indices").is_some());
         assert!(index.get("shards").is_none());
     }
@@ -135,11 +141,13 @@ mod tests {
         }));
         let cluster = invoke_cluster_stats_live_route(&serde_json::json!({
             "cluster_name": "steelsearch-dev",
+            "status": "yellow",
             "indices": { "count": 1 },
             "nodes": { "count": { "total": 1 } },
-            "status": "drop-me"
+            "fs": { "total_in_bytes": 0 }
         }));
         let index = invoke_index_stats_live_route(&serde_json::json!({
+            "_shards": { "total": 1, "successful": 1, "failed": 0 },
             "_all": { "primaries": {} },
             "indices": { "logs-000001": {} },
             "shards": "drop-me"
@@ -149,8 +157,10 @@ mod tests {
         assert!(nodes.get("cluster_name").is_none());
         assert!(cluster.get("cluster_name").is_some());
         assert!(cluster.get("indices").is_some());
-        assert!(cluster.get("status").is_none());
+        assert!(cluster.get("status").is_some());
+        assert!(cluster.get("fs").is_some());
         assert!(index.get("_all").is_some());
+        assert!(index.get("_shards").is_some());
         assert!(index.get("shards").is_none());
     }
 }

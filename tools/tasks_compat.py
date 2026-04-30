@@ -113,11 +113,70 @@ def check_target(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
 def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     compare = case.get("compare", {})
+    mode = compare.get("compare_mode")
+    if mode == "pending_tasks_shape":
+        return compare_pending_tasks_shape(steelsearch, opensearch)
+    if mode == "tasks_list_shape":
+        return compare_tasks_list_shape(steelsearch, opensearch)
     for path in compare.get("body_paths_equal", []):
         left = extract_path(steelsearch.get("body"), path)
         right = extract_path(opensearch.get("body"), path)
         if left != right:
             errors.append(f"body path [{path}] drift: steelsearch={left!r} opensearch={right!r}")
+    return errors
+
+
+def compare_pending_tasks_shape(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required = {
+        "insert_order",
+        "priority",
+        "source",
+        "executing",
+        "time_in_queue_millis",
+        "time_in_queue",
+    }
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        tasks = response.get("body", {}).get("tasks", [])
+        for index, task in enumerate(tasks):
+            missing = sorted(required.difference(task.keys()))
+            if missing:
+                errors.append(f"{label} pending task[{index}] missing fields {missing}")
+    return errors
+
+
+def compare_tasks_list_shape(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required_node = {"name", "transport_address", "host", "ip", "roles", "attributes", "tasks"}
+    required_task = {
+        "node",
+        "id",
+        "type",
+        "action",
+        "start_time_in_millis",
+        "running_time_in_nanos",
+        "cancellable",
+        "cancelled",
+        "headers",
+    }
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        nodes = response.get("body", {}).get("nodes", {})
+        if not nodes:
+            errors.append(f"{label} returned empty nodes map")
+            continue
+        first_node = next(iter(nodes.values()))
+        missing_node = sorted(required_node.difference(first_node.keys()))
+        if missing_node:
+            errors.append(f"{label} task node missing fields {missing_node}")
+            continue
+        tasks = first_node.get("tasks", {})
+        if not tasks:
+            errors.append(f"{label} task node returned empty task map")
+            continue
+        first_task = next(iter(tasks.values()))
+        missing_task = sorted(required_task.difference(first_task.keys()))
+        if missing_task:
+            errors.append(f"{label} task item missing fields {missing_task}")
     return errors
 
 

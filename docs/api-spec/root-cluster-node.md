@@ -11,10 +11,11 @@
 
 Read this API family in three layers:
 
-- identity/readback surfaces such as `GET /`, bounded cluster-state readback,
+- identity/readback surfaces such as `GET /`, cluster-state readback owned by
+  the standalone profile,
   and stable node/task summaries;
-- development summaries that are intentionally narrower than full OpenSearch
-  operational telemetry;
+- operator-facing summaries that are intentionally narrower than full
+  OpenSearch operational telemetry;
 - explicit fail-closed boundaries where Steelsearch must reject unsupported
   state filters, task options, stats groups, or lifecycle surfaces.
 
@@ -26,9 +27,9 @@ milestone.
 
 Examples:
 
-- `GET /_cluster/state` is strongest on the bounded identity/readback layer,
-  but still depends on explicit reject rules for unsupported metric/filter
-  combinations.
+- `GET /_cluster/state` now covers the standalone metric/index-filter shapes
+  used by the active local profile, including wildcard/comma selectors,
+  `routing_nodes`, and filtered response-depth rules.
 - `GET /_nodes/stats` and `GET /_cluster/stats` are summary-heavy surfaces and
   should not be read as full OpenSearch telemetry parity.
 - `GET /_tasks` / `POST /_tasks/_cancel` need both stable task summaries and
@@ -45,53 +46,53 @@ Examples:
 Primary source references:
 
 - OpenSearch: `RestMainAction`
-- Steelsearch notes: `docs/rust-port/rest-compatibility.md`
+- Steelsearch notes: `docs/rust-port/phase-a1-standalone-fullset-closure.md`
 
 ## Cluster Health And State
 
 | Route | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `GET /_cluster/health` | Cluster-wide or index-scoped health summary, including wait semantics and timeout behavior. | Development cluster health summary exists. Top-level counters are present, but index-scoped health, wait parameters, and full allocation semantics are incomplete. | Partial |
-| `GET /_cluster/state` | Full cluster-state readback, often filtered by metrics or indices. | Development cluster-state and routing summaries exist, but not full OpenSearch state exposure or filtering behavior. | Partial |
-| `GET /_cluster/settings` | Read current persistent and transient cluster settings. | The current live readback surface is bounded to `persistent` and `transient`. Local route activation and compat scaffolding now cover that read-only subset plus fail-closed handling for unsupported readback params, but this still does not imply full OpenSearch route parity or write-path parity. | Partial |
-| `PUT /_cluster/settings` | Mutate persistent or transient cluster settings. | A bounded source-owned mutation subset now exists for `persistent` and `transient`, including `acknowledged` response semantics and fail-closed handling for unsupported readback-style params. Local `PUT` route activation and `PUT`→`GET` round-trip evidence now exist for that subset, but side-by-side parity evidence is still narrower than full OpenSearch mutation parity. | Planned |
-| `GET /_cluster/pending_tasks` | Returns cluster-manager task backlog. | Development summary exists, not a production-grade task queue implementation. | Partial |
-| `GET /_cluster/allocation/explain` | Explains why shards are allocated or blocked. | Steelsearch exposes a development allocation explanation surface. It is useful for local rehearsal, not full OpenSearch allocation-decider parity. | Partial |
+| `GET /_cluster/health` | Cluster-wide or index-scoped health summary, including wait semantics and timeout behavior. | Live standalone route with cluster-wide and index-scoped health semantics covered by the root/cluster/node profile. | Partial |
+| `GET /_cluster/state` | Full cluster-state readback, often filtered by metrics or indices. | Steelsearch now serves standalone-scoped metric/index-filter combinations used by the active validation profile, including `metadata`, `nodes`, `routing_table`, `routing_nodes`, `blocks`, wildcard/comma index selectors, and OpenSearch-aligned filtered response depth. Deep cluster-state families outside that active profile are still pending. | Partial |
+| `GET /_cluster/settings` | Read current persistent and transient cluster settings. | Steelsearch now supports the standalone validation profile for nested readback, `flat_settings=true`, `include_defaults=true` acceptance, and post-mutation/post-reset readback on the live runtime path. Deep cluster-manager-only options outside that profile remain pending. | Partial |
+| `PUT /_cluster/settings` | Mutate persistent or transient cluster settings. | Steelsearch now supports dotted and nested mutation forms, key-level `null` reset semantics, and persistent/transient merge behavior on the live standalone runtime path. Broader option coverage outside the active standalone profile remains pending. | Partial |
+| `GET /_cluster/pending_tasks` | Returns cluster-manager task backlog. | Steelsearch now matches the active standalone profile for pending-task item depth (`insert_order`, `priority`, `source`, `executing`, queue timing fields) on the live runtime path. Broader cluster-manager backlog semantics remain pending. | Partial |
+| `GET /_cluster/allocation/explain` | Explains why shards are allocated or blocked. | Steelsearch now matches the active standalone profile for request-body selectors plus operator-facing response fields such as allocation flags, `current_node`, `unassigned_info`, and `node_allocation_decisions` on the live runtime path. Deep allocator-decider parity beyond that profile remains pending. | Partial |
 
 ### Cluster State Metric And Filtering Contract
 
-For `GET /_cluster/state`, `Phase A` should expose a bounded metric/filter
-subset and reject the rest explicitly.
+For `GET /_cluster/state`, `Phase A-1` expands the live standalone profile
+beyond the old bounded subset, but still keeps unsupported deep state families
+explicit rather than silently widening responses.
 
 - Supported direction
-  - basic top-level state readback needed for development replacement
-  - metric-filtered reads only for the subset Steelsearch can map to stable
-    cluster-state sections
+  - top-level full-state readback used by the standalone validation profile
+  - metric-filtered reads for `metadata`, `nodes`, `routing_table`,
+    `routing_nodes`, and `blocks`
+  - exact index selectors, wildcard selectors, `_all`, and comma-separated
+    selectors inside supported metadata/routing reads
 - Unsupported direction
-  - OpenSearch metric combinations that imply sections Steelsearch does not
-    expose stably
-  - index/filter forms that would suggest parity for unsupported routing or
-    metadata detail
+  - deep state families not yet carried by the standalone profile
+  - metric combinations that imply unsupported custom sections
 
 Fail-closed rule:
 
-- Unsupported metrics, index filters, or mixed filter combinations must be
-  rejected explicitly rather than silently ignored.
-- Steelsearch must not return a broader state payload than requested just to
-  approximate compatibility.
+- Unsupported metrics must be rejected explicitly rather than silently ignored.
+- Supported filtered reads must not widen the response depth beyond the
+  OpenSearch shape for that metric set.
 
 Metric/filter support sketch:
 
 | Request shape | `Phase A` expectation |
 | --- | --- |
-| cluster identity subset (for example `cluster_uuid`, `cluster_name`) | Supported |
-| top-level state identity subset (for example stable top-level identity fields under the cluster-state envelope) | Supported |
-| supported metadata summary subset (for example `metadata.cluster_uuid` and other stable metadata readback fields, not deep metadata parity) | Supported |
-| supported node summary subset (for example stable `nodes` identity/readback fields, not full node-detail parity) | Supported |
-| supported routing summary subset (for example stable `routing_table` readback fields, not deep routing-table parity) | Supported |
+| full-state readback with top-level identity, node map, metadata, routing table, and routing nodes | Supported |
+| metric-filtered `metadata` summary | Supported |
+| metric-filtered `nodes` summary | Supported |
+| metric-filtered `routing_table` summary | Supported |
+| metric-filtered `routing_nodes` summary | Supported |
+| metric-filtered `blocks` summary | Supported |
+| wildcard/comma/`_all` selector inside supported metadata/routing reads | Supported |
 | metric request that asks for unsupported custom or deep routing sections | Explicit reject |
-| index/filter request that narrows within the supported metric subset | Supported only if the same stable subset is preserved |
-| mixed metric/filter combination that would imply unsupported metadata or routing detail | Explicit reject |
 
 For live-compat fixture coverage, keep the current cluster-health comparison
 bounded to:
@@ -201,39 +202,44 @@ in-flight sources flowing through that bounded array shape, so the current
 live-route evidence even before OpenSearch side-by-side coverage is extended.
 
 `GET /_tasks`, `GET /_tasks/{task_id}`, and `POST /_tasks/_cancel` now have a
-source-owned bounded compatibility contract: list/get success paths are
-anchored to the `node`/`id`/`action`/`cancellable` allow-list, cancel success
-is anchored to the same bounded envelope, and unknown/non-cancellable error
-paths are anchored to canonical OpenSearch-shaped error types. Source-owned
-live hook symbols now reuse those same bounded envelopes for list/get/cancel
-route shapes, and local route activation tests now exercise list/get/cancel
-request shapes against seeded task-registry state. That grounds the remaining
-task-parity work in concrete source-owned semantics plus local traffic proof
-before side-by-side coverage is added.
+source-owned standalone-profile contract: list/get/cancel success paths carry
+node metadata (`name`, `transport_address`, `host`, `ip`, `roles`,
+`attributes`) plus richer task metadata (`type`, `start_time_in_millis`,
+`running_time_in_nanos`, `cancelled`, `headers`) on the live runtime path, and
+unknown/non-cancellable error paths stay anchored to canonical
+OpenSearch-shaped error types. The side-by-side compat runner now validates
+that operator-facing response depth rather than only the earlier bounded
+envelope.
 
-`GET /_nodes/stats`, `GET /_cluster/stats`, and `GET /_stats` now have a
-source-owned bounded top-level summary contract: node stats keep only `nodes`,
-cluster stats keep only `indices` plus `nodes`, and index stats keep only
-`_all` plus `indices`. That gives the current Partial stats surfaces a
-concrete supported-subset anchor. Source-owned live hooks now reuse those same
-bounded summary helpers for route-shaped inputs, and local route activation
-tests now exercise all three live endpoints before field-presence and numeric
-OpenSearch comparisons are added.
+`GET /_nodes/stats`, `GET /_cluster/stats`, and `GET /_stats` now expose the
+current standalone-profile field coverage on the live runtime path. Node stats
+carry operator-facing identity/process/JVM/index counters, cluster stats carry
+status plus aggregate index/node counters, and index stats carry `_shards`,
+`_all`, and seeded-index doc counters. The compat fixture now reads that
+richer field coverage rather than only the earlier bounded top-level envelope.
 
-`GET /_cluster/allocation/explain` now has a source-owned bounded development
-readback contract for `index`, `shard`, `primary`, `current_state`,
-`current_node`, and `node_allocation_decisions`. Within each
-`node_allocation_decisions[]` entry, the bounded subset keeps only
-`node_name`, `node_decision`, `weight_ranking`, and `deciders`, and each
-`deciders[]` entry keeps only `decider`, `decision`, and `explanation`.
-Source-owned live hook symbols now reuse that same bounded explanation helper,
-and daemon entrypoint references now carry the same route table and runtime
-dispatch-table shape for that surface. That gives the current Partial route a
-concrete compatibility anchor even before local traffic proof and OpenSearch
-side-by-side cases are widened. Local route activation tests now exercise the
-real `GET /_cluster/allocation/explain` request shape against a gateway-backed
-node and confirm the bounded `current_state` plus
-`node_allocation_decisions` surface.
+`GET /_cluster/allocation/explain` now matches the active standalone profile on
+the live runtime path rather than the earlier development-only shape. The
+runtime path accepts both `GET` and `POST` request selectors built from
+`index`, `shard`, and `primary`, and the current profile keeps the following
+operator-facing response fields aligned with the local OpenSearch baseline:
+
+- `index`, `shard`, `primary`, `current_state`
+- allocation flags such as `can_allocate`,
+  `can_remain_on_current_node`, `can_rebalance_cluster`, and
+  `can_rebalance_to_other_node`
+- explanatory strings such as `allocate_explanation` and
+  `rebalance_explanation`
+- `current_node` depth including identity, transport address, weight ranking,
+  and node attributes
+- `unassigned_info.reason` and `unassigned_info.last_allocation_status`
+- `node_allocation_decisions[]` depth including node identity, node
+  attributes, weight ranking, and nested `deciders[]`
+
+The source-owned route helper, runtime dispatch path, local route activation
+tests, and side-by-side compat fixture now all exercise that same standalone
+profile. The `--scope root-cluster-node` acceptance tree completes with a clean
+pass and no fail-closed skips for this family.
 
 Promote those sections to a separate exact allow-list table only when all of
 the following are true:
@@ -281,9 +287,9 @@ precision claim about exact OpenSearch metric coverage.
 
 | Route | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `GET /_nodes/stats` | Node-level runtime, transport, indexing, search, cache, thread-pool, and resource stats. | Steelsearch exposes local/development node summaries. Full telemetry parity is not implemented. | Partial |
-| `GET /_cluster/stats` | Cluster-wide statistics aggregated from node and shard state. | Development summary exists, but not full OpenSearch stat depth or semantics. | Partial |
-| `GET /_stats` | Index/shard statistics surface. | Partial stats surface exists for supported storage/runtime features. | Partial |
+| `GET /_nodes/stats` | Node-level runtime, transport, indexing, search, cache, thread-pool, and resource stats. | Steelsearch now serves the standalone validation profile for node identity, HTTP address, local index counters, and basic process/JVM summaries on the live runtime path. Broader telemetry families remain pending. | Partial |
+| `GET /_cluster/stats` | Cluster-wide statistics aggregated from node and shard state. | Steelsearch now serves the standalone validation profile for cluster name/status, aggregate index counters, node counts, and basic cluster-wide totals. Full OpenSearch stat depth remains pending. | Partial |
+| `GET /_stats` | Index/shard statistics surface. | Steelsearch now serves the standalone validation profile for `_shards`, `_all`, and seeded-index doc counters on the live runtime path. Broader shard/store/search telemetry remains pending. | Partial |
 | `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel` | Task listing, lookup, and cancellation for long-running actions. | Development and compatibility documents track these as remaining transport/admin gaps. They are not full parity today. | Planned |
 | `GET /_nodes/hot_threads` | Diagnostic stack and scheduler sampling. | Not implemented as a production-grade equivalent. | Planned |
 | `GET /_nodes/usage` | Returns usage counters per action/feature. | Not implemented as a production-grade equivalent. | Planned |
@@ -680,7 +686,7 @@ families.
 
 | Route family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `/_cat/indices`, `/_cat/plugins`, related cat APIs | Human-oriented text or JSON summaries for operators. | Some cat-compatible outputs exist for development comparison, but formatting and coverage are intentionally partial. | Partial |
+| `/_cat/indices`, `/_cat/plugins`, related cat APIs | Human-oriented text or JSON summaries for operators. | Steelsearch now serves the standalone validation profile for `/_cat/indices` and `/_cat/plugins` in both `format=json` and text-with-headers forms, with operator-facing column families aligned to the current root scope. Broader cat API coverage remains pending. | Partial |
 | Repository, decommission, remote-store, tiering, workload management admin routes | Production operations surfaces used by OpenSearch clusters. | Present in OpenSearch source inventory. Most remain unimplemented in Steelsearch. | Planned |
 
 ## Notes

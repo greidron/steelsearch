@@ -8,16 +8,26 @@ port state.
 
 ## Current Position
 
-Steelsearch currently covers an OpenSearch-shaped MVP, not a full replacement.
-The implemented surface includes basic REST routing, a small index/document API,
-Tantivy-backed local indexing/search, a small Query DSL subset, terms
-aggregation, transport handshake, cluster-state decoding, diff application, and
-coordinating-only Java interop.
+Steelsearch has completed the initial `Phase A` standalone replacement gate.
+That means the current daemon and acceptance harness prove a runtime-backed,
+OpenSearch-shaped replacement surface for the declared `Phase A` scope.
 
-The supported development replacement profile is documented separately in
-`docs/rust-port/development-replacement-profile.md`. That profile is limited to
-development daemon use with Steelsearch-owned data and explicitly does not make
-production replacement claims.
+Steelsearch is still not a full replacement for all OpenSearch standalone
+surfaces. The current implementation now combines:
+
+- runtime-backed parity for the declared standalone route families;
+- explicit separation of later-phase, extension-only, or non-claimed behavior;
+- feature-profile-based comparison for vector/snapshot families whose source
+  target requires extra environment capabilities.
+
+The next closure stage is therefore not "get a first working MVP". It is
+`Phase A-1`: close the remaining standalone route-family gaps on already-
+exposed Steelsearch surfaces before moving the focus to `Phase B` interop or
+`Phase C` same-cluster participation.
+
+The supported local replacement profile remains documented separately in
+`docs/rust-port/development-replacement-profile.md`. That profile is still not
+the same as a production certification profile.
 
 The local OpenSearch source shows the replacement gap is much larger:
 
@@ -129,7 +139,7 @@ compatibility track can be revisited after the standalone engine is stable.
 
 ### R8: Search Parity
 
-- Expand Query DSL beyond the current MVP to the built-in Java query set:
+- Expand Query DSL beyond the current Phase A subset to the built-in Java query set:
   phrase, multi-match, nested, dis-max, ids, query-string, boosting, terms,
   fuzzy, regexp, prefix, wildcard, spans, wrapper, function score, script,
   script score, geo, exists, match-none, terms-set, intervals, templates, and

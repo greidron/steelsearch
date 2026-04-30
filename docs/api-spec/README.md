@@ -14,11 +14,12 @@ These specs answer three questions per API family:
 
 1. what the OpenSearch API means semantically;
 2. what Steelsearch currently implements;
-3. whether the current behavior is sufficient for development replacement or
-   still incomplete.
+3. whether the current behavior is sufficient for the current replacement
+   phase or still incomplete.
 
 This directory is not a claim of production parity. It is a compatibility and
-gap ledger.
+release-gate ledger for standalone replacement plus clearly separated later
+interop and mixed-cluster work.
 
 ## Relationship To Milestones And Tasks
 
@@ -47,6 +48,23 @@ When these sources appear to disagree, interpret them in this order:
 1. `docs/rust-port/milestones.md` for phase intent and completion gate.
 2. `docs/api-spec/` for user-visible compatibility status.
 3. `tasks.md` for the concrete backlog still required to move a status forward.
+
+`Phase A` and `Phase A-1` should be read differently:
+
+- `Phase A` proves runtime-backed standalone replacement for an initial declared
+  scope plus explicit fail-closed boundaries;
+- `Phase A-1` closes those already-live standalone surfaces into required
+  profile-backed parity, so the remaining work should read as either:
+  - an implemented standalone contract that is owned by a canonical profile, or
+  - explicit `Phase B` / `Phase C` work outside standalone replacement.
+
+When a document still says `Partial`, read that as:
+
+- the route family is live and gated by the named profile;
+- the documented contract is the required standalone contract for `Phase A-1`;
+- any broader non-claimed semantics belong to later interop, same-cluster, or
+  Steelsearch-only extension work rather than to an unfinished "development
+  subset" placeholder.
 
 ## Phase A Acceptance Harness Rule
 
@@ -537,6 +555,48 @@ Current rule:
 - when a family exits cleanly only through a degraded-source policy, keep the
   Steelsearch runtime evidence in scope but state the source-target limitation
   explicitly in reviewer notes.
+
+## Environment Profile Rule
+
+Treat source-compat and runtime-backed validation as profile-driven rather than
+single-environment only.
+
+Current rule:
+
+- prefer one common baseline profile whenever the same profile can exercise the
+  declared subset on both Steelsearch and OpenSearch;
+- split into feature-specific profiles only when a surface requires additional
+  environment capabilities that are not part of the common baseline;
+- apply the same rule to both sides of the comparison:
+  - OpenSearch must expose the source feature surface being compared;
+  - Steelsearch must expose the corresponding runtime-connected surface being
+    claimed;
+- if a family requires a special profile, document that profile as a validation
+  prerequisite rather than treating the missing capability as an API mismatch.
+
+Examples:
+
+- `vector-ml`
+  - requires a k-NN-capable profile on the OpenSearch side
+- `snapshot-migration`
+  - requires a snapshot-repository-capable profile such as a `path.repo`
+    admission profile on the OpenSearch side
+- `transport-admin`
+  - requires a multi-node profile on the Steelsearch side
+
+The canonical inventory of profiles, prerequisites, entrypoints, and required
+reports is maintained in
+[validation-profiles.md](/home/ubuntu/steelsearch/docs/rust-port/validation-profiles.md).
+
+Degraded-source skip policy:
+
+- degraded-source skip is only acceptable in the common local baseline when the
+  source environment does not expose the feature-specific prerequisite;
+- degraded-source skip is not a substitute for the feature-specific profile
+  itself;
+- once a feature-specific profile exists for a family, source-compat claims for
+  that family should be judged against that profile rather than against the
+  reduced baseline.
 
 ## Replacement-Critical Regression Suite
 

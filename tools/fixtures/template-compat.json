@@ -2,7 +2,7 @@
   "name": "template-compat",
   "cases": [
     {
-      "name": "put_component_template_bounded_subset",
+      "name": "put_component_template_full_subset",
       "method": "PUT",
       "path": "/_component_template/logs-component-compat",
       "template_name": "logs-component-compat",
@@ -12,9 +12,38 @@
             "index": {
               "number_of_replicas": 0
             }
+          },
+          "mappings": {
+            "properties": {
+              "message": {
+                "type": "text"
+              }
+            }
           }
         },
-        "version": 1
+        "version": 1,
+        "_meta": {
+          "owner": "compat"
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_component_template_extra_subset",
+      "method": "PUT",
+      "path": "/_component_template/metrics-component-compat",
+      "template_name": "metrics-component-compat",
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 1
+            }
+          }
+        },
+        "version": 2
       },
       "compare": {
         "expected_status": 200
@@ -31,22 +60,59 @@
         "body_paths_present": [
           "name",
           "template.settings.index.number_of_replicas",
-          "version"
+          "template.mappings.properties.message.type",
+          "version",
+          "_meta.owner"
         ],
         "body_paths_equal": [
           "name",
-          "version"
+          "version",
+          "_meta.owner"
         ]
       }
     },
     {
-      "name": "put_index_template_bounded_subset",
+      "name": "get_component_template_global_readback",
+      "method": "GET",
+      "path": "/_component_template",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-component-compat.version",
+          "metrics-component-compat.version"
+        ],
+        "body_paths_equal": [
+          "logs-component-compat.version",
+          "metrics-component-compat.version"
+        ]
+      },
+      "extract": "component_template_collection"
+    },
+    {
+      "name": "get_component_template_wildcard_readback",
+      "method": "GET",
+      "path": "/_component_template/*-component-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-component-compat.version",
+          "metrics-component-compat.version"
+        ],
+        "body_paths_equal": [
+          "logs-component-compat.version",
+          "metrics-component-compat.version"
+        ]
+      },
+      "extract": "component_template_collection"
+    },
+    {
+      "name": "put_index_template_full_subset",
       "method": "PUT",
       "path": "/_index_template/logs-template-compat",
       "template_name": "logs-template-compat",
       "body": {
         "index_patterns": [
-          "logs-*"
+          "template-logs-*"
         ],
         "composed_of": [
           "logs-component-compat"
@@ -58,7 +124,34 @@
             }
           }
         },
-        "priority": 10
+        "priority": 10,
+        "version": 7,
+        "_meta": {
+          "owner": "compat"
+        },
+        "data_stream": {}
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_index_template_extra_subset",
+      "method": "PUT",
+      "path": "/_index_template/metrics-template-compat",
+      "template_name": "metrics-template-compat",
+      "body": {
+        "index_patterns": [
+          "metrics-*"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1
+            }
+          }
+        },
+        "priority": 5
       },
       "compare": {
         "expected_status": 200
@@ -77,31 +170,80 @@
           "index_patterns",
           "composed_of",
           "template.settings.index.number_of_shards",
-          "priority"
+          "priority",
+          "version",
+          "_meta.owner",
+          "data_stream"
         ],
         "body_paths_equal": [
           "name",
           "index_patterns",
           "composed_of",
-          "priority"
+          "priority",
+          "version",
+          "_meta.owner"
         ]
       }
     },
     {
-      "name": "put_legacy_template_bounded_subset",
+      "name": "get_index_template_comma_readback",
+      "method": "GET",
+      "path": "/_index_template/logs-template-compat,metrics-template-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      },
+      "extract": "index_template_collection"
+    },
+    {
+      "name": "put_legacy_template_full_subset",
       "method": "PUT",
       "path": "/_template/logs-legacy-compat",
       "template_name": "logs-legacy-compat",
       "body": {
         "index_patterns": [
-          "logs-*"
+          "legacy-logs-*"
         ],
         "order": 5,
+        "version": 3,
         "settings": {
           "index": {
             "number_of_replicas": 0
           }
+        },
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            }
+          }
+        },
+        "aliases": {
+          "logs-legacy-read": {}
         }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_legacy_template_extra_subset",
+      "method": "PUT",
+      "path": "/_template/metrics-legacy-compat",
+      "template_name": "metrics-legacy-compat",
+      "body": {
+        "index_patterns": [
+          "metrics-*"
+        ],
+        "order": 2
       },
       "compare": {
         "expected_status": 200
@@ -119,17 +261,38 @@
           "name",
           "index_patterns",
           "order",
-          "settings.index.number_of_replicas"
+          "version",
+          "settings.index.number_of_replicas",
+          "mappings.properties.message.type",
+          "aliases.logs-legacy-read"
         ],
         "body_paths_equal": [
           "name",
           "index_patterns",
-          "order"
+          "order",
+          "version"
         ]
       }
     },
     {
-      "name": "delete_component_template_bounded_subset",
+      "name": "get_legacy_template_wildcard_readback",
+      "method": "GET",
+      "path": "/_template/*-legacy-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-legacy-compat.order",
+          "metrics-legacy-compat.order"
+        ],
+        "body_paths_equal": [
+          "logs-legacy-compat.order",
+          "metrics-legacy-compat.order"
+        ]
+      },
+      "extract": "legacy_template_collection"
+    },
+    {
+      "name": "delete_component_template_in_use_failure",
       "method": "DELETE",
       "path": "/_component_template/logs-component-compat",
       "compare": {
@@ -146,11 +309,90 @@
       }
     },
     {
+      "name": "get_missing_component_template_error",
+      "method": "GET",
+      "path": "/_component_template/missing-component-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "get_missing_index_template_error",
+      "method": "GET",
+      "path": "/_index_template/missing-template-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "get_missing_legacy_template_error",
+      "method": "GET",
+      "path": "/_template/missing-legacy-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_absent": [
+          "error.type"
+        ]
+      }
+    },
+    {
+      "name": "delete_missing_component_template_error",
+      "method": "DELETE",
+      "path": "/_component_template/missing-component-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "delete_index_template_bounded_subset",
       "method": "DELETE",
-      "path": "/_index_template/logs-template-compat",
+      "path": "/_index_template/metrics-template-compat",
       "compare": {
         "expected_status": 200
+      }
+    },
+    {
+      "name": "delete_missing_index_template_error",
+      "method": "DELETE",
+      "path": "/_index_template/missing-template-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
       }
     },
     {
@@ -159,6 +401,23 @@
       "path": "/_template/logs-legacy-compat",
       "compare": {
         "expected_status": 200
+      }
+    },
+    {
+      "name": "delete_missing_legacy_template_error",
+      "method": "DELETE",
+      "path": "/_template/missing-legacy-compat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
       }
     }
   ]

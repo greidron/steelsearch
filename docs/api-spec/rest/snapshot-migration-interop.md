@@ -14,8 +14,10 @@ Rust-native replacement target. That means cutover has to happen through:
 
 ## Current Steelsearch Position
 
-- Development snapshot and restore flows exist for a supported subset.
-- Migration rehearsal exists for development replacement.
+- Snapshot repository/create/status/restore/delete/cleanup flows are live and
+  strict-compared on the canonical repository-capable OpenSearch profile.
+- Migration rehearsal exists as a strict-profile cutover path covering
+  mappings, templates, aliases, data streams, and vector-bearing payloads.
 - Java interop remains coordinating/external-client oriented, not full cluster
   membership.
 

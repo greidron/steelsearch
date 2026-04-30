@@ -9,7 +9,8 @@
         "expected_status": 200,
         "body_paths_present": [
           "tasks"
-        ]
+        ],
+        "compare_mode": "pending_tasks_shape"
       }
     },
     {
@@ -20,7 +21,8 @@
         "expected_status": 200,
         "body_paths_present": [
           "nodes"
-        ]
+        ],
+        "compare_mode": "tasks_list_shape"
       }
     },
     {

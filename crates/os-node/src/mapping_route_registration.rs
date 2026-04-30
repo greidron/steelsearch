@@ -64,6 +64,11 @@ pub fn build_mapping_update_body_subset(body: &serde_json::Value) -> serde_json:
         return serde_json::json!({});
     };
     let mut subset = serde_json::Map::new();
+    for key in ["dynamic", "_meta"] {
+        if let Some(value) = object.get(key) {
+            subset.insert(key.to_string(), value.clone());
+        }
+    }
     if let Some(properties) = object.get("properties") {
         subset.insert("properties".to_string(), properties.clone());
     }
@@ -152,17 +157,23 @@ mod tests {
     #[test]
     fn mapping_update_body_subset_keeps_properties_only() {
         let subset = build_mapping_update_body_subset(&serde_json::json!({
+            "dynamic": "strict",
+            "_meta": {
+                "owner": "search"
+            },
             "properties": {
                 "message": {
                     "type": "text"
                 }
             },
-            "_meta": {
-                "note": "drop-me"
+            "runtime": {
+                "drop": true
             }
         }));
 
+        assert_eq!(subset.get("dynamic"), Some(&serde_json::json!("strict")));
+        assert_eq!(subset.get("_meta"), Some(&serde_json::json!({ "owner": "search" })));
         assert!(subset.get("properties").is_some());
-        assert!(subset.get("_meta").is_none());
+        assert!(subset.get("runtime").is_none());
     }
 }

@@ -27,6 +27,8 @@ pub const CLUSTER_STATE_SUPPORTED_METRIC_FAMILIES: &[&str] = &[
     "metadata summary subset",
     "node summary subset",
     "routing summary subset",
+    "routing nodes subset",
+    "block summary subset",
 ];
 
 /// Parameter buckets that must stay explicit fail-closed until real handler
@@ -40,7 +42,7 @@ pub const CLUSTER_STATE_FAIL_CLOSED_PARAMETER_BUCKETS: &[&str] = &[
 /// Exact metric names currently accepted by the bounded `_cluster/state`
 /// compatibility helper.
 pub const CLUSTER_STATE_SUPPORTED_METRICS: &[&str] =
-    &["metadata", "nodes", "routing_table", "blocks"];
+    &["metadata", "nodes", "routing_table", "routing_nodes", "blocks"];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterStateRouteScope {
@@ -122,6 +124,11 @@ pub fn apply_cluster_state_route_scope(
                         "routing_table".to_string(),
                         filter_index_section(routing_table, &scope.indices),
                     );
+                }
+            }
+            "routing_nodes" => {
+                if let Some(routing_nodes) = source.get("routing_nodes") {
+                    filtered.insert("routing_nodes".to_string(), routing_nodes.clone());
                 }
             }
             _ => {}
@@ -247,20 +254,21 @@ mod tests {
 
     #[test]
     fn rejects_unknown_metric() {
-        let error = parse_cluster_state_route_scope(Some("blocks"), None).unwrap_err();
-        assert!(error.contains("unsupported metric [blocks]"));
+        let error = parse_cluster_state_route_scope(Some("unsupported"), None).unwrap_err();
+        assert!(error.contains("unsupported metric [unsupported]"));
     }
 
     #[test]
-    fn rejects_wildcard_index_filter() {
-        let error = parse_cluster_state_route_scope(Some("metadata"), Some("logs-*")).unwrap_err();
-        assert!(error.contains("unsupported index filter [logs-*]"));
+    fn supports_wildcard_index_filter() {
+        let scope = parse_cluster_state_route_scope(Some("metadata"), Some("logs-*")).unwrap();
+        assert_eq!(scope.indices, vec!["logs-*"]);
     }
 
     #[test]
-    fn rejects_nodes_metric_with_index_filter() {
-        let error = parse_cluster_state_route_scope(Some("nodes"), Some("logs-a")).unwrap_err();
-        assert!(error.contains("unsupported mixed metric/filter combination"));
+    fn supports_nodes_metric_with_index_filter() {
+        let scope = parse_cluster_state_route_scope(Some("nodes"), Some("logs-a")).unwrap();
+        assert_eq!(scope.metrics, vec!["nodes"]);
+        assert_eq!(scope.indices, vec!["logs-a"]);
     }
 
     #[test]
@@ -268,6 +276,9 @@ mod tests {
         let body = json!({
             "cluster_name": "steel-dev",
             "cluster_uuid": "cluster-uuid",
+            "version": 7,
+            "state_uuid": "state-uuid",
+            "master_node": "node-a",
             "metadata": { "indices": { "logs-a": { "state": "open" } } },
             "nodes": { "node-a": { "name": "node-a" } },
             "routing_table": { "indices": { "logs-a": { "shards": {} } } }
@@ -276,6 +287,9 @@ mod tests {
         let filtered =
             apply_cluster_state_route_scope(&body, Some("metadata,nodes"), None).unwrap();
         assert_eq!(filtered["cluster_name"], "steel-dev");
+        assert!(filtered.get("version").is_none());
+        assert!(filtered.get("state_uuid").is_none());
+        assert!(filtered.get("master_node").is_none());
         assert!(filtered.get("routing_table").is_none());
         assert!(filtered.get("metadata").is_some());
         assert!(filtered.get("nodes").is_some());
@@ -286,6 +300,9 @@ mod tests {
         let body = json!({
             "cluster_name": "steel-dev",
             "cluster_uuid": "cluster-uuid",
+            "version": 7,
+            "state_uuid": "state-uuid",
+            "master_node": "node-a",
             "metadata": {
                 "indices": {
                     "logs-a": { "state": "open" },
@@ -314,6 +331,9 @@ mod tests {
         let body = json!({
             "cluster_name": "steel-dev",
             "cluster_uuid": "cluster-uuid",
+            "version": 7,
+            "state_uuid": "state-uuid",
+            "master_node": "node-a",
             "nodes": { "node-a": { "name": "node-a" } }
         });
 
@@ -321,6 +341,7 @@ mod tests {
         assert_eq!(response.status, 200);
         assert_eq!(response.body["nodes"]["node-a"]["name"], "node-a");
         assert_eq!(response.body["cluster_name"], "steel-dev");
+        assert!(response.body.get("version").is_none());
     }
 
     #[test]
@@ -328,6 +349,9 @@ mod tests {
         let body = json!({
             "cluster_name": "steel-dev",
             "cluster_uuid": "cluster-uuid",
+            "version": 7,
+            "state_uuid": "state-uuid",
+            "master_node": "node-a",
             "metadata": { "indices": { "logs-a": { "state": "open" } } },
             "nodes": { "node-a": { "name": "node-a" } }
         });
@@ -350,6 +374,9 @@ mod tests {
         let body = json!({
             "cluster_name": "steel-dev",
             "cluster_uuid": "cluster-uuid",
+            "version": 7,
+            "state_uuid": "state-uuid",
+            "master_node": "node-a",
             "nodes": { "node-a": { "name": "node-a" } }
         });
         let mut request = RestRequest::new(RestMethod::Get, "/_cluster/state/nodes");
@@ -360,6 +387,30 @@ mod tests {
         let response = CLUSTER_STATE_ROUTE_REGISTRY_HOOK(&request, &body).unwrap();
         assert_eq!(response.status, 200);
         assert_eq!(response.body["nodes"]["node-a"]["name"], "node-a");
+    }
+
+    #[test]
+    fn includes_routing_nodes_metric_when_requested() {
+        let body = json!({
+            "cluster_name": "steel-dev",
+            "cluster_uuid": "cluster-uuid",
+            "version": 7,
+            "state_uuid": "state-uuid",
+            "master_node": "node-a",
+            "routing_nodes": {
+                "unassigned": [],
+                "nodes": {
+                    "node-a": [
+                        { "index": "logs-a", "node": "node-a", "primary": true, "state": "STARTED" }
+                    ]
+                }
+            }
+        });
+
+        let response = build_cluster_state_rest_response(&body, Some("routing_nodes"), None).unwrap();
+        assert_eq!(response.status, 200);
+        assert!(response.body.get("routing_nodes").is_some());
+        assert!(response.body.get("master_node").is_none());
     }
 
     #[test]

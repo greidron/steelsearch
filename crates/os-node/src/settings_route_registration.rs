@@ -68,7 +68,12 @@ pub fn build_settings_update_body_subset(body: &serde_json::Value) -> serde_json
     };
 
     let mut bounded_index = serde_json::Map::new();
-    for key in ["number_of_replicas", "refresh_interval"] {
+    for key in [
+        "number_of_replicas",
+        "refresh_interval",
+        "max_result_window",
+        "number_of_routing_shards",
+    ] {
         if let Some(value) = index_settings.get(key) {
             bounded_index.insert(key.to_string(), value.clone());
         }
@@ -167,6 +172,7 @@ mod tests {
             "index": {
                 "number_of_replicas": 0,
                 "refresh_interval": "1s",
+                "max_result_window": 2000,
                 "number_of_shards": 1
             },
             "analysis": {
@@ -179,7 +185,8 @@ mod tests {
             serde_json::json!({
                 "index": {
                     "number_of_replicas": 0,
-                    "refresh_interval": "1s"
+                    "refresh_interval": "1s",
+                    "max_result_window": 2000
                 }
             })
         );

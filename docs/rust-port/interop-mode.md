@@ -18,7 +18,7 @@ node participates in discovery, publication, cluster-state application,
 compatibility checks, node roles, task routing, and allocation decisions. A data
 or cluster-manager-capable node also becomes part of write, recovery, and
 failure semantics. The current Rust implementation can decode and apply parts
-of cluster state and can execute local MVP search behavior, but it does not yet
+of cluster state and can execute local standalone search behavior, but it does not yet
 implement the full Java node lifecycle contract.
 
 The external transport-client mode keeps the compatibility boundary narrow:
@@ -105,7 +105,7 @@ Any configuration that attempts to enable Java data-node participation must be
 rejected until write-path safety exists.
 
 This guard does not disable the standalone Rust-native Tantivy engine used by
-the local MVP REST shell. It only blocks advertising or using Steelsearch as a
+the local standalone REST surface. It only blocks advertising or using Steelsearch as a
 Java mixed-cluster data node.
 
 ## Remote Cluster-State Updates

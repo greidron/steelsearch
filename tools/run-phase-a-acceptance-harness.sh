@@ -12,7 +12,7 @@ usage() {
 Run the Phase A Steelsearch/OpenSearch acceptance harness entrypoint.
 
 Usage:
-  tools/run-phase-a-acceptance-harness.sh [--mode local|ci] [--scope full|root-cluster-node|index-metadata|document-write-path|search|snapshot-migration|vector-ml|transport-admin] [--work-dir DIR] [args...]
+  tools/run-phase-a-acceptance-harness.sh [--mode local|ci] [--scope full|root-cluster-node|index-metadata|document-write-path|search|search-execution|snapshot-migration|vector-ml|transport-admin] [--work-dir DIR] [args...]
 
 Modes:
   local   Default. Writes reusable reports under target/phase-a-acceptance-harness/local.
@@ -25,6 +25,7 @@ Scopes:
   document-write-path
                      Runs the runtime-backed document/write-path compare subset as a first-class preset.
   search             Runs the runtime-backed search compare subset as a first-class preset.
+  search-execution   Runs the runtime-backed multi-shard search execution/accounting subset as a first-class preset.
   snapshot-migration Runs the runtime-backed snapshot/migration compare subset as a first-class preset.
   vector-ml          Runs the runtime-backed vector/ML compare subset as a first-class preset.
   transport-admin    Runs the runtime-backed standalone transport/admin subset as a first-class preset.
@@ -99,7 +100,7 @@ case "${MODE}" in
 esac
 
 case "${SCOPE}" in
-  full|root-cluster-node|index-metadata|document-write-path|search|snapshot-migration|vector-ml|transport-admin) ;;
+  full|root-cluster-node|index-metadata|document-write-path|search|search-execution|snapshot-migration|vector-ml|transport-admin) ;;
   *)
     echo "Unsupported scope: ${SCOPE}" >&2
     usage >&2
@@ -137,7 +138,9 @@ export SNAPSHOT_LIFECYCLE_COMPAT_REPORT="${SNAPSHOT_LIFECYCLE_COMPAT_REPORT:-${C
 export DATA_STREAM_ROLLOVER_COMPAT_REPORT="${DATA_STREAM_ROLLOVER_COMPAT_REPORT:-${COMPARE_DIR}/data-stream-rollover-compat-report.json}"
 export MIGRATION_CUTOVER_INTEGRATION_REPORT="${MIGRATION_CUTOVER_INTEGRATION_REPORT:-${COMPARE_DIR}/migration-cutover-integration-report.json}"
 export VECTOR_SEARCH_COMPAT_REPORT="${VECTOR_SEARCH_COMPAT_REPORT:-${COMPARE_DIR}/vector-search-compat-report.json}"
+export ML_MODEL_SURFACE_COMPAT_REPORT="${ML_MODEL_SURFACE_COMPAT_REPORT:-${COMPARE_DIR}/ml-model-surface-compat-report.json}"
 export MULTI_NODE_TRANSPORT_ADMIN_REPORT="${MULTI_NODE_TRANSPORT_ADMIN_REPORT:-${COMPARE_DIR}/multi-node-transport-admin-report.json}"
+export SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}"
 export RUN_RUNTIME_PRECHECK="${RUN_RUNTIME_PRECHECK:-1}"
 export RUN_OPENSEARCH_COMPARISON="${RUN_OPENSEARCH_COMPARISON:-1}"
 export RUN_CLUSTER_HEALTH_COMPAT="${RUN_CLUSTER_HEALTH_COMPAT:-1}"
@@ -160,8 +163,22 @@ export RUN_SNAPSHOT_LIFECYCLE_COMPAT="${RUN_SNAPSHOT_LIFECYCLE_COMPAT:-1}"
 export RUN_DATA_STREAM_ROLLOVER_COMPAT="${RUN_DATA_STREAM_ROLLOVER_COMPAT:-1}"
 export RUN_MIGRATION_CUTOVER_INTEGRATION="${RUN_MIGRATION_CUTOVER_INTEGRATION:-0}"
 export RUN_VECTOR_SEARCH_COMPAT="${RUN_VECTOR_SEARCH_COMPAT:-0}"
+export RUN_ML_MODEL_SURFACE_COMPAT="${RUN_ML_MODEL_SURFACE_COMPAT:-0}"
 export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION="${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}"
 export PHASE_A_COMPARE_SCOPE="${PHASE_A_COMPARE_SCOPE:-${SCOPE}}"
+
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "search-execution" ]]; then
+  export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-execution-compat.json}"
+fi
+
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "search" ]]; then
+  export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-strict-compat.json}"
+fi
+
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "full" ]]; then
+  export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-strict-compat.json}"
+  export SEARCH_COMPAT_EXCLUDE_CASES="${SEARCH_COMPAT_EXCLUDE_CASES:-expand_wildcards_closed_fail_closed,get_aliases_readback,cat_count_json,cat_count_text}"
+fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "root-cluster-node" ]]; then
   export RUN_SEARCH_COMPAT=0
@@ -245,6 +262,30 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "search" ]]; then
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
 fi
 
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "search-execution" ]]; then
+  export RUN_CLUSTER_HEALTH_COMPAT=0
+  export RUN_ALLOCATION_EXPLAIN_COMPAT=0
+  export RUN_CLUSTER_SETTINGS_COMPAT=0
+  export RUN_CLUSTER_STATE_COMPAT=0
+  export RUN_ROOT_CLUSTER_NODE_COMPAT=0
+  export RUN_TASKS_COMPAT=0
+  export RUN_STATS_COMPAT=0
+  export RUN_INDEX_LIFECYCLE_COMPAT=0
+  export RUN_MAPPING_COMPAT=0
+  export RUN_SETTINGS_COMPAT=0
+  export RUN_SINGLE_DOC_CRUD_COMPAT=0
+  export RUN_REFRESH_COMPAT=0
+  export RUN_BULK_COMPAT=0
+  export RUN_ROUTING_COMPAT=0
+  export RUN_ALIAS_READ_COMPAT=0
+  export RUN_TEMPLATE_COMPAT=0
+  export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
+  export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
+  export RUN_MIGRATION_CUTOVER_INTEGRATION=0
+  export RUN_VECTOR_SEARCH_COMPAT=0
+  export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
+fi
+
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "snapshot-migration" ]]; then
   export RUN_CLUSTER_HEALTH_COMPAT=0
   export RUN_ALLOCATION_EXPLAIN_COMPAT=0
@@ -291,6 +332,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
   export RUN_MIGRATION_CUTOVER_INTEGRATION=0
   export RUN_SEARCH_COMPAT=0
   export RUN_VECTOR_SEARCH_COMPAT=1
+  export RUN_ML_MODEL_SURFACE_COMPAT=1
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
 fi
 

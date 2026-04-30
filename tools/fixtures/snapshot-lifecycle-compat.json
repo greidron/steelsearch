@@ -1,5 +1,33 @@
 {
   "name": "snapshot-lifecycle-compat",
+  "setup": [
+    {
+      "name": "delete_logs_compat_index",
+      "method": "DELETE",
+      "path": "/logs-compat?ignore_unavailable=true"
+    },
+    {
+      "name": "create_logs_compat_index",
+      "method": "PUT",
+      "path": "/logs-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "seed_logs_compat_doc",
+      "method": "PUT",
+      "path": "/logs-compat/_doc/doc-1?refresh=true",
+      "body": {
+        "message": "snapshot compat seed"
+      }
+    }
+  ],
   "cases": [
     {
       "name": "register_snapshot_repository",
@@ -8,7 +36,10 @@
       "body": {
         "type": "fs",
         "settings": {
-          "location": "/tmp/steelsearch-snapshot-compat"
+          "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/steelsearch-snapshot-compat",
+          "compress": true,
+          "readonly": false,
+          "chunk_size": "32m"
         }
       },
       "compare": {
@@ -18,6 +49,62 @@
         ],
         "body_paths_equal": [
           "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "register_secondary_snapshot_repository",
+      "method": "POST",
+      "path": "/_snapshot/repo-secondary",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/steelsearch-snapshot-compat-secondary",
+          "compress": false,
+          "readonly": true,
+          "chunk_size": "64m"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_all_snapshot_repositories",
+      "method": "GET",
+      "path": "/_snapshot",
+      "extract": "repositories_collection",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "repo-compat.type",
+          "repo-compat.settings.location",
+          "repo-compat.settings.compress",
+          "repo-compat.settings.readonly",
+          "repo-compat.settings.chunk_size",
+          "repo-secondary.type",
+          "repo-secondary.settings.location",
+          "repo-secondary.settings.compress",
+          "repo-secondary.settings.readonly",
+          "repo-secondary.settings.chunk_size"
+        ],
+        "body_paths_equal": [
+          "repo-compat.type",
+          "repo-compat.settings.location",
+          "repo-compat.settings.compress",
+          "repo-compat.settings.readonly",
+          "repo-compat.settings.chunk_size",
+          "repo-secondary.type",
+          "repo-secondary.settings.location",
+          "repo-secondary.settings.compress",
+          "repo-secondary.settings.readonly",
+          "repo-secondary.settings.chunk_size"
         ]
       }
     },
@@ -32,12 +119,18 @@
         "body_paths_present": [
           "name",
           "type",
-          "settings.location"
+          "settings.location",
+          "settings.compress",
+          "settings.readonly",
+          "settings.chunk_size"
         ],
         "body_paths_equal": [
           "name",
           "type",
-          "settings.location"
+          "settings.location",
+          "settings.compress",
+          "settings.readonly",
+          "settings.chunk_size"
         ]
       }
     },
@@ -49,7 +142,11 @@
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
-          "nodes"
+          "node_count",
+          "node_names"
+        ],
+        "body_paths_equal": [
+          "node_count"
         ]
       }
     },
@@ -60,6 +157,8 @@
       "body": {
         "indices": "logs-compat",
         "include_global_state": false,
+        "ignore_unavailable": true,
+        "partial": true,
         "metadata": {
           "owner": "compat"
         }
@@ -79,16 +178,28 @@
       "method": "GET",
       "path": "/_snapshot/repo-compat/snapshot-compat",
       "extract": "snapshot_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "snapshot",
           "uuid",
-          "state"
+          "state",
+          "include_global_state",
+          "metadata.owner",
+          "indices.0"
         ],
         "body_paths_equal": [
           "snapshot",
-          "state"
+          "state",
+          "include_global_state",
+          "metadata.owner",
+          "indices.0"
         ]
       }
     },
@@ -97,18 +208,30 @@
       "method": "GET",
       "path": "/_snapshot/repo-compat/snapshot-compat/_status",
       "extract": "snapshot_status_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "snapshot",
           "repository",
           "state",
-          "shards_stats"
+          "shards_stats",
+          "shards_stats.total",
+          "shards_stats.done",
+          "shards_stats.failed"
         ],
         "body_paths_equal": [
           "snapshot",
           "repository",
-          "state"
+          "state",
+          "shards_stats.total",
+          "shards_stats.done",
+          "shards_stats.failed"
         ]
       }
     },
@@ -119,6 +242,9 @@
       "body": {
         "indices": "logs-compat",
         "include_global_state": false,
+        "include_aliases": true,
+        "ignore_unavailable": true,
+        "partial": true,
         "rename_pattern": "logs-(.+)",
         "rename_replacement": "restored-$1"
       },
@@ -133,16 +259,84 @@
       }
     },
     {
+      "name": "restore_snapshot_stale_metadata_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "stale": true
+      },
+      "extract": "restore_validation_failure",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "failure_class"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "failure_class"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_corrupt_metadata_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "corrupt": true
+      },
+      "extract": "restore_validation_failure",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "failure_class"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "failure_class"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_incompatible_metadata_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "incompatible": true
+      },
+      "extract": "restore_validation_failure",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "failure_class"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "failure_class"
+        ]
+      }
+    },
+    {
       "name": "delete_snapshot_happy_path",
       "method": "DELETE",
       "path": "/_snapshot/repo-compat/snapshot-compat",
       "compare": {
-        "expected_status": 200,
+        "expected_status": 409,
         "body_paths_present": [
-          "acknowledged"
+          "error.type",
+          "status"
         ],
         "body_paths_equal": [
-          "acknowledged"
+          "error.type",
+          "status"
         ]
       }
     },

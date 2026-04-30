@@ -1636,3 +1636,159 @@
   - [x] `tools/run-phase-a-acceptance-harness.sh --mode local` 성공 기준으로 Phase A 실행 검증 재수행
   - [x] full local acceptance에서 `cluster-health-compat` clean-start drift(`status`, `active_primary_shards`, `active_shards`, `unassigned_shards`)를 OpenSearch baseline과 맞추기
   - [x] full local acceptance에서 `cluster-settings-compat` dotted-key mutation readback을 OpenSearch nested response shape와 맞추기
+- [x] Phase A-1 standalone fullset closure
+  - [x] `Phase A-1`를 standalone fullset-closure 단계로 정의하는 전용 문서 작성
+  - [x] `Phase A-1`과 `Phase B`/`Phase C`의 경계 규칙을 문서에 명시
+  - [x] `MVP`/초기 subset 종착점으로 읽히는 오래된 문서를 정리하거나 삭제
+  - [x] `question.md`를 비워 두고, active open question이 없음을 반영
+  - [x] common baseline profile과 feature-specific profile inventory를 문서/runner/fixture 기준으로 고정
+    - [x] `common-baseline` profile이 담당하는 family와 required reports를 문서화
+    - [x] `vector-ml` profile prerequisite를 OpenSearch/Steelsearch 양쪽 capability 기준으로 고정
+    - [x] `snapshot-migration` profile prerequisite를 repository-capable source target 기준으로 고정
+    - [x] `transport-admin` / `write-path` multi-node profile prerequisite를 Steelsearch topology 기준으로 고정
+    - [x] profile별 required acceptance entrypoint와 report path를 canonical 표로 정리
+  - [x] root/cluster/node standalone fullset closure
+    - [x] `/_cluster/health` index-scoped forms, wait semantics, timeout semantics를 OpenSearch standalone parity까지 확장
+    - [x] `/_cluster/state` metric/index filter 조합과 response depth를 current bounded subset에서 full standalone parity로 확장
+    - [x] `/_cluster/settings` default handling, flat/nested forms, null reset semantics, persistent/transient overwrite rules를 full standalone parity로 확장
+    - [x] `/_tasks`, `/_cluster/pending_tasks` response depth와 cancellation semantics를 OpenSearch standalone parity까지 확장
+    - [x] `/_nodes/stats`, `/_cluster/stats`, `/_stats` field coverage를 bounded subset에서 full standalone parity에 가깝게 확장
+    - [x] `/_cat/indices`, `/_cat/plugins` text/json output family를 operator-facing standalone parity까지 확장
+    - [x] `/_cluster/allocation/explain` request-body and response-body semantics를 development shape가 아니라 standalone parity 기준으로 확장
+    - [x] root/cluster/node fullset profile compare fixture를 추가하고 `--scope root-cluster-node`에서 fail-closed skip 없이 clean pass
+  - [x] index lifecycle and metadata standalone fullset closure
+    - [x] `PUT /{index}` create-index body parity를 aliases/mappings/settings/options 전체 standalone subset이 아니라 fullset에 가깝게 확장
+    - [x] `GET/HEAD/DELETE /{index}` selector semantics를 wildcard/comma/index-option parity까지 확장
+    - [x] `GET/PUT /_mapping` family를 merge rules, conflict classes, dynamic mapping behavior까지 확장
+    - [x] `GET/PUT /_settings` family를 mutable/non-mutable setting parity와 reset semantics까지 확장
+    - [x] alias read/write family를 filter/routing/write-index/wildcard/bulk mutation full standalone parity까지 확장
+    - [x] component/composable/legacy template family를 option coverage와 failure semantics까지 full standalone parity로 확장
+    - [x] `/_data_stream*` family를 fail-closed가 아니라 implemented standalone surface로 전환
+    - [x] `/{index}/_rollover` family를 fail-closed가 아니라 implemented standalone surface로 전환
+      - [x] data-stream-backed unnamed rollover happy path를 standalone runtime/compat 기준으로 구현
+      - [x] alias-backed named rollover target recognition과 source-compat compare를 정렬
+    - [x] index/metadata fullset compare fixture를 추가하고 `--scope index-metadata`에서 fail-closed skip 없이 clean pass
+      - [x] index-lifecycle fixture cleanup/setup를 runner 실행 경로에 연결해 stale template 오염을 제거
+      - [x] mapping-compat fixture cleanup/setup를 추가해 fresh create path와 post-update readback drift를 분리
+  - [x] document and write-path standalone fullset closure
+    - [x] single-document CRUD route semantics를 external versioning, realtime/source filtering edge cases, alias write semantics까지 확장
+    - [x] update semantics를 scripted update, detect_noop, retry_on_conflict, upsert edge cases까지 확장
+    - [x] `_bulk` family를 metadata, pipeline, refresh, routing, versioning, partial failure item semantics까지 확장
+    - [x] refresh/visibility semantics를 OpenSearch standalone parity 수준으로 확장
+    - [x] optimistic concurrency and conflict semantics를 edge-case matrix까지 확장
+    - [x] routing semantics를 alias/index/search interaction까지 확장
+    - [x] auto-create index, write alias, data stream target interaction을 standalone parity 기준으로 정리
+    - [x] document/write-path fullset compare fixture를 추가하고 `--scope document-write-path`에서 fail-closed skip 없이 clean pass
+  - [x] search standalone fullset closure
+    - [x] search scoped fixture에서 stale data-stream fail-closed 가정과 cluster-health skip을 제거해 current runtime과 정렬
+    - [x] Query DSL fullset closure
+      - [x] `multi_match`
+      - [x] `match_phrase` / phrase-prefix family
+      - [x] `dis_max`
+      - [x] `ids`
+      - [x] `query_string`
+      - [x] `simple_query_string`
+      - [x] `wildcard`
+      - [x] `prefix`
+      - [x] `regexp`
+      - [x] `fuzzy`
+      - [x] `exists`
+      - [x] `terms_set`
+      - [x] `nested`
+      - [x] `geo_distance`
+      - [x] `function_score`
+      - [x] `script_score`
+      - [x] `span*`
+        - [x] `span_term`
+        - [x] `span_near` / `span_or` / `span_multi` / `field_masking_span`
+      - [x] `more_like_this`
+      - [x] `intervals`
+    - [x] response shaping / session closure
+      - [x] `highlight`
+      - [x] `suggest`
+        - [x] `term suggest`
+        - [x] `completion suggest`
+        - [x] `phrase suggest`
+      - [x] `scroll`
+      - [x] `PIT`
+      - [x] `search_after`
+      - [x] `track_total_hits` non-boolean forms
+      - [x] `terminate_after`
+      - [x] `timeout`
+      - [x] `explain`
+      - [x] `profile`
+      - [x] `rescore`
+      - [x] `collapse`
+      - [x] `stored_fields`
+      - [x] `docvalue_fields`
+      - [x] `runtime_mappings`
+        - [x] common-baseline OpenSearch target가 `runtime_mappings` request shape를 `parsing_exception`으로 거절하는 것을 검증하고 baseline profile blocker로 기록
+        - [x] `runtime-fields` feature-specific profile, fixture, harness preset을 추가
+        - [x] `runtime_mappings` source-compat를 위한 source-capable OpenSearch target에서 compare를 복구
+          - [x] common-baseline launcher와 `opensearchproject/opensearch:latest (3.6.0)` Docker target 모두 request-body `runtime_mappings`를 `parsing_exception`으로 거절하는 것을 재확인
+          - [x] request-body `runtime_mappings`를 실제로 수용하는 OpenSearch source target profile/version을 확보하고 `--scope runtime-fields` compare를 복구
+            - [x] current `/home/ubuntu/OpenSearch` source tree에는 runtime field internals는 있으나 request-body `runtime_mappings` REST/body support 흔적이 없음을 확인
+            - [x] `tools/probe_runtime_fields_source_profile.sh`를 추가하고 representative Docker builds `1.3.19`, `2.11.1`, `2.19.0`를 실제 probe한 결과 모두 `parsing_exception`으로 거절함을 확인
+            - [x] current launcher/tree와 representative Docker builds 밖의 alternate OpenSearch build/version 확보 필요성을 검증했고, current evidence 범위에서는 source-capable target을 찾지 못했음을 확정
+          - [x] `runtime_mappings`를 Phase A-1 OpenSearch parity target으로 계속 유지할지, 아니면 Steelsearch-only extension으로 재분류할지 결정 후 backlog를 정렬
+    - [x] aggregation closure
+      - [x] `date_histogram`
+      - [x] `histogram`
+      - [x] `range`
+      - [x] `cardinality`
+      - [x] `terms.order`
+      - [x] `significant_terms.background_filter`
+      - [x] remaining metric/bucket/pipeline/scripted/plugin aggregation families required for standalone replacement
+    - [x] shard-failure, partial-timeout, partial-success, can-match, DFS/query-then-fetch semantics를 standalone parity 기준으로 확장
+      - [x] wildcard-target fail-closed/empty-target cases(`allow_no_indices=false`, `expand_wildcards=none`)를 source compare로 승격
+      - [x] `search_type=query_then_fetch|dfs_query_then_fetch`와 single-shard `pre_filter_shard_size` acceptance를 source compare로 승격
+      - [x] common-baseline single-node + 2-shard probe에서 `_shards.skipped=0`, `timed_out=false`, `successful=total`로 관측되어 true can-match/partial-success가 baseline profile에서는 재현되지 않음을 확인
+      - [x] shard-failure/partial-success response accounting과 true can-match pruning semantics를 source compare로 확장
+        - [x] `search-execution` feature profile, harness scope, multi-shard strict fixture를 추가
+        - [x] `search-execution` scope에서 `_shards.total|successful|skipped`, `timed_out`, `allow_partial_search_results`, `search_type` baseline strict compare를 복구
+        - [x] mixed-mapping `geo_distance` induced-failure case로 `_shards.failed`와 partial-success strict compare를 복구
+        - [x] true can-match pruning으로 `_shards.skipped > 0`가 관측되는 source-capable query/profile을 확보하고 strict compare를 복구
+      - [x] induced timeout/partial-timeout source-capable query/profile 탐색을 representative source builds 범위에서 수행하고 deterministic source profile 미확보를 확정
+        - [x] Docker OpenSearch 2.19.0에서 2-shard + 50k-doc `match_phrase` + `timeout=1micros` 반복 probe를 추가하고 `timed_out=true` candidate가 mixed/0-run 결과를 오가며 strict-compare용 deterministic source profile이 아님을 확인
+        - [x] timeout candidate matrix(`match_phrase`, `regexp`, `wildcard`, `script_score`, `function_score`, `histogram`, large-terms)와 higher-doc-count `script_score` probe를 실행해 현재 common source builds에서 deterministic `timed_out=true` family를 찾지 못했음을 확인
+        - [x] 50k-doc `script_score` candidate에 대해 2/4/8 primary shard topology probe를 실행했지만 `timed_out=true`가 안정화되지 않음을 확인
+        - [x] representative source version probe(`1.3.19`, `2.19.0`, `3.6.0`)에서도 deterministic `timed_out=true` profile을 찾지 못했고, `3.6.0` `script_score`는 mixed result만 관측됨을 확인
+      - [x] `timed_out=true` / partial-timeout strict source parity를 Phase A-1 OpenSearch parity blocker에서 제외하고 Phase B/feature-profile research item으로 재분류
+    - [x] `_cat` search-adjacent operator surfaces를 standalone parity 기준으로 확장
+    - [x] search strict fullset fixture를 추가하고 `--scope search`에서 unsupported-feature skip이 아니라 implemented parity 또는 true out-of-phase defer만 남기기
+  - [x] snapshot and migration standalone fullset closure
+    - [x] repository registration/readback/verification option coverage를 full standalone parity로 확장
+    - [x] snapshot create/status/restore/delete/cleanup request/response option coverage를 full standalone parity로 확장
+    - [x] restore validation and failure-path semantics를 transcript가 아니라 executable strict-profile compare로 승격
+    - [x] repository-capable OpenSearch profile을 고정하고 degraded-source snapshot skip 제거
+    - [x] snapshot lifecycle strict-profile compare를 `--scope snapshot-migration` required gate로 승격
+      - [x] repository registration/readback drift를 OpenSearch parity로 정렬
+      - [x] snapshot readback/status/restore lifecycle drift를 OpenSearch parity로 정렬
+      - [x] snapshot delete vs restore-in-progress concurrency semantics를 OpenSearch strict compare에 맞게 정렬
+      - [x] restore validation failure-path semantics를 OpenSearch strict compare에 맞게 정렬
+    - [x] migration/export/import tooling을 mappings/templates/aliases/vector/data-stream coverage까지 확장
+      - [x] migration cutover integration에서 target search가 `0 hits`로 비는 원인을 runtime import/replay path 기준으로 복구
+      - [x] migration fixture를 mappings/settings 외에 templates/aliases/data-stream/vector payload까지 확장
+  - [x] vector and ML standalone fullset closure
+    - [x] `knn_vector` mapping option coverage를 engine/data_type/method/mode/compression-level/doc_values/store/meta parity까지 확장
+    - [x] `knn` query option coverage를 filter/ignore_unmapped/expand_nested/radial search/method parameter parity까지 확장
+    - [x] hybrid lexical+vector scoring and ranking semantics를 standalone parity 수준으로 확장
+    - [x] `/_plugins/_knn/*` operational family를 stats/warmup/clear-cache/model/train/get/delete/search full standalone parity로 확장
+    - [x] ML/model-serving route family의 실제 claimed surface를 확정하고 corresponding strict profile compare 추가
+    - [x] k-NN-capable OpenSearch profile을 고정하고 degraded-source vector skip 제거
+    - [x] vector strict-profile compare를 `--scope vector-ml` required gate로 승격
+      - [x] OpenSearch shared subset에 맞게 `knn_vector` strict fixture를 정렬하고 setup create drift(`_meta` on `knn_vector`)를 제거
+      - [x] `knn`/hybrid query happy-path semantics를 OpenSearch strict compare에 맞게 정렬
+      - [x] unsupported vector/hybrid request의 error envelope/type drift를 OpenSearch strict compare에 맞게 정렬
+        - [x] `knn_query_unsupported_parameter_error`를 OpenSearch strict compare에 맞게 정렬
+        - [x] `hybrid_query_invalid_shape_error`를 OpenSearch strict compare에 맞게 정렬
+  - [x] transport/admin standalone closure
+    - [x] already-live admin/readback route family를 bounded subset이 아니라 standalone operator parity 기준으로 확장
+    - [x] multi-node admin topology checks를 stricter report invariants로 확장
+    - [x] transport/admin required profile과 report set을 release gate에 승격
+  - [x] Phase A-1 release gate
+    - [x] `tools/run-phase-a-acceptance-harness.sh --mode local` common-baseline tree가 `Phase A-1` 문서 기준 unsupported skip 없이 clean exit
+    - [x] feature-specific profile runners가 각각 clean exit
+    - [x] `docs/api-spec/*` 문서에서 해당 family가 더 이상 bounded subset 종착점처럼 읽히지 않도록 전면 최신화
+    - [x] `docs/rust-port/*` 문서에서 stale `MVP`, `development-only subset`, outdated blocker 표현을 제거 또는 갱신
+    - [x] `Phase A-1` completion checklist 작성

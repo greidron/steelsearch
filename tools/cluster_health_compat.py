@@ -64,6 +64,22 @@ def decode_response(status: int, payload: bytes) -> dict[str, Any]:
     }
 
 
+def run_setup(base_url: str, steps: list[dict[str, Any]], timeout: float) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for step in steps:
+        response = request_response(base_url, step, timeout)
+        errors = check_target(step, response)
+        results.append(
+            {
+                "name": step["name"],
+                "status": "passed" if not errors else "failed",
+                "response": response,
+                "errors": errors,
+            }
+        )
+    return results
+
+
 def extract_path(value: Any, path: str) -> Any:
     current = value
     for segment in path.split("."):
@@ -125,6 +141,34 @@ def main() -> int:
     }
 
     exit_code = 0
+    if fixture.get("setup"):
+        steelsearch_setup = run_setup(args.steelsearch_url, fixture["setup"], args.timeout)
+        opensearch_setup = run_setup(args.opensearch_url, fixture["setup"], args.timeout)
+        setup_report = []
+        for steelsearch_step, opensearch_step in zip(steelsearch_setup, opensearch_setup):
+            errors = (
+                steelsearch_step["errors"]
+                + opensearch_step["errors"]
+                + compare_targets(
+                    fixture.get("setup_compare", {}),
+                    steelsearch_step["response"],
+                    opensearch_step["response"],
+                )
+            )
+            status = "passed" if not errors else "failed"
+            if errors:
+                exit_code = 1
+            setup_report.append(
+                {
+                    "name": steelsearch_step["name"],
+                    "status": status,
+                    "steelsearch": steelsearch_step["response"],
+                    "opensearch": opensearch_step["response"],
+                    "errors": errors,
+                }
+            )
+        report["setup"] = setup_report
+
     for case in fixture.get("cases", []):
         steelsearch = request_response(args.steelsearch_url, case, args.timeout)
         opensearch = request_response(args.opensearch_url, case, args.timeout)

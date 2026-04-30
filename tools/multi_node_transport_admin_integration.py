@@ -83,6 +83,21 @@ def extract_path(value: Any, path: str) -> Any:
     return current
 
 
+def extract_case_value(
+    case_reports: dict[str, dict[str, Any]],
+    reference: dict[str, Any],
+) -> Any:
+    case = case_reports.get(reference["case"])
+    if case is None:
+        return None
+    value = extract_path(case, reference["path"])
+    if reference.get("transform") == "len":
+        if isinstance(value, (list, dict)):
+            return len(value)
+        return None
+    return value
+
+
 def check_case(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     compare = case.get("compare", {})
@@ -93,7 +108,50 @@ def check_case(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     for path in compare.get("body_paths_present", []):
         if extract_path(response.get("body"), path) is None:
             errors.append(f"missing body path [{path}]")
+    for path, expected in compare.get("body_paths_equal", {}).items():
+        actual = extract_path(response.get("body"), path)
+        if actual != expected:
+            errors.append(f"body path [{path}] expected {expected!r} but got {actual!r}")
+    for path, expected_count in compare.get("body_array_lengths", {}).items():
+        actual = extract_path(response.get("body"), path)
+        if not isinstance(actual, list):
+            errors.append(f"body path [{path}] is not an array")
+        elif len(actual) != expected_count:
+            errors.append(
+                f"body path [{path}] expected array length {expected_count} but got {len(actual)}"
+            )
+    for path, expected_count in compare.get("body_object_key_counts", {}).items():
+        actual = extract_path(response.get("body"), path)
+        if not isinstance(actual, dict):
+            errors.append(f"body path [{path}] is not an object")
+        elif len(actual) != expected_count:
+            errors.append(
+                f"body path [{path}] expected object key count {expected_count} but got {len(actual)}"
+            )
     return errors
+
+
+def check_post_conditions(
+    fixture: dict[str, Any],
+    case_reports: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    reports: list[dict[str, Any]] = []
+    for check in fixture.get("post_checks", []):
+        left = extract_case_value(case_reports, check["left"])
+        right = extract_case_value(case_reports, check["right"])
+        errors: list[str] = []
+        if left != right:
+            errors.append(f"left {left!r} != right {right!r}")
+        reports.append(
+            {
+                "name": check["name"],
+                "status": "passed" if not errors else "failed",
+                "left": left,
+                "right": right,
+                "errors": errors,
+            }
+        )
+    return reports
 
 
 def main() -> int:
@@ -120,6 +178,7 @@ def main() -> int:
             "failed": 0,
         },
     }
+    case_reports: dict[str, dict[str, Any]] = {}
 
     exit_code = 0
     for case in fixture.get("cases", []):
@@ -131,15 +190,25 @@ def main() -> int:
             report["summary"]["failed"] += 1
         else:
             report["summary"]["passed"] += 1
-        report["cases"].append(
-            {
-                "name": case["name"],
-                "target": case["target"],
-                "status": status,
-                "response": response,
-                "errors": errors,
-            }
-        )
+        case_report = {
+            "name": case["name"],
+            "target": case["target"],
+            "status": status,
+            "response": response,
+            "errors": errors,
+        }
+        case_reports[case["name"]] = case_report
+        report["cases"].append(case_report)
+
+    post_checks = check_post_conditions(fixture, case_reports)
+    if post_checks:
+        report["post_checks"] = post_checks
+        for check in post_checks:
+            if check["status"] == "failed":
+                exit_code = 1
+                report["summary"]["failed"] += 1
+            else:
+                report["summary"]["passed"] += 1
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

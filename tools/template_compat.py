@@ -113,6 +113,22 @@ def normalize_template_body(case: dict[str, Any], body: Any) -> Any:
                 **(named.get("component_template") or named),
             }
 
+    if extract == "component_template_collection":
+        if isinstance(body.get("component_templates"), list):
+            return {
+                item.get("name"): item.get("component_template")
+                for item in body["component_templates"]
+                if isinstance(item, dict) and item.get("name") is not None
+            }
+        return {
+            name: (
+                value.get("component_template", value)
+                if isinstance(value, dict)
+                else value
+            )
+            for name, value in body.items()
+        }
+
     if extract == "index_template_single":
         if isinstance(body.get("index_templates"), list) and body["index_templates"]:
             first = body["index_templates"][0]
@@ -127,11 +143,30 @@ def normalize_template_body(case: dict[str, Any], body: Any) -> Any:
                 **(named.get("index_template") or named),
             }
 
+    if extract == "index_template_collection":
+        if isinstance(body.get("index_templates"), list):
+            return {
+                item.get("name"): item.get("index_template")
+                for item in body["index_templates"]
+                if isinstance(item, dict) and item.get("name") is not None
+            }
+        return {
+            name: (
+                value.get("index_template", value)
+                if isinstance(value, dict)
+                else value
+            )
+            for name, value in body.items()
+        }
+
     if extract == "legacy_template_single" and template_name and template_name in body:
         return {
             "name": template_name,
             **(body.get(template_name) or {}),
         }
+
+    if extract == "legacy_template_collection" and isinstance(body, dict):
+        return body
 
     return body
 

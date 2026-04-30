@@ -1,5 +1,23 @@
 {
   "name": "stats-compat",
+  "setup": [
+    {
+      "name": "create_logs_stats_compat_index",
+      "method": "PUT",
+      "path": "/logs-stats-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "index"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "index"
+        ]
+      }
+    }
+  ],
   "cases": [
     {
       "name": "get_nodes_stats_shape",
@@ -9,7 +27,8 @@
         "expected_status": 200,
         "body_paths_present": [
           "nodes"
-        ]
+        ],
+        "compare_mode": "nodes_stats_shape"
       }
     },
     {
@@ -19,10 +38,15 @@
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
+          "cluster_name",
+          "status",
           "indices",
+          "indices.docs",
+          "indices.shards.total",
           "nodes",
           "nodes.count",
-          "nodes.count.total"
+          "nodes.count.total",
+          "nodes.count.data"
         ],
         "body_paths_equal": [
           "nodes.count.total"
@@ -36,11 +60,21 @@
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
+          "_shards",
+          "_shards.total",
+          "_shards.successful",
+          "_shards.failed",
           "_all",
+          "_all.primaries",
+          "_all.primaries.docs",
+          "_all.primaries.docs.count",
           "_all.total",
           "_all.total.docs",
           "_all.total.docs.count",
-          "indices"
+          "indices",
+          "indices.logs-stats-compat",
+          "indices.logs-stats-compat.primaries.docs.count",
+          "indices.logs-stats-compat.total.docs.count"
         ],
         "body_paths_equal": [
           "_all.total.docs.count"

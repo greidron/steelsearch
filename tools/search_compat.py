@@ -57,6 +57,11 @@ VOLATILE_RESPONSE_KEYS = {
 }
 
 
+def excluded_case_names() -> set[str]:
+    raw = os.environ.get("SEARCH_COMPAT_EXCLUDE_CASES", "")
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", default=str(DEFAULT_FIXTURE))
@@ -72,6 +77,11 @@ def main() -> int:
         return 2
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    excluded = excluded_case_names()
+    if excluded:
+        fixture["cases"] = [
+            case for case in fixture["cases"] if case.get("name") not in excluded
+        ]
     targets = {"steelsearch": args.steelsearch_url.rstrip("/")}
     if args.opensearch_url:
         targets["opensearch"] = args.opensearch_url.rstrip("/")
@@ -269,6 +279,19 @@ def run_case(case: dict[str, Any], targets: dict[str, str], timeout: float) -> d
                 "environment, so vector comparison is downgraded to degraded-source skip."
             ),
         }
+    if missing_runtime_mappings_support(expected["raw_response"]):
+        return {
+            "name": case["name"],
+            "area": case["area"],
+            "status": "skipped",
+            "mode": "comparison",
+            "targets": target_results,
+            "skip_scope": "degraded-source",
+            "reason": (
+                "OpenSearch target does not expose request-body runtime_mappings in this "
+                "environment, so runtime-fields comparison is downgraded to degraded-source skip."
+            ),
+        }
     matches = (
         steel["status"] == expected["status"]
         and steel["extract"] == expected["extract"]
@@ -291,31 +314,59 @@ def run_case_request(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     steps = case.get("steps")
     if not steps:
-        response = http_json(base_url, case["method"], case["path"], case.get("body"), timeout)
+        response = http_json(
+            base_url,
+            case["method"],
+            case["path"],
+            case.get("body"),
+            timeout,
+            accept=case.get("accept"),
+        )
         return response, []
 
     step_results: list[dict[str, Any]] = []
     response: dict[str, Any] = {"status": 0, "body": {}, "error": "case has no steps"}
     for index, step in enumerate(steps):
+        resolved_step = resolve_step_placeholders(step, response)
         response = http_json(
             base_url,
-            step["method"],
-            step["path"],
-            step.get("body"),
+            resolved_step["method"],
+            resolved_step["path"],
+            resolved_step.get("body"),
             timeout,
-            raw=step.get("raw", False),
+            raw=resolved_step.get("raw", False),
+            accept=resolved_step.get("accept"),
         )
-        expected_status = step.get("expected_status")
+        expected_status = resolved_step.get("expected_status")
         step_results.append(
             {
-                "name": step.get("name", f"step-{index + 1}"),
+                "name": resolved_step.get("name", f"step-{index + 1}"),
                 "status": response["status"],
                 "expected_status": expected_status,
                 "passed": expected_status is None or response["status"] == expected_status,
-                "extract": extract(step.get("extract", "status_only"), response),
+                "extract": extract(resolved_step.get("extract", "status_only"), response),
             }
         )
     return response, step_results
+
+
+def resolve_step_placeholders(step: dict[str, Any], previous_response: dict[str, Any]) -> dict[str, Any]:
+    return resolve_placeholders(step, previous_response)
+
+
+def resolve_placeholders(value: Any, previous_response: dict[str, Any]) -> Any:
+    if isinstance(value, dict):
+        return {key: resolve_placeholders(item, previous_response) for key, item in value.items()}
+    if isinstance(value, list):
+        return [resolve_placeholders(item, previous_response) for item in value]
+    if not isinstance(value, str):
+        return value
+    if value == "${last._scroll_id}":
+        return ((previous_response.get("body") or {}).get("_scroll_id"))
+    if value == "${last.id}":
+        body = previous_response.get("body") or {}
+        return body.get("id") or body.get("pit_id")
+    return value
 
 
 def http_json(
@@ -325,9 +376,10 @@ def http_json(
     body: Any,
     timeout: float,
     raw: bool = False,
+    accept: str | None = None,
 ) -> dict[str, Any]:
     data: bytes | None
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": accept or "application/json"}
     if raw:
         data = body.encode("utf-8")
         headers["Content-Type"] = "application/x-ndjson"
@@ -432,6 +484,147 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "ids": [hit.get("_id") for hit in hits],
             "sources": [hit.get("_source") for hit in hits],
         }
+    if kind == "search_summary":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        total = (body.get("hits") or {}).get("total")
+        shards = body.get("_shards") or {}
+        if isinstance(total, dict):
+            total_value = total.get("value")
+            total_relation = total.get("relation")
+        else:
+            total_value = total
+            total_relation = None
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "relation": total_relation,
+            "ids": [hit.get("_id") for hit in hits],
+            "timed_out": body.get("timed_out"),
+            "terminated_early": body.get("terminated_early"),
+            "shards": {
+                "total": shards.get("total"),
+                "successful": shards.get("successful"),
+                "skipped": shards.get("skipped"),
+                "failed": shards.get("failed"),
+            },
+        }
+    if kind == "search_explain":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        return {
+            "status": response["status"],
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "explanation_present": all(
+                isinstance(hit, dict) and isinstance(hit.get("_explanation"), dict)
+                for hit in hits
+            ),
+        }
+    if kind == "search_profile":
+        profile = body.get("profile") or {}
+        shards = profile.get("shards") if isinstance(profile, dict) else None
+        first_shard = shards[0] if isinstance(shards, list) and shards else {}
+        first_search = (
+            (first_shard.get("searches") or [])[0]
+            if isinstance(first_shard, dict) and first_shard.get("searches")
+            else {}
+        )
+        query_nodes = first_search.get("query") if isinstance(first_search, dict) else None
+        collector_nodes = first_search.get("collector") if isinstance(first_search, dict) else None
+        return {
+            "status": response["status"],
+            "profile_present": isinstance(profile, dict) and bool(profile),
+            "shards_present": isinstance(shards, list) and bool(shards),
+            "query_nodes_present": isinstance(query_nodes, list) and bool(query_nodes),
+            "collector_nodes_present": isinstance(collector_nodes, list) and bool(collector_nodes),
+        }
+    if kind == "search_fields":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        total = (body.get("hits") or {}).get("total")
+        if isinstance(total, dict):
+            total_value = total.get("value")
+        else:
+            total_value = total
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "fields": {
+                hit.get("_id"): hit.get("fields")
+                for hit in hits
+                if isinstance(hit, dict) and hit.get("_id") is not None
+            },
+        }
+    if kind == "highlight_hits":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        total = (body.get("hits") or {}).get("total")
+        if isinstance(total, dict):
+            total_value = total.get("value")
+        else:
+            total_value = total
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "ids": [hit.get("_id") for hit in hits],
+            "highlights": {
+                hit.get("_id"): hit.get("highlight")
+                for hit in hits
+                if isinstance(hit, dict) and hit.get("_id") is not None
+            },
+        }
+    if kind == "suggest_response":
+        suggest = body.get("suggest") or {}
+        normalized: dict[str, Any] = {}
+        if isinstance(suggest, dict):
+            for name, entries in sorted(suggest.items()):
+                if not isinstance(entries, list):
+                    continue
+                normalized[name] = [
+                    {
+                        "text": entry.get("text"),
+                        "options": [
+                            option.get("text")
+                            for option in (entry.get("options") or [])
+                            if isinstance(option, dict)
+                        ],
+                    }
+                    for entry in entries
+                    if isinstance(entry, dict)
+                ]
+        return {
+            "status": response["status"],
+            "suggest": normalized,
+        }
+    if kind == "scroll_hits":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        return {
+            "status": response["status"],
+            "scroll_id_present": bool(body.get("_scroll_id")),
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+        }
+    if kind == "scroll_clear":
+        return {
+            "status": response["status"],
+            "succeeded": body.get("succeeded"),
+            "num_freed": body.get("num_freed"),
+        }
+    if kind == "pit_open":
+        return {
+            "status": response["status"],
+            "id_present": bool(body.get("id") or body.get("pit_id")),
+        }
+    if kind == "pit_clear":
+        pits = body.get("pits")
+        if isinstance(pits, list):
+            freed_count = sum(
+                1
+                for item in pits
+                if isinstance(item, dict) and item.get("successful") is True
+            )
+        else:
+            freed_count = body.get("num_freed")
+        return {
+            "status": response["status"],
+            "freed_count": freed_count,
+        }
     if kind == "terms_aggregation":
         aggs = body.get("aggregations") or {}
         first_agg = next(iter(aggs.values()), {})
@@ -499,6 +692,34 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "fixture_indices_present": sorted(COMPAT_INDICES & indices),
             "required_columns_present": sorted(CAT_INDEX_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_indices_text":
+        raw = body.get("_raw") if isinstance(body, dict) else None
+        lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+        header = lines[0].split() if lines else []
+        indices = []
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) >= 3:
+                indices.append(parts[2])
+        return {
+            "status": response["status"],
+            "fixture_indices_present": sorted(COMPAT_INDICES & set(indices)),
+            "required_columns_present": sorted(CAT_INDEX_REQUIRED_COLUMNS & set(header)),
+        }
+    if kind == "cat_count":
+        if isinstance(body, list):
+            row = body[0] if body and isinstance(body[0], dict) else {}
+            count = row.get("count")
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            data_line = lines[-1] if lines else ""
+            parts = data_line.split()
+            count = parts[-1] if parts else None
+        return {
+            "status": response["status"],
+            "count": count,
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}
@@ -600,7 +821,7 @@ def normalize_aggregation_value(value: dict[str, Any]) -> Any:
                 "buckets": sorted(
                     (
                         {
-                            "key": bucket.get("key"),
+                            "key": bucket.get("key_as_string", bucket.get("key")),
                             "doc_count": bucket.get("doc_count"),
                         }
                         for bucket in buckets
@@ -675,6 +896,17 @@ def missing_knn_plugin_response(response: dict[str, Any]) -> bool:
         and isinstance(reason, str)
         and "unknown setting [index.knn]" in reason
     )
+
+
+def missing_runtime_mappings_support(response: dict[str, Any]) -> bool:
+    body = response.get("body") or {}
+    if response.get("status") != 400:
+        return False
+    error = body.get("error") or {}
+    if not isinstance(error, dict):
+        return False
+    reason = error.get("reason") or ""
+    return isinstance(reason, str) and "runtime_mappings" in reason
 
 
 def missing_knn_query_response(response: dict[str, Any]) -> bool:

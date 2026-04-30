@@ -2,6 +2,7 @@
   "index": "vector-search-compat-000001",
   "settings": {
     "index": {
+      "knn": true,
       "number_of_shards": 1,
       "number_of_replicas": 0
     }
@@ -14,9 +15,21 @@
       "tenant": {
         "type": "keyword"
       },
+      "category": {
+        "type": "keyword"
+      },
       "embedding": {
         "type": "knn_vector",
-        "dimension": 3
+        "dimension": 3,
+        "data_type": "float",
+        "mode": "in_memory",
+        "compression_level": "1x",
+        "doc_values": true,
+        "store": false,
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene"
+        }
       }
     }
   },
@@ -26,6 +39,7 @@
       "source": {
         "title": "alpha vector",
         "tenant": "tenant-a",
+        "category": "alpha",
         "embedding": [
           0.9,
           0.1,
@@ -38,6 +52,7 @@
       "source": {
         "title": "beta vector",
         "tenant": "tenant-a",
+        "category": "beta",
         "embedding": [
           0.1,
           0.9,
@@ -95,6 +110,87 @@
       }
     },
     {
+      "name": "knn_query_filter_happy_path",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "k": 2,
+              "filter": {
+                "term": {
+                  "category": "alpha"
+                }
+              }
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_query_ignore_unmapped_happy_path",
+      "body": {
+        "query": {
+          "knn": {
+            "missing_embedding": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "k": 1,
+              "ignore_unmapped": true
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_query_radial_max_distance_happy_path",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "max_distance": 0.5
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_query_method_parameters_happy_path",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "k": 2,
+              "method_parameters": {
+                "ef_search": 32
+              }
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
       "name": "knn_query_unsupported_parameter_error",
       "kind": "error_shape",
       "body": {
@@ -114,23 +210,72 @@
       }
     },
     {
+      "name": "hybrid_should_query_happy_path",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "match": {
+                  "title": "alpha"
+                }
+              },
+              {
+                "knn": {
+                  "embedding": {
+                    "vector": [
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    "k": 2
+                  }
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "hybrid_minimum_should_match_happy_path",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              },
+              {
+                "knn": {
+                  "embedding": {
+                    "vector": [
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    "max_distance": 0.5
+                  }
+                }
+              }
+            ],
+            "minimum_should_match": 2
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
       "name": "hybrid_query_invalid_shape_error",
       "kind": "error_shape",
       "body": {
         "query": {
           "hybrid": {
-            "queries": {
-              "knn": {
-                "embedding": {
-                  "vector": [
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  "k": 1
-                }
-              }
-            }
+            "queries": "oops"
           }
         }
       }

@@ -12,6 +12,8 @@ pub const CLUSTER_SETTINGS_ROUTE_PATH: &str = "/_cluster/settings";
 /// Canonical fail-closed bucket for unsupported `GET /_cluster/settings` parameters.
 pub const CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET: &str =
     "unsupported cluster-settings readback parameter";
+pub const CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS: [&str; 2] =
+    ["flat_settings", "include_defaults"];
 
 /// Canonical runnable readback subset for `GET /_cluster/settings`.
 pub const CLUSTER_SETTINGS_RUNNABLE_SUBSET_FIELDS: [&str; 2] = ["persistent", "transient"];
@@ -73,18 +75,64 @@ fn merge_cluster_settings_section(
     base: &serde_json::Value,
     patch: &serde_json::Value,
 ) -> serde_json::Value {
-    match (base, patch) {
-        (serde_json::Value::Object(base_map), serde_json::Value::Object(patch_map)) => {
-            let mut merged = base_map.clone();
-            for (key, value) in patch_map {
-                insert_dotted_cluster_setting(&mut merged, key, value.clone());
-            }
-            serde_json::Value::Object(merged)
+    let mut merged = flatten_cluster_settings_section(base);
+    for (key, value) in flatten_cluster_settings_section(patch) {
+        if value.is_null() {
+            merged.remove(&key);
+        } else {
+            merged.insert(key, value);
         }
-        (_, serde_json::Value::Null) => base.clone(),
-        (_, serde_json::Value::Object(_)) => patch.clone(),
-        (_, _) => patch.clone(),
     }
+    expand_dotted_cluster_settings_section(&serde_json::Value::Object(merged))
+}
+
+fn flatten_cluster_settings_section(
+    section: &serde_json::Value,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut flat = serde_json::Map::new();
+    flatten_cluster_settings_section_into(None, section, &mut flat);
+    flat
+}
+
+fn flatten_cluster_settings_section_into(
+    prefix: Option<&str>,
+    section: &serde_json::Value,
+    flat: &mut serde_json::Map<String, serde_json::Value>,
+) {
+    match section {
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                let next_key = prefix
+                    .map(|current| format!("{current}.{key}"))
+                    .unwrap_or_else(|| key.clone());
+                if value.is_object() {
+                    flatten_cluster_settings_section_into(Some(&next_key), value, flat);
+                } else {
+                    flat.insert(next_key, value.clone());
+                }
+            }
+        }
+        serde_json::Value::Null => {
+            if let Some(prefix) = prefix {
+                flat.insert(prefix.to_string(), serde_json::Value::Null);
+            }
+        }
+        _ => {
+            if let Some(prefix) = prefix {
+                flat.insert(prefix.to_string(), section.clone());
+            }
+        }
+    }
+}
+
+fn expand_dotted_cluster_settings_section(section: &serde_json::Value) -> serde_json::Value {
+    let mut expanded = serde_json::Map::new();
+    if let serde_json::Value::Object(section_map) = section {
+        for (key, value) in section_map {
+            insert_dotted_cluster_setting(&mut expanded, key, value.clone());
+        }
+    }
+    serde_json::Value::Object(expanded)
 }
 
 fn insert_dotted_cluster_setting(
@@ -115,11 +163,12 @@ fn insert_dotted_cluster_setting(
 pub fn reject_unsupported_cluster_settings_params(
     params: &[&str],
 ) -> Result<(), &'static str> {
-    if params.is_empty() {
-        Ok(())
-    } else {
-        Err(CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET)
+    for param in params {
+        if !CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS.contains(param) {
+            return Err(CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET);
+        }
     }
+    Ok(())
 }
 
 /// Canonical response-builder symbol for `GET /_cluster/settings`.
@@ -268,7 +317,7 @@ mod tests {
         );
 
         assert_eq!(
-            build_cluster_settings_rest_response(&body, &["flat_settings"]),
+            build_cluster_settings_rest_response(&body, &["local"]),
             Err("unsupported cluster-settings readback parameter")
         );
     }
@@ -432,6 +481,14 @@ mod tests {
     fn cluster_settings_param_reject_helper_uses_canonical_fail_closed_bucket() {
         assert_eq!(
             reject_unsupported_cluster_settings_params(&["flat_settings"]),
+            Ok(())
+        );
+        assert_eq!(
+            reject_unsupported_cluster_settings_params(&["include_defaults"]),
+            Ok(())
+        );
+        assert_eq!(
+            reject_unsupported_cluster_settings_params(&["local"]),
             Err("unsupported cluster-settings readback parameter")
         );
     }
@@ -481,11 +538,11 @@ mod tests {
         let response = apply_cluster_settings_mutation(&persisted_state, &request).unwrap();
         assert_eq!(response["acknowledged"], serde_json::json!(true));
         assert_eq!(
-            response["persistent"]["cluster.routing.allocation.enable"],
+            response["persistent"]["cluster"]["routing"]["allocation"]["enable"],
             serde_json::json!("primaries")
         );
         assert_eq!(
-            response["transient"]["cluster.info.update.interval"],
+            response["transient"]["cluster"]["info"]["update"]["interval"],
             serde_json::json!("45s")
         );
     }
@@ -497,7 +554,7 @@ mod tests {
             "transient": {}
         });
         let request = ClusterSettingsMutationRequest {
-            params: &["flat_settings"],
+            params: &["local"],
             persistent: &serde_json::json!({}),
             transient: &serde_json::json!({}),
         };

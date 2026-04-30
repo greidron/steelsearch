@@ -93,6 +93,45 @@ def extract_path(value: Any, path: str) -> Any:
     return current
 
 
+def normalize_body(case: dict[str, Any], body: Any) -> Any:
+    extract = case.get("extract")
+    if not isinstance(body, dict) or not extract:
+        return body
+    if extract == "data_stream_collection":
+        result: dict[str, Any] = {}
+        for item in body.get("data_streams", []):
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if name is None:
+                continue
+            result[name] = {
+                "generation": item.get("generation"),
+                "indices": item.get("indices"),
+                "status": item.get("status"),
+            }
+        return result
+    if extract == "data_stream_stats":
+        return {
+            "data_stream_count": body.get("data_stream_count"),
+            "backing_indices": body.get("backing_indices"),
+        }
+    if extract == "rollover_summary":
+        return {
+            "old_index": body.get("old_index"),
+            "new_index": body.get("new_index"),
+            "rolled_over": body.get("rolled_over"),
+            "acknowledged": body.get("acknowledged"),
+        }
+    return body
+
+
+def normalize_response(case: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(response)
+    normalized["body"] = normalize_body(case, response.get("body"))
+    return normalized
+
+
 def check_target(compare: dict[str, Any], response: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     expected_status = compare.get("expected_status")
@@ -106,6 +145,16 @@ def check_target(compare: dict[str, Any], response: dict[str, Any]) -> list[str]
     for path in compare.get("body_paths_absent", []):
         if extract_path(response.get("body"), path) is not None:
             errors.append(f"unexpected body path [{path}]")
+    return errors
+
+
+def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for path in case.get("body_paths_equal", []):
+        left = extract_path(steelsearch.get("body"), path)
+        right = extract_path(opensearch.get("body"), path)
+        if left != right:
+            errors.append(f"body path [{path}] drift: steelsearch={left!r} opensearch={right!r}")
     return errors
 
 
@@ -132,11 +181,15 @@ def main() -> int:
 
     exit_code = 0
     for case in fixture.get("cases", []):
-        steelsearch = request_response(args.steelsearch_url, case, args.timeout)
-        opensearch = request_response(args.opensearch_url, case, args.timeout)
+        for setup in case.get("setup", []):
+            request_response(args.steelsearch_url, setup, args.timeout)
+            request_response(args.opensearch_url, setup, args.timeout)
+        steelsearch = normalize_response(case, request_response(args.steelsearch_url, case, args.timeout))
+        opensearch = normalize_response(case, request_response(args.opensearch_url, case, args.timeout))
         errors = (
             [f"steelsearch: {error}" for error in check_target(case["steelsearch_compare"], steelsearch)]
             + [f"opensearch: {error}" for error in check_target(case["opensearch_compare"], opensearch)]
+            + compare_targets(case, steelsearch, opensearch)
         )
         status = "passed" if not errors else "failed"
         if errors:

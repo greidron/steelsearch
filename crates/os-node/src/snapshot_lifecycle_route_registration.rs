@@ -38,7 +38,13 @@ pub fn build_snapshot_create_body_subset(body: &serde_json::Value) -> serde_json
         return serde_json::json!({});
     };
     let mut subset = serde_json::Map::new();
-    for field in ["indices", "include_global_state", "metadata"] {
+    for field in [
+        "indices",
+        "include_global_state",
+        "metadata",
+        "partial",
+        "ignore_unavailable",
+    ] {
         if let Some(value) = object.get(field) {
             subset.insert(field.to_string(), value.clone());
         }
@@ -54,7 +60,16 @@ pub fn build_snapshot_create_response(snapshot: &serde_json::Value) -> serde_jso
     };
 
     let mut bounded_snapshot = serde_json::Map::new();
-    for field in ["snapshot", "uuid", "state", "indices"] {
+    for field in [
+        "snapshot",
+        "uuid",
+        "state",
+        "indices",
+        "include_global_state",
+        "metadata",
+        "partial",
+        "ignore_unavailable",
+    ] {
         if let Some(value) = object.get(field) {
             bounded_snapshot.insert(field.to_string(), value.clone());
         }
@@ -74,7 +89,14 @@ pub fn build_snapshot_readback_response(snapshot: &serde_json::Value) -> serde_j
     };
 
     let mut bounded_snapshot = serde_json::Map::new();
-    for field in ["snapshot", "uuid", "state", "indices"] {
+    for field in [
+        "snapshot",
+        "uuid",
+        "state",
+        "indices",
+        "include_global_state",
+        "metadata",
+    ] {
         if let Some(value) = object.get(field) {
             bounded_snapshot.insert(field.to_string(), value.clone());
         }
@@ -114,6 +136,9 @@ pub fn build_snapshot_restore_body_subset(body: &serde_json::Value) -> serde_jso
         "include_global_state",
         "rename_pattern",
         "rename_replacement",
+        "include_aliases",
+        "partial",
+        "ignore_unavailable",
     ] {
         if let Some(value) = object.get(field) {
             subset.insert(field.to_string(), value.clone());

@@ -28,11 +28,33 @@ pub fn parse_legacy_template_name_selectors(target: &str) -> Vec<String> {
 }
 
 fn selector_matches(selector: &str, candidate: &str) -> bool {
-    if let Some(prefix) = selector.strip_suffix('*') {
-        candidate.starts_with(prefix)
-    } else {
-        selector == candidate
+    if !selector.contains('*') {
+        return selector == candidate;
     }
+    let mut rest = candidate;
+    for (i, part) in selector.split('*').enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 && !selector.starts_with('*') {
+            if !rest.starts_with(part) {
+                return false;
+            }
+            rest = &rest[part.len()..];
+            continue;
+        }
+        if let Some(pos) = rest.find(part) {
+            rest = &rest[pos + part.len()..];
+        } else {
+            return false;
+        }
+    }
+    if !selector.ends_with('*') {
+        if let Some(last) = selector.rsplit('*').next() {
+            return candidate.ends_with(last);
+        }
+    }
+    true
 }
 
 pub fn build_legacy_template_body_subset(body: &serde_json::Value) -> serde_json::Value {

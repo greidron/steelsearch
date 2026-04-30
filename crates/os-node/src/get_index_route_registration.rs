@@ -39,9 +39,25 @@ pub fn build_get_index_metadata_response(
         return serde_json::json!({});
     };
 
+    let matched_names = index_map
+        .keys()
+        .filter(|name| selectors.iter().any(|selector| selector_matches(selector, name)))
+        .cloned()
+        .collect::<Vec<_>>();
+    build_get_index_metadata_response_for_names(indices, &matched_names)
+}
+
+pub fn build_get_index_metadata_response_for_names(
+    indices: &serde_json::Value,
+    names: &[String],
+) -> serde_json::Value {
+    let Some(index_map) = indices.as_object() else {
+        return serde_json::json!({});
+    };
+
     let mut response = serde_json::Map::new();
     for (name, metadata) in index_map {
-        if !selectors.iter().any(|selector| selector_matches(selector, name)) {
+        if !names.iter().any(|candidate| candidate == name) {
             continue;
         }
         let mut filtered = serde_json::Map::new();
@@ -114,5 +130,21 @@ mod tests {
         assert!(comma.get("logs-000001").is_some());
         assert!(comma.get("metrics-000001").is_some());
         assert!(comma.get("logs-000002").is_none());
+    }
+
+    #[test]
+    fn get_index_metadata_response_can_render_pre_resolved_target_set() {
+        let indices = serde_json::json!({
+            "logs-000001": { "settings": {}, "mappings": {}, "aliases": {} },
+            "logs-000002": { "settings": {}, "mappings": {}, "aliases": {} }
+        });
+
+        let response = build_get_index_metadata_response_for_names(
+            &indices,
+            &["logs-000002".to_string()],
+        );
+
+        assert!(response.get("logs-000002").is_some());
+        assert!(response.get("logs-000001").is_none());
     }
 }

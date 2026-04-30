@@ -1,0 +1,281 @@
+{
+  "indices": [
+    {
+      "name": "exec-compat",
+      "body": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "service": {
+              "type": "keyword"
+            },
+            "bytes": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "exec-geo-good",
+      "body": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "location": {
+              "type": "geo_point"
+            },
+            "service": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "exec-geo-bad",
+      "body": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "location": {
+              "type": "keyword"
+            },
+            "service": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "canmatch-a",
+      "body": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "ts": {
+              "type": "date"
+            },
+            "service": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "canmatch-b",
+      "body": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "ts": {
+              "type": "date"
+            },
+            "service": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "exec-compat",
+      "documents": [
+        {
+          "_id": "exec-1",
+          "_source": {
+            "service": "checkout",
+            "bytes": 1
+          }
+        }
+      ]
+    },
+    {
+      "index": "exec-geo-good",
+      "documents": [
+        {
+          "_id": "geo-good-1",
+          "_source": {
+            "service": "checkout",
+            "location": {
+              "lat": 37.78,
+              "lon": -122.41
+            }
+          }
+        }
+      ]
+    },
+    {
+      "index": "exec-geo-bad",
+      "documents": [
+        {
+          "_id": "geo-bad-1",
+          "_source": {
+            "service": "bad",
+            "location": "not-a-geo-point"
+          }
+        }
+      ]
+    },
+    {
+      "index": "canmatch-a",
+      "documents": [
+        {
+          "_id": "cm-a-1",
+          "_source": {
+            "service": "checkout",
+            "ts": "2026-04-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "index": "canmatch-b",
+      "documents": [
+        {
+          "_id": "cm-b-1",
+          "_source": {
+            "service": "catalog",
+            "ts": "2026-05-01T00:00:00Z"
+          }
+        }
+      ]
+    }
+  ],
+  "aliases": [],
+  "cases": [
+    {
+      "name": "dfs_query_then_fetch_execution_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/exec-compat/_search?search_type=dfs_query_then_fetch&pre_filter_shard_size=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "query_then_fetch_execution_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/exec-compat/_search?search_type=query_then_fetch",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "allow_partial_search_results_execution_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/exec-compat/_search?allow_partial_search_results=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "timeout_zero_execution_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/exec-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "timeout": "0ms"
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "geo_distance_partial_shard_failure_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/exec-geo-*/_search",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "5km",
+            "location": {
+              "lat": 37.78,
+              "lon": -122.41
+            }
+          }
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "geo_distance_partial_shard_failure_allow_partial_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/exec-geo-*/_search?allow_partial_search_results=true",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "5km",
+            "location": {
+              "lat": 37.78,
+              "lon": -122.41
+            }
+          }
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "match_none_can_match_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/canmatch-*/_search?pre_filter_shard_size=1",
+      "body": {
+        "query": {
+          "match_none": {}
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "range_can_match_summary",
+      "area": "search-execution",
+      "method": "POST",
+      "path": "/canmatch-*/_search?pre_filter_shard_size=1",
+      "body": {
+        "query": {
+          "range": {
+            "ts": {
+              "gte": "2026-04-01T00:00:00Z",
+              "lt": "2026-04-02T00:00:00Z"
+            }
+          }
+        }
+      },
+      "extract": "search_summary"
+    }
+  ]
+}

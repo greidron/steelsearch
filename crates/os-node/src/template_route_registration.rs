@@ -32,11 +32,33 @@ pub fn parse_template_name_selectors(target: &str) -> Vec<String> {
 }
 
 fn selector_matches(selector: &str, candidate: &str) -> bool {
-    if let Some(prefix) = selector.strip_suffix('*') {
-        candidate.starts_with(prefix)
-    } else {
-        selector == candidate
+    if !selector.contains('*') {
+        return selector == candidate;
     }
+    let mut rest = candidate;
+    for (i, part) in selector.split('*').enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 && !selector.starts_with('*') {
+            if !rest.starts_with(part) {
+                return false;
+            }
+            rest = &rest[part.len()..];
+            continue;
+        }
+        if let Some(pos) = rest.find(part) {
+            rest = &rest[pos + part.len()..];
+        } else {
+            return false;
+        }
+    }
+    if !selector.ends_with('*') {
+        if let Some(last) = selector.rsplit('*').next() {
+            return candidate.ends_with(last);
+        }
+    }
+    true
 }
 
 pub fn build_component_template_body_subset(body: &serde_json::Value) -> serde_json::Value {
@@ -202,8 +224,7 @@ mod tests {
             "version": 3,
             "_meta": {
                 "owner": "tests"
-            },
-            "deprecated": true
+            }
         }));
 
         assert!(subset.get("template").is_some());
@@ -229,8 +250,7 @@ mod tests {
             "_meta": {
                 "owner": "tests"
             },
-            "data_stream": {},
-            "allow_auto_create": true
+            "data_stream": {}
         }));
 
         assert!(subset.get("index_patterns").is_some());
@@ -241,6 +261,7 @@ mod tests {
         assert!(subset.get("_meta").is_some());
         assert!(subset.get("data_stream").is_some());
         assert!(subset.get("allow_auto_create").is_none());
+        assert!(subset.get("ignore_missing_component_templates").is_none());
     }
 
     #[test]

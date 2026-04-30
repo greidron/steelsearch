@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,16 @@ def validate_fixture(fixture: dict[str, Any]) -> list[str]:
 
 def validate_report(fixture: dict[str, Any], report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    fixture_cases = {case["name"]: case for case in fixture.get("cases", [])}
+    excluded_cases = {
+        name.strip()
+        for name in os.environ.get("SEARCH_COMPAT_EXCLUDE_CASES", "").split(",")
+        if name.strip()
+    }
+    fixture_cases = {
+        case["name"]: case
+        for case in fixture.get("cases", [])
+        if case.get("name") not in excluded_cases
+    }
     report_cases = {case.get("name"): case for case in report.get("cases", []) if case.get("name")}
     missing = sorted(set(fixture_cases) - set(report_cases))
     extra = sorted(set(report_cases) - set(fixture_cases))

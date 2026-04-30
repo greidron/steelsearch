@@ -5,8 +5,18 @@
       "name": "create_index_for_mapping_cases",
       "method": "PUT",
       "path": "/logs-compat-mapping-000001",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/logs-compat-mapping-000001?ignore_unavailable=true"
+        }
+      ],
       "body": {
         "mappings": {
+          "dynamic": "strict",
+          "_meta": {
+            "owner": "search"
+          },
           "properties": {
             "message": {
               "type": "text"
@@ -25,15 +35,22 @@
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
-          "logs-compat-mapping-000001.mappings.properties.message.type"
+          "logs-compat-mapping-000001.mappings.properties.message.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner"
         ]
       }
     },
     {
-      "name": "put_mapping_bounded_update",
+      "name": "put_mapping_merge_dynamic_meta_and_properties",
       "method": "PUT",
       "path": "/logs-compat-mapping-000001/_mapping",
       "body": {
+        "dynamic": "false",
+        "_meta": {
+          "owner": "platform",
+          "rollout": "phase-a1"
+        },
         "properties": {
           "level": {
             "type": "keyword"
@@ -51,10 +68,16 @@
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
-          "logs-compat-mapping-000001.mappings.properties.level.type"
+          "logs-compat-mapping-000001.mappings.properties.level.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner",
+          "logs-compat-mapping-000001.mappings._meta.rollout"
         ],
         "body_paths_equal": [
-          "logs-compat-mapping-000001.mappings.properties.level.type"
+          "logs-compat-mapping-000001.mappings.properties.level.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner",
+          "logs-compat-mapping-000001.mappings._meta.rollout"
         ]
       }
     },

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -31,6 +32,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def expand_placeholders(value: Any) -> Any:
+    if isinstance(value, str):
+        return os.path.expandvars(value)
+    if isinstance(value, list):
+        return [expand_placeholders(item) for item in value]
+    if isinstance(value, dict):
+        return {key: expand_placeholders(item) for key, item in value.items()}
+    return value
+
+
 def encode_request_body(case: dict[str, Any]) -> bytes | None:
     if "body" not in case:
         return None
@@ -40,6 +51,21 @@ def encode_request_body(case: dict[str, Any]) -> bytes | None:
     if isinstance(body, str):
         return body.encode("utf-8")
     raise TypeError(f"unsupported request body type: {type(body)!r}")
+
+
+def prepare_case_environment(case: dict[str, Any]) -> None:
+    body = case.get("body")
+    if not isinstance(body, dict):
+        return
+    if body.get("type") != "fs":
+        return
+    settings = body.get("settings")
+    if not isinstance(settings, dict):
+        return
+    location = settings.get("location")
+    if not isinstance(location, str) or not location:
+        return
+    Path(location).mkdir(parents=True, exist_ok=True)
 
 
 def request_response(base_url: str, case: dict[str, Any], timeout: float) -> dict[str, Any]:
@@ -65,6 +91,27 @@ def request_response(base_url: str, case: dict[str, Any], timeout: float) -> dic
             "body_text": None,
             "error": str(error.reason),
         }
+
+
+def request_with_polling(base_url: str, case: dict[str, Any], timeout: float) -> dict[str, Any]:
+    poll_until = case.get("poll_until")
+    response = request_response(base_url, case, timeout)
+    if not isinstance(poll_until, dict):
+        return response
+    body_path = poll_until.get("body_path")
+    expected = poll_until.get("equals")
+    attempts = int(poll_until.get("attempts", 1))
+    sleep_seconds = float(poll_until.get("sleep_seconds", 0.25))
+    if not isinstance(body_path, str) or attempts <= 1:
+        return response
+    normalized = normalize_response(case, response)
+    for _ in range(attempts - 1):
+        if extract_path(normalized.get("body"), body_path) == expected:
+            return response
+        time.sleep(sleep_seconds)
+        response = request_response(base_url, case, timeout)
+        normalized = normalize_response(case, response)
+    return response
 
 
 def decode_response(status: int, payload: bytes) -> dict[str, Any]:
@@ -107,9 +154,17 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
     if extract == "repository_single":
         repository_name = case.get("repository_name")
         if repository_name and repository_name in body:
-            return {
+            repository_body = {
                 "name": repository_name,
                 **(body.get(repository_name) or {}),
+            }
+            return normalize_repository_settings(repository_body)
+
+    if extract == "repositories_collection":
+        if isinstance(body, dict):
+            return {
+                name: normalize_repository_settings(value)
+                for name, value in body.items()
             }
 
     if extract in {"snapshot_single", "snapshot_status_single"}:
@@ -118,11 +173,50 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
             return snapshots[0]
 
     if extract == "verify_nodes":
+        nodes = body.get("nodes")
+        node_names: list[str] = []
+        if isinstance(nodes, dict):
+            for value in nodes.values():
+                if isinstance(value, dict):
+                    name = value.get("name")
+                    if isinstance(name, str):
+                        node_names.append(name)
         return {
-            "nodes": body.get("nodes"),
+            "node_count": len(nodes) if isinstance(nodes, dict) else 0,
+            "node_names": sorted(node_names),
+        }
+
+    if extract == "restore_validation_failure":
+        error = body.get("error")
+        reason = ""
+        error_type = None
+        if isinstance(error, dict):
+            error_type = error.get("type")
+            reason = str(error.get("reason") or "")
+        failure_class = None
+        for candidate in ("stale", "corrupt", "incompatible"):
+            if candidate in reason:
+                failure_class = candidate
+                break
+        return {
+            "status": body.get("status"),
+            "error_type": error_type,
+            "failure_class": failure_class,
         }
 
     return body
+
+
+def normalize_repository_settings(body: Any) -> Any:
+    if not isinstance(body, dict):
+        return body
+    normalized = json.loads(json.dumps(body))
+    settings = normalized.get("settings")
+    if isinstance(settings, dict):
+        for field in ("compress", "readonly"):
+            if field in settings:
+                settings[field] = str(settings[field]).lower()
+    return normalized
 
 
 def normalize_response(case: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
@@ -182,6 +276,7 @@ def main() -> int:
         return 2
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    fixture = expand_placeholders(fixture)
     report: dict[str, Any] = {
         "name": fixture.get("name", "snapshot-lifecycle-compat"),
         "fixture": str(Path(args.fixture).resolve()),
@@ -199,14 +294,19 @@ def main() -> int:
 
     exit_code = 0
     degraded_source_reason: str | None = None
+    for case in fixture.get("setup", []):
+        prepare_case_environment(case)
+        request_with_polling(args.steelsearch_url, case, args.timeout)
+        request_with_polling(args.opensearch_url, case, args.timeout)
     for case in fixture.get("cases", []):
+        prepare_case_environment(case)
         steelsearch = normalize_response(
             case,
-            request_response(args.steelsearch_url, case, args.timeout),
+            request_with_polling(args.steelsearch_url, case, args.timeout),
         )
         opensearch = normalize_response(
             case,
-            request_response(args.opensearch_url, case, args.timeout),
+            request_with_polling(args.opensearch_url, case, args.timeout),
         )
         if degraded_source_reason is None and missing_snapshot_repo_environment(opensearch):
             degraded_source_reason = (

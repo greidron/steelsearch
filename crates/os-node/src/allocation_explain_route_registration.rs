@@ -12,9 +12,20 @@ pub const ALLOCATION_EXPLAIN_RESPONSE_FIELDS: [&str; 6] = [
     "current_node",
     "node_allocation_decisions",
 ];
+pub const ALLOCATION_EXPLAIN_OPTIONAL_RESPONSE_FIELDS: [&str; 6] = [
+    "can_allocate",
+    "allocate_explanation",
+    "can_remain_on_current_node",
+    "can_rebalance_cluster",
+    "can_rebalance_to_other_node",
+    "rebalance_explanation",
+];
 
-pub const ALLOCATION_EXPLAIN_NODE_DECISION_FIELDS: [&str; 4] = [
+pub const ALLOCATION_EXPLAIN_NODE_DECISION_FIELDS: [&str; 7] = [
     "node_name",
+    "node_id",
+    "transport_address",
+    "node_attributes",
     "node_decision",
     "weight_ranking",
     "deciders",
@@ -22,6 +33,15 @@ pub const ALLOCATION_EXPLAIN_NODE_DECISION_FIELDS: [&str; 4] = [
 
 pub const ALLOCATION_EXPLAIN_DECIDER_FIELDS: [&str; 3] =
     ["decider", "decision", "explanation"];
+pub const ALLOCATION_EXPLAIN_CURRENT_NODE_FIELDS: [&str; 5] = [
+    "id",
+    "name",
+    "transport_address",
+    "weight_ranking",
+    "attributes",
+];
+pub const ALLOCATION_EXPLAIN_UNASSIGNED_INFO_FIELDS: [&str; 2] =
+    ["reason", "last_allocation_status"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AllocationExplainRouteRegistryEntry {
@@ -83,6 +103,29 @@ pub fn build_cluster_allocation_explain_response(
     body: &serde_json::Value,
 ) -> serde_json::Value {
     let mut normalized = normalize_fields(body, &ALLOCATION_EXPLAIN_RESPONSE_FIELDS);
+    for field in ALLOCATION_EXPLAIN_OPTIONAL_RESPONSE_FIELDS {
+        if let Some(value) = body.get(field) {
+            normalized.insert(field.to_string(), value.clone());
+        }
+    }
+    if let Some(current_node) = body.get("current_node") {
+        normalized.insert(
+            "current_node".to_string(),
+            serde_json::Value::Object(normalize_fields(
+                current_node,
+                &ALLOCATION_EXPLAIN_CURRENT_NODE_FIELDS,
+            )),
+        );
+    }
+    if let Some(unassigned_info) = body.get("unassigned_info") {
+        normalized.insert(
+            "unassigned_info".to_string(),
+            serde_json::Value::Object(normalize_fields(
+                unassigned_info,
+                &ALLOCATION_EXPLAIN_UNASSIGNED_INFO_FIELDS,
+            )),
+        );
+    }
     if body.get("node_allocation_decisions").is_some() {
         normalized.insert(
             "node_allocation_decisions".to_string(),

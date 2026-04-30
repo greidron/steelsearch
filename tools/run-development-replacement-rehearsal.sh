@@ -25,6 +25,7 @@ SNAPSHOT_LIFECYCLE_COMPAT_REPORT="${SNAPSHOT_LIFECYCLE_COMPAT_REPORT:-${REHEARSA
 DATA_STREAM_ROLLOVER_COMPAT_REPORT="${DATA_STREAM_ROLLOVER_COMPAT_REPORT:-${REHEARSAL_DIR}/data-stream-rollover-compat-report.json}"
 MIGRATION_CUTOVER_INTEGRATION_REPORT="${MIGRATION_CUTOVER_INTEGRATION_REPORT:-${REHEARSAL_DIR}/migration-cutover-integration-report.json}"
 VECTOR_SEARCH_COMPAT_REPORT="${VECTOR_SEARCH_COMPAT_REPORT:-${REHEARSAL_DIR}/vector-search-compat-report.json}"
+ML_MODEL_SURFACE_COMPAT_REPORT="${ML_MODEL_SURFACE_COMPAT_REPORT:-${REHEARSAL_DIR}/ml-model-surface-compat-report.json}"
 MULTI_NODE_TRANSPORT_ADMIN_REPORT="${MULTI_NODE_TRANSPORT_ADMIN_REPORT:-${REHEARSAL_DIR}/multi-node-transport-admin-report.json}"
 STEELSEARCH_READINESS_REPORT="${STEELSEARCH_READINESS_REPORT:-${REHEARSAL_DIR}/steelsearch-readiness.json}"
 STEELSEARCH_BENCHMARK_REPORT="${STEELSEARCH_BENCHMARK_REPORT:-${REHEARSAL_DIR}/deterministic-baselines.jsonl}"
@@ -34,6 +35,7 @@ STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS="${STEELSEARCH_RELEASE_EVIDENCE_MAX
 WAIT_TIMEOUT="${REHEARSAL_WAIT_TIMEOUT:-300}"
 RUN_SEARCH_COMPAT="${RUN_SEARCH_COMPAT:-1}"
 PHASE_A_COMPARE_SCOPE="${PHASE_A_COMPARE_SCOPE:-full}"
+export SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}"
 
 STEELSEARCH_STARTED=0
 OPENSEARCH_STARTED=0
@@ -66,7 +68,7 @@ Environment:
                                Steelsearch/OpenSearch load comparison evidence.
   STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS
                                Max benchmark/load report age. Default: 86400.
-  PHASE_A_COMPARE_SCOPE        `full`, `root-cluster-node`, `index-metadata`, `document-write-path`, `search`, `snapshot-migration`, `vector-ml`, or `transport-admin`. Default: full.
+  PHASE_A_COMPARE_SCOPE        `full`, `root-cluster-node`, `index-metadata`, `document-write-path`, `search`, `search-execution`, `snapshot-migration`, `vector-ml`, or `transport-admin`. Default: full.
 USAGE
 }
 
@@ -157,6 +159,36 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "search" ]]; then
   export RUN_MIGRATION_CUTOVER_INTEGRATION=0
   export RUN_VECTOR_SEARCH_COMPAT=0
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
+fi
+
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "search-execution" ]]; then
+  export RUN_CLUSTER_HEALTH_COMPAT=0
+  export RUN_ALLOCATION_EXPLAIN_COMPAT=0
+  export RUN_CLUSTER_SETTINGS_COMPAT=0
+  export RUN_CLUSTER_STATE_COMPAT=0
+  export RUN_ROOT_CLUSTER_NODE_COMPAT=0
+  export RUN_TASKS_COMPAT=0
+  export RUN_STATS_COMPAT=0
+  export RUN_INDEX_LIFECYCLE_COMPAT=0
+  export RUN_MAPPING_COMPAT=0
+  export RUN_SETTINGS_COMPAT=0
+  export RUN_SINGLE_DOC_CRUD_COMPAT=0
+  export RUN_REFRESH_COMPAT=0
+  export RUN_BULK_COMPAT=0
+  export RUN_ROUTING_COMPAT=0
+  export RUN_ALIAS_READ_COMPAT=0
+  export RUN_TEMPLATE_COMPAT=0
+  export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
+  export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
+  export RUN_MIGRATION_CUTOVER_INTEGRATION=0
+  export RUN_VECTOR_SEARCH_COMPAT=0
+  export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
+  export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-execution-compat.json}"
+fi
+
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "full" ]]; then
+  export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-strict-compat.json}"
+  export SEARCH_COMPAT_EXCLUDE_CASES="${SEARCH_COMPAT_EXCLUDE_CASES:-expand_wildcards_closed_fail_closed,get_aliases_readback,cat_count_json,cat_count_text}"
 fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "snapshot-migration" ]]; then
@@ -454,7 +486,11 @@ elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
   export OPENSEARCH_WORK_DIR="${OPENSEARCH_WORK_DIR:-${REHEARSAL_DIR}/opensearch}"
   rm -rf "${OPENSEARCH_WORK_DIR}"
   echo "Starting OpenSearch at ${OPENSEARCH_URL}" >&2
-  "${ROOT}/tools/run-opensearch-dev.sh" >"${REHEARSAL_DIR}/opensearch.log" 2>&1 &
+  if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
+    "${ROOT}/tools/run-opensearch-vector-dev.sh" >"${REHEARSAL_DIR}/opensearch.log" 2>&1 &
+  else
+    "${ROOT}/tools/run-opensearch-dev.sh" >"${REHEARSAL_DIR}/opensearch.log" 2>&1 &
+  fi
   OPENSEARCH_PID=$!
   OPENSEARCH_STARTED=1
 fi
@@ -584,6 +620,11 @@ if [[ "${RUN_VECTOR_SEARCH_COMPAT:-0}" == "1" ]]; then
     --opensearch-url "${OPENSEARCH_URL}" \
     --output "${VECTOR_SEARCH_COMPAT_REPORT}"
 fi
+if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
+  python3 "${ROOT}/tools/ml_model_surface_compat.py" \
+    --steelsearch-url "${STEELSEARCH_URL}" \
+    --output "${ML_MODEL_SURFACE_COMPAT_REPORT}"
+fi
 if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
   python3 "${ROOT}/tools/multi_node_transport_admin_integration.py" \
     --node-a-url "${STEELSEARCH_NODE_A_URL}" \
@@ -665,6 +706,9 @@ if [[ "${RUN_MIGRATION_CUTOVER_INTEGRATION:-0}" == "1" ]]; then
 fi
 if [[ "${RUN_VECTOR_SEARCH_COMPAT:-0}" == "1" ]]; then
   echo "vector search compatibility report: ${VECTOR_SEARCH_COMPAT_REPORT}"
+fi
+if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
+  echo "ml model surface compatibility report: ${ML_MODEL_SURFACE_COMPAT_REPORT}"
 fi
 if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
   echo "multi-node transport/admin integration report: ${MULTI_NODE_TRANSPORT_ADMIN_REPORT}"

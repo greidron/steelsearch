@@ -16,10 +16,13 @@ span:
 
 ## Current Steelsearch Position
 
-- Core `_search` routes exist.
-- A selected Query DSL, aggregation, sort, pagination, alias/wildcard, and
-  vector-search subset is implemented.
-- Many advanced search features are still absent or explicitly fail-closed.
+- Core `_search` routes are live and release-gated by the strict search and
+  search-execution profiles.
+- Query DSL, aggregation, response-shaping, scroll, PIT, and search execution
+  controls documented in the main spec are implemented on the standalone
+  surface.
+- Remaining non-claims are later-phase semantics or Steelsearch-only
+  extensions, not a development placeholder route.
 
 ## Key Route Families
 
@@ -30,20 +33,15 @@ span:
 - `GET /{index}/_search`
 - `POST /{index}/_search`
 
-### Advanced search families still missing or partial
+### Advanced search families still narrower than full OpenSearch
 
 - search templates
-- PIT
-- scroll
-- suggest
-- highlight
-- rescore
-- collapse
-- explain
-- profile
-- stored fields / docvalue fields / runtime fields
+- search templates
+- broader mixed-cluster shard-phase semantics
+- request-body `runtime_mappings` as OpenSearch parity
 
 ## Replacement Gap
 
-Search is one of the stronger parts of Steelsearch today, but it is still a
-subset implementation relative to OpenSearch.
+Search is one of the stronger standalone replacement areas in Steelsearch
+today. Remaining gaps are deeper OpenSearch semantics rather than missing route
+family activation.

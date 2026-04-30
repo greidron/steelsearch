@@ -14,6 +14,18 @@
       }
     },
     {
+      "name": "get_cluster_settings_flat_readback",
+      "method": "GET",
+      "path": "/_cluster/settings?flat_settings=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ]
+      }
+    },
+    {
       "name": "put_cluster_settings_bounded_mutation",
       "method": "PUT",
       "path": "/_cluster/settings",
@@ -23,6 +35,44 @@
         },
         "transient": {
           "cluster.info.update.interval": "45s"
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "persistent",
+          "transient"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "persistent.cluster.routing.allocation.enable",
+          "transient.cluster.info.update.interval"
+        ]
+      }
+    },
+    {
+      "name": "put_cluster_settings_nested_mutation",
+      "method": "PUT",
+      "path": "/_cluster/settings",
+      "body": {
+        "persistent": {
+          "cluster": {
+            "routing": {
+              "allocation": {
+                "enable": "new_primaries"
+              }
+            }
+          }
+        },
+        "transient": {
+          "cluster": {
+            "info": {
+              "update": {
+                "interval": "60s"
+              }
+            }
+          }
         }
       },
       "compare": {
@@ -50,6 +100,68 @@
           "transient"
         ],
         "body_paths_equal": [
+          "persistent.cluster.routing.allocation.enable",
+          "transient.cluster.info.update.interval"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_settings_include_defaults",
+      "method": "GET",
+      "path": "/_cluster/settings?include_defaults=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ]
+      }
+    },
+    {
+      "name": "put_cluster_settings_null_reset",
+      "method": "PUT",
+      "path": "/_cluster/settings",
+      "body": {
+        "persistent": {
+          "cluster.routing.allocation.enable": null
+        },
+        "transient": {
+          "cluster": {
+            "info": {
+              "update": {
+                "interval": null
+              }
+            }
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "persistent",
+          "transient"
+        ],
+        "body_paths_absent": [
+          "persistent.cluster.routing.allocation.enable",
+          "transient.cluster.info.update.interval"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_settings_after_null_reset",
+      "method": "GET",
+      "path": "/_cluster/settings?flat_settings=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ],
+        "body_paths_absent": [
           "persistent.cluster.routing.allocation.enable",
           "transient.cluster.info.update.interval"
         ]

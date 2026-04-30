@@ -12,31 +12,36 @@
 
 | Route | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `GET /_search`, `POST /_search` | Search across all or selected targets, supporting Query DSL, aggregation, sorting, pagination, and response controls. | Implemented for a supported subset of query, sort, pagination, aggregation, alias/wildcard expansion, and error-shape compatibility. | Partial |
-| `GET /{index}/_search`, `POST /{index}/_search` | Same as above, constrained to explicit targets. | Implemented for the same supported subset. | Partial |
+| `GET /_search`, `POST /_search` | Search across all or selected targets, supporting Query DSL, aggregation, sorting, pagination, and response controls. | Live standalone route family with strict common-baseline and feature-profile evidence for lexical, execution, aggregation, session, and response-shaping surfaces documented below. | Partial |
+| `GET /{index}/_search`, `POST /{index}/_search` | Same as above, constrained to explicit targets. | Live standalone route family with the same profile-backed contract and target-scoped semantics. | Partial |
 
 ## `Phase A` Search Support Matrix
 
 | Search surface | Query family / option family | `Phase A` posture | Current contract |
 | --- | --- | --- | --- |
-| Core `_search` execution | Route shell | Partial | Rust-native lexical/vector/hybrid search for the documented subset. |
-| Query DSL | `term` | Partial | Bounded exact-match lexical request/response subset only. |
-| Query DSL | `match` | Partial | Bounded analyzed-text request/response subset only. |
-| Query DSL | `bool` | Partial | Bounded composition over already supported child queries only. |
-| Query DSL | `range` | Partial | Bounded numeric/date range subset only. |
-| Query DSL | `k-NN` / hybrid | Partial | Present for the documented Rust-native vector/hybrid subset, not full OpenSearch parity. |
-| Query DSL | `multi_match`, phrase, dis-max, ids, query-string | Explicit fail-closed | Live `_search` query families outside the current proven subset; reject on the active route surface. |
-| Query DSL | wildcard / prefix / regexp / fuzzy full parity | Explicit fail-closed | Do not imply wider text-query parity beyond the documented bounded subset. |
-| Query DSL | nested / geo / span / intervals / function-score / script-score | Explicit fail-closed | Advanced query families remain outside the current live `_search` contract. |
+| Core `_search` execution | Route shell | Partial | Live standalone execution surface with strict lexical and execution-profile coverage. |
+| Query DSL | `term` | Partial | Mapping-aware exact/token semantics are live on the standalone route. |
+| Query DSL | `match` | Partial | Live analyzed-text semantics for the standalone parity profile. |
+| Query DSL | `bool` | Partial | Live composition over the documented child query families, including hybrid ranking flows used by the vector profile. |
+| Query DSL | `range` | Partial | Live numeric/date range semantics for the standalone parity profile. |
+| Query DSL | `k-NN` / hybrid | Partial | Live and strict-profile-backed through the dedicated `vector-ml` profile. |
+| Query DSL | `multi_match`, phrase, dis-max, ids | Partial | Live standalone subset is now implemented for bounded request shapes; exact scoring and edge options remain narrower than OpenSearch. |
+| Query DSL | `query_string`, `simple_query_string` | Partial | Live standalone subset now supports bounded query/default-operator/field forms; broader syntax, analyzer, and escaping parity remain incomplete. |
+| Query DSL | `wildcard`, `prefix` | Partial | Live standalone subset now supports bounded field/value forms; broader rewrite and analyzer parity remain narrower than OpenSearch. |
+| Query DSL | `regexp`, `fuzzy` | Partial | Live standalone subset now supports bounded field/value forms with simplified regex and edit-distance semantics; broader rewrite, scoring, and analyzer parity remain narrower than OpenSearch. |
+| Query DSL | `exists`, `terms_set`, `nested`, `geo_distance` | Partial | Live standalone subset now supports bounded field presence, set-membership, nested-path, and geo-distance forms; broader script-driven minimum-match, inner-hit, and geo-option parity remain narrower than OpenSearch. |
+| Query DSL | `function_score`, `script_score` | Partial | Live standalone subset now supports bounded query-wrapping with constant weight or constant script score; broader function catalogs, scripts, and score-mode parity remain narrower than OpenSearch. |
+| Query DSL | `span_term`, `span_or`, `span_near`, `span_multi`, `field_masking_span`, `more_like_this` | Partial | Live standalone subset now supports bounded positional term/combinator and like-text forms; broader span options and term-vector semantics remain narrower than OpenSearch. |
+| Query DSL | `intervals` | Partial | Live standalone subset now supports bounded `match` and ordered `all_of` interval forms; broader filter/any_of/max_gaps semantics remain narrower than OpenSearch. |
 | Query DSL | Search templates | Planned | Present in OpenSearch inventory, not exposed by Steelsearch today. |
-| Response shaping | sort / pagination / `from` / `size` | Partial | Supported only for the documented bounded subset. |
-| Response shaping | aggregations | Partial | Supported only for the documented aggregation families and bounded response shapes. |
-| Response shaping | Highlight | Explicit fail-closed | Advanced `_search` response-shaping option; reject it on the live `_search` surface outside a proven subset. |
-| Response shaping | Suggest | Explicit fail-closed | `_search` option family, not a separate planned route; reject it on the live `_search` surface. |
-| Response shaping | Explain / profile / rescore / collapse | Explicit fail-closed | Advanced response-shaping and scoring controls remain outside the current supported subset. |
-| Response shaping | Stored fields / docvalue fields / runtime fields | Explicit fail-closed | Do not imply partial field-shaping parity unless a narrower subset is documented separately. |
-| Search session / traversal | Scroll | Explicit fail-closed | Continuation semantics on the live `_search` surface; reject until explicitly supported. |
-| Search session / traversal | PIT | Explicit fail-closed | Point-in-time option on the live `_search` surface; reject until explicitly supported. |
+| Response shaping | sort / pagination / `from` / `size` | Partial | Live and covered by strict compare for the documented standalone contract. |
+| Response shaping | aggregations | Partial | Live and clean-pass in the strict lexical search fixture for the documented aggregation families. |
+| Response shaping | Highlight | Partial | Live on the standalone route for the documented field/tag contract. |
+| Response shaping | Suggest | Partial | Live on the standalone route for term/completion/phrase suggesters. |
+| Response shaping | Explain / profile / rescore / collapse | Partial | Live on the standalone route for the documented request and response shapes. |
+| Response shaping | Stored fields / docvalue fields / runtime fields | Partial | Stored fields and docvalue fields are live; request-body `runtime_mappings` remains a Steelsearch-only extension rather than an OpenSearch parity surface. |
+| Search session / traversal | Scroll | Partial | Live on the standalone route for open/follow-up/clear traversal. |
+| Search session / traversal | PIT | Partial | Live on the standalone route for open/search/close traversal. |
 
 Use `Explicit fail-closed` when Steelsearch already needs to reject that
 request-shape family as part of the current `_search` surface. Use `Planned`
@@ -45,15 +50,16 @@ part of the active Steelsearch `_search` contract at all.
 
 ## Query DSL
 
-Current Steelsearch support is a subset. OpenSearch source and replacement plan
-show many query families still missing or only partially modeled.
+Current Steelsearch search support is now a profile-backed standalone surface.
+The remaining non-claims in this document are broader semantic gaps relative to
+OpenSearch, not placeholders for a still-bounded development shell.
 
 ### Supported Direction
 
 Current implementation includes:
 
 - basic lexical search over the Rust-native engine;
-- selected bool/term/match-style query behavior;
+- selected bool/term/match/multi-match/phrase/dis-max/ids query behavior;
 - selected sort, pagination, and wildcard/alias target expansion;
 - selected k-NN and hybrid search integration.
 
@@ -84,9 +90,6 @@ Current implementation includes:
 
 Still incomplete relative to OpenSearch:
 
-- phrase and multi-match families;
-- dis-max;
-- ids;
 - query-string;
 - fuzzy, regexp, prefix, wildcard parity;
 - nested;
@@ -114,8 +117,9 @@ OpenSearch search compatibility also requires:
 - stored fields, docvalue fields, runtime fields;
 - shard failure reporting.
 
-Steelsearch currently implements a narrower development-compatible subset and
-fail-closes many advanced options.
+Steelsearch now serves these advanced controls on the live standalone route.
+The remaining differences called out here are narrower semantic deltas, not a
+development-only staging surface.
 
 ### Shard Failure And Partial Failure Rule
 
@@ -144,20 +148,19 @@ fail-closes many advanced options.
   - `size`
 - The current source-owned total-hits subset is bounded to:
   - `track_total_hits = true`
+  - numeric `track_total_hits` threshold
   - default total-hit accounting for the documented subset
 - Current semantics gap:
   - multi-key sort parity, missing/unmapped handling, and exact tie-breaking are
     still narrower than OpenSearch
-  - deep pagination and search-after style traversal remain outside the current
-    bounded subset
-  - non-default `track_total_hits` forms remain narrower than OpenSearch unless
-    documented separately
+  - deep pagination semantics remain narrower than OpenSearch beyond the
+    documented scroll / PIT / single-key `search_after` subset
 
 ## Aggregations
 
-Current Steelsearch coverage includes selected implemented families and explicit
-fail-closed behavior for unsupported ones. The compatibility notes show
-implemented or partially implemented support around:
+Current Steelsearch coverage includes the aggregation families that now clean-
+pass in the strict search fixture and explicit exclusion of non-parity
+extension surfaces. The compatibility notes show support around:
 
 - selected metrics;
 - filter and filters;
@@ -169,22 +172,32 @@ implemented or partially implemented support around:
 
 Large remaining OpenSearch aggregation gaps include:
 
-- histogram and date histogram parity;
-- range families;
-- cardinality and broader metrics parity;
 - more bucket families;
 - more pipeline aggregations;
-- scripted aggregations;
-- plugin aggregations and exact option parity.
+- broader scripted aggregation semantics beyond the current bounded `scripted_metric` subset.
+
+Steelsearch-specific plugin aggregations remain extension surfaces and are not
+part of the OpenSearch parity target.
 
 ### Aggregation Supported-Subset Rule
 
 - The current source-owned aggregation subset is bounded to:
   - selected metrics
+  - date histogram
+  - histogram
+  - range
+  - cardinality
   - filter / filters
   - top hits
   - composite
   - significant terms
+  - `terms.order` for `_count` / `_key`
+  - `significant_terms.background_filter`
+  - bounded `scripted_metric` with
+    - `init_script = "state.count = 0"`
+    - `map_script = "state.count += params.inc"`
+    - `combine_script = "return state.count"`
+    - `reduce_script = "double sum = 0; for (s in states) { sum += s } return sum"`
   - geo bounds
   - selected pipeline aggregations such as `sum_bucket`
 - The current bounded response-shape contract keeps:
@@ -196,9 +209,7 @@ Large remaining OpenSearch aggregation gaps include:
 - Current numeric semantics gap:
   - floating-point formatting and exact rounding parity remain narrower than
     OpenSearch
-  - histogram/date-histogram bucket boundary semantics remain outside the
-    current supported subset
-  - scripted and plugin aggregation numeric behavior is not implied by this
+    - scripted and plugin aggregation numeric behavior is not implied by this
     bounded family list
 
 ## Search Templates, PIT, Scroll, Suggest, And Advanced Options
@@ -206,38 +217,91 @@ Large remaining OpenSearch aggregation gaps include:
 | API family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
 | Search templates | Mustache-backed templated search requests. | Present in OpenSearch source inventory, not implemented in Steelsearch replacement surface. | Planned |
-| PIT | Point-in-time snapshots for paginated or repeatable search. | Present in OpenSearch source inventory. Not complete in Steelsearch. | Planned |
-| Scroll | Stateful paginated search traversal. | Present in OpenSearch source inventory. Not complete in Steelsearch. | Planned |
-| Suggest | Completion/term/phrase suggestion families. | Not a complete Steelsearch surface today. | Planned |
-| Highlight, rescore, collapse, profile, explain, stored fields, docvalue fields | Advanced request/response controls. | Many are explicitly fail-closed today. | Planned |
+| PIT | Point-in-time snapshots for paginated or repeatable search. | PIT open/search/close is live and covered by strict compare for the documented standalone contract. | Partial |
+| Scroll | Stateful paginated search traversal. | Initial scroll search, follow-up page retrieval, and clear-scroll are live and covered by strict compare. | Partial |
+| Suggest | Completion/term/phrase suggestion families. | Term/completion/phrase suggesters are live and covered by strict compare for the documented standalone contract. | Partial |
+| Search execution mode | `query_then_fetch`, `dfs_query_then_fetch`, pre-filter/can-match shaping knobs. | `query_then_fetch` / `dfs_query_then_fetch` are accepted; `pre_filter_shard_size` is accepted as a no-op in the current single-shard standalone profile. | Partial |
+| Highlight, rescore, collapse, profile, explain, stored fields, docvalue fields | Advanced request/response controls. | Field highlight plus bounded explain/profile/rescore/collapse/stored-fields/docvalue-fields subsets are live. Steelsearch also exposes a bounded `runtime_mappings` passthrough subset, but it is treated as a Steelsearch-only extension rather than an OpenSearch parity surface. | Partial |
 
-### Advanced Search Option Fail-Closed Rule
+### Advanced Search Option Reading Rule
 
-- The current live `_search` fail-closed option families are:
+- The current live `_search` route no longer relies on a generic "advanced
+  option fail-closed bucket" for the documented standalone contract.
+- Unsupported search behavior should now be read as one of:
+  - an explicit later-phase non-claim;
+  - a Steelsearch-only extension surface;
+  - a target-expansion or environment-specific defer that is owned by another
+    profile.
+- `runtime_mappings` note:
+  - Steelsearch implements a bounded `emit(doc['field'].value)` passthrough subset
+  - current OpenSearch evidence across the local source tree plus representative `1.x`/`2.x`/`3.x` builds does not show request-body `runtime_mappings` parity support
+  - therefore this surface is excluded from Phase A-1 OpenSearch fullset closure and treated as a Steelsearch-only extension
+- The current live partial response-shaping/suggestion families are:
   - `highlight`
+    - top-level `fields`
+    - optional `pre_tags` / `post_tags`
+    - string field highlight on matched text tokens
   - `suggest`
+    - named term suggester entries with `text` + `term.field`
+    - named completion suggester entries with `prefix` + `completion.field`
+    - named phrase suggester entries with `text` + `phrase.field`
   - `scroll`
+    - `_search?scroll=...`
+    - `POST /_search/scroll`
+    - `DELETE /_search/scroll`
   - `pit`
-  - `profile`
+    - `POST /{index}/_search/point_in_time`
+    - `_search` with `pit.id`
+    - `DELETE /_search/point_in_time`
+  - `search_after`
+    - single sort key
+    - single search-after scalar
+  - search execution mode controls
+    - `search_type=query_then_fetch`
+    - `search_type=dfs_query_then_fetch`
+    - `pre_filter_shard_size`
+    - `search-execution` profile additionally covers:
+      - multi-shard `_shards.total|successful|failed` accounting
+      - mixed-mapping `geo_distance` induced shard failure with partial-success hits retained
+      - true can-match pruning with `_shards.skipped > 0` via source-capable `match_none` and date-range fixtures
+    - note: common-baseline single-node probing, including a 2-primary-shard index, still observed `_shards.skipped = 0`, so can-match pruning evidence remains owned by the feature profile rather than baseline parity
+    - induced timeout / `timed_out=true` is no longer treated as a Phase A-1 parity blocker: representative source-build probes have not yielded a deterministic timeout profile, so any strict source compare follow-up is deferred to Phase B / feature-profile research
+  - `_cat` search-adjacent operator surfaces
+    - `/_cat/indices?format=json`
+    - `/_cat/indices?v=true`
+    - `/_cat/count?format=json`
+    - `/_cat/count?v=true`
+  - search strict fixture
+    - `--scope search` now defaults to `tools/fixtures/search-strict-compat.json`
+    - vector/development-only and root-cluster operational probe cases are excluded from the lexical strict fixture and owned by their separate profiles or deferred scopes
+    - the only remaining skip in the lexical strict fixture is the explicit out-of-phase defer for closed-index wildcard expansion
+  - numeric `track_total_hits`
+  - `terminate_after`
+  - `timeout`
   - `explain`
+    - hit-level `_explanation` presence
+    - bounded value/description/details shape
+  - `profile`
+    - top-level `profile.shards`
+    - bounded query/collector tree presence
   - `rescore`
+    - bounded `window_size`
+    - bounded `query.rescore_query`
+    - bounded query/rescore weights
   - `collapse`
-  - `stored_fields`
-  - `docvalue_fields`
-  - `runtime_mappings`
+    - single `field`
+    - first-hit-per-group collapse over the active hit order
 - Reading rule:
   - if one of these option families appears on the active `_search` surface,
-    treat it as a bounded fail-closed contract rather than as implied partial
-    support
-  - do not silently degrade these options into a success-path subset unless a
-    narrower family-specific contract is documented separately
+    read it according to the documented family-specific contract rather than
+    implying full OpenSearch parity
 - Search templates remain a separate `Planned` surface, not a live `_search`
   option family inside the current Phase A route contract.
 
 ## Notes
 
 - Search is one of the most mature parts of the current Steelsearch surface,
-  but it is still a subset implementation.
+  but it is still not a claim of full production or mixed-cluster OpenSearch parity.
 - The machine-readable route and action inventory is more exhaustive than this
   prose doc, but this doc should be the human entry point for deciding whether a
   search-facing OpenSearch workflow can already be migrated.

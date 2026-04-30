@@ -1,5 +1,39 @@
 {
   "name": "cluster-state-compat",
+  "setup": [
+    {
+      "name": "create_logs_state_compat_index",
+      "method": "PUT",
+      "path": "/logs-state-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "index"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "index"
+        ]
+      }
+    },
+    {
+      "name": "create_logs_state_extra_index",
+      "method": "PUT",
+      "path": "/logs-state-extra",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "index"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "index"
+        ]
+      }
+    }
+  ],
   "cases": [
     {
       "name": "get_cluster_state_full",
@@ -9,95 +43,161 @@
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
-          "metadata.indices.logs-compat",
+          "version",
+          "state_uuid",
+          "master_node",
+          "metadata.indices.logs-state-compat",
           "nodes",
-          "routing_table.indices.logs-compat"
+          "routing_nodes.unassigned",
+          "routing_table.indices.logs-state-compat"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state",
-          "routing_table.indices.logs-compat.shards.0.0.primary"
+          "metadata.indices.logs-state-compat.state",
+          "routing_table.indices.logs-state-compat.shards.0.0.primary"
         ]
       }
     },
     {
       "name": "get_cluster_state_filtered_metadata_single_index",
       "method": "GET",
-      "path": "/_cluster/state?metric=metadata&indices=logs-compat",
+      "path": "/_cluster/state?metric=metadata&indices=logs-state-compat",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
           "cluster_uuid",
-          "metadata.indices.logs-compat"
+          "metadata.indices.logs-state-compat"
         ],
         "body_paths_absent": [
           "nodes",
           "routing_table"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state"
+          "metadata.indices.logs-state-compat.state"
         ]
       }
     },
     {
       "name": "get_cluster_state_filtered_metadata_routing_single_index",
       "method": "GET",
-      "path": "/_cluster/state?metric=metadata,routing_table&indices=logs-compat",
+      "path": "/_cluster/state?metric=metadata,routing_table&indices=logs-state-compat",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
           "cluster_uuid",
-          "metadata.indices.logs-compat",
-          "routing_table.indices.logs-compat"
+          "metadata.indices.logs-state-compat",
+          "routing_table.indices.logs-state-compat"
         ],
         "body_paths_absent": [
           "nodes"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state",
-          "routing_table.indices.logs-compat.shards.0.0.primary"
+          "metadata.indices.logs-state-compat.state",
+          "routing_table.indices.logs-state-compat.shards.0.0.primary"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_routing_nodes_metric",
+      "method": "GET",
+      "path": "/_cluster/state?metric=routing_nodes",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "routing_nodes.unassigned"
+        ],
+        "body_paths_absent": [
+          "metadata",
+          "nodes",
+          "routing_table"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_path_routing_nodes_metric",
+      "method": "GET",
+      "path": "/_cluster/state/routing_nodes",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "routing_nodes.unassigned"
+        ],
+        "body_paths_absent": [
+          "metadata",
+          "nodes",
+          "routing_table"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_filtered_metadata_routing_multi_index_selector",
+      "method": "GET",
+      "path": "/_cluster/state?metric=metadata,routing_table&indices=logs-state-compat,logs-state-*",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "cluster_uuid",
+          "metadata.indices.logs-state-compat",
+          "metadata.indices.logs-state-extra",
+          "routing_table.indices.logs-state-compat",
+          "routing_table.indices.logs-state-extra"
+        ],
+        "body_paths_absent": [
+          "nodes",
+          "routing_nodes"
+        ],
+        "body_paths_equal": [
+          "metadata.indices.logs-state-compat.state",
+          "metadata.indices.logs-state-extra.state",
+          "routing_table.indices.logs-state-compat.shards.0.0.primary",
+          "routing_table.indices.logs-state-extra.shards.0.0.primary"
         ]
       }
     },
     {
       "name": "get_cluster_state_path_metric_single_index",
       "method": "GET",
-      "path": "/_cluster/state/metadata/logs-compat",
+      "path": "/_cluster/state/metadata/logs-state-compat",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
           "cluster_uuid",
-          "metadata.indices.logs-compat"
+          "metadata.indices.logs-state-compat"
         ],
         "body_paths_absent": [
           "nodes",
           "routing_table"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state"
+          "metadata.indices.logs-state-compat.state"
         ]
       }
     },
     {
       "name": "get_cluster_state_path_metric_routing_single_index",
       "method": "GET",
-      "path": "/_cluster/state/metadata,routing_table/logs-compat",
+      "path": "/_cluster/state/metadata,routing_table/logs-state-compat",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
           "cluster_uuid",
-          "metadata.indices.logs-compat",
-          "routing_table.indices.logs-compat"
+          "metadata.indices.logs-state-compat",
+          "routing_table.indices.logs-state-compat"
         ],
         "body_paths_absent": [
           "nodes"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state",
-          "routing_table.indices.logs-compat.shards.0.0.primary"
+          "metadata.indices.logs-state-compat.state",
+          "routing_table.indices.logs-state-compat.shards.0.0.primary"
         ]
       }
     },
@@ -122,27 +222,27 @@
     {
       "name": "reject_cluster_state_wildcard_index_filter",
       "method": "GET",
-      "path": "/_cluster/state?metric=metadata&indices=logs-*",
+      "path": "/_cluster/state?metric=metadata&indices=logs-state-*",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
           "cluster_uuid",
-          "metadata.indices.logs-compat"
+          "metadata.indices.logs-state-compat"
         ],
         "body_paths_absent": [
           "nodes",
           "routing_table"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state"
+          "metadata.indices.logs-state-compat.state"
         ]
       }
     },
     {
       "name": "reject_cluster_state_nodes_with_index_filter",
       "method": "GET",
-      "path": "/_cluster/state?metric=nodes&indices=logs-compat",
+      "path": "/_cluster/state?metric=nodes&indices=logs-state-compat",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
@@ -177,27 +277,27 @@
     {
       "name": "reject_cluster_state_path_wildcard_index_filter",
       "method": "GET",
-      "path": "/_cluster/state/metadata/logs-*",
+      "path": "/_cluster/state/metadata/logs-state-*",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
           "cluster_uuid",
-          "metadata.indices.logs-compat"
+          "metadata.indices.logs-state-compat"
         ],
         "body_paths_absent": [
           "nodes",
           "routing_table"
         ],
         "body_paths_equal": [
-          "metadata.indices.logs-compat.state"
+          "metadata.indices.logs-state-compat.state"
         ]
       }
     },
     {
       "name": "reject_cluster_state_path_nodes_with_index_filter",
       "method": "GET",
-      "path": "/_cluster/state/nodes/logs-compat",
+      "path": "/_cluster/state/nodes/logs-state-compat",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [

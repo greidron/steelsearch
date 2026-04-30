@@ -8,6 +8,7 @@
       "body": {
         "aliases": {
           "logs-compat-read": {},
+          "shared-compat-read": {},
           "logs-compat-write": {
             "is_write_index": true
           }
@@ -23,7 +24,21 @@
       "path": "/metrics-compat-alias-000001",
       "body": {
         "aliases": {
-          "metrics-compat-read": {}
+          "metrics-compat-read": {},
+          "shared-compat-read": {}
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "create_temp_index_for_remove_index_action",
+      "method": "PUT",
+      "path": "/tmp-compat-alias-000001",
+      "body": {
+        "aliases": {
+          "tmp-compat-read": {}
         }
       },
       "compare": {
@@ -89,6 +104,20 @@
       }
     },
     {
+      "name": "get_alias_multi_index_wildcard_readback",
+      "method": "GET",
+      "path": "/logs-compat-alias-000001,metrics-compat-alias-000001/_alias/*-compat-read",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-read",
+          "metrics-compat-alias-000001.aliases.metrics-compat-read",
+          "logs-compat-alias-000001.aliases.shared-compat-read",
+          "metrics-compat-alias-000001.aliases.shared-compat-read"
+        ]
+      }
+    },
+    {
       "name": "post_aliases_bulk_filter_subset_and_remove_read_alias",
       "method": "POST",
       "path": "/_aliases",
@@ -109,6 +138,11 @@
             "remove": {
               "index": "logs-compat-alias-000001",
               "alias": "logs-compat-read"
+            }
+          },
+          {
+            "remove_index": {
+              "index": "tmp-compat-alias-000001"
             }
           }
         ]
@@ -135,11 +169,26 @@
           "metrics-compat-alias-000001.aliases.metrics-compat-read"
         ],
         "body_paths_absent": [
-          "logs-compat-alias-000001.aliases.logs-compat-read"
+          "logs-compat-alias-000001.aliases.logs-compat-read",
+          "tmp-compat-alias-000001"
         ],
         "body_paths_equal": [
           "logs-compat-alias-000001.aliases.logs-compat-search.filter.term.service",
           "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index"
+        ]
+      }
+    },
+    {
+      "name": "delete_alias_multi_index_selector",
+      "method": "DELETE",
+      "path": "/logs-compat-alias-000001,metrics-compat-alias-000001/_alias/shared-compat-read",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
         ]
       }
     },
@@ -194,7 +243,9 @@
           "metrics-compat-alias-000001.aliases.metrics-compat-read"
         ],
         "body_paths_absent": [
-          "logs-compat-alias-000001.aliases.logs-compat-search"
+          "logs-compat-alias-000001.aliases.logs-compat-search",
+          "logs-compat-alias-000001.aliases.shared-compat-read",
+          "metrics-compat-alias-000001.aliases.shared-compat-read"
         ],
         "body_paths_equal": [
           "logs-compat-alias-000001.aliases.logs-compat-write.is_write_index"

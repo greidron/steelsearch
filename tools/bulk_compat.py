@@ -67,6 +67,13 @@ def request_response(base_url: str, case: dict[str, Any], timeout: float) -> dic
         }
 
 
+def run_setup(base_url: str, case: dict[str, Any], timeout: float) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for setup_case in case.get("setup", []):
+        results.append(request_response(base_url, setup_case, timeout))
+    return results
+
+
 def decode_response(status: int, payload: bytes) -> dict[str, Any]:
     text = payload.decode("utf-8", errors="replace") if payload else ""
     body = None
@@ -150,6 +157,8 @@ def main() -> int:
 
     exit_code = 0
     for case in fixture.get("cases", []):
+        steelsearch_setup = run_setup(args.steelsearch_url, case, args.timeout)
+        opensearch_setup = run_setup(args.opensearch_url, case, args.timeout)
         steelsearch = request_response(args.steelsearch_url, case, args.timeout)
         opensearch = request_response(args.opensearch_url, case, args.timeout)
         errors = (
@@ -167,6 +176,8 @@ def main() -> int:
             {
                 "name": case["name"],
                 "status": status,
+                "steelsearch_setup": steelsearch_setup,
+                "opensearch_setup": opensearch_setup,
                 "steelsearch": steelsearch,
                 "opensearch": opensearch,
                 "errors": errors,

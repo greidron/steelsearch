@@ -95,12 +95,71 @@ def check_target(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
 def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     compare = case.get("compare", {})
+    mode = compare.get("compare_mode")
+    if mode == "nodes_stats_shape":
+        return compare_nodes_stats_shape(steelsearch, opensearch)
     for path in compare.get("body_paths_equal", []):
         left = extract_path(steelsearch.get("body"), path)
         right = extract_path(opensearch.get("body"), path)
         if left != right:
             errors.append(f"body path [{path}] drift: steelsearch={left!r} opensearch={right!r}")
     return errors
+
+
+def compare_nodes_stats_shape(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required = {
+        "timestamp",
+        "name",
+        "host",
+        "ip",
+        "roles",
+        "attributes",
+        "transport_address",
+        "http",
+        "indices",
+        "process",
+        "jvm",
+    }
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        nodes = response.get("body", {}).get("nodes", {})
+        if not nodes:
+            errors.append(f"{label} returned empty nodes map")
+            continue
+        first_node = next(iter(nodes.values()))
+        missing = sorted(required.difference(first_node.keys()))
+        if missing:
+            errors.append(f"{label} node stats missing fields {missing}")
+    return errors
+
+
+def run_setup(
+    steps: list[dict[str, Any]],
+    steelsearch_url: str,
+    opensearch_url: str,
+    timeout: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    report_steps: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for step in steps:
+        steelsearch = request_response(steelsearch_url, step, timeout)
+        opensearch = request_response(opensearch_url, step, timeout)
+        step_errors = (
+            check_target(step, steelsearch)
+            + check_target(step, opensearch)
+            + compare_targets(step, steelsearch, opensearch)
+        )
+        report_steps.append(
+            {
+                "name": step["name"],
+                "status": "passed" if not step_errors else "failed",
+                "steelsearch": steelsearch,
+                "opensearch": opensearch,
+                "errors": step_errors,
+            }
+        )
+        errors.extend(f"setup:{step['name']}: {error}" for error in step_errors)
+    return report_steps, errors
 
 
 def main() -> int:
@@ -125,6 +184,17 @@ def main() -> int:
     }
 
     exit_code = 0
+    if fixture.get("setup"):
+        setup_report, setup_errors = run_setup(
+            fixture["setup"],
+            args.steelsearch_url,
+            args.opensearch_url,
+            args.timeout,
+        )
+        report["setup"] = setup_report
+        if setup_errors:
+            exit_code = 1
+
     for case in fixture.get("cases", []):
         steelsearch = request_response(args.steelsearch_url, case, args.timeout)
         opensearch = request_response(args.opensearch_url, case, args.timeout)

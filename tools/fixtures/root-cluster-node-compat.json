@@ -1,5 +1,19 @@
 {
   "name": "root-cluster-node-compat",
+  "setup": [
+    {
+      "name": "create_logs_cat_compat_index",
+      "method": "PUT",
+      "path": "/logs-cat-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "index"
+        ]
+      }
+    }
+  ],
   "cases": [
     {
       "name": "get_root_identity_shape",
@@ -29,6 +43,47 @@
       "compare": {
         "expected_status": 200,
         "expected_body_text": ""
+      }
+    },
+    {
+      "name": "get_cat_indices_json_shape",
+      "method": "GET",
+      "path": "/_cat/indices?format=json",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "cat_indices_json"
+      }
+    },
+    {
+      "name": "get_cat_indices_text_shape",
+      "method": "GET",
+      "path": "/_cat/indices?v=true",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "health status index",
+          "logs-cat-compat"
+        ]
+      }
+    },
+    {
+      "name": "get_cat_plugins_json_shape",
+      "method": "GET",
+      "path": "/_cat/plugins?format=json",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "cat_plugins_json"
+      }
+    },
+    {
+      "name": "get_cat_plugins_text_shape",
+      "method": "GET",
+      "path": "/_cat/plugins?v=true",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "name component version"
+        ]
       }
     }
   ]

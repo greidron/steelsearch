@@ -10,8 +10,10 @@ search options.
 
 ## Current Steelsearch Position
 
-- `knn_vector` mapping and `knn` query support exist for a supported subset.
-- Selected `/_plugins/_knn/*` and `/_plugins/_ml/*` routes exist.
+- `knn_vector` mapping and `knn` / hybrid query support are live and strict-
+  compared on the canonical k-NN-capable OpenSearch profile.
+- Selected `/_plugins/_knn/*` and `/_plugins/_ml/*` routes are live; ML model-
+  serving surfaces are validated by a Steelsearch-only strict runner.
 - Full plugin transport/runtime parity, authorization, and production isolation
   are still incomplete.
 
@@ -34,4 +36,5 @@ search options.
 
 ## Replacement Gap
 
-Useful for development replacement, not yet enough for production parity.
+Useful for standalone replacement and operator workflows, but not yet enough
+for production-grade parity.

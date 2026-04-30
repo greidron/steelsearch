@@ -5,6 +5,12 @@
       "name": "create_bulk_compat_index",
       "method": "PUT",
       "path": "/bulk-compat-000001",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/bulk-compat-000001?ignore_unavailable=true"
+        }
+      ],
       "body": {},
       "compare": {
         "expected_status": 200
@@ -19,6 +25,125 @@
       },
       "compare": {
         "expected_status": 201
+      }
+    },
+    {
+      "name": "global_bulk_optimistic_concurrency_success",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-1\",\"if_seq_no\":0,\"if_primary_term\":1}}\n{\"message\":\"seed-updated\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result"
+        ]
+      }
+    },
+    {
+      "name": "global_bulk_optimistic_concurrency_conflict",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-1\",\"if_seq_no\":0,\"if_primary_term\":1}}\n{\"message\":\"seed-conflict\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.error.type"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.error.type"
+        ]
+      }
+    },
+    {
+      "name": "global_bulk_auto_creates_missing_index",
+      "method": "POST",
+      "path": "/_bulk?refresh=wait_for",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/bulk-auto-create-000001?ignore_unavailable=true"
+        }
+      ],
+      "body": "{\"index\":{\"_index\":\"bulk-auto-create-000001\",\"_id\":\"doc-1\"}}\n{\"message\":\"auto-create-bulk\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index._index",
+          "items.0.index.status",
+          "items.0.index.result"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index._index",
+          "items.0.index.status",
+          "items.0.index.result"
+        ]
+      }
+    },
+    {
+      "name": "global_bulk_create_into_data_stream_target",
+      "method": "POST",
+      "path": "/_bulk?refresh=wait_for",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/_data_stream/bulk-write-ds"
+        },
+        {
+          "method": "DELETE",
+          "path": "/_index_template/bulk-write-ds-template"
+        },
+        {
+          "method": "PUT",
+          "path": "/_index_template/bulk-write-ds-template",
+          "body": {
+            "index_patterns": [
+              "bulk-write-ds*"
+            ],
+            "data_stream": {},
+            "template": {
+              "mappings": {
+                "properties": {
+                  "@timestamp": {
+                    "type": "date"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/_data_stream/bulk-write-ds"
+        }
+      ],
+      "body": "{\"create\":{\"_index\":\"bulk-write-ds\",\"_id\":\"doc-1\"}}\n{\"@timestamp\":\"2024-01-01T00:00:00Z\",\"message\":\"bulk-ds-write\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.create._index",
+          "items.0.create.status",
+          "items.0.create.result"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.create._index",
+          "items.0.create.status",
+          "items.0.create.result"
+        ]
       }
     },
     {
@@ -45,6 +170,83 @@
           "items.1.create.error.type",
           "items.2.delete.status",
           "items.2.delete.result"
+        ]
+      }
+    },
+    {
+      "name": "global_bulk_refresh_pipeline_routing_shape",
+      "method": "POST",
+      "path": "/_bulk?refresh=wait_for&pipeline=bulk-pipe",
+      "body": "{\"index\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-routed\",\"routing\":\"tenant-a\"}}\n{\"message\":\"routed-refresh\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.error.type"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.error.type"
+        ]
+      }
+    },
+    {
+      "name": "get_bulk_routed_doc_after_wait_for_refresh",
+      "method": "GET",
+      "path": "/bulk-compat-000001/_doc/doc-routed?routing=tenant-a&realtime=false",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found"
+        ]
+      }
+    },
+    {
+      "name": "global_bulk_external_version_create",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-ext\",\"version\":7,\"version_type\":\"external\"}}\n{\"message\":\"external-bulk\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result",
+          "items.0.index._version"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.result",
+          "items.0.index._version"
+        ]
+      }
+    },
+    {
+      "name": "global_bulk_external_version_conflict",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"bulk-compat-000001\",\"_id\":\"doc-ext\",\"version\":7,\"version_type\":\"external\"}}\n{\"message\":\"external-bulk-conflict\"}\n\n",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.error.type"
+        ],
+        "body_paths_equal": [
+          "errors",
+          "items.0.index.status",
+          "items.0.index.error.type"
         ]
       }
     },

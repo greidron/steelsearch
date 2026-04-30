@@ -160,6 +160,9 @@ def main() -> int:
 
     exit_code = 0
     for case in fixture.get("cases", []):
+        for setup in case.get("setup", []):
+            request_response(args.steelsearch_url, setup, args.timeout)
+            request_response(args.opensearch_url, setup, args.timeout)
         steelsearch = request_response(args.steelsearch_url, case, args.timeout)
         opensearch = request_response(args.opensearch_url, case, args.timeout)
         errors = (

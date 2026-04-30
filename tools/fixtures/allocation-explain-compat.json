@@ -26,13 +26,26 @@
           "index",
           "shard",
           "primary",
-          "current_state"
+          "current_state",
+          "can_remain_on_current_node",
+          "can_rebalance_cluster",
+          "can_rebalance_to_other_node",
+          "rebalance_explanation",
+          "current_node.id",
+          "current_node.name",
+          "current_node.transport_address",
+          "current_node.weight_ranking",
+          "current_node.attributes"
         ],
         "body_paths_equal": [
           "index",
           "shard",
           "primary",
-          "current_state"
+          "current_state",
+          "can_remain_on_current_node",
+          "can_rebalance_cluster",
+          "can_rebalance_to_other_node",
+          "rebalance_explanation"
         ]
       }
     },
@@ -52,13 +65,21 @@
           "shard",
           "primary",
           "current_state",
+          "can_allocate",
+          "allocate_explanation",
+          "unassigned_info.reason",
+          "unassigned_info.last_allocation_status",
           "node_allocation_decisions"
         ],
         "body_paths_equal": [
           "index",
           "shard",
           "primary",
-          "current_state"
+          "current_state",
+          "can_allocate",
+          "allocate_explanation",
+          "unassigned_info.reason",
+          "unassigned_info.last_allocation_status"
         ]
       }
     }

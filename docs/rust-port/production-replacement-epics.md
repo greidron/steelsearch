@@ -86,9 +86,9 @@ Validation environment and command:
 
 References:
 
-- `docs/rust-port/rest-compatibility.md`
+- `docs/api-spec/README.md`
 - `docs/rust-port/source-compatibility-matrix.md`
-- `docs/rust-port/compatibility-targets.md`
+- `docs/rust-port/phase-a1-standalone-fullset-closure.md`
 
 Minimum entry criteria:
 

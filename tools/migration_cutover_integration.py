@@ -70,6 +70,25 @@ def decode_response(status: int, payload: bytes) -> dict[str, Any]:
     }
 
 
+def extract_path(value: Any, path: str) -> Any:
+    current = value
+    for token in path.split("."):
+        if isinstance(current, list):
+            if not token.isdigit():
+                return None
+            index = int(token)
+            if index >= len(current):
+                return None
+            current = current[index]
+            continue
+        if not isinstance(current, dict):
+            return None
+        if token not in current:
+            return None
+        current = current[token]
+    return current
+
+
 def search_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
     hits = ((body.get("hits") or {}).get("hits") or [])
@@ -81,14 +100,81 @@ def search_summary(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def put_doc(base_url: str, index: str, doc_id: str, body: dict[str, Any], timeout: float) -> dict[str, Any]:
-    return request_json(
+def path_summary(response: dict[str, Any], paths: list[str]) -> dict[str, Any]:
+    body = response.get("body") or {}
+    summary: dict[str, Any] = {"status": response.get("status")}
+    for path in paths:
+        summary[path] = extract_path(body, path)
+    return summary
+
+
+def summarize_response(check: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+    extractor = check.get("extract")
+    if extractor == "search_summary":
+        return search_summary(response)
+    if extractor == "path_summary":
+        return path_summary(response, check.get("compare_paths", []))
+    if check.get("compare_paths"):
+        return path_summary(response, check["compare_paths"])
+    return {
+        "status": response.get("status"),
+        "body": response.get("body"),
+        "body_text": response.get("body_text"),
+    }
+
+
+def run_operation(
+    base_url: str,
+    operation: dict[str, Any],
+    timeout: float,
+) -> dict[str, Any]:
+    response = request_json(
         base_url,
-        "PUT",
-        f"/{index}/_doc/{doc_id}?refresh=wait_for",
-        body,
+        operation["method"],
+        operation["path"],
+        operation.get("body"),
         timeout,
     )
+    return {
+        "name": operation["name"],
+        "method": operation["method"],
+        "path": operation["path"],
+        **response,
+    }
+
+
+def legacy_fixture_to_operations_and_checks(fixture: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    index = fixture["index"]
+    operations: list[dict[str, Any]] = [
+        {
+            "name": "create_index",
+            "method": "PUT",
+            "path": f"/{index}",
+            "body": {
+                "settings": fixture["settings"],
+                "mappings": fixture["mappings"],
+            },
+        }
+    ]
+    for entry in fixture["docs"]:
+        operations.append(
+            {
+                "name": f"put_{entry['id']}",
+                "method": "PUT",
+                "path": f"/{index}/_doc/{entry['id']}?refresh=wait_for",
+                "body": entry["source"],
+            }
+        )
+    checks = [
+        {
+            "name": "index_search",
+            "method": "POST",
+            "path": f"/{index}/_search",
+            "body": fixture["query"],
+            "extract": "search_summary",
+        }
+    ]
+    return operations, checks
 
 
 def main() -> int:
@@ -98,112 +184,71 @@ def main() -> int:
         return 2
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
-    index = fixture["index"]
-    mappings = fixture["mappings"]
-    settings = fixture["settings"]
-    docs = fixture["docs"]
-    query = fixture["query"]
+    operations = fixture.get("operations")
+    checks = fixture.get("checks")
+    if operations is None or checks is None:
+        operations, checks = legacy_fixture_to_operations_and_checks(fixture)
 
     report: dict[str, Any] = {
-        "name": "migration-cutover-integration",
+        "name": fixture.get("name", "migration-cutover-integration"),
         "fixture": str(Path(args.fixture).resolve()),
         "source": args.opensearch_url,
         "target": args.steelsearch_url,
         "steps": [],
+        "checks": [],
         "comparison": {},
     }
 
-    source_create = request_json(
-        args.opensearch_url,
-        "PUT",
-        f"/{index}",
-        {
-            "settings": settings,
-            "mappings": mappings,
-        },
-        args.timeout,
-    )
-    report["steps"].append({"name": "source_create", **source_create})
+    for operation in operations:
+        source_step = run_operation(args.opensearch_url, operation, args.timeout)
+        source_step["target"] = "source"
+        report["steps"].append(source_step)
 
-    for entry in docs:
-        source_put = put_doc(
+    for operation in operations:
+        target_step = run_operation(args.steelsearch_url, operation, args.timeout)
+        target_step["target"] = "target"
+        report["steps"].append(target_step)
+
+    for check in checks:
+        source_response = request_json(
             args.opensearch_url,
-            index,
-            entry["id"],
-            entry["source"],
+            check["method"],
+            check["path"],
+            check.get("body"),
             args.timeout,
         )
-        report["steps"].append({"name": f"source_put_{entry['id']}", **source_put})
-
-    source_mapping = request_json(
-        args.opensearch_url,
-        "GET",
-        f"/{index}/_mapping",
-        None,
-        args.timeout,
-    )
-    source_settings = request_json(
-        args.opensearch_url,
-        "GET",
-        f"/{index}/_settings",
-        None,
-        args.timeout,
-    )
-    source_search = request_json(
-        args.opensearch_url,
-        "POST",
-        f"/{index}/_search",
-        query,
-        args.timeout,
-    )
-    report["steps"].append({"name": "source_mapping", **source_mapping})
-    report["steps"].append({"name": "source_settings", **source_settings})
-    report["steps"].append({"name": "source_search", **source_search})
-
-    target_create = request_json(
-        args.steelsearch_url,
-        "PUT",
-        f"/{index}",
-        {
-            "settings": settings,
-            "mappings": mappings,
-        },
-        args.timeout,
-    )
-    report["steps"].append({"name": "target_create", **target_create})
-
-    for entry in docs:
-        target_put = put_doc(
+        target_response = request_json(
             args.steelsearch_url,
-            index,
-            entry["id"],
-            entry["source"],
+            check["method"],
+            check["path"],
+            check.get("body"),
             args.timeout,
         )
-        report["steps"].append({"name": f"target_put_{entry['id']}", **target_put})
+        source_summary = summarize_response(check, source_response)
+        target_summary = summarize_response(check, target_response)
+        report["checks"].append(
+            {
+                "name": check["name"],
+                "source": source_summary,
+                "target": target_summary,
+                "match": source_summary == target_summary,
+            }
+        )
 
-    target_search = request_json(
-        args.steelsearch_url,
-        "POST",
-        f"/{index}/_search",
-        query,
-        args.timeout,
-    )
-    report["steps"].append({"name": "target_search", **target_search})
-
-    source_summary = search_summary(source_search)
-    target_summary = search_summary(target_search)
+    overall_match = all(check["match"] for check in report["checks"])
     report["comparison"] = {
-        "source": source_summary,
-        "target": target_summary,
-        "match": source_summary == target_summary,
+        "match": overall_match,
+        "checks": report["checks"],
     }
+    if report["checks"]:
+        report["comparison"]["source"] = report["checks"][0]["source"]
+        report["comparison"]["target"] = report["checks"][0]["target"]
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 0 if report["comparison"]["match"] else 1
+    return 0 if overall_match else 1
 
 
 if __name__ == "__main__":

@@ -13,10 +13,10 @@
 
 | Surface | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| Repository registration and verification | Declares and validates snapshot repositories. | Development-oriented snapshot support exists, but full repository parity is incomplete. | Partial |
-| Create, status, restore | Creates snapshots, checks status, and restores into a target cluster. | Development snapshot and restore flows exist for supported Steelsearch-native repositories. | Partial |
-| Delete and cleanup | Deletes snapshots and cleans orphaned repository state. | Not yet full parity. | Planned |
-| Corruption handling and fail-closed restore | Rejects stale/corrupt/incompatible snapshot metadata. | Some fail-closed testing exists, but full repository-grade parity is incomplete. | Partial |
+| Repository registration and verification | Declares and validates snapshot repositories. | Live standalone route family with strict-profile compare on the canonical repository-capable OpenSearch profile. | Partial |
+| Create, status, restore | Creates snapshots, checks status, and restores into a target cluster. | Live standalone route family with strict-profile compare for create/readback/status/restore. | Partial |
+| Delete and cleanup | Deletes snapshots and cleans orphaned repository state. | Live standalone route family with strict-profile compare, including delete-vs-restore concurrency semantics. | Partial |
+| Corruption handling and fail-closed restore | Rejects stale/corrupt/incompatible snapshot metadata. | Live strict-profile compare for restore validation and failure classes. | Partial |
 
 Important boundary:
 
@@ -30,13 +30,20 @@ Current source-owned bounded repository surface is limited to:
 
 - registration body subset:
   - `type`
-  - `settings`
+  - `settings.location`
+  - `settings.compress`
+  - `settings.readonly`
+  - `settings.chunk_size`
 - readback subset:
   - repository name keyed object
   - bounded `type`
-  - bounded `settings`
+  - bounded `settings.location`
+  - bounded `settings.compress`
+  - bounded `settings.readonly`
+  - bounded `settings.chunk_size`
 - verification subset:
-  - top-level `nodes`
+  - normalized `node_count`
+  - normalized `node_names`
 
 Current route-family anchor covers:
 
@@ -46,9 +53,7 @@ Current route-family anchor covers:
 - `POST /_snapshot/{repository}`
 - `POST /_snapshot/{repository}/_verify`
 
-This is a bounded repository CRUD/readback/verification anchor, not yet a claim
-of full repository lifecycle parity. Actual route-traffic proof remains a
-separate step.
+This is now a richer repository CRUD/readback/verification anchor for the current standalone profile, covering primary/secondary repository registration, global readback, named readback, and normalized verification-node summaries. Full repository lifecycle parity is still broader than this option subset.
 
 The current live activation step is source-owned runtime registration only:
 
@@ -70,13 +75,21 @@ Current runtime-connected evidence:
 
 Current compare note:
 
-- the local `snapshot-migration` acceptance scope now exits cleanly;
-- repository-grade OpenSearch comparison is currently degraded-source when the
-  local OpenSearch launcher does not allow the fixture repository path via
-  `path.repo`;
-- in that environment, Steelsearch runtime proof remains live while
-  OpenSearch-side snapshot cases are reported as explicit skips rather than
-  false mismatches.
+- the local `snapshot-migration` profile now uses the actual repository base
+  admitted by the OpenSearch `gradlew run` launcher:
+  - `${OPENSEARCH_ROOT}/build/testclusters/runTask-0/repo`
+- degraded-source skip from `path.repo` mismatch is removed;
+- the current gate now exposes real repository/readback/restore parity drift
+  instead of hiding snapshot lifecycle cases behind environment skips.
+- snapshot lifecycle strict compare now passes in the `snapshot-migration`
+  profile;
+- bounded migration/cutover replay for the current fixture now also passes in
+  the `snapshot-migration` profile;
+- migration breadth coverage in the current strict profile now includes:
+  - templates
+  - aliases
+  - data streams
+  - opaque vector-bearing document payloads
 
 ### Snapshot Create / Status / Restore Bounded Anchor
 
@@ -85,12 +98,18 @@ Current source-owned snapshot lifecycle surface is limited to:
 - create request subset:
   - `indices`
   - `include_global_state`
+  - `ignore_unavailable`
+  - `partial`
   - `metadata`
 - create/readback response subset:
   - `snapshot`
   - `uuid`
   - `state`
   - `indices`
+  - `include_global_state`
+  - `metadata`
+  - `partial`
+  - `ignore_unavailable`
 - status response subset:
   - `snapshot`
   - `repository`
@@ -99,6 +118,9 @@ Current source-owned snapshot lifecycle surface is limited to:
 - restore request subset:
   - `indices`
   - `include_global_state`
+  - `include_aliases`
+  - `ignore_unavailable`
+  - `partial`
   - `rename_pattern`
   - `rename_replacement`
 - restore response subset:
@@ -113,8 +135,9 @@ Current route-family anchor covers:
 - `GET /_snapshot/{repository}/{snapshot}/_status`
 - `POST /_snapshot/{repository}/{snapshot}/_restore`
 
-This is a bounded Phase A lifecycle anchor, not a claim of full repository-byte
-or full restore-option parity.
+This is the current standalone lifecycle contract and release-gated compare
+surface. Remaining non-claims are broader repository-byte and mixed-cluster
+semantics, not missing route activation.
 
 ### Snapshot Delete / Cleanup Bounded Anchor
 
@@ -170,13 +193,25 @@ Current restore failure-path wiring:
   the same source-owned validation helper before bounded restore semantics run;
 - clean metadata continues to the bounded restore subset.
 
-Transcript-based comparison note:
+Executable comparison note:
 
-- representative stale/corrupt/incompatible restore failures now have a
-  canonical comparison sheet in
-  [snapshot-restore-failure-transcript.md](/home/ubuntu/steelsearch/docs/api-spec/snapshot-restore-failure-transcript.md:1)
-- Phase A comparison preserves status, `error.type`, and boundary noun phrase
-  before comparing wider prose.
+- `snapshot-lifecycle-compat` now carries explicit restore-failure cases for:
+  - stale metadata
+  - corrupt metadata
+  - incompatible metadata
+- those cases normalize restore failures to the strict compare tuple:
+  - `status`
+  - `error_type`
+  - `failure_class`
+- `failure_class` is derived from the boundary noun phrase in `error.reason`,
+  so the compare stays strict on validation class without depending on wider
+  prose drift.
+
+Transcript note:
+
+- [snapshot-restore-failure-transcript.md](/home/ubuntu/steelsearch/docs/api-spec/snapshot-restore-failure-transcript.md:1)
+  remains as a human-readable reference sheet, not the canonical Phase A-1
+  comparison mechanism.
 
 Current live activation step is source-owned runtime registration:
 
@@ -208,17 +243,17 @@ supported APIs, not reusing OpenSearch shard stores directly.
 
 Current supported direction:
 
-- mappings/settings translation for supported subsets;
+- mappings/settings translation for the documented standalone migration contract;
 - bulk import;
 - search and behavior comparison through local rehearsal tools;
-- development cutover rehearsal for supported workloads.
+- strict-profile cutover rehearsal for the current standalone migration
+  workload.
 
-Major remaining gaps:
+Major remaining gaps are now broader depth items rather than missing baseline
+migration coverage:
 
-- broader mappings/template/alias translation;
-- data-stream translation;
-- scroll/PIT export coverage;
-- vector migration validation depth;
+- wider export coverage such as scroll/PIT-heavy workloads;
+- deeper vector-specific migration validation beyond opaque payload replay;
 - resumability and checkpointing;
 - production rollback runbooks and evidence archives.
 
@@ -255,10 +290,10 @@ Reading rule:
 
 Current integration evidence:
 
-- a dedicated cutover integration runner now seeds an OpenSearch source index,
-  replays bounded mappings/settings/documents into Steelsearch, and compares the
-  final search summary (`status`, `total`, ordered `_id` set) across source and
-  target.
+- a dedicated cutover integration runner now seeds an OpenSearch source with
+  bounded component/index templates, aliases, a data stream, and vector-bearing
+  document payloads, replays the same bounded resources into Steelsearch, and
+  compares bounded readback/search summaries across source and target.
 
 ## Transport Interop
 

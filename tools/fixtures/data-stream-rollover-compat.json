@@ -2,49 +2,264 @@
   "name": "data-stream-rollover-compat",
   "cases": [
     {
-      "name": "get_data_stream_global_fail_closed_vs_opensearch_supported",
+      "name": "put_data_stream_happy_path",
+      "method": "PUT",
+      "path": "/_data_stream/rollover-ds",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/_index_template/rollover-ds-template",
+          "body": {
+            "index_patterns": [
+              "rollover-ds*"
+            ],
+            "data_stream": {},
+            "template": {
+              "settings": {
+                "index": {
+                  "number_of_shards": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_data_stream_global_readback",
       "method": "GET",
       "path": "/_data_stream",
+      "extract": "data_stream_collection",
       "steelsearch_compare": {
-        "expected_status": 400,
+        "expected_status": 200,
         "body_paths_present": [
-          "error.type",
-          "error.reason",
-          "status"
+          "rollover-ds.generation",
+          "rollover-ds.indices",
+          "rollover-ds.status"
         ]
       },
       "opensearch_compare": {
         "expected_status": 200,
         "body_paths_present": [
-          "data_streams"
+          "rollover-ds.generation",
+          "rollover-ds.indices",
+          "rollover-ds.status"
         ]
-      }
+      },
+      "body_paths_equal": [
+        "rollover-ds.generation"
+      ]
     },
     {
-      "name": "get_data_stream_stats_fail_closed_vs_opensearch_supported",
+      "name": "get_data_stream_named_readback",
+      "method": "GET",
+      "path": "/_data_stream/rollover-ds",
+      "extract": "data_stream_collection",
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "rollover-ds.generation",
+          "rollover-ds.indices"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "rollover-ds.generation",
+          "rollover-ds.indices"
+        ]
+      },
+      "body_paths_equal": [
+        "rollover-ds.generation"
+      ]
+    },
+    {
+      "name": "get_data_stream_stats_happy_path",
       "method": "GET",
       "path": "/_data_stream/_stats",
+      "extract": "data_stream_stats",
       "steelsearch_compare": {
-        "expected_status": 400,
+        "expected_status": 200,
         "body_paths_present": [
-          "error.type",
-          "error.reason",
-          "status"
+          "data_stream_count",
+          "backing_indices"
         ]
       },
       "opensearch_compare": {
         "expected_status": 200,
         "body_paths_present": [
-          "data_stream_count"
+          "data_stream_count",
+          "backing_indices"
         ]
       }
     },
     {
-      "name": "rollover_unnamed_fail_closed_vs_opensearch_missing_target",
+      "name": "rollover_data_stream_unnamed_happy_path",
       "method": "POST",
-      "path": "/logs-write/_rollover",
+      "path": "/rollover-ds/_rollover",
+      "extract": "rollover_summary",
       "steelsearch_compare": {
-        "expected_status": 400,
+        "expected_status": 200,
+        "body_paths_present": [
+          "old_index",
+          "new_index",
+          "rolled_over",
+          "acknowledged"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "old_index",
+          "new_index",
+          "rolled_over",
+          "acknowledged"
+        ]
+      },
+      "body_paths_equal": [
+        "old_index",
+        "new_index",
+        "rolled_over"
+      ]
+    },
+    {
+      "name": "get_data_stream_after_rollover",
+      "method": "GET",
+      "path": "/_data_stream/rollover-ds",
+      "extract": "data_stream_collection",
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "rollover-ds.generation",
+          "rollover-ds.indices"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "rollover-ds.generation",
+          "rollover-ds.indices"
+        ]
+      },
+      "body_paths_equal": [
+        "rollover-ds.generation"
+      ]
+    },
+    {
+      "name": "get_rollover_alias_target_readback",
+      "method": "GET",
+      "path": "/_alias/rollover-write",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/rollover-logs-000001,rollover-logs-000002?ignore_unavailable=true"
+        },
+        {
+          "method": "PUT",
+          "path": "/rollover-logs-000001",
+          "body": {
+            "aliases": {
+              "rollover-write": {
+                "is_write_index": true
+              }
+            }
+          }
+        }
+      ],
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "rollover-logs-000001.aliases.rollover-write.is_write_index"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "rollover-logs-000001.aliases.rollover-write.is_write_index"
+        ]
+      }
+    },
+    {
+      "name": "rollover_alias_named_happy_path",
+      "method": "POST",
+      "path": "/rollover-write/_rollover/rollover-logs-000002",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/rollover-logs-000001,rollover-logs-000002?ignore_unavailable=true"
+        },
+        {
+          "method": "PUT",
+          "path": "/rollover-logs-000001",
+          "body": {
+            "aliases": {
+              "rollover-write": {
+                "is_write_index": true
+              }
+            }
+          }
+        }
+      ],
+      "extract": "rollover_summary",
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "old_index",
+          "new_index",
+          "rolled_over",
+          "acknowledged"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "old_index",
+          "new_index",
+          "rolled_over",
+          "acknowledged"
+        ]
+      },
+      "body_paths_equal": [
+        "old_index",
+        "new_index",
+        "rolled_over"
+      ]
+    },
+    {
+      "name": "delete_data_stream_happy_path",
+      "method": "DELETE",
+      "path": "/_data_stream/rollover-ds",
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_missing_data_stream_error",
+      "method": "GET",
+      "path": "/_data_stream/rollover-ds",
+      "steelsearch_compare": {
+        "expected_status": 404,
         "body_paths_present": [
           "error.type",
           "error.reason",
@@ -52,28 +267,7 @@
         ]
       },
       "opensearch_compare": {
-        "expected_status": 400,
-        "body_paths_present": [
-          "error.type",
-          "error.reason",
-          "status"
-        ]
-      }
-    },
-    {
-      "name": "rollover_named_fail_closed_vs_opensearch_missing_target",
-      "method": "POST",
-      "path": "/logs-write/_rollover/logs-000002",
-      "steelsearch_compare": {
-        "expected_status": 400,
-        "body_paths_present": [
-          "error.type",
-          "error.reason",
-          "status"
-        ]
-      },
-      "opensearch_compare": {
-        "expected_status": 400,
+        "expected_status": 404,
         "body_paths_present": [
           "error.type",
           "error.reason",

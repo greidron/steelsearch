@@ -4,9 +4,22 @@ pub const UPDATE_DOC_ROUTE_METHOD: &str = "POST";
 pub const UPDATE_DOC_ROUTE_PATH: &str = "/{index}/_update/{id}";
 pub const UPDATE_DOC_ROUTE_FAMILY: &str = "single_doc_update";
 
-pub const UPDATE_DOC_REQUEST_QUERY_FIELDS: [&str; 3] = ["routing", "refresh", "_source"];
-pub const UPDATE_DOC_REQUEST_BODY_FIELDS: [&str; 4] =
-    ["doc", "upsert", "doc_as_upsert", "retry_on_conflict"];
+pub const UPDATE_DOC_REQUEST_QUERY_FIELDS: [&str; 6] = [
+    "routing",
+    "refresh",
+    "_source",
+    "retry_on_conflict",
+    "if_seq_no",
+    "if_primary_term",
+];
+pub const UPDATE_DOC_REQUEST_BODY_FIELDS: [&str; 6] = [
+    "doc",
+    "upsert",
+    "doc_as_upsert",
+    "retry_on_conflict",
+    "script",
+    "scripted_upsert",
+];
 pub const UPDATE_DOC_RESPONSE_FIELDS: [&str; 6] = [
     "_index",
     "_id",
@@ -129,12 +142,14 @@ mod tests {
     }
 
     #[test]
-    fn update_doc_query_subset_keeps_routing_refresh_and_source_only() {
+    fn update_doc_query_subset_keeps_supported_query_controls_only() {
         let subset = build_update_doc_query_subset(&serde_json::json!({
             "routing": "tenant-a",
             "refresh": "wait_for",
             "_source": true,
-            "if_seq_no": 7
+            "retry_on_conflict": 3,
+            "if_seq_no": 7,
+            "if_primary_term": 5
         }));
 
         assert_eq!(
@@ -142,13 +157,16 @@ mod tests {
             serde_json::json!({
                 "routing": "tenant-a",
                 "refresh": "wait_for",
-                "_source": true
+                "_source": true,
+                "retry_on_conflict": 3,
+                "if_seq_no": 7,
+                "if_primary_term": 5
             })
         );
     }
 
     #[test]
-    fn update_doc_body_subset_keeps_bounded_partial_update_controls_only() {
+    fn update_doc_body_subset_keeps_supported_partial_update_controls_only() {
         let subset = build_update_doc_body_subset(&serde_json::json!({
             "doc": {
                 "message": "hello"
@@ -158,8 +176,10 @@ mod tests {
             },
             "doc_as_upsert": true,
             "retry_on_conflict": 3,
+            "detect_noop": true,
+            "scripted_upsert": true,
             "script": {
-                "source": "ctx._source.count += 1"
+                "source": "ctx._source.level = params.level"
             }
         }));
 
@@ -174,6 +194,11 @@ mod tests {
                 },
                 "doc_as_upsert": true,
                 "retry_on_conflict": 3
+                ,
+                "script": {
+                    "source": "ctx._source.level = params.level"
+                },
+                "scripted_upsert": true
             })
         );
     }
@@ -231,7 +256,8 @@ mod tests {
                 "routing": "tenant-a",
                 "refresh": "wait_for",
                 "_source": true,
-                "if_seq_no": 7
+                "if_seq_no": 7,
+                "if_primary_term": 5
             }),
             &serde_json::json!({
                 "doc": {
@@ -243,8 +269,9 @@ mod tests {
                 "doc_as_upsert": true,
                 "retry_on_conflict": 3,
                 "script": {
-                    "source": "ctx._source.count += 1"
-                }
+                    "source": "ctx._source.level = params.level"
+                },
+                "scripted_upsert": true
             }),
             &serde_json::json!({
                 "_index": "logs-000001",
@@ -267,7 +294,9 @@ mod tests {
                     "query": {
                         "routing": "tenant-a",
                         "refresh": "wait_for",
-                        "_source": true
+                        "_source": true,
+                        "if_seq_no": 7,
+                        "if_primary_term": 5
                     },
                     "body": {
                         "doc": {
@@ -277,7 +306,11 @@ mod tests {
                             "message": "seed"
                         },
                         "doc_as_upsert": true,
-                        "retry_on_conflict": 3
+                        "retry_on_conflict": 3,
+                        "script": {
+                            "source": "ctx._source.level = params.level"
+                        },
+                        "scripted_upsert": true
                     }
                 },
                 "response": {

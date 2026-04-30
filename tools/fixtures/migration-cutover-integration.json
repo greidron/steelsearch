@@ -1,54 +1,284 @@
 {
-  "index": "migration-cutover-compat-000001",
-  "settings": {
-    "index": {
-      "number_of_shards": 1,
-      "number_of_replicas": 0,
-      "refresh_interval": "1s"
-    }
-  },
-  "mappings": {
-    "properties": {
-      "message": {
-        "type": "text"
-      },
-      "tenant": {
-        "type": "keyword"
-      },
-      "level": {
-        "type": "keyword"
-      }
-    }
-  },
-  "docs": [
+  "name": "migration-cutover-integration",
+  "operations": [
     {
-      "id": "doc-1",
-      "source": {
+      "name": "delete_data_stream",
+      "method": "DELETE",
+      "path": "/_data_stream/migration-cutover-ds"
+    },
+    {
+      "name": "delete_index",
+      "method": "DELETE",
+      "path": "/migration-cutover-compat-000001?ignore_unavailable=true"
+    },
+    {
+      "name": "delete_component_template",
+      "method": "DELETE",
+      "path": "/_component_template/migration-cutover-component"
+    },
+    {
+      "name": "delete_index_template",
+      "method": "DELETE",
+      "path": "/_index_template/migration-cutover-template"
+    },
+    {
+      "name": "delete_data_stream_template",
+      "method": "DELETE",
+      "path": "/_index_template/migration-cutover-ds-template"
+    },
+    {
+      "name": "put_component_template",
+      "method": "PUT",
+      "path": "/_component_template/migration-cutover-component",
+      "body": {
+        "template": {
+          "mappings": {
+            "properties": {
+              "service": {
+                "type": "keyword"
+              }
+            }
+          }
+        },
+        "_meta": {
+          "owner": "migration-cutover"
+        }
+      }
+    },
+    {
+      "name": "put_index_template",
+      "method": "PUT",
+      "path": "/_index_template/migration-cutover-template",
+      "body": {
+        "index_patterns": [
+          "migration-cutover-compat-*"
+        ],
+        "composed_of": [
+          "migration-cutover-component"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1,
+              "number_of_replicas": 0,
+              "refresh_interval": "1s"
+            }
+          },
+          "mappings": {
+            "properties": {
+              "message": {
+                "type": "text"
+              },
+              "tenant": {
+                "type": "keyword"
+              },
+              "level": {
+                "type": "keyword"
+              },
+              "embedding": {
+                "type": "float"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "create_index",
+      "method": "PUT",
+      "path": "/migration-cutover-compat-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "refresh_interval": "1s"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            },
+            "level": {
+              "type": "keyword"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "embedding": {
+              "type": "float"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "put_alias",
+      "method": "POST",
+      "path": "/_aliases",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "index": "migration-cutover-compat-000001",
+              "alias": "migration-cutover-search",
+              "is_write_index": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "put_doc_1",
+      "method": "PUT",
+      "path": "/migration-cutover-compat-000001/_doc/doc-1?refresh=wait_for",
+      "body": {
         "message": "cutover alpha",
         "tenant": "tenant-a",
-        "level": "info"
+        "level": "info",
+        "service": "billing",
+        "embedding": [0.1, 0.2, 0.3]
       }
     },
     {
-      "id": "doc-2",
-      "source": {
+      "name": "put_doc_2",
+      "method": "PUT",
+      "path": "/migration-cutover-compat-000001/_doc/doc-2?refresh=wait_for",
+      "body": {
         "message": "cutover beta",
         "tenant": "tenant-a",
-        "level": "warn"
-      }
-    }
-  ],
-  "query": {
-    "query": {
-      "term": {
-        "tenant": "tenant-a"
+        "level": "warn",
+        "service": "billing",
+        "embedding": [0.4, 0.5, 0.6]
       }
     },
-    "sort": [
-      {
-        "level": "asc"
+    {
+      "name": "put_data_stream_template",
+      "method": "PUT",
+      "path": "/_index_template/migration-cutover-ds-template",
+      "body": {
+        "index_patterns": [
+          "migration-cutover-ds*"
+        ],
+        "data_stream": {},
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1,
+              "number_of_replicas": 0
+            }
+          },
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              },
+              "service": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
       }
-    ],
-    "track_total_hits": true
-  }
+    },
+    {
+      "name": "put_data_stream",
+      "method": "PUT",
+      "path": "/_data_stream/migration-cutover-ds"
+    }
+  ],
+  "checks": [
+    {
+      "name": "concrete_index_search",
+      "method": "POST",
+      "path": "/migration-cutover-compat-000001/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        },
+        "sort": [
+          {
+            "level": "asc"
+          }
+        ],
+        "track_total_hits": true
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "alias_search",
+      "method": "POST",
+      "path": "/migration-cutover-search/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "level": "asc"
+          }
+        ],
+        "track_total_hits": true
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "component_template_readback",
+      "method": "GET",
+      "path": "/_component_template/migration-cutover-component",
+      "compare_paths": [
+        "component_templates.0.name",
+        "component_templates.0.component_template.template.mappings.properties.service.type",
+        "component_templates.0.component_template._meta.owner"
+      ]
+    },
+    {
+      "name": "index_template_readback",
+      "method": "GET",
+      "path": "/_index_template/migration-cutover-template",
+      "compare_paths": [
+        "index_templates.0.name",
+        "index_templates.0.index_template.index_patterns.0",
+        "index_templates.0.index_template.composed_of.0",
+        "index_templates.0.index_template.template.mappings.properties.embedding.type"
+      ]
+    },
+    {
+      "name": "alias_readback",
+      "method": "GET",
+      "path": "/migration-cutover-compat-000001/_alias/migration-cutover-search",
+      "compare_paths": [
+        "migration-cutover-compat-000001.aliases.migration-cutover-search.is_write_index"
+      ]
+    },
+    {
+      "name": "vector_payload_doc",
+      "method": "GET",
+      "path": "/migration-cutover-compat-000001/_doc/doc-1",
+      "compare_paths": [
+        "_id",
+        "_source.service",
+        "_source.embedding.0",
+        "_source.embedding.1",
+        "_source.embedding.2"
+      ]
+    },
+    {
+      "name": "data_stream_readback",
+      "method": "GET",
+      "path": "/_data_stream/migration-cutover-ds",
+      "compare_paths": [
+        "data_streams.0.name",
+        "data_streams.0.generation",
+        "data_streams.0.template",
+        "data_streams.0.indices.0.index_name"
+      ]
+    }
+  ]
 }

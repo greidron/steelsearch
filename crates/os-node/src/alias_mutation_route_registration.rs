@@ -105,6 +105,15 @@ pub fn build_bulk_alias_actions_subset(body: &serde_json::Value) -> serde_json::
                 }
             }
             bounded_actions.push(serde_json::json!({ "remove": bounded_remove }));
+            continue;
+        }
+
+        if let Some(remove_index) = action.get("remove_index").and_then(|value| value.as_object()) {
+            let mut bounded_remove_index = serde_json::Map::new();
+            if let Some(value) = remove_index.get("index") {
+                bounded_remove_index.insert("index".to_string(), value.clone());
+            }
+            bounded_actions.push(serde_json::json!({ "remove_index": bounded_remove_index }));
         }
     }
 
@@ -207,6 +216,12 @@ mod tests {
                         "alias": "logs-read",
                         "must_exist": true
                     }
+                },
+                {
+                    "remove_index": {
+                        "index": "logs-000002",
+                        "must_exist": true
+                    }
                 }
             ]
         }));
@@ -218,5 +233,7 @@ mod tests {
         assert_eq!(subset["actions"][1]["remove"]["index"], "logs-000001");
         assert_eq!(subset["actions"][1]["remove"]["alias"], "logs-read");
         assert!(subset["actions"][1]["remove"].get("must_exist").is_none());
+        assert_eq!(subset["actions"][2]["remove_index"]["index"], "logs-000002");
+        assert!(subset["actions"][2]["remove_index"].get("must_exist").is_none());
     }
 }

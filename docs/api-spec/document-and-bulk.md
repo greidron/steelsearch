@@ -12,11 +12,26 @@
 
 | Route | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `PUT /{index}/_doc/{id}` | Index or replace a document with explicit id. | Generated route inventory currently classifies this route as `Stubbed`: Steelsearch exposes a development-oriented shell, but not full OpenSearch index-by-id semantics. | Stubbed |
-| `POST /{index}/_doc` | Index a document with generated id. | Keep this as `Partial` for now: the current generated route inventory does not cleanly separate the generated-id document-create surface from the id-bearing document-index routes, so route-surface reclassification still needs explicit reconciliation. | Partial |
-| `GET /{index}/_doc/{id}` | Realtime or near-realtime single-document fetch with source controls. | Generated route inventory currently classifies this route as `Stubbed`: Steelsearch exposes a development-oriented fetch shell, but not full OpenSearch get-document semantics. | Stubbed |
-| `DELETE /{index}/_doc/{id}` | Delete a single document with OpenSearch version and routing semantics. | Generated route inventory still marks the REST delete surface as missing. Internal engine delete ability should not be read as current HTTP parity. | Planned |
-| `POST /{index}/_update/{id}` | Partial update with scripts, doc merge, upsert, and retry controls. | Generated route inventory still marks the HTTP update surface as missing. Internal or bulk-adjacent update flows are not proof of single-document update-route parity. | Planned |
+| `PUT /{index}/_doc/{id}` | Index or replace a document with explicit id. | Live standalone runtime path with routing, optimistic concurrency, external versioning, refresh policy, auto-create index, write-alias resolution, and data-stream target write resolution. | Partial |
+| `POST /{index}/_doc` | Index a document with generated id. | Live standalone runtime path with generated-id create semantics, refresh policy, alias/data-stream write-target resolution, and concrete backing-index echo. | Partial |
+| `GET /{index}/_doc/{id}` | Realtime or near-realtime single-document fetch with source controls. | Live standalone runtime path with source filtering, realtime control, alias read routing, and concrete backing-index echo. | Partial |
+| `DELETE /{index}/_doc/{id}` | Delete a single document with OpenSearch version and routing semantics. | Live standalone runtime path with routing, optimistic concurrency, refresh policy, and delete/not-found result classes. | Partial |
+| `POST /{index}/_update/{id}` | Partial update with scripts, doc merge, upsert, and retry controls. | Live standalone runtime path with doc merge, scripted assignment subset, upsert/doc_as_upsert/scripted_upsert, retry-on-conflict acceptance, and optimistic concurrency. | Partial |
+
+### Write-Target Resolution Rule
+
+- Current standalone write-target resolution applies in this order:
+  - existing data stream target writes resolve to the current backing index
+  - concrete index writes stay on the named index
+  - alias writes prefer the unique `is_write_index=true` target
+  - single-index alias writes resolve to that sole concrete index
+  - multi-index alias writes without a unique write index fail closed with
+    `400 illegal_argument_exception`
+  - missing concrete index writes auto-create a minimal index before the write
+- The current standalone profile now validates this on live HTTP routes for:
+  - single-document explicit-id writes
+  - generated-id writes
+  - bulk `index` / `create` actions
 
 ### Delete And Update Route-Surface Rule
 
@@ -33,7 +48,7 @@
   these routes `Partial` when the generated REST inventory still classifies
   them as `Stubbed`.
 
-### `PUT /{index}/_doc/{id}` Bounded Semantics Anchor
+### `PUT /{index}/_doc/{id}` Current Standalone Contract
 
 - The current source-owned request-query subset is bounded to:
   - `routing`
@@ -47,7 +62,8 @@
   - `_seq_no`
   - `_primary_term`
   - `forced_refresh`
-- This gives the explicit-id document write surface a concrete anchor for:
+- This gives the explicit-id document write surface a concrete standalone
+  contract for:
   - version advancement
   - sequence number / primary term exposure
   - routing-aware request shaping
@@ -58,10 +74,10 @@
 - Local route-traffic proof now covers:
   - `PUT /{index}/_doc/{id}` after index creation
   - bounded `_version`, `_seq_no`, `_primary_term`, and `result` response shape
-- This still does not, by itself, promote the route status above `Stubbed`.
-  Full OpenSearch semantics remain separate work.
+- The route is now a live standalone API surface. Remaining differences are
+  deeper OpenSearch semantics, not route-surface uncertainty.
 
-### `GET /{index}/_doc/{id}` Bounded Semantics Anchor
+### `GET /{index}/_doc/{id}` Current Standalone Contract
 
 - The current source-owned request-query subset is bounded to:
   - `_source`
@@ -87,11 +103,11 @@
   - `GET /{index}/_doc/{id}` after index creation and document write
   - bounded `_source` filtering with `routing` and `realtime` query shaping
   - OpenSearch-shaped `404` not-found envelope with `found = false`
-- This gives single-document fetch a concrete anchor for source filtering,
-  realtime/routing request shaping, and not-found result-class semantics,
-  without yet promoting the route status above `Stubbed`.
+- This gives single-document fetch the current standalone contract for source
+  filtering, realtime/routing request shaping, and not-found result-class
+  semantics.
 
-### `DELETE /{index}/_doc/{id}` Bounded Semantics Anchor
+### `DELETE /{index}/_doc/{id}` Current Standalone Contract
 
 - The current source-owned request-query subset is bounded to:
   - `routing`
@@ -117,12 +133,11 @@
   - `DELETE /{index}/_doc/{id}` after index creation and document write
   - bounded `result = deleted` response shape
   - bounded missing-result class with `result = not_found`
-- This gives single-document delete a concrete anchor for routing-aware delete
-  requests, compare-and-set request shaping, and bounded delete/not-found
-  result-class semantics, without yet promoting the route status above
-  `Planned`.
+- This gives single-document delete the current standalone contract for
+  routing-aware delete requests, compare-and-set request shaping, and
+  delete/not-found result classes.
 
-### `POST /{index}/_update/{id}` Bounded Semantics Anchor
+### `POST /{index}/_update/{id}` Current Standalone Contract
 
 - The current source-owned request-query subset is bounded to:
   - `routing`
@@ -152,10 +167,9 @@
   - `POST /{index}/_update/{id}` after index creation and document write
   - bounded `result = updated` response shape
   - bounded upsert path with `doc_as_upsert` and `result = created`
-- This gives single-document update a concrete anchor for partial document
-  merge, bounded upsert control, retry-on-conflict request shaping, and
-  minimal update result/error class semantics, without yet promoting the route
-  status above `Planned`.
+- This gives single-document update the current standalone contract for partial
+  document merge, upsert control, retry-on-conflict request shaping, and
+  update result/error classes.
 
 ### Refresh Policy And Visibility Timing Rule
 
@@ -163,7 +177,7 @@
   bounded to:
   - `refresh=false` (default)
   - `refresh=wait_for`
-- Out-of-subset policy values stay outside the Phase A bounded contract:
+- Out-of-contract policy values remain outside the current standalone claim:
   - `refresh=true`
   - any non-OpenSearch token outside `false` / `wait_for`
 - Visibility timing rule:
@@ -206,11 +220,13 @@
 - This does not yet claim shard-placement parity or richer multi-shard routing
   behavior beyond the current custom-token visibility contract.
 
-### Generated-Id Post Reconciliation Note
+### Generated-Id Route Classification Note
 
-- `POST /{index}/_doc` is the exception for now.
-- Keep it at `Partial` until the generated inventory explicitly distinguishes
-  the generated-id create surface from the id-bearing document-index routes.
+- `POST /{index}/_doc` remains `Partial`, but it is already a live standalone
+  route.
+- The remaining work is inventory and classification hygiene: the generated
+  inventory still needs to distinguish the generated-id create surface from the
+  id-bearing document-index routes.
 - Treat that inventory split as required follow-up work rather than optional
   cleanup: without it, the single-document route table cannot fully align its
   route-surface labels to the generated source inventory.
@@ -295,8 +311,8 @@ inventory split is available.
 
 | Route | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `POST /_bulk` | Executes NDJSON batches across one or more indices. | Implemented for a supported subset of index/create/update/delete bulk items. | Partial |
-| `POST /{index}/_bulk` | Executes NDJSON batches with default target index. | Implemented for the same supported subset. | Partial |
+| `POST /_bulk` | Executes NDJSON batches across one or more indices. | Live standalone route family with strict fixture coverage for index/create/update/delete item flows, partial failures, routing, refresh, and concurrency semantics in the documented contract. | Partial |
+| `POST /{index}/_bulk` | Executes NDJSON batches with default target index. | Live standalone route family with the same contract plus default-target semantics. | Partial |
 
 Bulk semantics still missing or incomplete:
 
@@ -320,7 +336,7 @@ Bulk semantics still missing or incomplete:
 
 The route-level `Partial` label above is intentionally broader than any single
 item-type row. It means Steelsearch exposes a usable `_bulk` surface for a
-mixed supported subset, not that every bulk item type has the same maturity or
+mixed standalone contract, not that every bulk item type has the same maturity or
 the same OpenSearch semantic depth.
 
 ### Bulk Metadata Parity Anchor

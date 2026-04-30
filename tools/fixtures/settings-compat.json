@@ -9,7 +9,8 @@
         "settings": {
           "index": {
             "number_of_replicas": 1,
-            "refresh_interval": "5s"
+            "refresh_interval": "5s",
+            "max_result_window": 1000
           }
         }
       },
@@ -25,18 +26,20 @@
         "expected_status": 200,
         "body_paths_present": [
           "logs-compat-settings-000001.settings.index.number_of_replicas",
-          "logs-compat-settings-000001.settings.index.refresh_interval"
+          "logs-compat-settings-000001.settings.index.refresh_interval",
+          "logs-compat-settings-000001.settings.index.max_result_window"
         ]
       }
     },
     {
-      "name": "put_settings_bounded_update",
+      "name": "put_settings_merge_mutable_update",
       "method": "PUT",
       "path": "/logs-compat-settings-000001/_settings",
       "body": {
         "index": {
           "number_of_replicas": 0,
-          "refresh_interval": "1s"
+          "refresh_interval": "1s",
+          "max_result_window": 2000
         }
       },
       "compare": {
@@ -51,9 +54,39 @@
         "expected_status": 200,
         "body_paths_present": [
           "logs-compat-settings-000001.settings.index.number_of_replicas",
-          "logs-compat-settings-000001.settings.index.refresh_interval"
+          "logs-compat-settings-000001.settings.index.refresh_interval",
+          "logs-compat-settings-000001.settings.index.max_result_window"
         ],
         "body_paths_equal": [
+          "logs-compat-settings-000001.settings.index.refresh_interval",
+          "logs-compat-settings-000001.settings.index.max_result_window"
+        ]
+      }
+    },
+    {
+      "name": "put_settings_null_reset_refresh_interval",
+      "method": "PUT",
+      "path": "/logs-compat-settings-000001/_settings",
+      "body": {
+        "index": {
+          "refresh_interval": null
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "get_settings_after_null_reset",
+      "method": "GET",
+      "path": "/logs-compat-settings-000001/_settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-settings-000001.settings.index.number_of_replicas",
+          "logs-compat-settings-000001.settings.index.max_result_window"
+        ],
+        "body_paths_absent": [
           "logs-compat-settings-000001.settings.index.refresh_interval"
         ]
       }

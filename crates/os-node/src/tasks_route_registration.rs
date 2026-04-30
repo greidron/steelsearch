@@ -5,7 +5,25 @@ pub const TASKS_LIST_ROUTE_PATH: &str = "/_tasks";
 pub const TASKS_GET_ROUTE_PATH: &str = "/_tasks/{task_id}";
 pub const TASKS_CANCEL_ROUTE_PATH: &str = "/_tasks/_cancel";
 
-pub const TASKS_ENVELOPE_FIELDS: [&str; 4] = ["node", "id", "action", "cancellable"];
+pub const TASKS_ENVELOPE_FIELDS: [&str; 9] = [
+    "node",
+    "id",
+    "type",
+    "action",
+    "start_time_in_millis",
+    "running_time_in_nanos",
+    "cancellable",
+    "cancelled",
+    "headers",
+];
+pub const TASKS_NODE_FIELDS: [&str; 6] = [
+    "name",
+    "transport_address",
+    "host",
+    "ip",
+    "roles",
+    "attributes",
+];
 pub const TASKS_ERROR_FIELDS: [&str; 2] = ["error.type", "error.reason"];
 
 pub const TASKS_UNSUPPORTED_PARAMETER_BUCKET: &str = "unsupported task registry parameter";
@@ -16,7 +34,10 @@ pub const TASKS_NON_CANCELLABLE_ERROR_TYPE: &str = "illegal_argument_exception";
 pub struct BoundedTaskRecord<'a> {
     pub node: &'a str,
     pub id: u64,
+    pub task_type: &'a str,
     pub action: &'a str,
+    pub start_time_in_millis: u64,
+    pub running_time_in_nanos: u64,
     pub cancellable: bool,
 }
 
@@ -32,17 +53,29 @@ pub fn build_bounded_task_envelope(task: &BoundedTaskRecord<'_>) -> serde_json::
     serde_json::json!({
         "node": task.node,
         "id": task.id,
+        "type": task.task_type,
         "action": task.action,
+        "start_time_in_millis": task.start_time_in_millis,
+        "running_time_in_nanos": task.running_time_in_nanos,
         "cancellable": task.cancellable,
+        "cancelled": false,
+        "headers": {},
     })
 }
 
-pub fn build_tasks_list_response(tasks: &[BoundedTaskRecord<'_>]) -> serde_json::Value {
+pub fn build_tasks_list_response(
+    node: &serde_json::Value,
+    tasks: &[BoundedTaskRecord<'_>],
+) -> serde_json::Value {
     let mut nodes = serde_json::Map::new();
     for task in tasks {
         let node_entry = nodes
             .entry(task.node.to_string())
-            .or_insert_with(|| serde_json::json!({ "tasks": {} }));
+            .or_insert_with(|| {
+                let mut seeded = node.clone();
+                seeded["tasks"] = serde_json::json!({});
+                seeded
+            });
         let task_key = format!("{}:{}", task.node, task.id);
         node_entry["tasks"][task_key] = build_bounded_task_envelope(task);
     }
@@ -77,6 +110,20 @@ fn normalize_bounded_task_value(task: &serde_json::Value) -> serde_json::Value {
         "id": task.get("id").cloned().unwrap_or(serde_json::Value::Null),
         "action": task.get("action").cloned().unwrap_or(serde_json::Value::Null),
         "cancellable": task.get("cancellable").cloned().unwrap_or(serde_json::Value::Bool(false)),
+        "cancelled": task.get("cancelled").cloned().unwrap_or(serde_json::Value::Bool(false)),
+        "type": task.get("type").cloned().unwrap_or(serde_json::Value::Null),
+        "start_time_in_millis": task
+            .get("start_time_in_millis")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "running_time_in_nanos": task
+            .get("running_time_in_nanos")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "headers": task
+            .get("headers")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
     })
 }
 
@@ -116,6 +163,7 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
         .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let node_metadata = body.get("node").cloned().unwrap_or_else(|| serde_json::json!({}));
     let mut nodes = serde_json::Map::new();
     for task in tasks {
         let normalized = normalize_bounded_task_value(&task);
@@ -124,7 +172,11 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
         let task_key = format!("{node}:{id}");
         let node_entry = nodes
             .entry(node.to_string())
-            .or_insert_with(|| serde_json::json!({ "tasks": {} }));
+            .or_insert_with(|| {
+                let mut seeded = node_metadata.clone();
+                seeded["tasks"] = serde_json::json!({});
+                seeded
+            });
         node_entry["tasks"][task_key] = normalized;
     }
     serde_json::json!({ "nodes": nodes })
@@ -140,6 +192,7 @@ pub fn invoke_tasks_get_live_route(body: &serde_json::Value) -> serde_json::Valu
 
 pub fn invoke_tasks_cancel_live_route(body: &serde_json::Value) -> serde_json::Value {
     let task = body.get("task").unwrap_or(body);
+    let node_metadata = body.get("node").cloned().unwrap_or_else(|| serde_json::json!({}));
     let normalized = normalize_bounded_task_value(task);
     let node = normalized["node"].as_str().unwrap_or("unknown");
     let id = normalized["id"].as_u64().unwrap_or_default();
@@ -147,6 +200,12 @@ pub fn invoke_tasks_cancel_live_route(body: &serde_json::Value) -> serde_json::V
     serde_json::json!({
         "nodes": {
             node: {
+                "name": node_metadata.get("name").cloned().unwrap_or(serde_json::Value::Null),
+                "transport_address": node_metadata.get("transport_address").cloned().unwrap_or(serde_json::Value::Null),
+                "host": node_metadata.get("host").cloned().unwrap_or(serde_json::Value::Null),
+                "ip": node_metadata.get("ip").cloned().unwrap_or(serde_json::Value::Null),
+                "roles": node_metadata.get("roles").cloned().unwrap_or(serde_json::json!([])),
+                "attributes": node_metadata.get("attributes").cloned().unwrap_or_else(|| serde_json::json!({})),
                 "tasks": {
                     task_key: normalized
                 }
@@ -186,7 +245,10 @@ mod tests {
         BoundedTaskRecord {
             node: "node-a",
             id: 7,
+            task_type: "transport",
             action: "cluster:admin/reroute",
+            start_time_in_millis: 1,
+            running_time_in_nanos: 2,
             cancellable: true,
         }
     }
@@ -197,16 +259,40 @@ mod tests {
         assert_eq!(TASKS_ROUTE_REGISTRY_TABLE[0].path, "/_tasks");
         assert_eq!(TASKS_ROUTE_REGISTRY_TABLE[1].path, "/_tasks/{task_id}");
         assert_eq!(TASKS_ROUTE_REGISTRY_TABLE[2].path, "/_tasks/_cancel");
-        assert_eq!(TASKS_ENVELOPE_FIELDS, ["node", "id", "action", "cancellable"]);
+        assert_eq!(
+            TASKS_ENVELOPE_FIELDS,
+            [
+                "node",
+                "id",
+                "type",
+                "action",
+                "start_time_in_millis",
+                "running_time_in_nanos",
+                "cancellable",
+                "cancelled",
+                "headers",
+            ]
+        );
     }
 
     #[test]
     fn tasks_list_response_groups_bounded_tasks_by_node() {
-        let body = build_tasks_list_response(&[sample_task()]);
+        let body = build_tasks_list_response(
+            &serde_json::json!({
+                "name": "node-a",
+                "transport_address": "127.0.0.1:9300",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1:9300",
+                "roles": ["cluster_manager"],
+                "attributes": {"testattr": "test"}
+            }),
+            &[sample_task()],
+        );
         assert_eq!(
             body["nodes"]["node-a"]["tasks"]["node-a:7"]["action"],
             serde_json::json!("cluster:admin/reroute")
         );
+        assert_eq!(body["nodes"]["node-a"]["name"], serde_json::json!("node-a"));
     }
 
     #[test]
@@ -221,6 +307,14 @@ mod tests {
             }
         });
         let list = invoke_tasks_list_live_route(&serde_json::json!({
+            "node": {
+                "name": "node-a",
+                "transport_address": "127.0.0.1:9300",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1:9300",
+                "roles": ["cluster_manager"],
+                "attributes": {"testattr": "test"}
+            },
             "tasks": [task["task"].clone()]
         }));
         let get = invoke_tasks_get_live_route(&task);
@@ -230,6 +324,7 @@ mod tests {
             list["nodes"]["node-a"]["tasks"]["node-a:7"]["action"],
             serde_json::json!("cluster:admin/reroute")
         );
+        assert_eq!(list["nodes"]["node-a"]["name"], serde_json::json!("node-a"));
         assert!(get["task"].get("unexpected").is_none());
         assert_eq!(
             cancel["nodes"]["node-a"]["tasks"]["node-a:7"]["cancellable"],

@@ -10,8 +10,16 @@
         "expected_status": 200,
         "body_paths_present": [
           "status",
-          "number_of_nodes"
-        ]
+          "number_of_nodes",
+          "number_of_data_nodes",
+          "timed_out"
+        ],
+        "body_paths_equal": {
+          "status": "green",
+          "number_of_nodes": 2,
+          "number_of_data_nodes": 2,
+          "timed_out": false
+        }
       }
     },
     {
@@ -23,8 +31,20 @@
         "expected_status": 200,
         "body_paths_present": [
           "cluster_name",
-          "metadata"
-        ]
+          "metadata",
+          "master_node",
+          "state_uuid",
+          "version"
+        ],
+        "body_paths_equal": {
+          "cluster_name": "steelsearch-dev",
+          "metadata.cluster_uuid": "steelsearch-dev-cluster-uuid",
+          "state_uuid": "steelsearch-state-uuid",
+          "version": 1
+        },
+        "body_object_key_counts": {
+          "nodes": 2
+        }
       }
     },
     {
@@ -37,7 +57,11 @@
         "body_paths_present": [
           "persistent",
           "transient"
-        ]
+        ],
+        "body_paths_equal": {
+          "persistent.cluster.routing.allocation.enable": "all",
+          "transient.cluster.info.update.interval": "30s"
+        }
       }
     },
     {
@@ -49,7 +73,14 @@
         "expected_status": 200,
         "body_paths_present": [
           "tasks"
-        ]
+        ],
+        "body_array_lengths": {
+          "tasks": 2
+        },
+        "body_paths_equal": {
+          "tasks.0.priority": "HIGH",
+          "tasks.1.priority": "HIGH"
+        }
       }
     },
     {
@@ -61,7 +92,13 @@
         "expected_status": 200,
         "body_paths_present": [
           "nodes"
-        ]
+        ],
+        "body_object_key_counts": {
+          "nodes": 1
+        },
+        "body_paths_equal": {
+          "nodes.steel-node-1.name": "steel-node-1"
+        }
       }
     },
     {
@@ -73,7 +110,13 @@
         "expected_status": 200,
         "body_paths_present": [
           "nodes"
-        ]
+        ],
+        "body_object_key_counts": {
+          "nodes": 2
+        },
+        "body_paths_equal": {
+          "nodes.steel-node-2.indices.docs.count": 0
+        }
       }
     },
     {
@@ -86,7 +129,13 @@
         "body_paths_present": [
           "indices",
           "nodes"
-        ]
+        ],
+        "body_paths_equal": {
+          "status": "green",
+          "nodes.count.total": 2,
+          "nodes.count.data": 2,
+          "indices.count": 0
+        }
       }
     },
     {
@@ -99,7 +148,85 @@
         "body_paths_present": [
           "_all",
           "indices"
-        ]
+        ],
+        "body_paths_equal": {
+          "_shards.total": 0,
+          "_shards.successful": 0,
+          "_shards.failed": 0,
+          "_all.total.docs.count": 0
+        }
+      }
+    }
+  ],
+  "post_checks": [
+    {
+      "name": "cluster_name_consistent_between_health_and_state",
+      "left": {
+        "case": "node_a_cluster_health",
+        "path": "response.body.cluster_name"
+      },
+      "right": {
+        "case": "node_b_cluster_state",
+        "path": "response.body.cluster_name"
+      }
+    },
+    {
+      "name": "cluster_name_consistent_between_health_and_stats",
+      "left": {
+        "case": "node_a_cluster_health",
+        "path": "response.body.cluster_name"
+      },
+      "right": {
+        "case": "node_a_cluster_stats",
+        "path": "response.body.cluster_name"
+      }
+    },
+    {
+      "name": "node_count_matches_cluster_state_nodes",
+      "left": {
+        "case": "node_a_cluster_health",
+        "path": "response.body.number_of_nodes"
+      },
+      "right": {
+        "case": "node_b_cluster_state",
+        "path": "response.body.nodes",
+        "transform": "len"
+      }
+    },
+    {
+      "name": "node_count_matches_nodes_stats_nodes",
+      "left": {
+        "case": "node_a_cluster_health",
+        "path": "response.body.number_of_nodes"
+      },
+      "right": {
+        "case": "node_b_nodes_stats",
+        "path": "response.body.nodes",
+        "transform": "len"
+      }
+    },
+    {
+      "name": "pending_task_count_matches_node_a_task_entries",
+      "left": {
+        "case": "node_b_pending_tasks",
+        "path": "response.body.tasks",
+        "transform": "len"
+      },
+      "right": {
+        "case": "node_a_tasks",
+        "path": "response.body.nodes.steel-node-1.tasks",
+        "transform": "len"
+      }
+    },
+    {
+      "name": "cluster_uuid_matches_metadata_cluster_uuid",
+      "left": {
+        "case": "node_b_cluster_state",
+        "path": "response.body.cluster_uuid"
+      },
+      "right": {
+        "case": "node_b_cluster_state",
+        "path": "response.body.metadata.cluster_uuid"
       }
     }
   ]

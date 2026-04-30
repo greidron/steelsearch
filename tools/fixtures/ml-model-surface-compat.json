@@ -1,0 +1,122 @@
+{
+  "name": "ml-model-surface-compat",
+  "cases": [
+    {
+      "name": "register_model",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/_register",
+      "body": {
+        "name": "compat-text-embedding",
+        "function_name": "text_embedding",
+        "dimension": 3
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "name",
+        "function_name",
+        "model_state"
+      ],
+      "expected_paths": {
+        "name": "compat-text-embedding",
+        "function_name": "text_embedding",
+        "model_state": "registered"
+      }
+    },
+    {
+      "name": "get_model",
+      "method": "GET",
+      "path": "/_plugins/_ml/models/${register_model.model_id}",
+      "expected_status": 200,
+      "compare_paths": [
+        "model_id",
+        "name",
+        "function_name",
+        "dimension",
+        "deployed"
+      ],
+      "expected_paths": {
+        "model_id": "${register_model.model_id}",
+        "name": "compat-text-embedding",
+        "function_name": "text_embedding",
+        "dimension": 3,
+        "deployed": false
+      }
+    },
+    {
+      "name": "deploy_model",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/${register_model.model_id}/_deploy",
+      "expected_status": 200,
+      "compare_paths": [
+        "model_id",
+        "deployed",
+        "task_state"
+      ],
+      "expected_paths": {
+        "model_id": "${register_model.model_id}",
+        "deployed": true,
+        "task_state": "DEPLOYED"
+      }
+    },
+    {
+      "name": "predict_model",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/${register_model.model_id}/_predict",
+      "body": {
+        "text_docs": [
+          "alpha beta"
+        ]
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "inference_results.0.model_id",
+        "inference_results.0.output.0.0",
+        "inference_results.0.output.0.1"
+      ],
+      "expected_paths": {
+        "inference_results.0.model_id": "${register_model.model_id}",
+        "inference_results.0.output.0.0": 10.0,
+        "inference_results.0.output.0.1": 2.0
+      }
+    },
+    {
+      "name": "search_model",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/_search",
+      "body": {
+        "query": {
+          "term": {
+            "model_id": "${register_model.model_id}"
+          }
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "hits.total.value",
+        "hits.hits.0._id",
+        "hits.hits.0._source.deployed"
+      ],
+      "expected_paths": {
+        "hits.total.value": 1,
+        "hits.hits.0._id": "${register_model.model_id}",
+        "hits.hits.0._source.deployed": true
+      }
+    },
+    {
+      "name": "undeploy_model",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/${register_model.model_id}/_undeploy",
+      "expected_status": 200,
+      "compare_paths": [
+        "model_id",
+        "deployed",
+        "task_state"
+      ],
+      "expected_paths": {
+        "model_id": "${register_model.model_id}",
+        "deployed": false,
+        "task_state": "UNDEPLOYED"
+      }
+    }
+  ]
+}

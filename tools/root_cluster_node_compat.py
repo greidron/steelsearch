@@ -92,6 +92,10 @@ def check_target(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
             f"{expected_body_text!r} but got {response.get('body_text')!r}"
         )
 
+    for snippet in compare.get("body_text_contains", []):
+        if snippet not in (response.get("body_text") or ""):
+            errors.append(f"body_text missing snippet [{snippet}]")
+
     for path in compare.get("body_paths_present", []):
         if extract_path(response.get("body"), path) is None:
             errors.append(f"missing body path [{path}]")
@@ -106,6 +110,11 @@ def check_target(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
 def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     compare = case.get("compare", {})
+    mode = compare.get("compare_mode")
+    if mode == "cat_indices_json":
+        return compare_cat_indices_json(steelsearch, opensearch)
+    if mode == "cat_plugins_json":
+        return compare_cat_plugins_json(steelsearch, opensearch)
     for path in compare.get("body_paths_equal", []):
         left = extract_path(steelsearch.get("body"), path)
         right = extract_path(opensearch.get("body"), path)
@@ -117,6 +126,63 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
             f"steelsearch={steelsearch.get('body_text')!r} opensearch={opensearch.get('body_text')!r}"
         )
     return errors
+
+
+def compare_cat_indices_json(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required = {"health", "status", "index", "pri", "rep", "docs.count", "store.size"}
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        body = response.get("body")
+        if not isinstance(body, list) or not body:
+            errors.append(f"{label} cat indices response was not a non-empty list")
+            continue
+        first = body[0]
+        missing = sorted(required.difference(first.keys()))
+        if missing:
+            errors.append(f"{label} cat indices row missing fields {missing}")
+    return errors
+
+
+def compare_cat_plugins_json(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required = {"name", "component", "version"}
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        body = response.get("body")
+        if not isinstance(body, list):
+            errors.append(f"{label} cat plugins response was not a list")
+            continue
+        if not body:
+            continue
+        first = body[0]
+        missing = sorted(required.difference(first.keys()))
+        if missing:
+            errors.append(f"{label} cat plugins row missing fields {missing}")
+    return errors
+
+
+def run_setup(
+    steps: list[dict[str, Any]],
+    steelsearch_url: str,
+    opensearch_url: str,
+    timeout: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    report_steps: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for step in steps:
+        steelsearch = request_response(steelsearch_url, step, timeout)
+        opensearch = request_response(opensearch_url, step, timeout)
+        step_errors = check_target(step, steelsearch) + check_target(step, opensearch)
+        report_steps.append(
+            {
+                "name": step["name"],
+                "status": "passed" if not step_errors else "failed",
+                "steelsearch": steelsearch,
+                "opensearch": opensearch,
+                "errors": step_errors,
+            }
+        )
+        errors.extend(f"setup:{step['name']}: {error}" for error in step_errors)
+    return report_steps, errors
 
 
 def main() -> int:
@@ -141,6 +207,17 @@ def main() -> int:
     }
 
     exit_code = 0
+    if fixture.get("setup"):
+        setup_report, setup_errors = run_setup(
+            fixture["setup"],
+            args.steelsearch_url,
+            args.opensearch_url,
+            args.timeout,
+        )
+        report["setup"] = setup_report
+        if setup_errors:
+            exit_code = 1
+
     for case in fixture.get("cases", []):
         steelsearch = request_response(args.steelsearch_url, case, args.timeout)
         opensearch = request_response(args.opensearch_url, case, args.timeout)

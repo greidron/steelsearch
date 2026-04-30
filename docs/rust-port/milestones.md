@@ -24,7 +24,7 @@ surface area, with comparable externally visible behavior.
   compatible status codes, JSON fields, and error shapes for both happy-path and
   failure cases.
 - Index, document, bulk, search, metadata, cluster, and snapshot APIs work with
-  production-oriented semantics for the declared supported subset, not just
+  production-oriented semantics for the declared Phase A surface, not just
   development stubs.
 - Multi-node Steelsearch cluster behavior is stable enough for shard
   allocation, cluster health/state, metadata propagation, task tracking, and
@@ -42,13 +42,13 @@ surface area, with comparable externally visible behavior.
   APIs.
 - Write-path semantics for `_version`, `_seq_no`, `_primary_term`, refresh
   visibility, optimistic concurrency, routing, and replica-safe state changes.
-- Search semantics for the declared Query DSL subset, pagination, sorting,
+- Search semantics for the declared Query DSL surface, pagination, sorting,
   aggregations, alias and wildcard target expansion, and shard failure
   reporting.
 - Snapshot, restore, cleanup, and migration flows sufficient for cutover and
   rollback rehearsal.
 - Test evidence showing Steelsearch and OpenSearch behave compatibly on the
-  supported subset.
+  declared Phase A surface.
 
 ### Non-Goals for Completion
 
@@ -56,6 +56,56 @@ surface area, with comparable externally visible behavior.
 - Binary plugin ABI compatibility.
 - Full parity for every OpenSearch plugin or every route in the source
   inventory.
+
+## Phase A-1: Standalone Fullset Closure
+
+Phase A-1 extends `Phase A` without changing its deployment model.
+
+The target is no longer "bounded subset plus explicit fail-closed" for already
+live standalone surfaces. The target becomes "full standalone OpenSearch
+replacement for those surfaces" while keeping Java interop and mixed-cluster
+semantics out of scope.
+
+### Definition of Done
+
+- REST routes already exposed in `Phase A` no longer stop at a bounded subset
+  unless the missing behavior is explicitly pushed to `Phase B` or `Phase C`.
+- Search, aggregation, vector, snapshot, index/metadata, and write-path
+  behavior broaden from initial Phase A parity to full standalone parity for
+  the chosen route families.
+- Validation is profile-driven:
+  - common baseline profile where possible
+  - feature-specific profiles where the feature requires extra source or target
+    capabilities
+- Steelsearch and OpenSearch are compared on the same capability profile for
+  every fullset claim.
+
+### Required Capability Areas
+
+- Full standalone Query DSL closure for exposed `_search` surfaces.
+- Full standalone response-shaping and search-session closure for exposed search
+  routes.
+- Aggregation family closure beyond the currently supported subset.
+- Data stream and rollover implementation instead of fail-closed behavior.
+- Write-path closure for the remaining OpenSearch document semantics expected of
+  a standalone replacement.
+- Snapshot/repository closure beyond bounded lifecycle support.
+- Vector/k-NN closure for the chosen standalone-compatible surface.
+- Cat/admin/readback closure for already live root/cluster/node surfaces.
+
+### Non-Goals for Completion
+
+- Java OpenSearch mixed-cluster coordination.
+- Same-cluster shard relocation/recovery/publication parity with Java nodes.
+- Binary plugin ABI compatibility.
+
+### Boundary Against Later Phases
+
+- `Phase A-1` remains Steelsearch-only standalone replacement.
+- `Phase B` starts when work requires Java OpenSearch interop, strict
+  source-side mixed-mode behavior, or coordinating/read-only interop semantics.
+- `Phase C` starts when work requires same-cluster peer-node participation,
+  mixed-node shard lifecycle parity, or Java coordination/publication parity.
 
 ## Phase B: Mixed-Cluster Interop
 

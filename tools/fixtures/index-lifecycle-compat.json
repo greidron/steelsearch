@@ -2,24 +2,49 @@
   "name": "index-lifecycle-compat",
   "cases": [
     {
-      "name": "create_index_bounded_body",
+      "name": "create_index_rich_body_with_query_options",
       "method": "PUT",
-      "path": "/logs-compat-lifecycle-000001",
+      "path": "/logs-compat-lifecycle-000001?wait_for_active_shards=1&timeout=30s&master_timeout=30s",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/_index_template/logs-template-compat"
+        },
+        {
+          "method": "DELETE",
+          "path": "/_template/logs-legacy-compat"
+        }
+      ],
       "body": {
         "settings": {
           "index": {
-            "number_of_shards": 1
+            "number_of_shards": 1,
+            "number_of_replicas": 1,
+            "refresh_interval": "30s"
           }
         },
         "mappings": {
+          "dynamic": "strict",
           "properties": {
             "message": {
               "type": "text"
+            },
+            "env": {
+              "type": "keyword"
             }
           }
         },
         "aliases": {
-          "logs-compat-lifecycle-read": {}
+          "logs-compat-lifecycle-read": {
+            "is_write_index": true,
+            "index_routing": "tenant-a",
+            "search_routing": "tenant-a",
+            "filter": {
+              "term": {
+                "env": "prod"
+              }
+            }
+          }
         }
       },
       "compare": {
@@ -36,6 +61,45 @@
           "logs-compat-lifecycle-000001.settings",
           "logs-compat-lifecycle-000001.mappings",
           "logs-compat-lifecycle-000001.aliases"
+        ],
+        "body_paths_equal": [
+          "logs-compat-lifecycle-000001.settings.index.number_of_shards",
+          "logs-compat-lifecycle-000001.settings.index.number_of_replicas",
+          "logs-compat-lifecycle-000001.settings.index.refresh_interval",
+          "logs-compat-lifecycle-000001.mappings.dynamic",
+          "logs-compat-lifecycle-000001.mappings.properties.message.type",
+          "logs-compat-lifecycle-000001.mappings.properties.env.type",
+          "logs-compat-lifecycle-000001.aliases.logs-compat-lifecycle-read.is_write_index",
+          "logs-compat-lifecycle-000001.aliases.logs-compat-lifecycle-read.index_routing",
+          "logs-compat-lifecycle-000001.aliases.logs-compat-lifecycle-read.search_routing",
+          "logs-compat-lifecycle-000001.aliases.logs-compat-lifecycle-read.filter.term.env"
+        ]
+      }
+    },
+    {
+      "name": "get_index_wildcard_selector_metadata",
+      "method": "GET",
+      "path": "/logs-compat-lifecycle-*",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-lifecycle-000001.settings",
+          "logs-compat-lifecycle-000001.mappings",
+          "logs-compat-lifecycle-000001.aliases"
+        ]
+      }
+    },
+    {
+      "name": "get_index_comma_selector_ignore_unavailable",
+      "method": "GET",
+      "path": "/logs-compat-lifecycle-000001,missing-compat-lifecycle-000001?ignore_unavailable=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-lifecycle-000001.settings"
+        ],
+        "body_paths_absent": [
+          "missing-compat-lifecycle-000001"
         ]
       }
     },
@@ -43,6 +107,16 @@
       "name": "head_index_created_bodyless",
       "method": "HEAD",
       "path": "/logs-compat-lifecycle-000001",
+      "compare": {
+        "expected_status": 200,
+        "body_text_exact": "",
+        "body_text_equal": true
+      }
+    },
+    {
+      "name": "head_index_wildcard_bodyless",
+      "method": "HEAD",
+      "path": "/logs-compat-lifecycle-*",
       "compare": {
         "expected_status": 200,
         "body_text_exact": "",
@@ -60,9 +134,38 @@
       }
     },
     {
-      "name": "delete_index_wildcard_success",
+      "name": "create_second_index_for_comma_delete",
+      "method": "PUT",
+      "path": "/logs-compat-lifecycle-000002",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "delete_index_comma_selector_success",
       "method": "DELETE",
-      "path": "/logs-compat-lifecycle-*",
+      "path": "/logs-compat-lifecycle-000001,logs-compat-lifecycle-000002",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "delete_index_missing_ignore_unavailable_success",
+      "method": "DELETE",
+      "path": "/missing-compat-lifecycle-000001?ignore_unavailable=true",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [

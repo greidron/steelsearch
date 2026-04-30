@@ -5639,6 +5639,44 @@ mod single_doc_put_live_route_parity_tests {
         );
         assert_eq!(create_index.status, 200);
 
+        let mapping = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/vector-search-compat-000001/_mapping",
+        ));
+        assert_eq!(mapping.status, 200);
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["data_type"],
+            "float"
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["mode"],
+            "in_memory"
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["compression_level"],
+            "1x"
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["doc_values"],
+            true
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["store"],
+            false
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["_meta"]["owner"],
+            "vector-live-route"
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["method"]["name"],
+            "hnsw"
+        );
+        assert_eq!(
+            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["method"]["engine"],
+            "lucene"
+        );
+
         let put_doc = node.handle_rest_request(
             os_rest::RestRequest::new(
                 os_rest::RestMethod::Put,
@@ -6581,7 +6619,19 @@ mod vector_live_route_parity_tests {
                         "tenant": { "type": "keyword" },
                         "embedding": {
                             "type": "knn_vector",
-                            "dimension": 3
+                            "dimension": 3,
+                            "data_type": "float",
+                            "mode": "in_memory",
+                            "compression_level": "1x",
+                            "doc_values": true,
+                            "store": false,
+                            "_meta": {
+                                "owner": "vector-live-route"
+                            },
+                            "method": {
+                                "name": "hnsw",
+                                "engine": "lucene"
+                            }
                         }
                     }
                 }
@@ -6635,7 +6685,7 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(knn.status, 200);
-        assert_eq!(knn.body["hits"]["total"]["value"], 1);
+        assert_eq!(knn.body["hits"]["total"]["value"], 2);
         assert_eq!(knn.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let hybrid = node.handle_rest_request(
@@ -6670,6 +6720,165 @@ mod vector_live_route_parity_tests {
         assert_eq!(hybrid.body["hits"]["total"]["value"], 2);
         assert_eq!(hybrid.body["hits"]["hits"][0]["_id"], "doc-2");
         assert_eq!(hybrid.body["hits"]["hits"][1]["_id"], "doc-1");
+
+        let filtered_knn = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/vector-search-compat-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": [1.0, 0.0, 0.0],
+                            "k": 2,
+                            "filter": {
+                                "term": {
+                                    "title": "alpha vector"
+                                }
+                            }
+                        }
+                    }
+                },
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(filtered_knn.status, 200);
+        assert_eq!(filtered_knn.body["hits"]["total"]["value"], 1);
+        assert_eq!(filtered_knn.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let ignore_unmapped = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/vector-search-compat-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "knn": {
+                        "missing_embedding": {
+                            "vector": [1.0, 0.0, 0.0],
+                            "k": 1,
+                            "ignore_unmapped": true
+                        }
+                    }
+                },
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(ignore_unmapped.status, 200);
+        assert_eq!(ignore_unmapped.body["hits"]["total"]["value"], 0);
+
+        let radial = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/vector-search-compat-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": [1.0, 0.0, 0.0],
+                            "max_distance": 0.5
+                        }
+                    }
+                },
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(radial.status, 200);
+        assert_eq!(radial.body["hits"]["total"]["value"], 1);
+        assert_eq!(radial.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let method_parameters = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/vector-search-compat-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": [0.0, 1.0, 0.0],
+                            "k": 1,
+                            "expand_nested": false,
+                            "method_parameters": {
+                                "ef_search": 32
+                            }
+                        }
+                    }
+                },
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(method_parameters.status, 200);
+        assert_eq!(method_parameters.body["hits"]["total"]["value"], 2);
+        assert_eq!(method_parameters.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let hybrid_should = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/vector-search-compat-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "bool": {
+                        "should": [
+                            {
+                                "match": {
+                                    "title": "alpha"
+                                }
+                            },
+                            {
+                                "knn": {
+                                    "embedding": {
+                                        "vector": [1.0, 0.0, 0.0],
+                                        "k": 2
+                                    }
+                                }
+                            }
+                        ],
+                        "minimum_should_match": 1
+                    }
+                },
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(hybrid_should.status, 200);
+        assert_eq!(hybrid_should.body["hits"]["total"]["value"], 2);
+        assert_eq!(hybrid_should.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let hybrid_minimum_should_match = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/vector-search-compat-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "bool": {
+                        "should": [
+                            {
+                                "term": {
+                                    "tenant": "tenant-a"
+                                }
+                            },
+                            {
+                                "knn": {
+                                    "embedding": {
+                                        "vector": [1.0, 0.0, 0.0],
+                                        "max_distance": 0.5
+                                    }
+                                }
+                            }
+                        ],
+                        "minimum_should_match": 2
+                    }
+                },
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(hybrid_minimum_should_match.status, 200);
+        assert_eq!(hybrid_minimum_should_match.body["hits"]["total"]["value"], 1);
+        assert_eq!(hybrid_minimum_should_match.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let unsupported = node.handle_rest_request(
             os_rest::RestRequest::new(
@@ -6711,6 +6920,126 @@ mod vector_live_route_parity_tests {
             "/_plugins/_knn/clear_cache/vector-search-compat-000001",
         ));
         assert_eq!(clear_cache.status, 200);
+
+        let train_model = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/_plugins/_knn/models/_train",
+            )
+            .with_json_body(serde_json::json!({
+                "training_index": "vector-search-compat-000001",
+                "dimension": 3,
+                "description": "vector test model",
+                "method": {
+                    "name": "hnsw",
+                    "engine": "lucene"
+                }
+            })),
+        );
+        assert_eq!(train_model.status, 200);
+        let model_id = train_model.body["model_id"].as_str().unwrap_or("");
+        assert!(!model_id.is_empty());
+
+        let get_model = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            &format!("/_plugins/_knn/models/{model_id}"),
+        ));
+        assert_eq!(get_model.status, 200);
+        assert_eq!(get_model.body["dimension"], 3);
+        assert_eq!(get_model.body["method"]["engine"], "lucene");
+
+        let search_model = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/_plugins/_knn/models/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "term": {
+                        "model_id": model_id
+                    }
+                }
+            })),
+        );
+        assert_eq!(search_model.status, 200);
+        assert_eq!(search_model.body["hits"]["total"]["value"], 1);
+        assert_eq!(search_model.body["hits"]["hits"][0]["_id"], model_id);
+
+        let stats_after_train = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/_plugins/_knn/stats",
+        ));
+        assert_eq!(stats_after_train.status, 200);
+        assert_eq!(stats_after_train.body["nodes"]["local"]["model_count"], 1);
+        assert_eq!(stats_after_train.body["nodes"]["local"]["training_requests"], 1);
+
+        let delete_model = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Delete,
+            &format!("/_plugins/_knn/models/{model_id}"),
+        ));
+        assert_eq!(delete_model.status, 200);
+        assert_eq!(delete_model.body["result"], "deleted");
+
+        let register_ml_model = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/_plugins/_ml/models/_register",
+            )
+            .with_json_body(serde_json::json!({
+                "name": "compat-text-embedding",
+                "function_name": "text_embedding",
+                "dimension": 3
+            })),
+        );
+        assert_eq!(register_ml_model.status, 200);
+        let ml_model_id = register_ml_model.body["model_id"].as_str().unwrap_or("");
+        assert!(!ml_model_id.is_empty());
+
+        let get_ml_model = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            &format!("/_plugins/_ml/models/{ml_model_id}"),
+        ));
+        assert_eq!(get_ml_model.status, 200);
+        assert_eq!(get_ml_model.body["dimension"], 3);
+        assert_eq!(get_ml_model.body["deployed"], false);
+
+        let deploy_ml_model = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Post,
+            &format!("/_plugins/_ml/models/{ml_model_id}/_deploy"),
+        ));
+        assert_eq!(deploy_ml_model.status, 200);
+        assert_eq!(deploy_ml_model.body["deployed"], true);
+
+        let predict_ml_model = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                &format!("/_plugins/_ml/models/{ml_model_id}/_predict"),
+            )
+            .with_json_body(serde_json::json!({
+                "text_docs": ["alpha beta"]
+            })),
+        );
+        assert_eq!(predict_ml_model.status, 200);
+        assert_eq!(predict_ml_model.body["inference_results"][0]["model_id"], ml_model_id);
+
+        let search_ml_model = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/_plugins/_ml/models/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "term": { "model_id": ml_model_id } }
+            })),
+        );
+        assert_eq!(search_ml_model.status, 200);
+        assert_eq!(search_ml_model.body["hits"]["total"]["value"], 1);
+
+        let undeploy_ml_model = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Post,
+            &format!("/_plugins/_ml/models/{ml_model_id}/_undeploy"),
+        ));
+        assert_eq!(undeploy_ml_model.status, 200);
+        assert_eq!(undeploy_ml_model.body["deployed"], false);
     }
 }
 

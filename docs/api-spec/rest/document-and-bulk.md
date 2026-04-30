@@ -16,10 +16,12 @@ They are not only HTTP wrappers. Their semantics depend on:
 
 ## Current Steelsearch Position
 
-- Basic document index/get and bulk flows exist.
-- Refresh exists and is part of the current development replacement profile.
-- Full delete/update, routing, conflict, and replica/write parity are still
-  incomplete.
+- Single-document CRUD, refresh, routing, optimistic concurrency, alias/data-
+  stream write-target resolution, and bulk flows are live on the standalone
+  surface.
+- The documented write-path contract is strict-compared by the dedicated
+  document-write-path profile.
+- Replica/write durability and same-cluster behavior remain later-phase work.
 
 ## Key Route Families
 
@@ -42,5 +44,6 @@ They are not only HTTP wrappers. Their semantics depend on:
 
 ## Replacement Gap
 
-The current implementation is good enough for a supported development subset.
-It is not yet a full OpenSearch write-path replacement.
+The current implementation is a real standalone write-path replacement surface.
+It is not yet a full production or same-cluster OpenSearch write-path
+replacement.

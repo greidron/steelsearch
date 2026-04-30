@@ -38,7 +38,7 @@ Versioning rules for this matrix:
 | Status | Meaning |
 | --- | --- |
 | Implemented | The current repository has a native Rust implementation for this layer. |
-| Partial | The current repository covers the development or compatibility subset, but not full OpenSearch semantics. |
+| Partial | The current repository exposes a real standalone or compatibility surface, but broader OpenSearch semantics remain incomplete. |
 | Stubbed | Steelsearch exposes an OpenSearch-shaped shell with limited behavior. |
 | Planned | Required for replacement work, but not implemented yet. |
 | Out of scope | Excluded from the current standalone Steelsearch milestone. |
@@ -57,12 +57,12 @@ Versioning rules for this matrix:
 | k-NN vector indexing and query search | Implemented | Implemented | Partial | No | `knn_vector` mapping, vector persistence, `knn` query execution, filters, selected method parameters, hybrid BM25/vector search, and daemon fixtures exist. Native HNSW/FAISS/NMSLIB parity, byte/binary vectors, all score spaces, nested semantics, painless scripts, cache memory enforcement, and exact OpenSearch k-NN ranking parity remain incomplete. |
 | k-NN plugin REST and model APIs | Implemented | Partial | Partial | No | `_plugins/_knn/stats`, warmup, clear cache, train/get/delete/search model routes are represented. OpenSearch k-NN transport actions, training internals, remote index build, circuit breaker enforcement, and full plugin setting semantics are incomplete. |
 | ML Commons, neural search, and model serving | Implemented | Partial | Partial | No | Model groups, model registration, deploy/undeploy, predict, model search, rerank, and embedding-to-k-NN development flow exist. OpenSearch ML Commons task lifecycle, connectors, authz, persistent deployment, neural query processors, sparse encoders, and production model runtime isolation are incomplete. |
-| Snapshot and restore | Implemented | Partial | Partial | No | Development snapshot create/status/restore paths and crash/fail-closed tests exist. OpenSearch repository plugins, repository verification, snapshot deletion/cleanup, incremental segment snapshots, remote store, searchable snapshots, and direct OpenSearch snapshot import are incomplete. |
+| Snapshot and restore | Implemented | Partial | Partial | No | Repository registration/verify plus snapshot create/status/restore/delete/cleanup strict compare now exist on the standalone profile. Incremental segment snapshots, remote store, searchable snapshots, and direct OpenSearch snapshot import are incomplete. |
 | Migration and replacement tooling | Implemented | N/A | Partial | No | Migration crates and local rehearsal scripts cover export/import style replacement workflows using supported REST surfaces. Full OpenSearch mapping/template/alias translation, scroll/PIT export coverage, vector migration validation, resumability, and production runbooks remain incomplete. |
 | Steelsearch multi-node runtime | Implemented | Implemented | Partial | No | Development daemons support node names, seed hosts, isolated data paths, primary/replica assignment, remote shard routing, replication, peer recovery, relocation, restart, and fault-injection tests. Discovery, membership, quorum, split-brain protection, rolling upgrades, production durability, and Java data-node mixed membership are not production-ready. |
 | Native transport frame and OpenSearch probe compatibility | Partial | N/A | Partial | No | Frame encode/decode, ping, handshake, transport error decoding, and cluster-state decode scaffolding exist. Full transport action execution, named writeable registry coverage, cluster-state diffs, search/write transport parity, and Java data-node binary compatibility are incomplete. |
 | Security and access control | Stubbed | Stubbed | Planned | No | Some fail-closed development gates and model registry access metadata exist. TLS, authn/authz, tenants, roles, index permissions, audit logs, secret handling, OpenSearch Security plugin API parity, and secure multi-node operation are missing. |
-| OpenSearch comparison harness | Implemented | N/A | Partial | No | Search compatibility fixtures and Steelsearch/OpenSearch comparison wrappers cover supported search, bulk, k-NN, and error-shape subsets. Coverage is intentionally not exhaustive and must expand before claiming cluster replacement parity. |
+| OpenSearch comparison harness | Implemented | N/A | Partial | No | Common-baseline plus feature-specific profile runners now clean-pass for search-execution, snapshot-migration, vector-ml, and transport-admin. Coverage is still not exhaustive enough for production or mixed-cluster replacement claims. |
 | Java OpenSearch data-node compatibility | Out of scope | N/A | Out of scope | No | Mixed Java data-node membership, Lucene segment binary sharing, Java plugin ABI, Java transport hot paths, and JVM recovery participation remain disabled unless a separate compatibility track is opened. |
 | Java plugin ABI compatibility | Out of scope | N/A | Out of scope | No | Steelsearch has Rust-native k-NN and ML-shaped modules, not Java plugin loading or Java plugin extension points. |
 
@@ -75,8 +75,8 @@ Versioning rules for this matrix:
 | `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`, `GET /_cat/indices`, `GET /_cat/plugins`, `GET /_tasks`, `GET /_nodes/hot_threads`, `GET /_nodes/usage`, `GET /_cluster/allocation/explain` | Partial | Partial | Operational and cat responses are local/dev summaries, not full OpenSearch telemetry parity. |
 | `PUT /{index}`, `GET /{index}`, `DELETE /{index}` | Partial | Partial | Index shell, mapping/settings persistence, and daemon tests exist. |
 | `PUT /{index}/_doc/{id}`, `GET /{index}/_doc/{id}` | Partial | Partial | Single-document index/get routes exist; single-document HTTP delete/update and full OpenSearch write semantics do not. |
-| `POST /_bulk`, `POST /{index}/_bulk` | Implemented | Partial | Supported NDJSON write subset. |
-| `GET /_search`, `POST /_search`, `GET /{index}/_search`, `POST /{index}/_search` | Implemented | Partial | Supported query/aggregation/vector subset. |
+| `POST /_bulk`, `POST /{index}/_bulk` | Implemented | Partial | Standalone write-path contract is live and strict-compared; broader production semantics remain. |
+| `GET /_search`, `POST /_search`, `GET /{index}/_search`, `POST /{index}/_search` | Implemented | Partial | Standalone lexical search contract is live and strict-compared; vector execution is owned by the dedicated `vector-ml` profile. |
 | `POST /{index}/_refresh` | Implemented | Partial | Refresh visibility and write refresh policies are covered. |
 | `PUT /_snapshot/{repository}/{snapshot}`, status, restore | Partial | Partial | Development fs-style snapshot/restore only. |
 | k-NN plugin routes under `/_plugins/_knn` | Partial | Partial | Stats, warmup, clear cache, model train/get/delete/search are represented. |
@@ -104,8 +104,8 @@ Versioning rules for this matrix:
 | Development Steelsearch daemon for supported REST tests | Possible. |
 | Development OpenSearch comparison for supported fixtures | Possible with `RUN_OPENSEARCH_COMPARISON=1` and a usable OpenSearch service or checkout. |
 | Development migration rehearsal into Steelsearch | Possible for supported mappings, documents, bulk writes, search, and vector fixtures. |
-| Development k-NN search | Possible for the supported `knn_vector` and `knn` query subset. |
-| Development model-serving-to-vector-search flow | Possible for the supported ML Commons-shaped subset. |
+| Standalone k-NN search | Possible on the canonical `vector-ml` profile. |
+| Standalone model-serving-to-vector-search flow | Possible on the canonical `vector-ml` profile. |
 | Development multi-node Steelsearch cluster | Possible for Steelsearch-native daemons only. |
 | Production OpenSearch cluster replacement | Not ready. |
 | Production OpenSearch API parity | Not ready. |
@@ -126,6 +126,6 @@ Versioning rules for this matrix:
   and transport action.
 - Expand comparison fixtures until every implemented daemon route has both
   positive and negative Steelsearch/OpenSearch cases.
-- Promote development-only multi-node, snapshot, migration, k-NN, and model
-  serving rows only after durability, security, observability, upgrade, and
-  failure-mode criteria are documented and tested.
+- Promote standalone multi-node, snapshot, migration, k-NN, and model-serving
+  rows beyond `Partial` only after durability, security, observability,
+  upgrade, and failure-mode criteria are documented and tested.
