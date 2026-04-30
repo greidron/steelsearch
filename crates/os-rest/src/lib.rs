@@ -641,6 +641,25 @@ mod tests {
     }
 
     #[test]
+    fn accepts_json_header_allows_wildcards_and_multiple_values() {
+        let wildcard =
+            RestRequest::new(RestMethod::Get, "/_search").with_header("Accept", "*/*");
+        assert!(wildcard.require_json_accept().is_ok());
+
+        let mixed = RestRequest::new(RestMethod::Get, "/_search")
+            .with_header("Accept", "text/plain, application/*;q=0.9");
+        assert!(mixed.require_json_accept().is_ok());
+    }
+
+    #[test]
+    fn with_opaque_id_from_is_noop_when_request_has_no_header() {
+        let request = RestRequest::new(RestMethod::Get, "/");
+        let response =
+            RestResponse::json(200, serde_json::json!({ "ok": true })).with_opaque_id_from(&request);
+        assert!(response.headers.get(HEADER_OPAQUE_ID).is_none());
+    }
+
+    #[test]
     fn task_cancellation_uses_opensearch_error_shape() {
         let cancellation = RestTaskCancellation {
             task_id: "node-a:42".to_string(),

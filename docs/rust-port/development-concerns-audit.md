@@ -23,6 +23,9 @@ These are the primary phase-definition documents and should be read first.
   - external Java OpenSearch interop as coordinator/observer/gated forwarder
 - [phase-c-peer-node-compat.md](/home/ubuntu/steelsearch/docs/rust-port/phase-c-peer-node-compat.md)
   - same-cluster peer-node participation, reports, and release gate
+- [utoipa-fit-assessment.md](/home/ubuntu/steelsearch/docs/rust-port/utoipa-fit-assessment.md)
+  - why Steelsearch uses generated OpenAPI as the main contract and `utoipa`
+    only as a targeted proof of concept today
 - [interop-mode.md](/home/ubuntu/steelsearch/docs/rust-port/interop-mode.md)
   - the Phase B vs Phase C operating-model boundary
 - [validation-profiles.md](/home/ubuntu/steelsearch/docs/rust-port/validation-profiles.md)

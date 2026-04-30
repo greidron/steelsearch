@@ -21,6 +21,10 @@ name = "dev_cluster_daemons"
 path = "tests/dev_cluster_daemons.rs"
 required-features = ["development-runtime"]
 
+[[test]]
+name = "utoipa_poc"
+path = "tests/utoipa_poc.rs"
+
 [dependencies]
 bytes.workspace = true
 os-cluster-state = { path = "../os-cluster-state" }
@@ -37,3 +41,8 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+indexmap = "=2.7.0"
+serde_json.workspace = true
+utoipa = "4.2.3"

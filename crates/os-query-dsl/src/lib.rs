@@ -2171,6 +2171,49 @@ mod tests {
     }
 
     #[test]
+    fn parses_search_aggregations_from_aggregations_alias() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggregations": {
+                "latency_sum": {
+                    "sum": {
+                        "field": "latency_ms"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["latency_sum"],
+            Aggregation::Metric(MetricAggregation {
+                kind: MetricAggregationKind::Sum,
+                field: "latency_ms".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_metric_aggregation_with_unsupported_option() {
+        let error = parse_aggregation_map(&serde_json::json!({
+            "latency_sum": {
+                "sum": {
+                    "field": "latency_ms",
+                    "missing": 0
+                }
+            }
+        }))
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            QueryDslError::UnsupportedOption {
+                clause: "sum".to_string(),
+                option: "missing".to_string()
+            }
+        );
+    }
+
+    #[test]
     fn rejects_unsupported_query_clause() {
         let error = parse_query(&serde_json::json!({
             "geo_shape": {}
