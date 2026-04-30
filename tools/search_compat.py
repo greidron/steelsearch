@@ -73,6 +73,28 @@ CAT_NODEATTRS_REQUIRED_COLUMNS = {
     "attr",
     "value",
 }
+CAT_PENDING_TASKS_REQUIRED_COLUMNS = {
+    "insertOrder",
+    "timeInQueue",
+    "priority",
+    "source",
+}
+CAT_SHARDS_REQUIRED_COLUMNS = {
+    "index",
+    "shard",
+    "prirep",
+    "state",
+    "docs",
+    "store",
+}
+CAT_SEGMENTS_REQUIRED_COLUMNS = {
+    "index",
+    "shard",
+    "prirep",
+    "segment",
+    "docs.count",
+    "size",
+}
 VOLATILE_RESPONSE_KEYS = {
     "_primary_term",
     "_seq_no",
@@ -757,6 +779,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "count": count,
         }
+    if kind == "cat_pending_tasks":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_PENDING_TASKS_REQUIRED_COLUMNS & columns),
+        }
     if kind == "cat_aliases":
         if isinstance(body, list):
             rows = body
@@ -836,6 +870,36 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "node_count": len(node_names),
             "required_columns_present": sorted(CAT_NODEATTRS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_shards":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            row_count = len(rows)
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+            row_count = max(len(lines) - 1, 0)
+        return {
+            "status": response["status"],
+            "row_count": row_count,
+            "required_columns_present": sorted(CAT_SHARDS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_segments":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            row_count = len(rows)
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+            row_count = max(len(lines) - 1, 0)
+        return {
+            "status": response["status"],
+            "row_count": row_count,
+            "required_columns_present": sorted(CAT_SEGMENTS_REQUIRED_COLUMNS & columns),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}

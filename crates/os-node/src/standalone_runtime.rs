@@ -1614,11 +1614,32 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_cat/health" {
             return Some(self.handle_cat_health_route(request));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/pending_tasks" {
+            return Some(self.handle_cat_pending_tasks_route(request));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/nodes" {
             return Some(self.handle_cat_nodes_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_cat/nodeattrs" {
             return Some(self.handle_cat_nodeattrs_route(request));
+        }
+        if request.method == RestMethod::Get && request.path == "/_cat/segments" {
+            return Some(self.handle_cat_segments_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/segments/") {
+            return Some(self.handle_cat_segments_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/segments/")),
+            ));
+        }
+        if request.method == RestMethod::Get && request.path == "/_cat/shards" {
+            return Some(self.handle_cat_shards_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/shards/") {
+            return Some(self.handle_cat_shards_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/shards/")),
+            ));
         }
         if request.method == RestMethod::Get && request.path == "/_cat/indices" {
             return Some(self.handle_cat_indices_route(request, None));
@@ -6084,6 +6105,165 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_pending_tasks_route(&self, request: &RestRequest) -> RestResponse {
+        let mut rows = self
+            .task_records()
+            .into_iter()
+            .map(|task| {
+                serde_json::json!({
+                    "insertOrder": task.get("insert_order").and_then(Value::as_u64).unwrap_or(0).to_string(),
+                    "timeInQueue": task.get("time_in_queue").and_then(Value::as_str).unwrap_or("0ms"),
+                    "priority": task.get("priority").and_then(Value::as_str).unwrap_or("URGENT"),
+                    "source": task.get("source").and_then(Value::as_str).unwrap_or(""),
+                    "executing": task.get("executing").and_then(Value::as_bool).unwrap_or(false).to_string(),
+                })
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| {
+            left["insertOrder"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["insertOrder"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("insertOrder timeInQueue priority source executing".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {}",
+                row["insertOrder"].as_str().unwrap_or("0"),
+                row["timeInQueue"].as_str().unwrap_or("0ms"),
+                row["priority"].as_str().unwrap_or("URGENT"),
+                row["source"].as_str().unwrap_or(""),
+                row["executing"].as_str().unwrap_or("false"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_segments_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let mut rows = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
+            .map(|index| {
+                let docs = self.index_document_count(index);
+                serde_json::json!({
+                    "index": index,
+                    "shard": "0",
+                    "prirep": "p",
+                    "ip": "0.0.0.0",
+                    "segment": "_0",
+                    "generation": "0",
+                    "docs.count": docs.to_string(),
+                    "size": "0b"
+                })
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| {
+            left["index"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["index"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("index shard prirep ip segment generation docs.count size".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {}",
+                row["index"].as_str().unwrap_or(""),
+                row["shard"].as_str().unwrap_or("0"),
+                row["prirep"].as_str().unwrap_or("p"),
+                row["ip"].as_str().unwrap_or("0.0.0.0"),
+                row["segment"].as_str().unwrap_or("_0"),
+                row["generation"].as_str().unwrap_or("0"),
+                row["docs.count"].as_str().unwrap_or("0"),
+                row["size"].as_str().unwrap_or("0b"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let mut rows = Vec::new();
+        for index in self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
+        {
+            let docs = self.index_document_count(index);
+            rows.push(serde_json::json!({
+                "index": index,
+                "shard": "0",
+                "prirep": "p",
+                "state": "STARTED",
+                "docs": docs.to_string(),
+                "store": "0b",
+                "ip": "0.0.0.0",
+                "node": self.info.name.clone(),
+            }));
+            rows.push(serde_json::json!({
+                "index": index,
+                "shard": "0",
+                "prirep": "r",
+                "state": "UNASSIGNED",
+                "docs": "0",
+                "store": "0b",
+                "ip": "",
+                "node": "",
+            }));
+        }
+        rows.sort_by(|left, right| {
+            left["index"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["index"].as_str().unwrap_or_default())
+                .then(
+                    left["prirep"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .cmp(right["prirep"].as_str().unwrap_or_default()),
+                )
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("index shard prirep state docs store ip node".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {}",
+                row["index"].as_str().unwrap_or(""),
+                row["shard"].as_str().unwrap_or("0"),
+                row["prirep"].as_str().unwrap_or("p"),
+                row["state"].as_str().unwrap_or("STARTED"),
+                row["docs"].as_str().unwrap_or("0"),
+                row["store"].as_str().unwrap_or("0b"),
+                row["ip"].as_str().unwrap_or(""),
+                row["node"].as_str().unwrap_or(""),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_plugins_route(&self, request: &RestRequest) -> RestResponse {
         let node_name = self
             .cluster_view
@@ -6363,6 +6543,15 @@ impl SteelNode {
             .or_else(|| settings["number_of_shards"].as_str())
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(1)
+    }
+
+    fn index_document_count(&self, index: &str) -> usize {
+        self.documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .keys()
+            .filter(|key| key.split_once(':').map(|(doc_index, _)| doc_index == index).unwrap_or(false))
+            .count()
     }
 
     fn build_search_hit_fields(
@@ -10462,5 +10651,93 @@ mod tests {
         let indices_text = indices_text_response.body.as_str().expect("cat indices text body");
         assert!(indices_text.contains("logs-000001"));
         assert!(!indices_text.contains("metrics-000001"));
+    }
+
+    #[test]
+    fn cat_pending_tasks_shards_and_segments_routes_serve_json_text_and_target_filters() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node.task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 7,
+                task: ClusterManagerTask {
+                    source: "reroute shards".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+        {
+            let mut created_indices = node
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned");
+            created_indices.insert("logs-000001".to_string());
+            created_indices.insert("metrics-000001".to_string());
+        }
+        {
+            let mut documents = node
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            documents.insert(
+                "logs-000001:doc-1".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message": "log doc"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let mut pending_json_request = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        pending_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let pending_json_response = node.handle_rest_request(pending_json_request);
+        assert_eq!(pending_json_response.status, 200);
+        assert_eq!(pending_json_response.body[0]["source"], "reroute shards");
+
+        let mut pending_text_request = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        pending_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let pending_text_response = node.handle_rest_request(pending_text_request);
+        let pending_text = pending_text_response
+            .body
+            .as_str()
+            .expect("cat pending tasks text body");
+        assert!(pending_text.contains("insertOrder"));
+        assert!(pending_text.contains("reroute shards"));
+
+        let mut shards_json_request = RestRequest::new(RestMethod::Get, "/_cat/shards/logs-*");
+        shards_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let shards_json_response = node.handle_rest_request(shards_json_request);
+        assert_eq!(shards_json_response.status, 200);
+        assert_eq!(shards_json_response.body.as_array().expect("cat shards array").len(), 2);
+        assert_eq!(shards_json_response.body[0]["index"], "logs-000001");
+
+        let mut segments_text_request = RestRequest::new(RestMethod::Get, "/_cat/segments/logs-*");
+        segments_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let segments_text_response = node.handle_rest_request(segments_text_request);
+        let segments_text = segments_text_response
+            .body
+            .as_str()
+            .expect("cat segments text body");
+        assert!(segments_text.contains("logs-000001"));
+        assert!(!segments_text.contains("metrics-000001"));
     }
 }

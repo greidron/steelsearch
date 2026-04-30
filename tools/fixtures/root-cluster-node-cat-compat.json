@@ -1,0 +1,18 @@
+{
+  "name": "root-cluster-node-cat-compat",
+  "indices": [
+    {"name": "logs-root-cat-000001", "body": {}},
+    {"name": "metrics-root-cat-000001", "body": {}}
+  ],
+  "bulk": [
+    {"index": "logs-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "log doc"}}]},
+    {"index": "metrics-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "metric doc"}}]}
+  ],
+  "cases": [
+    {"name": "cat_pending_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/pending_tasks?v=true", "accept": "text/plain", "extract": "cat_pending_tasks"},
+    {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
+    {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
+    {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},
+    {"name": "cat_segments_text", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_segments"}
+  ]
+}
