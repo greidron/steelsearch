@@ -4,20 +4,11 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 ## root-cluster-node
 
-- `/_cat/allocation` (GET)
-- `/_cat/allocation/{nodes}` (GET)
-- `/_cat/fielddata` (GET)
-- `/_cat/fielddata/{fields}` (GET)
-- `/_cat/pending_tasks` (GET)
 - `/_cat/pit_segments` (GET)
 - `/_cat/pit_segments/_all` (GET)
 - `/_cat/recovery` (GET)
 - `/_cat/recovery/{index}` (GET)
 - `/_cat/repositories` (GET)
-- `/_cat/segments` (GET)
-- `/_cat/segments/{index}` (GET)
-- `/_cat/shards` (GET)
-- `/_cat/shards/{index}` (GET)
 - `/_cat/snapshots` (GET)
 - `/_cat/snapshots/{repository}` (GET)
 - `/_cat/tasks` (GET)

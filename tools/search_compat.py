@@ -95,6 +95,25 @@ CAT_SEGMENTS_REQUIRED_COLUMNS = {
     "docs.count",
     "size",
 }
+CAT_ALLOCATION_REQUIRED_COLUMNS = {
+    "shards",
+    "disk.indices",
+    "disk.used",
+    "disk.avail",
+    "disk.total",
+    "disk.percent",
+    "host",
+    "ip",
+    "node",
+}
+CAT_FIELDDATA_REQUIRED_COLUMNS = {
+    "id",
+    "host",
+    "ip",
+    "node",
+    "field",
+    "size",
+}
 VOLATILE_RESPONSE_KEYS = {
     "_primary_term",
     "_seq_no",
@@ -810,6 +829,30 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "fixture_aliases_present": sorted({"logs-compat-read"} & aliases),
             "required_columns_present": sorted(CAT_ALIAS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_allocation":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_ALLOCATION_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_fielddata":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_FIELDDATA_REQUIRED_COLUMNS & columns),
         }
     if kind == "cat_health":
         if isinstance(body, list):

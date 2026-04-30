@@ -59,7 +59,7 @@ def parse_matrix() -> list[dict[str, str]]:
         if parts[0] in {'family', '---'}:
             continue
         family, status, method, path, profile, entry = parts
-        if status not in {'planned', 'stubbed'}:
+        if status == 'out-of-scope':
             continue
         rows.append({
             'family': family,

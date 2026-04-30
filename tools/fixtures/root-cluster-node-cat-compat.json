@@ -9,6 +9,8 @@
     {"index": "metrics-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "metric doc"}}]}
   ],
   "cases": [
+    {"name": "cat_allocation_text", "area": "operational", "method": "GET", "path": "/_cat/allocation?v=true", "accept": "text/plain", "extract": "cat_allocation"},
+    {"name": "cat_fielddata_text", "area": "operational", "method": "GET", "path": "/_cat/fielddata/message,user?v=true", "accept": "text/plain", "extract": "cat_fielddata"},
     {"name": "cat_pending_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/pending_tasks?v=true", "accept": "text/plain", "extract": "cat_pending_tasks"},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},

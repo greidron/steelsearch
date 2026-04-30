@@ -8,22 +8,22 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 3 |
-| missing-route | 121 |
-| requires-stateful-probe | 163 |
+| implemented-read | 72 |
+| missing-route | 112 |
+| requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
 ## By family
 
 | family | implemented-read | missing-route | requires-stateful-probe | unprobeable-expression |
 | --- | ---: | ---: | ---: | ---: |
-| document-and-bulk | 0 | 9 | 28 | 0 |
-| index-and-metadata | 0 | 26 | 63 | 0 |
+| document-and-bulk | 3 | 9 | 29 | 0 |
+| index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 3 | 52 | 33 | 10 |
-| search | 0 | 18 | 25 | 2 |
+| root-cluster-node | 39 | 43 | 36 | 10 |
+| search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
-| vector-and-ml | 0 | 0 | 4 | 7 |
+| vector-and-ml | 0 | 0 | 5 | 7 |
 
 ## Missing safe read/head routes
 
@@ -100,21 +100,12 @@ Base URL: `http://127.0.0.1:19200`
 | index-and-metadata | GET | `/{index}/_upgrade` | `/logs-compat/_upgrade` | planned |
 | search | GET | `/_validate/query` | `/_validate/query` | planned |
 | search | GET | `/{index}/_validate/query` | `/logs-compat/_validate/query` | planned |
-| root-cluster-node | GET | `/_cat/allocation` | `/_cat/allocation` | planned |
-| root-cluster-node | GET | `/_cat/allocation/{nodes}` | `/_cat/allocation/steelsearch-dev-node` | planned |
 | root-cluster-node | GET | `/_cat` | `/_cat` | planned |
 | root-cluster-node | GET | `/_cat/recovery` | `/_cat/recovery` | planned |
 | root-cluster-node | GET | `/_cat/recovery/{index}` | `/_cat/recovery/logs-compat` | planned |
-| root-cluster-node | GET | `/_cat/fielddata` | `/_cat/fielddata` | planned |
-| root-cluster-node | GET | `/_cat/fielddata/{fields}` | `/_cat/fielddata/message` | planned |
-| root-cluster-node | GET | `/_cat/pending_tasks` | `/_cat/pending_tasks` | planned |
 | root-cluster-node | GET | `/_cat/pit_segments` | `/_cat/pit_segments` | planned |
 | root-cluster-node | GET | `/_cat/pit_segments/_all` | `/_cat/pit_segments/_all` | planned |
 | root-cluster-node | GET | `/_cat/repositories` | `/_cat/repositories` | planned |
-| root-cluster-node | GET | `/_cat/segments` | `/_cat/segments` | planned |
-| root-cluster-node | GET | `/_cat/segments/{index}` | `/_cat/segments/logs-compat` | planned |
-| root-cluster-node | GET | `/_cat/shards` | `/_cat/shards` | planned |
-| root-cluster-node | GET | `/_cat/shards/{index}` | `/_cat/shards/logs-compat` | planned |
 | root-cluster-node | GET | `/_cat/snapshots` | `/_cat/snapshots` | planned |
 | root-cluster-node | GET | `/_cat/snapshots/{repository}` | `/_cat/snapshots/repo-compat` | planned |
 | root-cluster-node | GET | `/_cat/tasks` | `/_cat/tasks` | planned |

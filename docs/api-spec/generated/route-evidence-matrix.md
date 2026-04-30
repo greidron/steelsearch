@@ -276,29 +276,29 @@ status and the canonical comparison/profile owner when one exists.
 | search | planned | POST | `/{index}/_validate/query` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_cat/aliases` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/aliases/{alias}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cat/allocation` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/allocation/{nodes}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/allocation` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/allocation/{nodes}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/recovery` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/recovery/{index}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_cat/count` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cat/count/{index}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/fielddata` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/fielddata/{fields}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/count/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/fielddata` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/fielddata/{fields}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/health` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/indices` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cat/indices/{index}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/nodeattrs` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/indices/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/nodeattrs` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/nodes` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cat/pending_tasks` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/pending_tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/pit_segments` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/pit_segments/_all` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_cat/plugins` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/repositories` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/segments` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/segments/{index}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/shards` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/shards/{index}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/segments` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/segments/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/shards` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/shards/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/snapshots` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/snapshots/{repository}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/tasks` | `deferred` | `no canonical runtime compare owner` |

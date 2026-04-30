@@ -184,26 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_cat/allocation"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/allocation/{nodes}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/fielddata"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/fielddata/{fields}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/pending_tasks"
-    },
-    {
-      "method": "GET",
       "path": "/_cat/pit_segments"
     },
     {
@@ -221,22 +201,6 @@
     {
       "method": "GET",
       "path": "/_cat/repositories"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/segments"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/segments/{index}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/shards"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/shards/{index}"
     },
     {
       "method": "GET",

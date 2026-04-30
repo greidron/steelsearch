@@ -1605,10 +1605,28 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_cat/aliases" {
             return Some(self.handle_cat_aliases_route(request, None));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/allocation" {
+            return Some(self.handle_cat_allocation_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/allocation/") {
+            return Some(self.handle_cat_allocation_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/allocation/")),
+            ));
+        }
         if request.method == RestMethod::Get && request.path.starts_with("/_cat/aliases/") {
             return Some(self.handle_cat_aliases_route(
                 request,
                 Some(request.path.trim_start_matches("/_cat/aliases/")),
+            ));
+        }
+        if request.method == RestMethod::Get && request.path == "/_cat/fielddata" {
+            return Some(self.handle_cat_fielddata_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/fielddata/") {
+            return Some(self.handle_cat_fielddata_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/fielddata/")),
             ));
         }
         if request.method == RestMethod::Get && request.path == "/_cat/health" {
@@ -5912,6 +5930,128 @@ impl SteelNode {
             row["timestamp"].as_str().unwrap_or("00:00:00"),
             row["count"].as_str().unwrap_or("0"),
         ));
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_allocation_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let nodes = self
+            .cluster_view
+            .as_ref()
+            .map(|view| view.nodes.clone())
+            .unwrap_or_else(|| {
+                vec![DevelopmentClusterNode {
+                    node_id: self.info.name.clone(),
+                    node_name: self.info.name.clone(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                }]
+            });
+        let shards = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .len()
+            .to_string();
+        let mut rows = nodes
+            .into_iter()
+            .filter(|node| {
+                target
+                    .map(|pattern| {
+                        wildcard_match(pattern, &node.node_name)
+                            || wildcard_match(pattern, &node.transport_address)
+                    })
+                    .unwrap_or(true)
+            })
+            .map(|node| {
+                let ip = node
+                    .transport_address
+                    .rsplit_once(':')
+                    .map(|(host, _)| host.to_string())
+                    .unwrap_or_else(|| "127.0.0.1".to_string());
+                serde_json::json!({
+                    "shards": shards,
+                    "disk.indices": "0b",
+                    "disk.used": "0b",
+                    "disk.avail": "0b",
+                    "disk.total": "0b",
+                    "disk.percent": "0",
+                    "host": ip,
+                    "ip": ip,
+                    "node": node.node_name,
+                })
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| {
+            left["node"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["node"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("shards disk.indices disk.used disk.avail disk.total disk.percent host ip node".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {} {}",
+                row["shards"].as_str().unwrap_or("0"),
+                row["disk.indices"].as_str().unwrap_or("0b"),
+                row["disk.used"].as_str().unwrap_or("0b"),
+                row["disk.avail"].as_str().unwrap_or("0b"),
+                row["disk.total"].as_str().unwrap_or("0b"),
+                row["disk.percent"].as_str().unwrap_or("0"),
+                row["host"].as_str().unwrap_or("127.0.0.1"),
+                row["ip"].as_str().unwrap_or("127.0.0.1"),
+                row["node"].as_str().unwrap_or(""),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_fielddata_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let rows = target
+            .map(|fields| {
+                fields
+                    .split(',')
+                    .filter(|field| !field.is_empty())
+                    .map(|field| {
+                        serde_json::json!({
+                            "id": self.info.name,
+                            "host": "127.0.0.1",
+                            "ip": "127.0.0.1",
+                            "node": self.info.name,
+                            "field": field,
+                            "size": "0b"
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("id host ip node field size".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {}",
+                row["id"].as_str().unwrap_or(""),
+                row["host"].as_str().unwrap_or("127.0.0.1"),
+                row["ip"].as_str().unwrap_or("127.0.0.1"),
+                row["node"].as_str().unwrap_or(""),
+                row["field"].as_str().unwrap_or(""),
+                row["size"].as_str().unwrap_or("0b"),
+            ));
+        }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
@@ -10756,5 +10896,79 @@ mod tests {
             "no handler found for uri [/_cat/shards] and method [POST]"
         );
         assert_eq!(response.body["status"], 404);
+    }
+
+    #[test]
+    fn cat_allocation_and_fielddata_routes_serve_json_text_and_target_filters() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.register_development_cluster_endpoints(DevelopmentClusterView {
+            cluster_name: "steel-cluster".to_string(),
+            cluster_uuid: "cluster-1".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        {
+            let mut created_indices = node
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned");
+            created_indices.insert("logs-000001".to_string());
+            created_indices.insert("metrics-000001".to_string());
+        }
+
+        let mut allocation_json_request = RestRequest::new(RestMethod::Get, "/_cat/allocation/steel-*");
+        allocation_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let allocation_json_response = node.handle_rest_request(allocation_json_request);
+        assert_eq!(allocation_json_response.status, 200);
+        assert_eq!(allocation_json_response.body[0]["node"], "steel-node-a");
+
+        let mut allocation_text_request = RestRequest::new(RestMethod::Get, "/_cat/allocation/steel-*");
+        allocation_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let allocation_text_response = node.handle_rest_request(allocation_text_request);
+        let allocation_text = allocation_text_response
+            .body
+            .as_str()
+            .expect("cat allocation text body");
+        assert!(allocation_text.contains("disk.indices"));
+        assert!(allocation_text.contains("steel-node-a"));
+
+        let mut fielddata_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/fielddata/message,user");
+        fielddata_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let fielddata_json_response = node.handle_rest_request(fielddata_json_request);
+        assert_eq!(fielddata_json_response.status, 200);
+        assert_eq!(fielddata_json_response.body.as_array().expect("cat fielddata array").len(), 2);
+        assert_eq!(fielddata_json_response.body[0]["field"], "message");
+
+        let mut fielddata_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/fielddata/message,user");
+        fielddata_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let fielddata_text_response = node.handle_rest_request(fielddata_text_request);
+        let fielddata_text = fielddata_text_response
+            .body
+            .as_str()
+            .expect("cat fielddata text body");
+        assert!(fielddata_text.contains("id host ip node field size"));
+        assert!(fielddata_text.contains("message"));
+        assert!(fielddata_text.contains("user"));
     }
 }
