@@ -37,6 +37,30 @@ CAT_INDEX_REQUIRED_COLUMNS = {
     "docs.count",
     "store.size",
 }
+CAT_ALIAS_REQUIRED_COLUMNS = {
+    "alias",
+    "index",
+    "filter",
+    "routing.index",
+    "routing.search",
+    "is_write_index",
+}
+CAT_HEALTH_REQUIRED_COLUMNS = {
+    "epoch",
+    "timestamp",
+    "cluster",
+    "status",
+    "node.total",
+    "node.data",
+    "shards",
+    "pri",
+    "relo",
+    "init",
+    "unassign",
+    "pending_tasks",
+    "max_task_wait_time",
+    "active_shards_percent",
+}
 VOLATILE_RESPONSE_KEYS = {
     "_primary_term",
     "_seq_no",
@@ -720,6 +744,46 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "count": count,
+        }
+    if kind == "cat_aliases":
+        if isinstance(body, list):
+            rows = body
+            aliases = {row.get("alias") for row in rows if isinstance(row, dict)}
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            header = lines[0].split() if lines else []
+            aliases = set()
+            for line in lines[1:]:
+                parts = line.split()
+                if parts:
+                    aliases.add(parts[0])
+            columns = set(header)
+        return {
+            "status": response["status"],
+            "fixture_aliases_present": sorted({"logs-compat-read"} & aliases),
+            "required_columns_present": sorted(CAT_ALIAS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_health":
+        if isinstance(body, list):
+            row = body[0] if body and isinstance(body[0], dict) else {}
+            columns = set(row.keys())
+            cluster = row.get("cluster")
+            health_status = row.get("status")
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            header = lines[0].split() if lines else []
+            data = lines[-1].split() if len(lines) > 1 else []
+            columns = set(header)
+            cluster = data[2] if len(data) > 2 else None
+            health_status = data[3] if len(data) > 3 else None
+        return {
+            "status": response["status"],
+            "cluster_present": bool(cluster),
+            "health_status": health_status,
+            "required_columns_present": sorted(CAT_HEALTH_REQUIRED_COLUMNS & columns),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}

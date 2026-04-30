@@ -24,10 +24,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         serde_json::from_str(&openapi_text).expect("generated openapi json should parse");
 
     assert_eq!(openapi["openapi"], "3.0.3");
-    assert_eq!(
-        openapi["info"]["title"],
-        "Steelsearch OpenSearch-Compatible API"
-    );
+    assert_eq!(openapi["info"]["title"], "Steelsearch API");
 
     let paths = openapi["paths"]
         .as_object()
@@ -36,6 +33,15 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
     assert!(paths.contains_key("/"));
     assert!(paths.contains_key("/_cluster/health"));
     assert!(paths.contains_key("/_search"));
+    assert_eq!(
+        paths["/"]
+            .as_object()
+            .expect("root path item should be an object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["get".to_string(), "head".to_string()])
+    );
 
     let cluster_health_get = &paths["/_cluster/health"]["get"];
     assert_eq!(cluster_health_get["x-steelsearch-family"], "root-cluster-node");
@@ -46,6 +52,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         cluster_health_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/OpenSearchSuccessEnvelope"
     );
+    assert!(cluster_health_get["responses"]["200"]["content"]["text/plain"].is_null());
 
     let search_get = &paths["/_search"]["get"];
     let search_params = search_get["parameters"]
@@ -63,9 +70,69 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         "#/components/schemas/BulkNdjsonRequest"
     );
 
+    let cat_count_get = &paths["/_cat/count"]["get"];
+    assert_eq!(
+        cat_count_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CatCountResponse"
+    );
+    assert_eq!(
+        cat_count_get["responses"]["200"]["content"]["text/plain"]["schema"]["type"],
+        "string"
+    );
+
+    let cat_indices_get = &paths["/_cat/indices"]["get"];
+    assert_eq!(
+        cat_indices_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CatIndicesResponse"
+    );
+
+    let cat_root_get = &paths["/_cat"]["get"];
+    assert!(cat_root_get["responses"]["200"]["content"]["application/json"].is_null());
+    assert_eq!(
+        cat_root_get["responses"]["200"]["content"]["text/plain"]["schema"]["type"],
+        "string"
+    );
+
+    let cat_health_get = &paths["/_cat/health"]["get"];
+    assert_eq!(
+        cat_health_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CatHealthResponse"
+    );
+
+    let cat_nodes_get = &paths["/_cat/nodes"]["get"];
+    assert_eq!(
+        cat_nodes_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CatNodesResponse"
+    );
+
+    let cat_shards_get = &paths["/_cat/shards"]["get"];
+    assert_eq!(
+        cat_shards_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CatShardsResponse"
+    );
+
+    let hot_threads_get = &paths["/_nodes/hot_threads"]["get"];
+    assert!(hot_threads_get["responses"]["200"]["content"]["application/json"].is_null());
+    assert_eq!(
+        hot_threads_get["responses"]["200"]["content"]["text/plain"]["schema"]["type"],
+        "string"
+    );
+
     let tags = openapi["tags"].as_array().expect("openapi tags should be array");
     assert!(tags.iter().any(|tag| tag["name"] == "root-cluster-node"));
     assert!(tags.iter().any(|tag| tag["name"] == "search"));
+
+    let schemas = openapi["components"]["schemas"]
+        .as_object()
+        .expect("openapi components schemas should be object");
+    assert!(schemas["CatHealthRow"]["properties"]["active_shards_percent"].is_object());
+    assert!(schemas["CatNodeRow"]["properties"]["heap.current"].is_object());
+    assert!(schemas["CatShardRow"]["properties"]["unassigned.reason"].is_object());
+    assert!(schemas["CatSegmentRow"]["properties"]["size.memory"].is_object());
+    assert!(schemas["CatRecoveryRow"]["properties"]["bytes_recovered"].is_object());
+    assert!(schemas["CatTaskRow"]["properties"]["running_time_ns"].is_object());
+    assert!(schemas["CatTemplateRow"]["properties"]["priority"].is_object());
+    assert!(schemas["CatThreadPoolRow"]["properties"]["queue_size"].is_object());
 
     let route_matrix =
         fs::read_to_string(route_matrix_path).expect("generated route evidence matrix should exist");

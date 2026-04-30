@@ -5,20 +5,895 @@
         "description": "NDJSON bulk request body.",
         "type": "string"
       },
-      "CatApiResponse": {
-        "description": "Cat API text or JSON response.",
-        "oneOf": [
-          {
+      "CatAliasRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat aliases API.",
+        "properties": {
+          "alias": {
             "type": "string"
           },
-          {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array"
+          "filter": {
+            "type": "string"
+          },
+          "index": {
+            "type": "string"
+          },
+          "is_write_index": {
+            "type": "string"
+          },
+          "routing.index": {
+            "type": "string"
+          },
+          "routing.search": {
+            "type": "string"
           }
-        ]
+        },
+        "type": "object"
+      },
+      "CatAliasesResponse": {
+        "description": "JSON response emitted by the cat aliases API.",
+        "items": {
+          "$ref": "#/components/schemas/CatAliasRow"
+        },
+        "type": "array"
+      },
+      "CatAllocationResponse": {
+        "description": "JSON response emitted by the cat allocation API.",
+        "items": {
+          "$ref": "#/components/schemas/CatAllocationRow"
+        },
+        "type": "array"
+      },
+      "CatAllocationRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat allocation API.",
+        "properties": {
+          "disk.avail": {
+            "type": "string"
+          },
+          "disk.indices": {
+            "type": "string"
+          },
+          "disk.percent": {
+            "type": "string"
+          },
+          "disk.total": {
+            "type": "string"
+          },
+          "disk.used": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "node.role": {
+            "type": "string"
+          },
+          "node.roles": {
+            "type": "string"
+          },
+          "shards": {
+            "type": "string"
+          },
+          "shards.undesired": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatCountResponse": {
+        "description": "JSON response emitted by the cat count API.",
+        "items": {
+          "$ref": "#/components/schemas/CatCountRow"
+        },
+        "type": "array"
+      },
+      "CatCountRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat count API.",
+        "properties": {
+          "count": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatFielddataResponse": {
+        "description": "JSON response emitted by the cat fielddata API.",
+        "items": {
+          "$ref": "#/components/schemas/CatFielddataRow"
+        },
+        "type": "array"
+      },
+      "CatFielddataRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat fielddata API.",
+        "properties": {
+          "evictions": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatHealthResponse": {
+        "description": "JSON response emitted by the cat health API.",
+        "items": {
+          "$ref": "#/components/schemas/CatHealthRow"
+        },
+        "type": "array"
+      },
+      "CatHealthRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat health API.",
+        "properties": {
+          "active_shards_percent": {
+            "type": "string"
+          },
+          "cluster": {
+            "type": "string"
+          },
+          "discovered_cluster_manager": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "init": {
+            "type": "string"
+          },
+          "max_task_wait_time": {
+            "type": "string"
+          },
+          "node.data": {
+            "type": "string"
+          },
+          "node.total": {
+            "type": "string"
+          },
+          "pending_tasks": {
+            "type": "string"
+          },
+          "pri": {
+            "type": "string"
+          },
+          "relo": {
+            "type": "string"
+          },
+          "shards": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "task_max_waiting_in_queue_millis": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "unassign": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatIndexRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat indices API.",
+        "properties": {
+          "creation.date": {
+            "type": "string"
+          },
+          "creation.date.string": {
+            "type": "string"
+          },
+          "dataset.size": {
+            "type": "string"
+          },
+          "docs.count": {
+            "type": "string"
+          },
+          "docs.deleted": {
+            "type": "string"
+          },
+          "health": {
+            "type": "string"
+          },
+          "index": {
+            "type": "string"
+          },
+          "pri": {
+            "type": "string"
+          },
+          "pri.store.size": {
+            "type": "string"
+          },
+          "rep": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "store.size": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatIndicesResponse": {
+        "description": "JSON response emitted by the cat indices API.",
+        "items": {
+          "$ref": "#/components/schemas/CatIndexRow"
+        },
+        "type": "array"
+      },
+      "CatJsonRow": {
+        "additionalProperties": true,
+        "description": "Generic JSON row emitted by a cat API.",
+        "type": "object"
+      },
+      "CatJsonRowsResponse": {
+        "description": "JSON response emitted by a cat API when format=json is requested.",
+        "items": {
+          "$ref": "#/components/schemas/CatJsonRow"
+        },
+        "type": "array"
+      },
+      "CatNodeAttrRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat nodeattrs API.",
+        "properties": {
+          "attr": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatNodeAttrsResponse": {
+        "description": "JSON response emitted by the cat nodeattrs API.",
+        "items": {
+          "$ref": "#/components/schemas/CatNodeAttrRow"
+        },
+        "type": "array"
+      },
+      "CatNodeRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat nodes API.",
+        "properties": {
+          "build": {
+            "type": "string"
+          },
+          "cluster_manager": {
+            "type": "string"
+          },
+          "cpu": {
+            "type": "string"
+          },
+          "disk.avail": {
+            "type": "string"
+          },
+          "disk.total": {
+            "type": "string"
+          },
+          "disk.used": {
+            "type": "string"
+          },
+          "disk.used_percent": {
+            "type": "string"
+          },
+          "heap.current": {
+            "type": "string"
+          },
+          "heap.max": {
+            "type": "string"
+          },
+          "heap.percent": {
+            "type": "string"
+          },
+          "http_address": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "jdk": {
+            "type": "string"
+          },
+          "load_15m": {
+            "type": "string"
+          },
+          "load_1m": {
+            "type": "string"
+          },
+          "load_5m": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "node.role": {
+            "type": "string"
+          },
+          "node.roles": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string"
+          },
+          "ram.current": {
+            "type": "string"
+          },
+          "ram.max": {
+            "type": "string"
+          },
+          "ram.percent": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatNodesResponse": {
+        "description": "JSON response emitted by the cat nodes API.",
+        "items": {
+          "$ref": "#/components/schemas/CatNodeRow"
+        },
+        "type": "array"
+      },
+      "CatPendingTaskRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat pending tasks API.",
+        "properties": {
+          "executing": {
+            "type": "string"
+          },
+          "insertOrder": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "timeInQueue": {
+            "type": "string"
+          },
+          "time_in_queue_millis": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatPendingTasksResponse": {
+        "description": "JSON response emitted by the cat pending tasks API.",
+        "items": {
+          "$ref": "#/components/schemas/CatPendingTaskRow"
+        },
+        "type": "array"
+      },
+      "CatPitSegmentRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat PIT segments API.",
+        "properties": {
+          "docs.count": {
+            "type": "string"
+          },
+          "docs.deleted": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "string"
+          },
+          "index": {
+            "type": "string"
+          },
+          "pit_id": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "shard": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          },
+          "size.memory": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatPitSegmentsResponse": {
+        "description": "JSON response emitted by the cat PIT segments API.",
+        "items": {
+          "$ref": "#/components/schemas/CatPitSegmentRow"
+        },
+        "type": "array"
+      },
+      "CatPluginRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat plugins API.",
+        "properties": {
+          "classname": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "custom_foldername": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "java_version": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "opensearch_version": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatPluginsResponse": {
+        "description": "JSON response emitted by the cat plugins API.",
+        "items": {
+          "$ref": "#/components/schemas/CatPluginRow"
+        },
+        "type": "array"
+      },
+      "CatRecoveryResponse": {
+        "description": "JSON response emitted by the cat recovery API.",
+        "items": {
+          "$ref": "#/components/schemas/CatRecoveryRow"
+        },
+        "type": "array"
+      },
+      "CatRecoveryRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat recovery API.",
+        "properties": {
+          "bytes": {
+            "type": "string"
+          },
+          "bytes_percent": {
+            "type": "string"
+          },
+          "bytes_recovered": {
+            "type": "string"
+          },
+          "files": {
+            "type": "string"
+          },
+          "files_percent": {
+            "type": "string"
+          },
+          "files_recovered": {
+            "type": "string"
+          },
+          "index": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "shard": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string"
+          },
+          "source_host": {
+            "type": "string"
+          },
+          "source_node": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "target_host": {
+            "type": "string"
+          },
+          "target_node": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          },
+          "translog_ops": {
+            "type": "string"
+          },
+          "translog_ops_percent": {
+            "type": "string"
+          },
+          "translog_ops_recovered": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatRepositoriesResponse": {
+        "description": "JSON response emitted by the cat repositories API.",
+        "items": {
+          "$ref": "#/components/schemas/CatRepositoryRow"
+        },
+        "type": "array"
+      },
+      "CatRepositoryRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat repositories API.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatSegmentRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat segments API.",
+        "properties": {
+          "committed": {
+            "type": "string"
+          },
+          "compound": {
+            "type": "string"
+          },
+          "docs.count": {
+            "type": "string"
+          },
+          "docs.deleted": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "prirep": {
+            "type": "string"
+          },
+          "searchable": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "shard": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          },
+          "size.memory": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatSegmentsResponse": {
+        "description": "JSON response emitted by the cat segments API.",
+        "items": {
+          "$ref": "#/components/schemas/CatSegmentRow"
+        },
+        "type": "array"
+      },
+      "CatShardRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat shards API.",
+        "properties": {
+          "committed": {
+            "type": "string"
+          },
+          "docs": {
+            "type": "string"
+          },
+          "index": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "prirep": {
+            "type": "string"
+          },
+          "shard": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "sync_id": {
+            "type": "string"
+          },
+          "unassigned.reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatShardsResponse": {
+        "description": "JSON response emitted by the cat shards API.",
+        "items": {
+          "$ref": "#/components/schemas/CatShardRow"
+        },
+        "type": "array"
+      },
+      "CatSnapshotRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat snapshots API.",
+        "properties": {
+          "duration": {
+            "type": "string"
+          },
+          "end_epoch": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "failed_shards": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "indices": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "start_epoch": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "successful_shards": {
+            "type": "string"
+          },
+          "total_shards": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatSnapshotsResponse": {
+        "description": "JSON response emitted by the cat snapshots API.",
+        "items": {
+          "$ref": "#/components/schemas/CatSnapshotRow"
+        },
+        "type": "array"
+      },
+      "CatTaskRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat tasks API.",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "cancellable": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "parent_task_id": {
+            "type": "string"
+          },
+          "running_time": {
+            "type": "string"
+          },
+          "running_time_ns": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatTasksResponse": {
+        "description": "JSON response emitted by the cat tasks API.",
+        "items": {
+          "$ref": "#/components/schemas/CatTaskRow"
+        },
+        "type": "array"
+      },
+      "CatTemplateRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat templates API.",
+        "properties": {
+          "composed_of": {
+            "type": "string"
+          },
+          "index_patterns": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "order": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatTemplatesResponse": {
+        "description": "JSON response emitted by the cat templates API.",
+        "items": {
+          "$ref": "#/components/schemas/CatTemplateRow"
+        },
+        "type": "array"
+      },
+      "CatThreadPoolResponse": {
+        "description": "JSON response emitted by the cat thread pool API.",
+        "items": {
+          "$ref": "#/components/schemas/CatThreadPoolRow"
+        },
+        "type": "array"
+      },
+      "CatThreadPoolRow": {
+        "additionalProperties": true,
+        "description": "Representative row returned by the cat thread pool API.",
+        "properties": {
+          "active": {
+            "type": "string"
+          },
+          "completed": {
+            "type": "string"
+          },
+          "largest": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "node_name": {
+            "type": "string"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "queue_size": {
+            "type": "string"
+          },
+          "rejected": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          },
+          "threads": {
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "EmptySuccessResponse": {
         "description": "Bodyless or empty success response.",
@@ -91,64 +966,12 @@
   },
   "info": {
     "description": "Generated OpenAPI companion built from the source-derived REST route inventory. This reflects route inventory and evidence ownership, not a claim that every listed route is fully implemented.",
-    "title": "Steelsearch OpenSearch-Compatible API",
+    "title": "Steelsearch API",
     "version": "0.1.0"
   },
   "openapi": "3.0.3",
   "paths": {
     "/": {
-      "delete": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
-        "operationId": "delete_root",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful response envelope"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchErrorResponse"
-                }
-              }
-            },
-            "description": "OpenSearch-shaped fail-closed error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchErrorResponse"
-                }
-              }
-            },
-            "description": "Not found"
-          }
-        },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
-        "tags": [
-          "root-cluster-node"
-        ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
-        "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java",
-        "x-opensearch-source-line": "62",
-        "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
-      },
       "get": {
         "description": "Remaining gaps are mostly parity depth, option coverage, and production-hardening.",
         "operationId": "get_root",
@@ -159,11 +982,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -207,18 +1025,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -265,11 +1072,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -327,11 +1129,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -391,11 +1188,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -447,18 +1239,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -522,11 +1303,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -594,11 +1370,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -647,11 +1418,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -709,11 +1475,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -783,11 +1544,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -854,11 +1610,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -907,11 +1658,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -969,11 +1715,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -1034,11 +1775,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -1095,11 +1831,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -1160,11 +1891,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -1221,11 +1947,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -1286,11 +2007,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -1336,11 +2052,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
-                }
-              },
               "text/plain": {
                 "schema": {
                   "type": "string"
@@ -1392,7 +2103,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatAliasesResponse"
                 }
               },
               "text/plain": {
@@ -1455,7 +2166,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatAliasesResponse"
                 }
               },
               "text/plain": {
@@ -1509,7 +2220,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatAllocationResponse"
                 }
               },
               "text/plain": {
@@ -1572,7 +2283,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatAllocationResponse"
                 }
               },
               "text/plain": {
@@ -1626,7 +2337,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatCountResponse"
                 }
               },
               "text/plain": {
@@ -1689,7 +2400,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatCountResponse"
                 }
               },
               "text/plain": {
@@ -1733,122 +2444,6 @@
         "x-steelsearch-status": "planned"
       }
     },
-    "/_cat/example": {
-      "get": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
-        "operationId": "get__cat_example",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful response envelope"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchErrorResponse"
-                }
-              }
-            },
-            "description": "OpenSearch-shaped fail-closed error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchErrorResponse"
-                }
-              }
-            },
-            "description": "Not found"
-          }
-        },
-        "summary": "Returns operator-oriented cat output for cluster or index summaries.",
-        "tags": [
-          "root-cluster-node"
-        ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
-        "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/examples/rest-handler/src/main/java/org/opensearch/example/resthandler/ExampleCatAction.java",
-        "x-opensearch-source-line": "60",
-        "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "out-of-scope"
-      },
-      "post": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
-        "operationId": "post__cat_example",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OpenSearchJsonRequest"
-              }
-            }
-          },
-          "required": false
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful response envelope"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchErrorResponse"
-                }
-              }
-            },
-            "description": "OpenSearch-shaped fail-closed error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchErrorResponse"
-                }
-              }
-            },
-            "description": "Not found"
-          }
-        },
-        "summary": "Returns operator-oriented cat output for cluster or index summaries.",
-        "tags": [
-          "root-cluster-node"
-        ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
-        "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/examples/rest-handler/src/main/java/org/opensearch/example/resthandler/ExampleCatAction.java",
-        "x-opensearch-source-line": "60",
-        "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "out-of-scope"
-      }
-    },
     "/_cat/fielddata": {
       "get": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -1859,7 +2454,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatFielddataResponse"
                 }
               },
               "text/plain": {
@@ -1922,7 +2517,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatFielddataResponse"
                 }
               },
               "text/plain": {
@@ -1976,7 +2571,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatHealthResponse"
                 }
               },
               "text/plain": {
@@ -2030,7 +2625,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatIndicesResponse"
                 }
               },
               "text/plain": {
@@ -2093,7 +2688,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatIndicesResponse"
                 }
               },
               "text/plain": {
@@ -2147,7 +2742,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatNodeAttrsResponse"
                 }
               },
               "text/plain": {
@@ -2201,7 +2796,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatNodesResponse"
                 }
               },
               "text/plain": {
@@ -2255,7 +2850,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatPendingTasksResponse"
                 }
               },
               "text/plain": {
@@ -2309,7 +2904,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatPitSegmentsResponse"
                 }
               },
               "text/plain": {
@@ -2363,7 +2958,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatPitSegmentsResponse"
                 }
               },
               "text/plain": {
@@ -2417,7 +3012,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatPluginsResponse"
                 }
               },
               "text/plain": {
@@ -2471,7 +3066,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatRecoveryResponse"
                 }
               },
               "text/plain": {
@@ -2534,7 +3129,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatRecoveryResponse"
                 }
               },
               "text/plain": {
@@ -2588,7 +3183,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatRepositoriesResponse"
                 }
               },
               "text/plain": {
@@ -2642,7 +3237,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatSegmentsResponse"
                 }
               },
               "text/plain": {
@@ -2705,7 +3300,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatSegmentsResponse"
                 }
               },
               "text/plain": {
@@ -2759,7 +3354,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatShardsResponse"
                 }
               },
               "text/plain": {
@@ -2822,7 +3417,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatShardsResponse"
                 }
               },
               "text/plain": {
@@ -2876,7 +3471,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatSnapshotsResponse"
                 }
               },
               "text/plain": {
@@ -2939,7 +3534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatSnapshotsResponse"
                 }
               },
               "text/plain": {
@@ -2993,7 +3588,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatTasksResponse"
                 }
               },
               "text/plain": {
@@ -3047,7 +3642,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatTemplatesResponse"
                 }
               },
               "text/plain": {
@@ -3110,7 +3705,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatTemplatesResponse"
                 }
               },
               "text/plain": {
@@ -3164,7 +3759,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatThreadPoolResponse"
                 }
               },
               "text/plain": {
@@ -3227,7 +3822,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatApiResponse"
+                  "$ref": "#/components/schemas/CatThreadPoolResponse"
                 }
               },
               "text/plain": {
@@ -3293,11 +3888,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -3346,11 +3936,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -3409,11 +3994,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -3462,11 +4042,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -3525,11 +4100,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -3607,11 +4177,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -3677,11 +4242,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -3757,11 +4317,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -3810,11 +4365,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -3875,11 +4425,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -3928,11 +4473,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -3992,11 +4532,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4052,11 +4587,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4124,11 +4654,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4177,11 +4702,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4240,11 +4760,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4293,11 +4808,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4356,11 +4866,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4428,11 +4933,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4481,11 +4981,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4544,11 +5039,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4615,11 +5105,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4695,11 +5180,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4748,11 +5228,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4811,11 +5286,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4864,11 +5334,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -4928,11 +5393,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -4989,11 +5449,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5045,18 +5500,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -5120,11 +5564,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5192,11 +5631,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5245,11 +5679,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5308,11 +5737,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5361,11 +5785,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5424,11 +5843,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5496,11 +5910,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5550,11 +5959,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5603,11 +6007,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5667,11 +6066,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5727,11 +6121,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5799,11 +6188,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5861,11 +6245,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -5935,11 +6314,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -5988,11 +6362,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6050,11 +6419,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6115,11 +6479,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6168,11 +6527,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6232,11 +6586,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6285,11 +6634,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6348,11 +6692,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6401,11 +6740,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6463,11 +6797,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6528,11 +6857,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6581,11 +6905,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6645,11 +6964,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -6719,11 +7033,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6792,11 +7101,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6855,11 +7159,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6916,11 +7215,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -6972,18 +7266,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -7047,11 +7330,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7119,11 +7397,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7173,11 +7446,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7226,11 +7494,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7288,11 +7551,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7352,11 +7610,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7412,11 +7665,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7484,11 +7732,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7546,11 +7789,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7618,11 +7856,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7671,11 +7904,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7726,11 +7954,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7779,11 +8002,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7843,11 +8061,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -7896,11 +8109,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -7960,11 +8168,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8013,11 +8216,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8077,11 +8275,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8139,11 +8332,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8211,11 +8399,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8264,11 +8447,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8328,11 +8506,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8382,11 +8555,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8435,11 +8603,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8498,11 +8661,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8551,11 +8709,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8614,11 +8767,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8667,11 +8815,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8730,11 +8873,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8783,11 +8921,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8846,11 +8979,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -8899,11 +9027,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -8954,11 +9077,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9004,11 +9122,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
               "text/plain": {
                 "schema": {
                   "type": "string"
@@ -9072,11 +9185,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9125,11 +9233,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -9188,11 +9291,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -9260,11 +9358,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9313,11 +9406,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -9377,11 +9465,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9439,11 +9522,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -9503,11 +9581,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9562,11 +9635,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
               "text/plain": {
                 "schema": {
                   "type": "string"
@@ -9637,11 +9705,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9710,11 +9773,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9772,11 +9830,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -9843,11 +9896,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -9923,11 +9971,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -9985,11 +10028,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10057,11 +10095,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10128,11 +10161,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10191,11 +10219,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10264,11 +10287,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10343,11 +10361,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10431,11 +10444,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10495,11 +10503,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10558,11 +10561,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10618,11 +10616,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10692,11 +10685,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10745,11 +10733,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10809,11 +10792,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -10862,11 +10840,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10925,11 +10898,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -10997,11 +10965,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11050,11 +11013,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11113,11 +11071,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11167,11 +11120,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11220,11 +11168,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11282,11 +11225,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11346,11 +11284,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11420,11 +11353,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11473,11 +11401,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11538,11 +11461,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11600,11 +11518,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11672,11 +11585,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11734,11 +11642,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11806,11 +11709,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11859,11 +11757,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -11922,11 +11815,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -11984,11 +11872,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12056,11 +11939,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12119,11 +11997,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12172,11 +12045,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12227,11 +12095,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12281,11 +12144,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12334,11 +12192,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12396,11 +12249,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12460,11 +12308,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12520,11 +12363,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12592,11 +12430,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12662,11 +12495,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12744,11 +12572,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12823,11 +12646,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -12901,11 +12719,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -12989,11 +12802,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13068,11 +12876,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13130,11 +12933,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -13216,11 +13014,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13287,11 +13080,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13341,11 +13129,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13394,11 +13177,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -13472,11 +13250,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13525,11 +13298,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -13602,11 +13370,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -13690,11 +13453,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -13752,11 +13510,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -13837,11 +13590,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -13933,11 +13681,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14011,11 +13754,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14099,11 +13837,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14177,11 +13910,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14265,11 +13993,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14319,11 +14042,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14372,11 +14090,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14434,11 +14147,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14498,11 +14206,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14551,11 +14254,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14615,11 +14313,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14677,11 +14370,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14749,11 +14437,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14817,11 +14500,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -14897,11 +14575,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -14975,11 +14648,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -15057,11 +14725,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15127,11 +14790,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -15209,11 +14867,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15288,11 +14941,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15364,11 +15012,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -15452,11 +15095,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15538,11 +15176,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -15636,11 +15269,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15725,11 +15353,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15803,11 +15426,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -15891,11 +15509,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -15944,11 +15557,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16008,11 +15616,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16070,11 +15673,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16142,11 +15740,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16195,11 +15788,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16260,11 +15848,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16322,11 +15905,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16396,11 +15974,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16449,11 +16022,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16513,11 +16081,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16574,11 +16137,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16630,18 +16188,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -16705,11 +16252,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16776,11 +16318,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16850,11 +16387,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -16903,11 +16435,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -16977,11 +16504,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17030,11 +16552,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17093,11 +16610,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17146,11 +16658,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17209,11 +16716,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17262,11 +16764,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17326,11 +16823,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17379,11 +16871,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17442,11 +16929,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17503,11 +16985,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17567,11 +17044,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17627,11 +17099,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17699,11 +17166,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17770,11 +17232,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17832,11 +17289,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -17904,11 +17356,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -17968,11 +17415,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18031,11 +17473,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18092,11 +17529,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18148,18 +17580,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -18224,11 +17645,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18287,11 +17703,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18343,18 +17754,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -18418,11 +17818,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -18490,11 +17885,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18559,11 +17949,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18623,18 +18008,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -18706,11 +18080,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -18786,11 +18155,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18859,11 +18223,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -18929,11 +18288,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -19009,11 +18363,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19088,11 +18437,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19150,11 +18494,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -19221,11 +18560,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -19303,11 +18637,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19376,11 +18705,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19446,11 +18770,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -19520,11 +18839,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19590,11 +18904,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -19663,11 +18972,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -19745,11 +19049,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19824,11 +19123,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19897,11 +19191,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -19959,11 +19248,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -20030,11 +19314,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -20112,11 +19391,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20191,11 +19465,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20263,11 +19532,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -20337,11 +19601,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20408,11 +19667,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20477,11 +19731,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20541,18 +19790,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -20624,11 +19862,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -20704,11 +19937,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20774,11 +20002,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -20854,11 +20077,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -20916,11 +20134,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -20988,11 +20201,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21050,11 +20258,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21122,11 +20325,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21184,11 +20382,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21255,11 +20448,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21329,11 +20517,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21391,11 +20574,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21463,11 +20641,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21533,11 +20706,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21605,11 +20773,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21667,11 +20830,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21739,11 +20897,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21810,11 +20963,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -21872,11 +21020,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -21944,11 +21087,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22006,11 +21144,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22078,11 +21211,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22140,11 +21268,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22212,11 +21335,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22274,11 +21392,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22345,11 +21458,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22419,11 +21527,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22481,11 +21584,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22553,11 +21651,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22616,11 +21709,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22678,11 +21766,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22749,11 +21832,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22822,11 +21900,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -22904,11 +21977,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -22976,11 +22044,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23063,11 +22126,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23158,11 +22216,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23256,11 +22309,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -23342,11 +22390,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23438,11 +22481,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -23524,11 +22562,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23620,11 +22653,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -23682,11 +22710,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23754,11 +22777,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -23816,11 +22834,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -23888,11 +22901,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -23959,11 +22967,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24021,11 +23024,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -24103,11 +23101,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24182,11 +23175,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24253,11 +23241,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24317,18 +23300,7 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccessResponse"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
+            "content": {},
             "description": "Successful response envelope"
           },
           "400": {
@@ -24402,11 +23374,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -24482,11 +23449,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24544,11 +23506,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -24616,11 +23573,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24678,11 +23630,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -24750,11 +23697,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24820,11 +23762,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -24900,11 +23837,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -24962,11 +23894,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -25044,11 +23971,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -25125,11 +24047,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -25198,11 +24115,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -25260,11 +24172,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -25332,11 +24239,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -25394,11 +24296,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -25465,11 +24362,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },
@@ -25539,11 +24431,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -25612,11 +24499,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
                 }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
               }
             },
             "description": "Successful response envelope"
@@ -25674,11 +24556,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenSearchSuccessEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             },

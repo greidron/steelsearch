@@ -196,7 +196,9 @@ fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Option<RestReque
 }
 
 fn write_http_response(stream: &mut TcpStream, response: RestResponse) -> std::io::Result<()> {
-    let body_bytes = if response
+    let body_bytes = if let Some(raw_body) = response.raw_body {
+        raw_body
+    } else if response
         .headers
         .get("content-type")
         .is_some_and(|value| value.starts_with("text/plain"))
@@ -1600,6 +1602,18 @@ impl SteelNode {
             };
             return Some(self.handle_rollover_route(target, named));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/aliases" {
+            return Some(self.handle_cat_aliases_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/aliases/") {
+            return Some(self.handle_cat_aliases_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/aliases/")),
+            ));
+        }
+        if request.method == RestMethod::Get && request.path == "/_cat/health" {
+            return Some(self.handle_cat_health_route(request));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/indices" {
             return Some(self.handle_cat_indices_route(request));
         }
@@ -1815,17 +1829,19 @@ impl SteelNode {
     }
 
     fn handle_swagger_ui_route(&self) -> RestResponse {
-        RestResponse::text(200, SWAGGER_UI_HTML)
-            .with_header("content-type", "text/html; charset=utf-8")
+        RestResponse::raw(200, SWAGGER_UI_HTML, "text/html; charset=utf-8")
     }
 
     fn handle_swagger_ui_css_route(&self) -> RestResponse {
-        RestResponse::text(200, SWAGGER_UI_CSS).with_header("content-type", "text/css; charset=utf-8")
+        RestResponse::raw(200, SWAGGER_UI_CSS, "text/css; charset=utf-8")
     }
 
     fn handle_swagger_ui_bundle_route(&self) -> RestResponse {
-        RestResponse::text(200, SWAGGER_UI_BUNDLE_JS)
-            .with_header("content-type", "application/javascript; charset=utf-8")
+        RestResponse::raw(
+            200,
+            SWAGGER_UI_BUNDLE_JS,
+            "application/javascript; charset=utf-8",
+        )
     }
 
     fn handle_cluster_state_route(&self, request: &RestRequest) -> RestResponse {
@@ -5734,6 +5750,83 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_aliases_route(
+        &self,
+        request: &RestRequest,
+        alias_target: Option<&str>,
+    ) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut rows = Vec::new();
+        if let Some(indices) = manifest["indices"].as_object() {
+            for (index_name, body) in indices {
+                let Some(aliases) = body.get("aliases").and_then(Value::as_object) else {
+                    continue;
+                };
+                for (alias_name, alias_state) in aliases {
+                    if alias_target.is_some_and(|target| !wildcard_match(target, alias_name)) {
+                        continue;
+                    }
+                    rows.push(serde_json::json!({
+                        "alias": alias_name,
+                        "index": index_name,
+                        "filter": alias_state
+                            .get("filter")
+                            .map_or("-".to_string(), |_| "*".to_string()),
+                        "routing.index": alias_state
+                            .get("index_routing")
+                            .or_else(|| alias_state.get("routing"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("-"),
+                        "routing.search": alias_state
+                            .get("search_routing")
+                            .or_else(|| alias_state.get("routing"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("-"),
+                        "is_write_index": alias_state
+                            .get("is_write_index")
+                            .map(|value| if value == &Value::Bool(true) { "true" } else { "false" })
+                            .unwrap_or("-"),
+                    }));
+                }
+            }
+        }
+        rows.sort_by(|left, right| {
+            left["alias"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["alias"].as_str().unwrap_or_default())
+                .then_with(|| {
+                    left["index"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .cmp(right["index"].as_str().unwrap_or_default())
+                })
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("alias index filter routing.index routing.search is_write_index".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {}",
+                row["alias"].as_str().unwrap_or(""),
+                row["index"].as_str().unwrap_or(""),
+                row["filter"].as_str().unwrap_or("-"),
+                row["routing.index"].as_str().unwrap_or("-"),
+                row["routing.search"].as_str().unwrap_or("-"),
+                row["is_write_index"].as_str().unwrap_or("-"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_count_route(&self, request: &RestRequest) -> RestResponse {
         let docs = self
             .documents_state
@@ -5758,6 +5851,59 @@ impl SteelNode {
             row["epoch"].as_str().unwrap_or("0"),
             row["timestamp"].as_str().unwrap_or("00:00:00"),
             row["count"].as_str().unwrap_or("0"),
+        ));
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_health_route(&self, request: &RestRequest) -> RestResponse {
+        let body = self
+            .cluster_health_body(None)
+            .unwrap_or_else(|| serde_json::json!({}));
+        let row = serde_json::json!({
+            "epoch": "0",
+            "timestamp": "00:00:00",
+            "cluster": body.get("cluster_name").and_then(Value::as_str).unwrap_or(""),
+            "status": body.get("status").and_then(Value::as_str).unwrap_or("red"),
+            "node.total": body.get("number_of_nodes").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "node.data": body.get("number_of_data_nodes").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "shards": body.get("active_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "pri": body.get("active_primary_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "relo": body.get("relocating_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "init": body.get("initializing_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "unassign": body.get("unassigned_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "pending_tasks": body.get("number_of_pending_tasks").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "max_task_wait_time": "0s",
+            "active_shards_percent": format!(
+                "{:.1}%",
+                body.get("active_shards_percent_as_number")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(100.0)
+            ),
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(vec![row]));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("epoch timestamp cluster status node.total node.data shards pri relo init unassign pending_tasks max_task_wait_time active_shards_percent".to_string());
+        }
+        lines.push(format!(
+            "{} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            row["epoch"].as_str().unwrap_or("0"),
+            row["timestamp"].as_str().unwrap_or("00:00:00"),
+            row["cluster"].as_str().unwrap_or(""),
+            row["status"].as_str().unwrap_or("red"),
+            row["node.total"].as_str().unwrap_or("0"),
+            row["node.data"].as_str().unwrap_or("0"),
+            row["shards"].as_str().unwrap_or("0"),
+            row["pri"].as_str().unwrap_or("0"),
+            row["relo"].as_str().unwrap_or("0"),
+            row["init"].as_str().unwrap_or("0"),
+            row["unassign"].as_str().unwrap_or("0"),
+            row["pending_tasks"].as_str().unwrap_or("0"),
+            row["max_task_wait_time"].as_str().unwrap_or("0s"),
+            row["active_shards_percent"].as_str().unwrap_or("100.0%"),
         ));
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -9887,7 +10033,7 @@ mod tests {
             Some("application/json")
         );
         assert_eq!(response.body["openapi"], "3.0.3");
-        assert_eq!(response.body["info"]["title"], "Steelsearch OpenSearch-Compatible API");
+        assert_eq!(response.body["info"]["title"], "Steelsearch API");
     }
 
     #[test]
@@ -9925,5 +10071,90 @@ mod tests {
         );
         let body = response.body.as_str().expect("javascript body should be string");
         assert!(body.contains("SwaggerUIBundle"));
+    }
+
+    #[test]
+    fn cat_aliases_routes_serve_json_and_text_views() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        {
+            let mut manifest = node
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            manifest["indices"]["logs-000001"] = serde_json::json!({
+                "aliases": {
+                    "logs-read": { "is_write_index": true, "routing": "logs-route" }
+                }
+            });
+        }
+
+        let mut json_request = RestRequest::new(RestMethod::Get, "/_cat/aliases");
+        json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let json_response = node.handle_rest_request(json_request);
+        assert_eq!(json_response.status, 200);
+        assert_eq!(json_response.body[0]["alias"], "logs-read");
+        assert_eq!(json_response.body[0]["index"], "logs-000001");
+        assert_eq!(json_response.body[0]["routing.index"], "logs-route");
+
+        let mut text_request = RestRequest::new(RestMethod::Get, "/_cat/aliases/logs-*");
+        text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let text_response = node.handle_rest_request(text_request);
+        assert_eq!(text_response.status, 200);
+        let text_body = text_response.body.as_str().expect("cat aliases text body");
+        assert!(text_body.contains("alias index filter routing.index routing.search is_write_index"));
+        assert!(text_body.contains("logs-read logs-000001"));
+    }
+
+    #[test]
+    fn cat_health_route_serves_json_and_text_views() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        node.created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .insert("logs-000001".to_string());
+
+        let mut json_request = RestRequest::new(RestMethod::Get, "/_cat/health");
+        json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let json_response = node.handle_rest_request(json_request);
+        assert_eq!(json_response.status, 200);
+        assert_eq!(json_response.body[0]["cluster"], "steelsearch-dev");
+        assert_eq!(json_response.body[0]["status"], "yellow");
+        assert_eq!(json_response.body[0]["node.total"], "1");
+
+        let mut text_request = RestRequest::new(RestMethod::Get, "/_cat/health");
+        text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let text_response = node.handle_rest_request(text_request);
+        assert_eq!(text_response.status, 200);
+        let text_body = text_response.body.as_str().expect("cat health text body");
+        assert!(text_body.contains("epoch timestamp cluster status"));
+        assert!(text_body.contains("steelsearch-dev"));
     }
 }

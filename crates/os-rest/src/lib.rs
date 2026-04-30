@@ -171,6 +171,8 @@ pub struct RestResponse {
     pub status: u16,
     pub headers: BTreeMap<String, String>,
     pub body: Value,
+    #[serde(skip)]
+    pub raw_body: Option<Vec<u8>>,
 }
 
 impl RestResponse {
@@ -184,6 +186,7 @@ impl RestResponse {
             status,
             headers,
             body,
+            raw_body: None,
         }
     }
 
@@ -194,6 +197,18 @@ impl RestResponse {
             status,
             headers,
             body: Value::String(body.into()),
+            raw_body: None,
+        }
+    }
+
+    pub fn raw(status: u16, body: impl IntoRestBody, content_type: impl Into<String>) -> Self {
+        let mut headers = BTreeMap::new();
+        headers.insert(HEADER_CONTENT_TYPE.to_string(), content_type.into());
+        Self {
+            status,
+            headers,
+            body: Value::Null,
+            raw_body: Some(body.into_rest_body()),
         }
     }
 
@@ -202,6 +217,7 @@ impl RestResponse {
             status,
             headers: BTreeMap::new(),
             body: Value::Null,
+            raw_body: None,
         }
     }
 

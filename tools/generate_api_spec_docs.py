@@ -550,6 +550,20 @@ def query_parameters(path: str, method: str) -> list[dict]:
     return deduped
 
 
+def include_openapi_operation(row: dict[str, str], path: str, method: str) -> bool:
+    source = row["source"]
+    status = row["status"]
+    if "/plugins/examples/" in source:
+        return False
+    if path == "/" and method not in {"get", "head"}:
+        return False
+    if path.startswith("/_cat") and method != "get":
+        return False
+    if status == "out-of-scope" and path.startswith("/_cat/example"):
+        return False
+    return True
+
+
 def operation_id(method: str, path: str) -> str:
     pieces = []
     for segment in path.strip("/").split("/"):
@@ -587,19 +601,76 @@ def request_body_for(path: str, method: str) -> dict | None:
     }
 
 
-def responses_for(path: str, method: str) -> dict:
-    success_schema = {"$ref": "#/components/schemas/OpenSearchSuccessEnvelope"}
+CAT_RESPONSE_SCHEMAS = {
+    "/_cat/aliases": "CatAliasesResponse",
+    "/_cat/allocation": "CatAllocationResponse",
+    "/_cat/count": "CatCountResponse",
+    "/_cat/fielddata": "CatFielddataResponse",
+    "/_cat/health": "CatHealthResponse",
+    "/_cat/indices": "CatIndicesResponse",
+    "/_cat/nodeattrs": "CatNodeAttrsResponse",
+    "/_cat/nodes": "CatNodesResponse",
+    "/_cat/pending_tasks": "CatPendingTasksResponse",
+    "/_cat/pit_segments": "CatPitSegmentsResponse",
+    "/_cat/plugins": "CatPluginsResponse",
+    "/_cat/recovery": "CatRecoveryResponse",
+    "/_cat/repositories": "CatRepositoriesResponse",
+    "/_cat/segments": "CatSegmentsResponse",
+    "/_cat/shards": "CatShardsResponse",
+    "/_cat/snapshots": "CatSnapshotsResponse",
+    "/_cat/tasks": "CatTasksResponse",
+    "/_cat/templates": "CatTemplatesResponse",
+    "/_cat/thread_pool": "CatThreadPoolResponse",
+}
+
+
+def cat_schema_name_for(path: str) -> str | None:
+    if path == "/_cat":
+        return None
+    for prefix, schema_name in CAT_RESPONSE_SCHEMAS.items():
+        if path == prefix or path.startswith(prefix + "/"):
+            return schema_name
+    return "CatJsonRowsResponse"
+
+
+def success_schema_for(path: str, method: str) -> dict:
     if method == "head":
-        success_schema = {"$ref": "#/components/schemas/EmptySuccessResponse"}
-    elif path.startswith("/_cat"):
-        success_schema = {"$ref": "#/components/schemas/CatApiResponse"}
+        return {"$ref": "#/components/schemas/EmptySuccessResponse"}
+    if path.startswith("/_cat"):
+        schema_name = cat_schema_name_for(path)
+        if schema_name is None:
+            return {"type": "string"}
+        return {"$ref": f"#/components/schemas/{schema_name}"}
+    return {"$ref": "#/components/schemas/OpenSearchSuccessEnvelope"}
+
+
+def success_content_for(path: str, method: str) -> dict:
+    success_schema = success_schema_for(path, method)
+    if method == "head":
+        return {}
+    if path.startswith("/_cat"):
+        if path == "/_cat":
+            return {
+                "text/plain": {"schema": {"type": "string"}},
+            }
+        return {
+            "application/json": {"schema": success_schema},
+            "text/plain": {"schema": {"type": "string"}},
+        }
+    if "hot_threads" in path:
+        return {
+            "text/plain": {"schema": {"type": "string"}},
+        }
+    return {
+        "application/json": {"schema": success_schema},
+    }
+
+
+def responses_for(path: str, method: str) -> dict:
     return {
         "200": {
             "description": "Successful response envelope",
-            "content": {
-                "application/json": {"schema": success_schema},
-                "text/plain": {"schema": {"type": "string"}},
-            },
+            "content": success_content_for(path, method),
         },
         "400": {
             "description": "OpenSearch-shaped fail-closed error",
@@ -624,7 +695,7 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
     spec: dict[str, object] = {
         "openapi": "3.0.3",
         "info": {
-            "title": "Steelsearch OpenSearch-Compatible API",
+            "title": "Steelsearch API",
             "version": "0.1.0",
             "description": (
                 "Generated OpenAPI companion built from the source-derived REST route "
@@ -647,12 +718,451 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
                     "type": "object",
                     "description": "Bodyless or empty success response."
                 },
-                "CatApiResponse": {
-                    "oneOf": [
-                        {"type": "string"},
-                        {"type": "array", "items": {"type": "object", "additionalProperties": True}},
-                    ],
-                    "description": "Cat API text or JSON response."
+                "CatJsonRow": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "description": "Generic JSON row emitted by a cat API."
+                },
+                "CatJsonRowsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatJsonRow"},
+                    "description": "JSON response emitted by a cat API when format=json is requested."
+                },
+                "CatCountRow": {
+                    "type": "object",
+                    "properties": {
+                        "epoch": {"type": "string"},
+                        "timestamp": {"type": "string"},
+                        "count": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat count API."
+                },
+                "CatCountResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatCountRow"},
+                    "description": "JSON response emitted by the cat count API."
+                },
+                "CatAliasRow": {
+                    "type": "object",
+                    "properties": {
+                        "alias": {"type": "string"},
+                        "index": {"type": "string"},
+                        "filter": {"type": "string"},
+                        "routing.index": {"type": "string"},
+                        "routing.search": {"type": "string"},
+                        "is_write_index": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat aliases API."
+                },
+                "CatAliasesResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatAliasRow"},
+                    "description": "JSON response emitted by the cat aliases API."
+                },
+                "CatAllocationRow": {
+                    "type": "object",
+                    "properties": {
+                        "shards": {"type": "string"},
+                        "shards.undesired": {"type": "string"},
+                        "disk.indices": {"type": "string"},
+                        "disk.used": {"type": "string"},
+                        "disk.avail": {"type": "string"},
+                        "disk.total": {"type": "string"},
+                        "disk.percent": {"type": "string"},
+                        "host": {"type": "string"},
+                        "host": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "node": {"type": "string"},
+                        "node.role": {"type": "string"},
+                        "node.roles": {"type": "string"},
+                        "node": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat allocation API."
+                },
+                "CatAllocationResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatAllocationRow"},
+                    "description": "JSON response emitted by the cat allocation API."
+                },
+                "CatFielddataRow": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "host": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "node": {"type": "string"},
+                        "field": {"type": "string"},
+                        "size": {"type": "string"},
+                        "evictions": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat fielddata API."
+                },
+                "CatFielddataResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatFielddataRow"},
+                    "description": "JSON response emitted by the cat fielddata API."
+                },
+                "CatHealthRow": {
+                    "type": "object",
+                    "properties": {
+                        "epoch": {"type": "string"},
+                        "timestamp": {"type": "string"},
+                        "cluster": {"type": "string"},
+                        "status": {"type": "string"},
+                        "node.total": {"type": "string"},
+                        "node.data": {"type": "string"},
+                        "shards": {"type": "string"},
+                        "pri": {"type": "string"},
+                        "relo": {"type": "string"},
+                        "init": {"type": "string"},
+                        "unassign": {"type": "string"},
+                        "pending_tasks": {"type": "string"},
+                        "task_max_waiting_in_queue_millis": {"type": "string"},
+                        "max_task_wait_time": {"type": "string"},
+                        "active_shards_percent": {"type": "string"},
+                        "discovered_cluster_manager": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat health API."
+                },
+                "CatHealthResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatHealthRow"},
+                    "description": "JSON response emitted by the cat health API."
+                },
+                "CatIndexRow": {
+                    "type": "object",
+                    "properties": {
+                        "health": {"type": "string"},
+                        "status": {"type": "string"},
+                        "index": {"type": "string"},
+                        "uuid": {"type": "string"},
+                        "pri": {"type": "string"},
+                        "rep": {"type": "string"},
+                        "docs.count": {"type": "string"},
+                        "docs.deleted": {"type": "string"},
+                        "creation.date": {"type": "string"},
+                        "creation.date.string": {"type": "string"},
+                        "store.size": {"type": "string"},
+                        "pri.store.size": {"type": "string"},
+                        "dataset.size": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat indices API."
+                },
+                "CatIndicesResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatIndexRow"},
+                    "description": "JSON response emitted by the cat indices API."
+                },
+                "CatNodeAttrRow": {
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string"},
+                        "host": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "attr": {"type": "string"},
+                        "value": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat nodeattrs API."
+                },
+                "CatNodeAttrsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatNodeAttrRow"},
+                    "description": "JSON response emitted by the cat nodeattrs API."
+                },
+                "CatNodeRow": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "pid": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "port": {"type": "string"},
+                        "http_address": {"type": "string"},
+                        "version": {"type": "string"},
+                        "type": {"type": "string"},
+                        "build": {"type": "string"},
+                        "jdk": {"type": "string"},
+                        "disk.total": {"type": "string"},
+                        "disk.used": {"type": "string"},
+                        "disk.avail": {"type": "string"},
+                        "disk.used_percent": {"type": "string"},
+                        "heap.percent": {"type": "string"},
+                        "heap.current": {"type": "string"},
+                        "heap.max": {"type": "string"},
+                        "ram.percent": {"type": "string"},
+                        "ram.current": {"type": "string"},
+                        "ram.max": {"type": "string"},
+                        "cpu": {"type": "string"},
+                        "load_1m": {"type": "string"},
+                        "load_5m": {"type": "string"},
+                        "load_15m": {"type": "string"},
+                        "node.role": {"type": "string"},
+                        "node.roles": {"type": "string"},
+                        "cluster_manager": {"type": "string"},
+                        "name": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat nodes API."
+                },
+                "CatNodesResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatNodeRow"},
+                    "description": "JSON response emitted by the cat nodes API."
+                },
+                "CatPendingTaskRow": {
+                    "type": "object",
+                    "properties": {
+                        "insertOrder": {"type": "string"},
+                        "timeInQueue": {"type": "string"},
+                        "priority": {"type": "string"},
+                        "executing": {"type": "string"},
+                        "time_in_queue_millis": {"type": "string"},
+                        "priority": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat pending tasks API."
+                },
+                "CatPendingTasksResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatPendingTaskRow"},
+                    "description": "JSON response emitted by the cat pending tasks API."
+                },
+                "CatPitSegmentRow": {
+                    "type": "object",
+                    "properties": {
+                        "pit_id": {"type": "string"},
+                        "index": {"type": "string"},
+                        "shard": {"type": "string"},
+                        "segment": {"type": "string"},
+                        "generation": {"type": "string"},
+                        "docs.count": {"type": "string"},
+                        "docs.deleted": {"type": "string"},
+                        "size": {"type": "string"},
+                        "size.memory": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat PIT segments API."
+                },
+                "CatPitSegmentsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatPitSegmentRow"},
+                    "description": "JSON response emitted by the cat PIT segments API."
+                },
+                "CatPluginRow": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "component": {"type": "string"},
+                        "version": {"type": "string"},
+                        "opensearch_version": {"type": "string"},
+                        "java_version": {"type": "string"},
+                        "description": {"type": "string"},
+                        "classname": {"type": "string"},
+                        "custom_foldername": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat plugins API."
+                },
+                "CatRecoveryRow": {
+                    "type": "object",
+                    "properties": {
+                        "index": {"type": "string"},
+                        "shard": {"type": "string"},
+                        "start_time": {"type": "string"},
+                        "name": {"type": "string"},
+                        "time": {"type": "string"},
+                        "type": {"type": "string"},
+                        "stage": {"type": "string"},
+                        "source_host": {"type": "string"},
+                        "source_node": {"type": "string"},
+                        "target_host": {"type": "string"},
+                        "target_node": {"type": "string"},
+                        "repository": {"type": "string"},
+                        "snapshot": {"type": "string"},
+                        "files": {"type": "string"},
+                        "files_recovered": {"type": "string"},
+                        "files_percent": {"type": "string"},
+                        "bytes": {"type": "string"},
+                        "bytes_recovered": {"type": "string"},
+                        "bytes_percent": {"type": "string"},
+                        "translog_ops": {"type": "string"},
+                        "translog_ops_recovered": {"type": "string"},
+                        "translog_ops_percent": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat recovery API."
+                },
+                "CatPluginsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatPluginRow"},
+                    "description": "JSON response emitted by the cat plugins API."
+                },
+                "CatRecoveryResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatRecoveryRow"},
+                    "description": "JSON response emitted by the cat recovery API."
+                },
+                "CatRepositoryRow": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "type": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat repositories API."
+                },
+                "CatRepositoriesResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatRepositoryRow"},
+                    "description": "JSON response emitted by the cat repositories API."
+                },
+                "CatSegmentRow": {
+                    "type": "object",
+                    "properties": {
+                        "index": {"type": "string"},
+                        "shard": {"type": "string"},
+                        "prirep": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "id": {"type": "string"},
+                        "segment": {"type": "string"},
+                        "generation": {"type": "string"},
+                        "docs.count": {"type": "string"},
+                        "docs.deleted": {"type": "string"},
+                        "size": {"type": "string"},
+                        "size.memory": {"type": "string"},
+                        "committed": {"type": "string"},
+                        "searchable": {"type": "string"},
+                        "compound": {"type": "string"},
+                        "version": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat segments API."
+                },
+                "CatSegmentsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatSegmentRow"},
+                    "description": "JSON response emitted by the cat segments API."
+                },
+                "CatShardRow": {
+                    "type": "object",
+                    "properties": {
+                        "index": {"type": "string"},
+                        "shard": {"type": "string"},
+                        "prirep": {"type": "string"},
+                        "state": {"type": "string"},
+                        "docs": {"type": "string"},
+                        "store": {"type": "string"},
+                        "committed": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "node": {"type": "string"},
+                        "sync_id": {"type": "string"},
+                        "unassigned.reason": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat shards API."
+                },
+                "CatShardsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatShardRow"},
+                    "description": "JSON response emitted by the cat shards API."
+                },
+                "CatSnapshotRow": {
+                    "type": "object",
+                    "properties": {
+                        "repository": {"type": "string"},
+                        "id": {"type": "string"},
+                        "status": {"type": "string"},
+                        "start_epoch": {"type": "string"},
+                        "start_time": {"type": "string"},
+                        "end_epoch": {"type": "string"},
+                        "end_time": {"type": "string"},
+                        "duration": {"type": "string"},
+                        "indices": {"type": "string"},
+                        "successful_shards": {"type": "string"},
+                        "failed_shards": {"type": "string"},
+                        "total_shards": {"type": "string"},
+                        "reason": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat snapshots API."
+                },
+                "CatSnapshotsResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatSnapshotRow"},
+                    "description": "JSON response emitted by the cat snapshots API."
+                },
+                "CatTaskRow": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string"},
+                        "type": {"type": "string"},
+                        "task_id": {"type": "string"},
+                        "parent_task_id": {"type": "string"},
+                        "start_time": {"type": "string"},
+                        "timestamp": {"type": "string"},
+                        "running_time": {"type": "string"},
+                        "running_time_ns": {"type": "string"},
+                        "cancellable": {"type": "string"},
+                        "headers": {"type": "string"},
+                        "ip": {"type": "string"},
+                        "node": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat tasks API."
+                },
+                "CatTasksResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatTaskRow"},
+                    "description": "JSON response emitted by the cat tasks API."
+                },
+                "CatTemplateRow": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "index_patterns": {"type": "string"},
+                        "order": {"type": "string"},
+                        "priority": {"type": "string"},
+                        "version": {"type": "string"},
+                        "composed_of": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat templates API."
+                },
+                "CatTemplatesResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatTemplateRow"},
+                    "description": "JSON response emitted by the cat templates API."
+                },
+                "CatThreadPoolRow": {
+                    "type": "object",
+                    "properties": {
+                        "node_name": {"type": "string"},
+                        "name": {"type": "string"},
+                        "active": {"type": "string"},
+                        "size": {"type": "string"},
+                        "queue_size": {"type": "string"},
+                        "queue": {"type": "string"},
+                        "rejected": {"type": "string"},
+                        "largest": {"type": "string"},
+                        "completed": {"type": "string"},
+                        "threads": {"type": "string"},
+                        "completed": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                    "description": "Representative row returned by the cat thread pool API."
+                },
+                "CatThreadPoolResponse": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CatThreadPoolRow"},
+                    "description": "JSON response emitted by the cat thread pool API."
                 },
                 "OpenSearchErrorCause": {
                     "type": "object",
@@ -696,6 +1206,8 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
         if method not in {"get", "put", "post", "delete", "head"}:
             continue
         if path is None:
+            continue
+        if not include_openapi_operation(row, path, method):
             continue
         family = rest_family(row)
         profile, entrypoint = rest_evidence_owner(row)

@@ -549,6 +549,36 @@
       "extract": "cat_count"
     },
     {
+      "name": "cat_aliases_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/aliases?format=json",
+      "extract": "cat_aliases"
+    },
+    {
+      "name": "cat_aliases_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/aliases/logs-*?v=true",
+      "accept": "text/plain",
+      "extract": "cat_aliases"
+    },
+    {
+      "name": "cat_health_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/health?format=json",
+      "extract": "cat_health"
+    },
+    {
+      "name": "cat_health_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/health?v=true",
+      "accept": "text/plain",
+      "extract": "cat_health"
+    },
+    {
       "name": "get_document",
       "area": "document",
       "method": "GET",
