@@ -1,0 +1,4675 @@
+{
+  "base_url": "http://127.0.0.1:19200",
+  "by_family": {
+    "document-and-bulk": {
+      "implemented-read": 3,
+      "missing-route": 9,
+      "requires-stateful-probe": 29
+    },
+    "index-and-metadata": {
+      "implemented-read": 28,
+      "missing-route": 26,
+      "requires-stateful-probe": 64
+    },
+    "misc": {
+      "missing-route": 9,
+      "requires-stateful-probe": 5
+    },
+    "root-cluster-node": {
+      "implemented-read": 25,
+      "missing-route": 55,
+      "requires-stateful-probe": 36,
+      "unprobeable-expression": 10
+    },
+    "search": {
+      "implemented-read": 2,
+      "missing-route": 18,
+      "requires-stateful-probe": 26,
+      "unprobeable-expression": 2
+    },
+    "snapshot-migration-interop": {
+      "missing-route": 7,
+      "requires-stateful-probe": 5
+    },
+    "vector-and-ml": {
+      "requires-stateful-probe": 5,
+      "unprobeable-expression": 7
+    }
+  },
+  "generated_from": "/home/ubuntu/steelsearch/docs/api-spec/generated/route-evidence-matrix.md",
+  "routes": [
+    {
+      "concrete_path": "/_ingest/processor/grok",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_ingest/processor/grok",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_ingest/processor/grok] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_ingest/processor/grok] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_msearch/template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_msearch/template",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_msearch/template] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_msearch/template] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_msearch/template",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_msearch/template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_msearch/template",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_msearch/template] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_msearch/template] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_msearch/template",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_render/template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_render/template",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_render/template] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_render/template] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_render/template",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_render/template/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_render/template/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_render/template/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_render/template/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_render/template/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search/template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search/template",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search/template] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search/template] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_search/template",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_search/template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_search/template",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_search/template] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_search/template] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_search/template",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_scripts/painless/_context",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_scripts/painless/_context",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_scripts/painless/_context] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_scripts/painless/_context] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_scripts/painless/_execute",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_scripts/painless/_execute",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_scripts/painless/_execute] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_scripts/painless/_execute] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "POST",
+      "path": "/_scripts/painless/_execute",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "(dynamic)",
+      "path": "/_opensearch_dashboards + route.getPath(",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/ + ENDPOINT",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/ + ENDPOINT",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/ + ENDPOINT",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/ + ENDPOINT",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_delete_by_query",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_reindex",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_update_by_query/{taskId}/_rethrottle",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_delete_by_query/{taskId}/_rethrottle",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_reindex/{taskId}/_rethrottle",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_update_by_query",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_field_caps",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_field_caps",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_field_caps] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_field_caps] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "POST",
+      "path": "/_field_caps",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_field_caps",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/{index}/_field_caps",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_field_caps] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_field_caps] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "POST",
+      "path": "/{index}/_field_caps",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_cluster/voting_config_exclusions",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_tasks/_cancel",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_tasks/{task_id}/_cancel",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_snapshot/{repository}/_cleanup",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_cluster/voting_config_exclusions",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/allocation/explain",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/allocation/explain",
+      "probe": {
+        "body": "{\"can_rebalance_cluster\":\"no\",\"can_rebalance_to_other_node\":\"no\",\"can_remain_on_current_node\":\"yes\",\"current_node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"id\":\"steelsearch-dev-node\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1},\"current_state\":\"started\",\"index\":\"logs-compat\",\"primary\":true,\"rebalance_explanation\":\"rebalancing is not allowed\",\"shard\":0}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_cluster/routing/awareness/weights",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_cluster/routing/awareness/{attribute}/weights",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/settings",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "probe": {
+        "body": "{\"persistent\":{\"cluster\":{\"routing\":{\"allocation\":{\"enable\":\"all\"}}}},\"transient\":{\"cluster\":{\"info\":{\"update\":{\"interval\":\"30s\"}}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/routing/awareness/zone/weights",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/routing/awareness/{attribute}/weights",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/routing/awareness/zone/weights] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/routing/awareness/zone/weights] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/health",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "probe": {
+        "body": "{\"active_primary_shards\":3,\"active_shards\":3,\"active_shards_percent_as_number\":50.0,\"cluster_name\":\"steelsearch-dev\",\"delayed_unassigned_shards\":0,\"initializing_shards\":0,\"number_of_data_nodes\":1,\"number_of_in_flight_fetch\":0,\"number_of_nodes\":1,\"number_of_pending_tasks\":2,\"relocating_shards\":0,\"status\":\"yellow\",\"task_max_waiting_in_queue_millis\":0,\"timed_out\":false,\"unassigned_shards\":3}",
+        "status": 200
+      },
+      "profile": "`root-cluster-node`",
+      "runtime_status": "implemented-read",
+      "source_status": "stubbed"
+    },
+    {
+      "concrete_path": "/_cluster/health/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/health/{index}",
+      "probe": {
+        "body": "{\"active_primary_shards\":1,\"active_shards\":1,\"active_shards_percent_as_number\":50.0,\"cluster_name\":\"steelsearch-dev\",\"delayed_unassigned_shards\":0,\"initializing_shards\":0,\"number_of_data_nodes\":1,\"number_of_in_flight_fetch\":0,\"number_of_nodes\":1,\"number_of_pending_tasks\":2,\"relocating_shards\":0,\"status\":\"yellow\",\"task_max_waiting_in_queue_millis\":0,\"timed_out\":false,\"unassigned_shards\":1}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_cluster/routing/awareness/{attribute}/weights",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_cluster/reroute",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search_shards",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_search_shards",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search_shards] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search_shards] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_search_shards",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_search_shards",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/{index}/_search_shards",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_search_shards] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_search_shards] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/{index}/_search_shards",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/state",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/state",
+      "probe": {
+        "body": "{\"blocks\":{},\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-compat\":{\"state\":\"open\"},\"logs-compat-alias-000001\":{\"state\":\"open\"},\"metrics-compat-alias-000001\":{\"state\":\"open\"}}},\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-compat\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/state/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/state/{metric}",
+      "probe": {
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-compat\":{\"state\":\"open\"},\"logs-compat-alias-000001\":{\"state\":\"open\"},\"metrics-compat-alias-000001\":{\"state\":\"open\"}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/state/metadata/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/state/{metric}/{indices}",
+      "probe": {
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-compat\":{\"state\":\"open\"}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/stats",
+      "probe": {
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":3,\"docs\":{\"count\":0},\"shards\":{\"total\":3}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/stats/nodes/steelsearch-dev-node",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/stats/nodes/{nodeId}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/stats/nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/stats/nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/stats/metadata/nodes/steelsearch-dev-node",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/stats/{metric}/nodes/{nodeId}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_cluster/settings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_snapshot/{repository}/{snapshot}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_snapshot/{repository}/{snapshot}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_cluster/decommission/awareness",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_snapshot/{repository}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_snapshot/{repository}/{snapshot}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_scripts/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/decommission/awareness/zone/_status",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/_status",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/decommission/awareness/zone/_status] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/decommission/awareness/zone/_status] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot/repo-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot/{repository}",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_script_context",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_script_context",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_script_context] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_script_context] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_script_language",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_script_language",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_script_language] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_script_language] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot/repo-compat/snap-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot/{repository}/{snapshot}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"[repo-compat:snap-compat] missing\",\"type\":\"snapshot_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_scripts/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_scripts/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_scripts/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_scripts/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_tasks/1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_tasks/{task_id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"task [1] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_tasks",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_tasks",
+      "probe": {
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:1\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":1,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:3\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":3,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/hot_threads",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/hot_threads",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/hot_threads] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/hot_threads] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/hot_threads",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/hot_threads",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/hot_threads] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/hot_threads] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/http",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/{metrics}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/http] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/http] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/info/http",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/info/{metrics}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/info/http] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/info/http] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/stats",
+      "probe": {
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/stats",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/stats/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/stats/{metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/stats/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/stats/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/stats/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/stats/{metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/stats/metadata/docs",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/stats/{metric}/{index_metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/stats/metadata/docs] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/stats/metadata/docs] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/stats/metadata/docs",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/stats/{metric}/{index_metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata/docs] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata/docs] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/usage",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/usage",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/usage] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/usage] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/usage",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/usage",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/usage] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/usage] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/usage/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/usage/{metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/usage/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/usage/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_nodes/steelsearch-dev-node/usage/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_nodes/{nodeId}/usage/{metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/usage/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/usage/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cluster/pending_tasks",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cluster/pending_tasks",
+      "probe": {
+        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 1\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 2\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_filecache/prune",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_snapshot/{repository}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_snapshot/{repository}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_scripts/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_scripts/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_scripts/{id}/{context}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_scripts/{id}/{context}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_nodes/reload_secure_settings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_nodes/{nodeId}/reload_secure_settings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_remote/info",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_remote/info",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_remote/info] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_remote/info] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_remotestore/metadata/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_remotestore/metadata/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_remotestore/metadata/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_remotestore/metadata/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_remotestore/metadata/{index}/{shard_id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_remotestore/stats/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_remotestore/stats/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_remotestore/stats/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_remotestore/stats/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_remotestore/stats/{index}/{shard_id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_remotestore/_restore",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot/repo-compat/snap-compat/logs-compat/_status",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot/{repository}/{snapshot}/{index}/_status",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_snapshot/repo-compat/snap-compat/logs-compat/_status] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_snapshot/repo-compat/snap-compat/logs-compat/_status] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot/repo-compat/snap-compat/_status",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot/{repository}/{snapshot}/_status",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"[repo-compat:snap-compat] missing\",\"type\":\"snapshot_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot/repo-compat/_status",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot/{repository}/_status",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"[repo-compat:_status] missing\",\"type\":\"snapshot_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_snapshot/_status",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_snapshot/_status",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_snapshot/{repository}/_verify",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_wlm/stats",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_wlm/{nodeId}/stats",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_wlm/stats/{workloadGroupId}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_wlm/{nodeId}/stats/{workloadGroupId}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_list/wlm_stats",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_list/wlm_stats/{nodeId}/stats",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_list/wlm_stats/stats/{workloadGroupId}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "_list/wlm_stats/{nodeId}/stats/{workloadGroupId}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/_dangling/{index_uuid}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_dangling/{index_uuid}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_dangling",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_dangling",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_dangling] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_dangling] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_block/{block}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_analyze",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_analyze",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_analyze] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_analyze] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_analyze",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_analyze",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_analyze",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_analyze] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_analyze] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_analyze",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_cache/clear",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_cache/clear",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_close",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_close",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_data_stream/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope index-metadata`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}",
+      "probe": null,
+      "profile": "`index-metadata`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "stubbed"
+    },
+    {
+      "concrete_path": "/_data_stream/_stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_data_stream/_stats",
+      "probe": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1},\"backing_indices\":0,\"data_stream_count\":0,\"total_store_size_bytes\":0}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_data_stream/logs-read/_stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_data_stream/{name}/_stats",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"data_stream matching [logs-read/_stats] not found\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/_component_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/_index_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/_data_stream/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "DELETE",
+      "path": "/",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope index-metadata`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/{index}",
+      "probe": null,
+      "profile": "`index-metadata`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "stubbed"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_flush",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_flush",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_flush] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_flush] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_flush",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_flush",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_flush",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_flush] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_flush] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_flush",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_forcemerge",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_forcemerge",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_alias",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_alias",
+      "probe": {
+        "body": "{\"logs-compat\":{\"aliases\":{\"logs-compat-read\":{}}},\"logs-compat-alias-000001\":{\"aliases\":{\"logs-compat-write\":{\"index_routing\":\"r1\",\"is_write_index\":true,\"search_routing\":\"r1\"}}},\"metrics-compat-alias-000001\":{\"aliases\":{\"metrics-compat-read\":{}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_aliases",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_aliases",
+      "probe": {
+        "body": "{\"logs-compat\":{\"aliases\":{\"logs-compat-read\":{}}},\"logs-compat-alias-000001\":{\"aliases\":{\"logs-compat-write\":{\"index_routing\":\"r1\",\"is_write_index\":true,\"search_routing\":\"r1\"}}},\"metrics-compat-alias-000001\":{\"aliases\":{\"metrics-compat-read\":{}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_alias/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_alias/{name}",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_alias/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/_alias/{name}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_alias",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_alias",
+      "probe": {
+        "body": "{\"logs-compat\":{\"aliases\":{\"logs-compat-read\":{}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_alias",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/{index}/_alias",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_alias/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_alias/{name}",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_alias/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/{index}/_alias/{name}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_component_template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_component_template",
+      "probe": {
+        "body": "{\"component_templates\":[]}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_component_template/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_component_template/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"component template matching [logs-read] not found\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_component_template/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/_component_template/{name}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_index_template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_index_template",
+      "probe": {
+        "body": "{\"index_templates\":[]}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_index_template/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_index_template/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"index template matching [logs-read] not found\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_index_template/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/_index_template/{name}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_data_stream",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_data_stream",
+      "probe": {
+        "body": "{\"data_streams\":[]}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_data_stream/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_data_stream/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"data_stream matching [logs-read] not found\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_mapping/field/message",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_mapping/field/{fields}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_mapping/field/message] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_mapping/field/message] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_mapping/field/message",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_mapping/field/{fields}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_mapping/field/message] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_mapping/field/message] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_template",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_template",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_template/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_template/{name}",
+      "probe": {
+        "body": "{}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_template/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/_template/{name}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope index-metadata`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}",
+      "probe": {
+        "body": "{\"logs-compat\":{\"aliases\":{\"logs-compat-read\":{}},\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"}}}}}",
+        "status": 200
+      },
+      "profile": "`index-metadata`",
+      "runtime_status": "implemented-read",
+      "source_status": "stubbed"
+    },
+    {
+      "concrete_path": "/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "HEAD",
+      "path": "/{index}",
+      "probe": {
+        "body": "",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/ingestion/_state",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/ingestion/_state",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/ingestion/_state] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/ingestion/_state] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_mapping",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_mapping",
+      "probe": {
+        "body": "{\"logs-compat\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"}}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_mappings",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_mappings",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_mappings] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_mappings] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_mapping",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_mapping",
+      "probe": {
+        "body": "{\"logs-compat\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"}}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_mappings",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_mappings",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_mappings] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_mappings] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_settings",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_settings",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_settings/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_settings/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_settings/logs-read] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_settings/logs-read] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_settings",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_settings",
+      "probe": {
+        "body": "{}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_settings/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_settings/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_settings/logs-read] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_settings/logs-read] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_setting/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_setting/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_setting/logs-read] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_setting/logs-read] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/{index}/_alias/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "DELETE",
+      "path": "/{index}/_aliases/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_alias/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_alias/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_alias/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_alias/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_aliases/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_aliases/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_aliases/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_aliases/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_alias",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_aliases",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_alias",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_aliases",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_segments",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_segments",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_segments] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_segments] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_segments",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_segments",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_segments] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_segments] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_shard_stores",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_shard_stores",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_shard_stores] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_shard_stores] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_shard_stores",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_shard_stores",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_shard_stores] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_shard_stores] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_stats",
+      "probe": {
+        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":3,\"total\":3},\"indices\":{\"logs-compat\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-compat-alias-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-compat-alias-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_stats/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_stats/{metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_stats/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_stats/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_stats",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_stats",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_stats] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_stats] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_stats/metadata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_stats/{metric}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_stats/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_stats/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_open",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_open",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/ingestion/_pause",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_component_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_component_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_index_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_index_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_template/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_mapping",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_mapping",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_mappings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_mappings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_recovery",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_recovery",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_recovery] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_recovery] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_recovery",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_recovery",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_recovery] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_recovery] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_refresh",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/_refresh",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_refresh] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_refresh] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_refresh",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_refresh",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_refresh",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_refresh] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_refresh] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_refresh",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_shrink/{target}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_shrink/{target}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_split/{target}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_split/{target}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_clone/{target}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_clone/{target}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_resolve/index/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_resolve/index/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_resolve/index/logs-read] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_resolve/index/logs-read] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/ingestion/_resume",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_rollover",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_rollover/{new_index}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_scale",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_index_template/_simulate_index/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_index_template/_simulate",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_index_template/_simulate/{name}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_flush/synced",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_flush/synced",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_flush/synced] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_flush/synced] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_flush/synced",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_flush/synced",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_flush/synced",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_flush/synced] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_flush/synced] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_flush/synced",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/_settings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/{index}/_settings",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/_upgrade",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "POST",
+      "path": "/{index}/_upgrade",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_upgrade",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/_upgrade",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_upgrade] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_upgrade] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_upgrade",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "index-and-metadata",
+      "method": "GET",
+      "path": "/{index}/_upgrade",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_upgrade] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_upgrade] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_validate/query",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_validate/query",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_validate/query] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_validate/query] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_validate/query",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_validate/query",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_validate/query",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_validate/query] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_validate/query] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_validate/query",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/aliases",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/aliases",
+      "probe": {
+        "body": "logs-compat-read logs-compat - - - -\nlogs-compat-write logs-compat-alias-000001 - r1 r1 true\nmetrics-compat-read metrics-compat-alias-000001 - - - -\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/aliases/logs-*",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/aliases/{alias}",
+      "probe": {
+        "body": "logs-compat-read logs-compat - - - -\nlogs-compat-write logs-compat-alias-000001 - r1 r1 true\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/allocation",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/allocation",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/allocation] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/allocation] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/allocation/steelsearch-dev-node",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/allocation/{nodes}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/allocation/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/allocation/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/recovery",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/recovery",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/recovery] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/recovery] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/recovery/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/recovery/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/recovery/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/recovery/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/count",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/count",
+      "probe": {
+        "body": "0 00:00:00 0\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/count/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/count/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/count/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/count/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/fielddata",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/fielddata",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/fielddata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/fielddata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/fielddata/message",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/fielddata/{fields}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/fielddata/message] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/fielddata/message] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/health",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/health",
+      "probe": {
+        "body": "0 00:00:00 steelsearch-dev yellow 1 1 3 3 0 0 3 2 0s 50.0%\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/indices",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/indices",
+      "probe": {
+        "body": "yellow open logs-compat 1 0 0 0b\nyellow open logs-compat-alias-000001 1 0 0 0b\nyellow open metrics-compat-alias-000001 1 0 0 0b\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/indices/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/indices/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/indices/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/indices/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/nodeattrs",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/nodeattrs",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/nodeattrs] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/nodeattrs] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/nodes",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/nodes",
+      "probe": {
+        "body": "steelsearch-dev-node 1 0.0.0.0 19300 0.0.0.0:19200 steelsearch-dev 0b 0b 0b 0b dim * steelsearch-dev-node\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/pending_tasks",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/pending_tasks",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/pending_tasks] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/pending_tasks] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/pit_segments",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/pit_segments",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/pit_segments] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/pit_segments] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/pit_segments/_all",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/pit_segments/_all] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/pit_segments/_all] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/plugins",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/plugins",
+      "probe": {
+        "body": "steelsearch-dev-node steelsearch-runtime 1.0.0-dev Steelsearch development runtime plugin surface org.steelsearch.runtime.Plugin\n",
+        "status": 200
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/repositories",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/repositories",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/repositories] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/repositories] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/segments",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/segments",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/segments] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/segments] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/segments/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/segments/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/segments/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/segments/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/shards",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/shards",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/shards] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/shards] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/shards/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/shards/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/shards/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/shards/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/snapshots",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/snapshots",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/snapshots] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/snapshots] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/snapshots/repo-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/snapshots/{repository}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/snapshots/repo-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/snapshots/repo-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/tasks",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/tasks",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/tasks] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/tasks] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/templates",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/templates",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/templates] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/templates] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/templates/logs-read",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/templates/{name}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/templates/logs-read] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/templates/logs-read] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/thread_pool",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/thread_pool",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/thread_pool] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/thread_pool] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_cat/thread_pool/search",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "root-cluster-node",
+      "method": "GET",
+      "path": "/_cat/thread_pool/{thread_pool_patterns}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/thread_pool/search] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/thread_pool/search] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_bulk",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_bulk",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "PUT",
+      "path": "/_bulk",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "PUT",
+      "path": "/{index}/_bulk",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_bulk/stream",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "PUT",
+      "path": "/_bulk/stream",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_bulk/stream",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "PUT",
+      "path": "/{index}/_bulk/stream",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "DELETE",
+      "path": "/{index}/_doc/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_doc/doc-1",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope document-write-path`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_doc/{id}",
+      "probe": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-compat\",\"found\":false}",
+        "status": 404
+      },
+      "profile": "`document-write-path`",
+      "runtime_status": "implemented-read",
+      "source_status": "stubbed"
+    },
+    {
+      "concrete_path": "/logs-compat/_doc/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "HEAD",
+      "path": "/{index}/_doc/{id}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_source/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_source/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_source/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_source/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_source/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "HEAD",
+      "path": "/{index}/_source/{id}",
+      "probe": {
+        "body": "",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_doc/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope document-write-path`",
+      "family": "document-and-bulk",
+      "method": "PUT",
+      "path": "/{index}/_doc/{id}",
+      "probe": null,
+      "profile": "`document-write-path`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "stubbed"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_create/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "PUT",
+      "path": "/{index}/_create/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_doc",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_mget",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/_mget",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_mget] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_mget] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_mget",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_mget",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_mget] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_mget] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_mget",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_mget",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_mtermvectors",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/_mtermvectors",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_mtermvectors] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_mtermvectors] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/_mtermvectors",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_mtermvectors",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_mtermvectors",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_mtermvectors] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_mtermvectors] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_mtermvectors",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_termvectors",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_termvectors",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_termvectors] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_termvectors] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_termvectors",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_termvectors/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "GET",
+      "path": "/{index}/_termvectors/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_termvectors/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_termvectors/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_termvectors/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/{index}/_update/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "DELETE",
+      "path": "/_ingest/pipeline/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_ingest/pipeline",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_ingest/pipeline",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_ingest/pipeline] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_ingest/pipeline] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_ingest/pipeline/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_ingest/pipeline/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_ingest/pipeline/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_ingest/pipeline/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "PUT",
+      "path": "/_ingest/pipeline/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_ingest/pipeline/doc-1/_simulate",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_ingest/pipeline/{id}/_simulate",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_ingest/pipeline/doc-1/_simulate] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_ingest/pipeline/doc-1/_simulate] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "POST",
+      "path": "/_ingest/pipeline/{id}/_simulate",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_ingest/pipeline/_simulate",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "GET",
+      "path": "/_ingest/pipeline/_simulate",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_ingest/pipeline/_simulate] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_ingest/pipeline/_simulate] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "snapshot-migration-interop",
+      "method": "POST",
+      "path": "/_ingest/pipeline/_simulate",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_list/indices",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_list/indices",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_list/indices] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_list/indices] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_list/indices/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_list/indices/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_list/indices/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_list/indices/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_list",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_list",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_list] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_list] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_list/shards",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_list/shards",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_list/shards] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_list/shards] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_list/shards/logs-compat",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_list/shards/{index}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_list/shards/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_list/shards/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "DELETE",
+      "path": "/_search/scroll",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "DELETE",
+      "path": "/_search/scroll/{scroll_id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_count",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_count",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_count] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_count] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_count",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_count",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_count",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_count] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_count] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_count",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_search/point_in_time",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time/_all",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "DELETE",
+      "path": "/_search/pipeline/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_explain/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_explain/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_explain/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_explain/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_explain/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search/point_in_time/_all",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search/point_in_time/_all",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search/point_in_time/_all] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search/point_in_time/_all] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search/pipeline",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search/pipeline",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search/pipeline] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search/pipeline] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search/pipeline/doc-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search/pipeline/{id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search/pipeline/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search/pipeline/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_msearch",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_msearch",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_msearch] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_msearch] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_msearch",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_msearch",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_msearch",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_msearch] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_msearch] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_msearch",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "PUT",
+      "path": "/_search/pipeline/{id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a value at line 1 column 0\",\"type\":\"unexpected_end_of_input_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_search",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_search",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/{index}/_search",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a value at line 1 column 0\",\"type\":\"unexpected_end_of_input_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "profile": "`deferred`",
+      "runtime_status": "implemented-read",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/{index}/_search",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search/scroll",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search/scroll",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search/scroll] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search/scroll] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_search/scroll",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_search/scroll/scroll-1",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "GET",
+      "path": "/_search/scroll/{scroll_id}",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search/scroll/scroll-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search/scroll/scroll-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "search",
+      "method": "POST",
+      "path": "/_search/scroll/{scroll_id}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "POST",
+      "path": "/{index}/_tier/ + targetTier",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "POST",
+      "path": "/_tier/_cancel/{index}",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/logs-compat/_tier",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/{index}/_tier",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_tier] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_tier] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": "/_tier/all",
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "misc",
+      "method": "GET",
+      "path": "/_tier/all",
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_tier/all] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_tier/all] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "profile": "`deferred`",
+      "runtime_status": "missing-route",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "POST",
+      "path": "String.format(Locale.ROOT, \"%s/%s/{%s}\", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "DELETE",
+      "path": "String.format(Locale.ROOT, \"%s/%s/{%s}\", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "String.format(Locale.ROOT, \"%s/%s/{%s}\", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "KNNPlugin.KNN_BASE_URI + \"/{nodeId}/stats/\"",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "KNNPlugin.KNN_BASE_URI + \"/{nodeId}/stats/{stat}\"",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "KNNPlugin.KNN_BASE_URI + \"/stats/\"",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "KNNPlugin.KNN_BASE_URI + \"/stats/{stat}\"",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "KNNPlugin.KNN_BASE_URI + URL_PATH",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "GET",
+      "path": "String.format(Locale.ROOT, \"%s/%s/%s\", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "unprobeable-expression",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "POST",
+      "path": "String.format(Locale.ROOT, \"%s/%s/%s\", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "POST",
+      "path": "String.format(Locale.ROOT, \"%s/%s/{%s}/_train\", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    },
+    {
+      "concrete_path": null,
+      "entrypoint": "`no canonical runtime compare owner`",
+      "family": "vector-and-ml",
+      "method": "POST",
+      "path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "probe": null,
+      "profile": "`deferred`",
+      "runtime_status": "requires-stateful-probe",
+      "source_status": "planned"
+    }
+  ],
+  "summary": {
+    "implemented-read": 58,
+    "missing-route": 124,
+    "requires-stateful-probe": 170,
+    "unprobeable-expression": 19
+  }
+}
