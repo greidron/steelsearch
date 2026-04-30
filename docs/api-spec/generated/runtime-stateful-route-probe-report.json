@@ -1,0 +1,175 @@
+{
+  "base_url": "http://127.0.0.1:19200",
+  "by_family": {
+    "document-and-bulk": {
+      "passed": 1
+    },
+    "index-and-metadata": {
+      "passed": 1
+    },
+    "root-cluster-node": {
+      "passed": 2
+    },
+    "search": {
+      "passed": 1
+    },
+    "snapshot-migration-interop": {
+      "passed": 1
+    }
+  },
+  "cases": [
+    {
+      "body": {
+        "persistent": {
+          "cluster.routing.allocation.enable": "all"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "name": "cluster_settings_put",
+      "path": "/_cluster/settings",
+      "result": {
+        "body": "{\"acknowledged\":true,\"persistent\":{\"cluster\":{\"routing\":{\"allocation\":{\"enable\":\"all\"}}}},\"transient\":{\"cluster\":{\"info\":{\"update\":{\"interval\":\"30s\"}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0,
+          "index.number_of_shards": 1
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "name": "index_create_put",
+      "path": "/logs-stateful-created",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-created\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "name": "bulk_post",
+      "path": "/logs-stateful-probe/_bulk",
+      "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "method": "POST",
+      "name": "search_post",
+      "path": "/logs-stateful-probe/_search",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":2}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo"
+        },
+        "type": "fs"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "method": "PUT",
+      "name": "snapshot_repository_put",
+      "path": "/_snapshot/repo-stateful-probe",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "name": "tasks_cancel_post",
+      "path": "/_tasks/_cancel",
+      "result": {
+        "body": "{\"node_failures\":[{\"caused_by\":{\"node_id\":\"\",\"reason\":\"No such node []\",\"type\":\"no_such_node_exception\"},\"node_id\":\"\",\"reason\":\"Failed node []\",\"type\":\"failed_node_exception\"}],\"nodes\":{}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    }
+  ],
+  "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
+  "setup": [
+    {
+      "method": "DELETE",
+      "path": "/logs-stateful-probe?ignore_unavailable=true",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        },
+        "settings": {
+          "index.number_of_replicas": 0,
+          "index.number_of_shards": 1
+        }
+      },
+      "method": "PUT",
+      "path": "/logs-stateful-probe",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"shards_acknowledged\":true}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "message": "stateful route probe",
+        "tenant": "tenant-a"
+      },
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_doc/doc-1?refresh=true",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"forced_refresh\":true,\"result\":\"created\"}",
+        "status": 201
+      }
+    }
+  ],
+  "summary": {
+    "passed": 6
+  }
+}

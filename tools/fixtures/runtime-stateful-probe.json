@@ -1,0 +1,101 @@
+{
+  "setup": [
+    {
+      "method": "DELETE",
+      "path": "/logs-stateful-probe?ignore_unavailable=true"
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-stateful-probe",
+      "body": {
+        "settings": {
+          "index.number_of_shards": 1,
+          "index.number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "message": { "type": "text" },
+            "tenant": { "type": "keyword" }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_doc/doc-1?refresh=true",
+      "body": {
+        "message": "stateful route probe",
+        "tenant": "tenant-a"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "cluster_settings_put",
+      "family": "root-cluster-node",
+      "method": "PUT",
+      "path": "/_cluster/settings",
+      "body": {
+        "persistent": {
+          "cluster.routing.allocation.enable": "all"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_create_put",
+      "family": "index-and-metadata",
+      "method": "PUT",
+      "path": "/logs-stateful-created",
+      "body": {
+        "settings": {
+          "index.number_of_shards": 1,
+          "index.number_of_replicas": 0
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_post",
+      "family": "document-and-bulk",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_bulk",
+      "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_post",
+      "family": "search",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_repository_put",
+      "family": "snapshot-migration-interop",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tasks_cancel_post",
+      "family": "root-cluster-node",
+      "method": "POST",
+      "path": "/_tasks/_cancel",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    }
+  ]
+}
