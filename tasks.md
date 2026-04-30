@@ -1873,13 +1873,11 @@
   - [x] canonical planned/stubbed inventory를 runtime-backed route ledger로 재분류 (`docs/api-spec/generated/runtime-route-ledger.{json,md}` 생성)
   - [x] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
   - [x] runtime-backed ledger의 `missing-route` 항목을 family별 구현 우선순위로 재정렬하고 false positive를 제거 (`docs/api-spec/generated/runtime-missing-route-priority.{json,md}` 생성, implemented-read 항목은 `[x]`로 재분류)
-  - [x] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
+  - [ ] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=39, missing-route=43, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_cat/pit_segments` (GET) [missing-route]
-    - [ ] `/_cat/pit_segments/_all` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=41, missing-route=41, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_cat/recovery` (GET) [missing-route]
     - [ ] `/_cat/recovery/{index}` (GET) [missing-route]
     - [ ] `/_cat/repositories` (GET) [missing-route]
@@ -1965,6 +1963,8 @@
     - [x] `/_cat/nodeattrs` (GET) [implemented-read]
     - [x] `/_cat/nodes` (GET) [implemented-read]
     - [x] `/_cat/pending_tasks` (GET) [implemented-read]
+    - [x] `/_cat/pit_segments` (GET) [implemented-read]
+    - [x] `/_cat/pit_segments/_all` (GET) [implemented-read]
     - [x] `/_cat/plugins` (GET) [implemented-read]
     - [x] `/_cat/segments` (GET) [implemented-read]
     - [x] `/_cat/segments/{index}` (GET) [implemented-read]

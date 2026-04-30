@@ -2896,7 +2896,7 @@
     },
     "/_cat/pit_segments": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_pit_segments",
         "parameters": [],
         "responses": {
@@ -2940,17 +2940,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java",
         "x-opensearch-source-line": "49",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/pit_segments/_all": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_pit_segments__all",
         "parameters": [],
         "responses": {
@@ -2994,12 +2994,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java",
         "x-opensearch-source-line": "49",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/plugins": {

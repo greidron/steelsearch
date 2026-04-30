@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 39,
-      "missing-route": 43,
+      "implemented-read": 41,
+      "missing-route": 41,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -986,7 +986,7 @@
       "method": "GET",
       "path": "/_tasks",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:5\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":5,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:7\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":7,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:3\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":3,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:5\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":5,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1224,7 +1224,7 @@
       "method": "GET",
       "path": "/_cluster/pending_tasks",
       "probe": {
-        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 5\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 6\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
+        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 3\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 4\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3208,7 +3208,7 @@
     },
     {
       "concrete_path": "/_cat/allocation",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/allocation",
@@ -3216,13 +3216,13 @@
         "body": "11 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/allocation/steelsearch-dev-node",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/allocation/{nodes}",
@@ -3230,9 +3230,9 @@
         "body": "11 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat",
@@ -3292,7 +3292,7 @@
     },
     {
       "concrete_path": "/_cat/count/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/count/{index}",
@@ -3300,13 +3300,13 @@
         "body": "0 00:00:00 0\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/fielddata",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/fielddata",
@@ -3314,13 +3314,13 @@
         "body": "\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/fielddata/message",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/fielddata/{fields}",
@@ -3328,9 +3328,9 @@
         "body": "steelsearch-dev-node 127.0.0.1 127.0.0.1 steelsearch-dev-node message 0b\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/health",
@@ -3362,7 +3362,7 @@
     },
     {
       "concrete_path": "/_cat/indices/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/indices/{index}",
@@ -3370,13 +3370,13 @@
         "body": "yellow open logs-compat 1 0 0 0b\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/nodeattrs",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/nodeattrs",
@@ -3384,9 +3384,9 @@
         "body": "steelsearch-dev-node 0.0.0.0 0.0.0.0 roles cluster_manager,data,ingest\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/nodes",
@@ -3404,17 +3404,17 @@
     },
     {
       "concrete_path": "/_cat/pending_tasks",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/pending_tasks",
       "probe": {
-        "body": "0 0ms HIGH publication round 5 true\n1 0ms HIGH publication round 6 true\n",
+        "body": "0 0ms HIGH publication round 3 true\n1 0ms HIGH publication round 4 true\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/pit_segments",
@@ -3423,11 +3423,11 @@
       "method": "GET",
       "path": "/_cat/pit_segments",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/pit_segments] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/pit_segments] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: no pit ids specified;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: no pit ids specified;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3437,11 +3437,11 @@
       "method": "GET",
       "path": "/_cat/pit_segments/_all",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/pit_segments/_all] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/pit_segments/_all] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3474,7 +3474,7 @@
     },
     {
       "concrete_path": "/_cat/segments",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/segments",
@@ -3482,13 +3482,13 @@
         "body": "logs-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-cat-next-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-compat 0 p 0.0.0.0 _0 0 0 0b\nlogs-compat-alias-000001 0 p 0.0.0.0 _0 0 0 0b\nlogs-root-cat-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-stateful-created 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-probe 0 p 0.0.0.0 _0 0 2 0b\nmetrics-000001 0 p 0.0.0.0 _0 0 1 0b\nmetrics-cat-next-000001 0 p 0.0.0.0 _0 0 1 0b\nmetrics-compat-alias-000001 0 p 0.0.0.0 _0 0 0 0b\nmetrics-root-cat-000001 0 p 0.0.0.0 _0 0 1 0b\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/segments/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/segments/{index}",
@@ -3496,13 +3496,13 @@
         "body": "logs-compat 0 p 0.0.0.0 _0 0 0 0b\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/shards",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/shards",
@@ -3510,13 +3510,13 @@
         "body": "logs-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-000001 0 r UNASSIGNED 0 0b  \nlogs-cat-next-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-cat-next-000001 0 r UNASSIGNED 0 0b  \nlogs-compat 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat 0 r UNASSIGNED 0 0b  \nlogs-compat-alias-000001 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat-alias-000001 0 r UNASSIGNED 0 0b  \nlogs-root-cat-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-root-cat-000001 0 r UNASSIGNED 0 0b  \nlogs-stateful-created 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-created 0 r UNASSIGNED 0 0b  \nlogs-stateful-probe 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-probe 0 r UNASSIGNED 0 0b  \nmetrics-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-000001 0 r UNASSIGNED 0 0b  \nmetrics-cat-next-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-cat-next-000001 0 r UNASSIGNED 0 0b  \nmetrics-compat-alias-000001 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nmetrics-compat-alias-000001 0 r UNASSIGNED 0 0b  \nmetrics-root-cat-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-root-cat-000001 0 r UNASSIGNED 0 0b  \n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/shards/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/shards/{index}",
@@ -3524,9 +3524,9 @@
         "body": "logs-compat 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat 0 r UNASSIGNED 0 0b  \n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/snapshots",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 72,
-    "missing-route": 112,
+    "implemented-read": 74,
+    "missing-route": 110,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

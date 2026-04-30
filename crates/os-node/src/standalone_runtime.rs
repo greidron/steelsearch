@@ -1650,6 +1650,12 @@ impl SteelNode {
                 Some(request.path.trim_start_matches("/_cat/segments/")),
             ));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/pit_segments" {
+            return Some(self.handle_cat_pit_segments_route(request, false));
+        }
+        if request.method == RestMethod::Get && request.path == "/_cat/pit_segments/_all" {
+            return Some(self.handle_cat_pit_segments_route(request, true));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6337,6 +6343,40 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_pit_segments_route(&self, request: &RestRequest, include_all: bool) -> RestResponse {
+        if !include_all {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "action_request_validation_exception",
+                                "reason": "Validation Failed: 1: no pit ids specified;"
+                            }
+                        ],
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: no pit ids specified;"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let rows: Vec<Value> = Vec::new();
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push(
+                "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
+                    .to_string(),
+            );
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -10970,5 +11010,45 @@ mod tests {
         assert!(fielddata_text.contains("id host ip node field size"));
         assert!(fielddata_text.contains("message"));
         assert!(fielddata_text.contains("user"));
+    }
+
+    #[test]
+    fn cat_pit_segments_routes_serve_json_and_text_views() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let mut pit_json_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments");
+        pit_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let pit_json_response = node.handle_rest_request(pit_json_request);
+        assert_eq!(pit_json_response.status, 400);
+        assert_eq!(
+            pit_json_response.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+
+        let mut pit_text_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
+        pit_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let pit_text_response = node.handle_rest_request(pit_text_request);
+        let pit_text = pit_text_response
+            .body
+            .as_str()
+            .expect("cat pit_segments text body");
+        assert!(pit_text.contains(
+            "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
+        ));
+
+        let mut pit_all_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
+        pit_all_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let pit_all_response = node.handle_rest_request(pit_all_request);
+        assert_eq!(pit_all_response.status, 200);
+        assert_eq!(pit_all_response.body, Value::Array(Vec::new()));
     }
 }
