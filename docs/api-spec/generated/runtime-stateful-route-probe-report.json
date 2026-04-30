@@ -15,6 +15,9 @@
     },
     "snapshot-migration-interop": {
       "passed": 1
+    },
+    "vector-and-ml": {
+      "passed": 1
     }
   },
   "cases": [
@@ -26,6 +29,7 @@
       },
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
       "method": "PUT",
       "name": "cluster_settings_put",
       "path": "/_cluster/settings",
@@ -45,6 +49,7 @@
       },
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/{index}",
       "method": "PUT",
       "name": "index_create_put",
       "path": "/logs-stateful-created",
@@ -59,6 +64,7 @@
       "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present",
       "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
       "method": "POST",
       "name": "bulk_post",
       "path": "/logs-stateful-probe/_bulk",
@@ -78,6 +84,7 @@
       },
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
+      "inventory_path": "/{index}/_search",
       "method": "POST",
       "name": "search_post",
       "path": "/logs-stateful-probe/_search",
@@ -97,6 +104,7 @@
       },
       "expected_runtime_status": "stateful-route-present",
       "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
       "method": "PUT",
       "name": "snapshot_repository_put",
       "path": "/_snapshot/repo-stateful-probe",
@@ -111,11 +119,31 @@
       "body": {},
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
+      "inventory_path": "/_tasks/_cancel",
       "method": "POST",
       "name": "tasks_cancel_post",
       "path": "/_tasks/_cancel",
       "result": {
         "body": "{\"node_failures\":[{\"caused_by\":{\"node_id\":\"\",\"reason\":\"No such node []\",\"type\":\"no_such_node_exception\"},\"node_id\":\"\",\"reason\":\"Failed node []\",\"type\":\"failed_node_exception\"}],\"nodes\":{}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "model_id": "probe-model",
+        "training_field": "tenant",
+        "training_index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "method": "POST",
+      "name": "knn_model_train_post",
+      "path": "/_plugins/_knn/models/_train",
+      "result": {
+        "body": "{\"model_id\":\"knn-model-2\",\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -170,6 +198,6 @@
     }
   ],
   "summary": {
-    "passed": 6
+    "passed": 7
   }
 }

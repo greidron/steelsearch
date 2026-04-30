@@ -4740,7 +4740,7 @@
         "x-steelsearch-status": "implemented-read"
       },
       "put": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "put__cluster_settings",
         "parameters": [],
         "requestBody": {
@@ -4789,12 +4789,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterUpdateSettingsAction.java",
         "x-opensearch-source-line": "67",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_cluster/state": {
@@ -10483,7 +10483,7 @@
     },
     "/_plugins/_knn/models/_train": {
       "post": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post__plugins__knn_models__train",
         "parameters": [],
         "requestBody": {
@@ -10532,12 +10532,12 @@
         "tags": [
           "vector-and-ml"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope vector-ml",
+        "x-evidence-profile": "vector-ml",
         "x-opensearch-source": "/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java",
         "x-opensearch-source-line": "74",
         "x-steelsearch-family": "vector-and-ml",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_plugins/_knn/models/{model_id}": {
@@ -14612,7 +14612,7 @@
         "x-steelsearch-status": "planned"
       },
       "put": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "put__snapshot_by_repository",
         "parameters": [
           {
@@ -14678,12 +14678,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPutRepositoryAction.java",
         "x-opensearch-source-line": "63",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_snapshot/{repository}/_cleanup": {
@@ -15828,7 +15828,7 @@
     },
     "/_tasks/_cancel": {
       "post": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post__tasks__cancel",
         "parameters": [],
         "requestBody": {
@@ -15877,12 +15877,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCancelTasksAction.java",
         "x-opensearch-source-line": "71",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_tasks/{task_id}": {
@@ -17616,7 +17616,7 @@
         "x-steelsearch-status": "implemented-read"
       },
       "put": {
-        "description": "Steelsearch needs full OpenSearch semantics, not only a development shell.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "put_by_index",
         "parameters": [
           {
@@ -17679,7 +17679,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCreateIndexAction.java",
         "x-opensearch-source-line": "66",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "stubbed"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/{index}/_alias": {
@@ -18676,7 +18676,7 @@
     },
     "/{index}/_bulk": {
       "post": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post_by_index__bulk",
         "parameters": [
           {
@@ -18734,12 +18734,12 @@
         "tags": [
           "document-and-bulk"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope document-write-path",
+        "x-evidence-profile": "document-write-path",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestBulkAction.java",
         "x-opensearch-source-line": "77",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -22164,7 +22164,7 @@
         "x-steelsearch-status": "implemented-read"
       },
       "post": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post_by_index__search",
         "parameters": [
           {
@@ -22246,12 +22246,12 @@
         "tags": [
           "search"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java",
         "x-opensearch-source-line": "128",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/{index}/_search/point_in_time": {

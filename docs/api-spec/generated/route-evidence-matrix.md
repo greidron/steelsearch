@@ -55,7 +55,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented | GET | `/` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented | HEAD | `/` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_cluster/voting_config_exclusions` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | POST | `/_tasks/_cancel` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-stateful | POST | `/_tasks/_cancel` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_tasks/{task_id}/_cancel` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/_cleanup` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_cluster/voting_config_exclusions` | `deferred` | `no canonical runtime compare owner` |
@@ -81,7 +81,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | GET | `/_cluster/stats/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cluster/stats/{metric}/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | PUT | `/_cluster/settings` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-stateful | PUT | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}` | `deferred` | `no canonical runtime compare owner` |
@@ -117,7 +117,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-read | GET | `/_cluster/pending_tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_filecache/prune` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | PUT | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-stateful | PUT | `/_snapshot/{repository}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_scripts/{id}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_scripts/{id}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_scripts/{id}/{context}` | `deferred` | `no canonical runtime compare owner` |
@@ -157,7 +157,7 @@ status and the canonical comparison/profile owner when one exists.
 | index-and-metadata | planned | POST | `/_close` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | POST | `/{index}/_close` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | PUT | `/_data_stream/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | stubbed | PUT | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-stateful | PUT | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-read | GET | `/_data_stream/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-read | GET | `/_data_stream/{name}/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | DELETE | `/_component_template/{name}` | `deferred` | `no canonical runtime compare owner` |
@@ -307,7 +307,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | GET | `/_cat/thread_pool` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/thread_pool/{thread_pool_patterns}` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | planned | POST | `/_bulk` | `deferred` | `no canonical runtime compare owner` |
-| document-and-bulk | planned | POST | `/{index}/_bulk` | `deferred` | `no canonical runtime compare owner` |
+| document-and-bulk | implemented-stateful | POST | `/{index}/_bulk` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | planned | PUT | `/_bulk` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | planned | PUT | `/{index}/_bulk` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | planned | POST | `/_bulk/stream` | `deferred` | `no canonical runtime compare owner` |
@@ -373,7 +373,7 @@ status and the canonical comparison/profile owner when one exists.
 | search | implemented-read | GET | `/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | planned | POST | `/_search` | `deferred` | `no canonical runtime compare owner` |
 | search | implemented-read | GET | `/{index}/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | planned | POST | `/{index}/_search` | `deferred` | `no canonical runtime compare owner` |
+| search | implemented-stateful | POST | `/{index}/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | planned | GET | `/_search/scroll` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | POST | `/_search/scroll` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | GET | `/_search/scroll/{scroll_id}` | `deferred` | `no canonical runtime compare owner` |
@@ -393,4 +393,4 @@ status and the canonical comparison/profile owner when one exists.
 | vector-and-ml | planned | GET | `String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)` | `deferred` | `no canonical runtime compare owner` |
 | vector-and-ml | planned | POST | `String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)` | `deferred` | `no canonical runtime compare owner` |
 | vector-and-ml | planned | POST | `String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)` | `deferred` | `no canonical runtime compare owner` |
-| vector-and-ml | planned | POST | `String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)` | `deferred` | `no canonical runtime compare owner` |
+| vector-and-ml | implemented-stateful | POST | `String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)` | `vector-ml` | `tools/run-phase-a-acceptance-harness.sh --scope vector-ml` |

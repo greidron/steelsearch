@@ -18,6 +18,7 @@ GENERATED_ARTIFACTS = [
     OUT_DIR / "openapi.json",
 ]
 RUNTIME_ROUTE_LEDGER = OUT_DIR / "runtime-route-ledger.json"
+STATEFUL_ROUTE_PROBE_REPORT = OUT_DIR / "runtime-stateful-route-probe-report.json"
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:
@@ -81,6 +82,7 @@ def status_behavior(status: str) -> str:
     return {
         "implemented": "Steelsearch exposes this surface with the main supported behavior present.",
         "implemented-read": "Steelsearch exposes this safe read/head surface in the standalone runtime; deeper parity may still remain.",
+        "implemented-stateful": "Steelsearch exposes this stateful surface in the standalone runtime; deeper parity and compare coverage may still remain.",
         "partial": "Steelsearch exposes this surface, but the behavior is narrower than OpenSearch.",
         "stubbed": "Steelsearch exposes an OpenSearch-shaped shell or development-only subset here.",
         "planned": "OpenSearch exposes this surface, but Steelsearch has not implemented it yet.",
@@ -191,6 +193,8 @@ def rest_gap(status: str, family: str, path: str) -> str:
         return "Remaining gaps are mostly parity depth, option coverage, and production-hardening."
     if status == "implemented-read":
         return "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain."
+    if status == "implemented-stateful":
+        return "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain."
     if status == "stubbed":
         return "Steelsearch needs full OpenSearch semantics, not only a development shell."
     if status == "planned":
@@ -394,9 +398,25 @@ def load_runtime_route_ledger() -> dict[tuple[str, str], str]:
     return mapping
 
 
+def load_stateful_route_report() -> dict[tuple[str, str], str]:
+    if not STATEFUL_ROUTE_PROBE_REPORT.exists():
+        return {}
+    payload = json.loads(STATEFUL_ROUTE_PROBE_REPORT.read_text(encoding="utf-8"))
+    mapping: dict[tuple[str, str], str] = {}
+    for case in payload.get("cases", []):
+        method = case.get("method")
+        inventory_path = case.get("inventory_path")
+        runtime_status = case.get("runtime_status")
+        if not method or not inventory_path or not runtime_status:
+            continue
+        mapping[(method, inventory_path)] = runtime_status
+    return mapping
+
+
 def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     ledger = load_runtime_route_ledger()
-    if not ledger:
+    stateful_report = load_stateful_route_report()
+    if not ledger and not stateful_report:
         return rows
     updated: list[dict[str, str]] = []
     for row in rows:
@@ -404,6 +424,9 @@ def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str
         runtime_status = ledger.get((row["method"], row["path_or_expression"]))
         if runtime_status == "implemented-read" and row["status"] in {"planned", "stubbed"}:
             next_row["status"] = "implemented-read"
+        stateful_status = stateful_report.get((row["method"], row["path_or_expression"]))
+        if stateful_status == "stateful-route-present" and row["status"] in {"planned", "stubbed"}:
+            next_row["status"] = "implemented-stateful"
         updated.append(next_row)
     return updated
 

@@ -58,6 +58,7 @@ def main() -> int:
         status = 'passed' if runtime_status == case['expected_runtime_status'] else 'failed'
         record = {
             **case,
+            'inventory_path': case.get('inventory_path', case['path']),
             'runtime_status': runtime_status,
             'result': result,
             'status': status,

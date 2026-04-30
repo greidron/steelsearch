@@ -1874,7 +1874,7 @@
   - [x] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
   - [x] runtime-backed ledger의 `missing-route` 항목을 family별 구현 우선순위로 재정렬하고 false positive를 제거 (`docs/api-spec/generated/runtime-missing-route-priority.{json,md}` 생성, implemented-read 항목은 `[x]`로 재분류)
   - [x] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가 (`tools/fixtures/runtime-stateful-probe.json`, `tools/probe_stateful_route_ledger.py`, `docs/api-spec/generated/runtime-stateful-route-probe-report.json`)
-  - [ ] stateful probe fixture coverage를 root/index/document/search/snapshot/vector family 전반으로 확장하고 `stateful-route-present` 항목을 승격 대상으로 재분류
+  - [x] stateful probe fixture coverage를 root/index/document/search/snapshot/vector family 전반으로 확장하고 `stateful-route-present` 항목을 승격 대상으로 재분류
   - [ ] root/cluster/node runtime route parity
     - [ ] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가

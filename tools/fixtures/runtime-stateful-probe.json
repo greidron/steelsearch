@@ -33,6 +33,7 @@
     {
       "name": "cluster_settings_put",
       "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
       "method": "PUT",
       "path": "/_cluster/settings",
       "body": {
@@ -45,6 +46,7 @@
     {
       "name": "index_create_put",
       "family": "index-and-metadata",
+      "inventory_path": "/{index}",
       "method": "PUT",
       "path": "/logs-stateful-created",
       "body": {
@@ -58,6 +60,7 @@
     {
       "name": "bulk_post",
       "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
       "method": "POST",
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
@@ -67,6 +70,7 @@
     {
       "name": "search_post",
       "family": "search",
+      "inventory_path": "/{index}/_search",
       "method": "POST",
       "path": "/logs-stateful-probe/_search",
       "body": {
@@ -79,6 +83,7 @@
     {
       "name": "snapshot_repository_put",
       "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
       "method": "PUT",
       "path": "/_snapshot/repo-stateful-probe",
       "body": {
@@ -92,9 +97,23 @@
     {
       "name": "tasks_cancel_post",
       "family": "root-cluster-node",
+      "inventory_path": "/_tasks/_cancel",
       "method": "POST",
       "path": "/_tasks/_cancel",
       "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_train_post",
+      "family": "vector-and-ml",
+      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/_train",
+      "body": {
+        "model_id": "probe-model",
+        "training_index": "logs-stateful-probe",
+        "training_field": "tenant"
+      },
       "expected_runtime_status": "stateful-route-present"
     }
   ]

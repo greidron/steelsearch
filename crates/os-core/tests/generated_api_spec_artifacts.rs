@@ -18,6 +18,8 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         "/home/ubuntu/steelsearch/docs/api-spec/generated/route-evidence-matrix.md";
     let runtime_ledger_path =
         "/home/ubuntu/steelsearch/docs/api-spec/generated/runtime-route-ledger.json";
+    let stateful_probe_report_path =
+        "/home/ubuntu/steelsearch/docs/api-spec/generated/runtime-stateful-route-probe-report.json";
     let rest_tsv_path = "/home/ubuntu/steelsearch/docs/rust-port/generated/source-rest-routes.tsv";
 
     let openapi_text =
@@ -72,6 +74,17 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         bulk_post["requestBody"]["content"]["application/x-ndjson"]["schema"]["$ref"],
         "#/components/schemas/BulkNdjsonRequest"
     );
+    let indexed_bulk_post = &paths["/{index}/_bulk"]["post"];
+    assert_eq!(indexed_bulk_post["x-steelsearch-status"], "implemented-stateful");
+
+    let cluster_settings_put = &paths["/_cluster/settings"]["put"];
+    assert_eq!(cluster_settings_put["x-steelsearch-status"], "implemented-stateful");
+
+    let tasks_cancel_post = &paths["/_tasks/_cancel"]["post"];
+    assert_eq!(tasks_cancel_post["x-steelsearch-status"], "implemented-stateful");
+
+    let knn_train_post = &paths["/_plugins/_knn/models/_train"]["post"];
+    assert_eq!(knn_train_post["x-steelsearch-status"], "implemented-stateful");
 
     let cat_count_get = &paths["/_cat/count"]["get"];
     assert_eq!(
@@ -151,6 +164,8 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
     assert!(route_matrix.contains("`/_search`"));
     assert!(route_matrix.contains("| root-cluster-node | implemented-read | GET | `/_cluster/health` |"));
     assert!(route_matrix.contains("| root-cluster-node | implemented-read | GET | `/_cat/aliases` |"));
+    assert!(route_matrix.contains("| root-cluster-node | implemented-stateful | PUT | `/_cluster/settings` |"));
+    assert!(route_matrix.contains("| root-cluster-node | implemented-stateful | POST | `/_tasks/_cancel` |"));
 
     let runtime_ledger_text =
         fs::read_to_string(runtime_ledger_path).expect("runtime route ledger should exist");
@@ -162,6 +177,22 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .expect("runtime ledger routes should be array")
         .iter()
         .any(|route| route["path"] == "/_cat/aliases" && route["runtime_status"] == "implemented-read"));
+
+    let stateful_probe_text =
+        fs::read_to_string(stateful_probe_report_path).expect("stateful route probe report should exist");
+    let stateful_probe: Value =
+        serde_json::from_str(&stateful_probe_text).expect("stateful route probe report should parse");
+    assert_eq!(stateful_probe["summary"]["passed"], 7);
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_cluster/settings" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)" && case["runtime_status"] == "stateful-route-present"));
 
     let mut literal_routes = BTreeSet::new();
     let rest_tsv = fs::read_to_string(rest_tsv_path).expect("source rest route tsv should exist");
