@@ -100,7 +100,7 @@ The Phase A acceptance harness is the evidence layer that ties milestone intent
 to API-family status.
 
 - it must stop before comparison if
-  `cargo check -p os-node --features development-runtime --bin steelsearch`
+  `cargo check -p os-node --features standalone-runtime --bin steelsearch`
   fails, because a
   helper-only or local-harness-only implementation is not enough to claim
   runtime readiness;
@@ -134,7 +134,7 @@ entrypoint for this reusable comparison shape.
 Before the side-by-side comparison runs, that entrypoint should enforce a
 runtime-backed preflight gate:
 
-1. run `cargo check -p os-node --features development-runtime --bin steelsearch`;
+1. run `cargo check -p os-node --features standalone-runtime --bin steelsearch`;
 2. record the result as reviewer-facing preflight evidence;
 3. stop immediately if the compile gate fails;
 4. only then continue to real Steelsearch/OpenSearch route comparison.
@@ -164,7 +164,7 @@ Canonical artifact names under `compare/`:
 
 - always-on report:
   `runtime-precheck-report.json`
-  (`cargo check -p os-node --features development-runtime --bin steelsearch`
+  (`cargo check -p os-node --features standalone-runtime --bin steelsearch`
   preflight gate, compile result, and runtime-backed evidence eligibility)
   `search-compat-report.json`
   `cluster-health-compat-report.json`
@@ -679,7 +679,7 @@ Mark Phase A complete only when all of the following are true:
   local-harness-only artifacts are excluded from the release tally and called
   out separately when they still exist
 - the runtime compile gate passes via:
-  - `cargo check -p os-node --features development-runtime --bin steelsearch`
+  - `cargo check -p os-node --features standalone-runtime --bin steelsearch`
 - `tools/run-phase-a-acceptance-harness.sh --mode local` exits successfully for
   the current Phase A tree
 - fail-closed boundaries are documented for every planned or intentionally

@@ -1,6 +1,6 @@
 //! Node lifecycle scaffolding.
 
-pub mod development_runtime;
+pub mod standalone_runtime;
 pub mod allocation_explain_route_registration;
 pub mod alias_read_route_registration;
 pub mod alias_mutation_route_registration;
@@ -35,7 +35,7 @@ pub mod template_route_registration;
 pub mod write_path_invariants;
 
 use os_core::Version;
-pub use development_runtime::*;
+pub use standalone_runtime::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NodeInfo {

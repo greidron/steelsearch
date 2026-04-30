@@ -33,7 +33,7 @@ Scopes:
 Environment passthrough:
   STEELSEARCH_URL                   Reuse an existing Steelsearch endpoint.
   OPENSEARCH_URL                    Reuse an existing OpenSearch endpoint.
-  RUN_RUNTIME_PRECHECK=0            Skip the `cargo check -p os-node --features development-runtime --bin steelsearch` preflight gate.
+  RUN_RUNTIME_PRECHECK=0            Skip the `cargo check -p os-node --features standalone-runtime --bin steelsearch` preflight gate.
   RUN_CLUSTER_HEALTH_COMPAT=0       Skip the always-on cluster health live comparison.
   RUN_ALLOCATION_EXPLAIN_COMPAT=0   Skip the always-on allocation explain live comparison.
   RUN_CLUSTER_SETTINGS_COMPAT=0     Skip the always-on cluster settings live comparison.
@@ -403,7 +403,7 @@ fi
 
 if [[ "${RUN_RUNTIME_PRECHECK}" != "0" ]]; then
   RUNTIME_PRECHECK_LOG="${REHEARSAL_DIR}/cargo-check-os-node.log"
-  RUNTIME_PRECHECK_COMMAND="cargo check -p os-node --features development-runtime --bin steelsearch"
+  RUNTIME_PRECHECK_COMMAND="cargo check -p os-node --features standalone-runtime --bin steelsearch"
   echo "Running runtime precheck: ${RUNTIME_PRECHECK_COMMAND}"
   if ${RUNTIME_PRECHECK_COMMAND} >"${RUNTIME_PRECHECK_LOG}" 2>&1; then
     cat >"${RUNTIME_PRECHECK_REPORT}" <<EOF

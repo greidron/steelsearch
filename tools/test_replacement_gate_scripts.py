@@ -28,7 +28,7 @@ class ReplacementGateScriptTests(unittest.TestCase):
             result.stdout.strip().splitlines(),
             [
                 "+ cargo build -p os-node --bin steelsearch",
-                "+ cargo build -p os-node --features development-runtime --bin steelsearch",
+                "+ cargo build -p os-node --features standalone-runtime --bin steelsearch",
                 "+ cargo test --workspace --no-run",
                 "+ tools/run-steelsearch-smoke.sh",
                 "+ tools/run-daemon-backed-search-compat.sh",

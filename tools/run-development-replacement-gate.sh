@@ -12,7 +12,7 @@ Usage:
   tools/run-development-replacement-gate.sh [--dry-run]
 
 Sequence:
-  1. cargo build -p os-node --features development-runtime --bin steelsearch
+  1. cargo build -p os-node --features standalone-runtime --bin steelsearch
   2. cargo test --workspace --no-run
   3. tools/run-steelsearch-smoke.sh
   4. tools/run-daemon-backed-search-compat.sh
@@ -52,7 +52,7 @@ run() {
 
 cd "${ROOT}"
 
-run cargo build -p os-node --features development-runtime --bin steelsearch
+run cargo build -p os-node --features standalone-runtime --bin steelsearch
 run cargo test --workspace --no-run
 run tools/run-steelsearch-smoke.sh
 run tools/run-daemon-backed-search-compat.sh

@@ -116,7 +116,7 @@ for ((i = 0; i < NODE_COUNT; i++)); do
 
   (
     cd "${ROOT}"
-    exec cargo run -p os-node --features development-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" -- \
+    exec cargo run -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" -- \
       --http.host "${HTTP_HOST}" \
       --http.port "${http_port}" \
       --transport.host "${TRANSPORT_HOST}" \

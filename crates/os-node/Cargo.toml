@@ -9,17 +9,17 @@ autotests = false
 
 [features]
 default = []
-development-runtime = []
+standalone-runtime = []
 
 [[bin]]
 name = "steelsearch"
 path = "src/main.rs"
-required-features = ["development-runtime"]
+required-features = ["standalone-runtime"]
 
 [[test]]
 name = "dev_cluster_daemons"
 path = "tests/dev_cluster_daemons.rs"
-required-features = ["development-runtime"]
+required-features = ["standalone-runtime"]
 
 [[test]]
 name = "utoipa_poc"

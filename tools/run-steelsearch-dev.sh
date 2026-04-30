@@ -42,7 +42,7 @@ echo "Steelsearch access URL: http://${HTTP_ACCESS_HOST}:${PORT}" >&2
 echo "Steelsearch transport bind: ${TRANSPORT_HOST}:${TRANSPORT_PORT}" >&2
 echo "Steelsearch transport access: ${TRANSPORT_ACCESS_HOST}:${TRANSPORT_PORT}" >&2
 
-exec cargo run -p os-node --features development-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" -- \
+exec cargo run -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" -- \
   --http.host "${HOST}" \
   --http.port "${PORT}" \
   --transport.host "${TRANSPORT_HOST}" \
