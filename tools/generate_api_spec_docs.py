@@ -17,6 +17,7 @@ GENERATED_ARTIFACTS = [
     OUT_DIR / "route-evidence-matrix.md",
     OUT_DIR / "openapi.json",
 ]
+RUNTIME_ROUTE_LEDGER = OUT_DIR / "runtime-route-ledger.json"
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:
@@ -79,6 +80,7 @@ def write_text(path: Path, text: str) -> None:
 def status_behavior(status: str) -> str:
     return {
         "implemented": "Steelsearch exposes this surface with the main supported behavior present.",
+        "implemented-read": "Steelsearch exposes this safe read/head surface in the standalone runtime; deeper parity may still remain.",
         "partial": "Steelsearch exposes this surface, but the behavior is narrower than OpenSearch.",
         "stubbed": "Steelsearch exposes an OpenSearch-shaped shell or development-only subset here.",
         "planned": "OpenSearch exposes this surface, but Steelsearch has not implemented it yet.",
@@ -187,6 +189,8 @@ def rest_meaning(method: str, path: str, source: str) -> str:
 def rest_gap(status: str, family: str, path: str) -> str:
     if status == "implemented":
         return "Remaining gaps are mostly parity depth, option coverage, and production-hardening."
+    if status == "implemented-read":
+        return "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain."
     if status == "stubbed":
         return "Steelsearch needs full OpenSearch semantics, not only a development shell."
     if status == "planned":
@@ -373,6 +377,35 @@ def rest_evidence_owner(row: dict[str, str]) -> tuple[str, str]:
     if family == "vector-and-ml":
         return ("vector-ml", "tools/run-phase-a-acceptance-harness.sh --scope vector-ml")
     return ("deferred", "no canonical runtime compare owner")
+
+
+def load_runtime_route_ledger() -> dict[tuple[str, str], str]:
+    if not RUNTIME_ROUTE_LEDGER.exists():
+        return {}
+    payload = json.loads(RUNTIME_ROUTE_LEDGER.read_text(encoding="utf-8"))
+    mapping: dict[tuple[str, str], str] = {}
+    for route in payload.get("routes", []):
+        method = route.get("method")
+        path = route.get("path")
+        runtime_status = route.get("runtime_status")
+        if not method or not path or not runtime_status:
+            continue
+        mapping[(method, path)] = runtime_status
+    return mapping
+
+
+def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    ledger = load_runtime_route_ledger()
+    if not ledger:
+        return rows
+    updated: list[dict[str, str]] = []
+    for row in rows:
+        next_row = dict(row)
+        runtime_status = ledger.get((row["method"], row["path_or_expression"]))
+        if runtime_status == "implemented-read" and row["status"] in {"planned", "stubbed"}:
+            next_row["status"] = "implemented-read"
+        updated.append(next_row)
+    return updated
 
 
 def render_route_evidence_matrix(rows: list[dict[str, str]]) -> str:
@@ -1234,7 +1267,7 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
 
 
 def main() -> None:
-    rest_rows = read_tsv(REST_TSV)
+    rest_rows = apply_runtime_route_status(read_tsv(REST_TSV))
     transport_rows = read_tsv(TRANSPORT_TSV)
     write_text(OUT_DIR / "rest-routes.md", render_rest_reference(rest_rows))
     write_text(OUT_DIR / "transport-actions.md", render_transport_reference(transport_rows))

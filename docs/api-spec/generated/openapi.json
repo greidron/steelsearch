@@ -1063,7 +1063,7 @@
     },
     "/_alias": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__alias",
         "parameters": [],
         "responses": {
@@ -1102,12 +1102,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "77",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -1169,7 +1169,7 @@
     },
     "/_alias/{name}": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__alias_by_name",
         "parameters": [
           {
@@ -1217,15 +1217,15 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "79",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head__alias_by_name",
         "parameters": [
           {
@@ -1267,12 +1267,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "80",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -1409,7 +1409,7 @@
     },
     "/_aliases": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__aliases",
         "parameters": [],
         "responses": {
@@ -1448,12 +1448,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "78",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -2095,7 +2095,7 @@
     },
     "/_cat/aliases": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_aliases",
         "parameters": [],
         "responses": {
@@ -2139,17 +2139,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestAliasAction.java",
         "x-opensearch-source-line": "61",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/aliases/{alias}": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_aliases_by_alias",
         "parameters": [
           {
@@ -2202,12 +2202,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestAliasAction.java",
         "x-opensearch-source-line": "61",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/allocation": {
@@ -2329,7 +2329,7 @@
     },
     "/_cat/count": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_count",
         "parameters": [],
         "responses": {
@@ -2373,12 +2373,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestCountAction.java",
         "x-opensearch-source-line": "65",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/count/{index}": {
@@ -2563,7 +2563,7 @@
     },
     "/_cat/health": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_health",
         "parameters": [],
         "responses": {
@@ -2607,17 +2607,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestHealthAction.java",
         "x-opensearch-source-line": "58",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/indices": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_indices",
         "parameters": [],
         "responses": {
@@ -2661,12 +2661,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestIndicesAction.java",
         "x-opensearch-source-line": "117",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/indices/{index}": {
@@ -2788,7 +2788,7 @@
     },
     "/_cat/nodes": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_nodes",
         "parameters": [],
         "responses": {
@@ -2832,12 +2832,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestNodesAction.java",
         "x-opensearch-source-line": "98",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/pending_tasks": {
@@ -3004,7 +3004,7 @@
     },
     "/_cat/plugins": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cat_plugins",
         "parameters": [],
         "responses": {
@@ -3048,12 +3048,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPluginsAction.java",
         "x-opensearch-source-line": "68",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cat/recovery": {
@@ -3927,7 +3927,7 @@
     },
     "/_cluster/allocation/explain": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_allocation_explain",
         "parameters": [],
         "responses": {
@@ -3966,12 +3966,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterAllocationExplainAction.java",
         "x-opensearch-source-line": "65",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -4216,7 +4216,7 @@
     },
     "/_cluster/health": {
       "get": {
-        "description": "Steelsearch needs full OpenSearch semantics, not only a development shell.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_health",
         "parameters": [
           {
@@ -4277,12 +4277,12 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java",
         "x-opensearch-source-line": "69",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "stubbed"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/health/{index}": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_health_by_index",
         "parameters": [
           {
@@ -4346,17 +4346,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java",
         "x-opensearch-source-line": "69",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/pending_tasks": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_pending_tasks",
         "parameters": [],
         "responses": {
@@ -4395,12 +4395,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestPendingClusterTasksAction.java",
         "x-opensearch-source-line": "59",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/reroute": {
@@ -4693,7 +4693,7 @@
     },
     "/_cluster/settings": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_settings",
         "parameters": [],
         "responses": {
@@ -4732,12 +4732,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetSettingsAction.java",
         "x-opensearch-source-line": "82",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -4799,7 +4799,7 @@
     },
     "/_cluster/state": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_state",
         "parameters": [],
         "responses": {
@@ -4838,17 +4838,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStateAction.java",
         "x-opensearch-source-line": "95",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/state/{metric}": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_state_by_metric",
         "parameters": [
           {
@@ -4896,17 +4896,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStateAction.java",
         "x-opensearch-source-line": "96",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/state/{metric}/{indices}": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_state_by_metric_by_indices",
         "parameters": [
           {
@@ -4962,17 +4962,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStateAction.java",
         "x-opensearch-source-line": "97",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/stats": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__cluster_stats",
         "parameters": [],
         "responses": {
@@ -5011,12 +5011,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterStatsAction.java",
         "x-opensearch-source-line": "70",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_cluster/stats/nodes/{nodeId}": {
@@ -5325,7 +5325,7 @@
     },
     "/_component_template": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__component_template",
         "parameters": [],
         "responses": {
@@ -5364,12 +5364,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComponentTemplateAction.java",
         "x-opensearch-source-line": "66",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_component_template/{name}": {
@@ -5430,7 +5430,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__component_template_by_name",
         "parameters": [
           {
@@ -5478,15 +5478,15 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComponentTemplateAction.java",
         "x-opensearch-source-line": "67",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head__component_template_by_name",
         "parameters": [
           {
@@ -5528,12 +5528,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComponentTemplateAction.java",
         "x-opensearch-source-line": "68",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -5949,7 +5949,7 @@
     },
     "/_data_stream": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__data_stream",
         "parameters": [],
         "responses": {
@@ -5988,17 +5988,17 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetDataStreamsAction.java",
         "x-opensearch-source-line": "58",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_data_stream/_stats": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__data_stream__stats",
         "parameters": [],
         "responses": {
@@ -6037,12 +6037,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDataStreamsStatsAction.java",
         "x-opensearch-source-line": "61",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_data_stream/{name}": {
@@ -6103,7 +6103,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__data_stream_by_name",
         "parameters": [
           {
@@ -6151,12 +6151,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetDataStreamsAction.java",
         "x-opensearch-source-line": "58",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -6227,7 +6227,7 @@
     },
     "/_data_stream/{name}/_stats": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__data_stream_by_name__stats",
         "parameters": [
           {
@@ -6275,12 +6275,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDataStreamsStatsAction.java",
         "x-opensearch-source-line": "62",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_delete_by_query/{taskId}/_rethrottle": {
@@ -6896,7 +6896,7 @@
     },
     "/_index_template": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__index_template",
         "parameters": [],
         "responses": {
@@ -6935,12 +6935,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComposableIndexTemplateAction.java",
         "x-opensearch-source-line": "66",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_index_template/_simulate": {
@@ -7196,7 +7196,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__index_template_by_name",
         "parameters": [
           {
@@ -7244,15 +7244,15 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComposableIndexTemplateAction.java",
         "x-opensearch-source-line": "67",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head__index_template_by_name",
         "parameters": [
           {
@@ -7294,12 +7294,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetComposableIndexTemplateAction.java",
         "x-opensearch-source-line": "68",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -8438,7 +8438,7 @@
     },
     "/_mapping": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__mapping",
         "parameters": [],
         "responses": {
@@ -8477,12 +8477,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java",
         "x-opensearch-source-line": "85",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_mapping/field/{fields}": {
@@ -9224,7 +9224,7 @@
     },
     "/_nodes/stats": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__nodes_stats",
         "parameters": [],
         "responses": {
@@ -9263,12 +9263,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestNodesStatsAction.java",
         "x-opensearch-source-line": "70",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_nodes/stats/{metric}": {
@@ -12685,7 +12685,7 @@
     },
     "/_search": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__search",
         "parameters": [
           {
@@ -12749,12 +12749,12 @@
         "tags": [
           "search"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java",
         "x-opensearch-source-line": "125",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -14081,7 +14081,7 @@
     },
     "/_settings": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__settings",
         "parameters": [],
         "responses": {
@@ -14120,12 +14120,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java",
         "x-opensearch-source-line": "64",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -14294,7 +14294,7 @@
     },
     "/_snapshot": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__snapshot",
         "parameters": [
           {
@@ -14342,17 +14342,17 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetRepositoriesAction.java",
         "x-opensearch-source-line": "76",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_snapshot/_status": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__snapshot__status",
         "parameters": [
           {
@@ -14400,12 +14400,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java",
         "x-opensearch-source-line": "67",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_snapshot/{repository}": {
@@ -14474,7 +14474,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__snapshot_by_repository",
         "parameters": [
           {
@@ -14530,12 +14530,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetRepositoriesAction.java",
         "x-opensearch-source-line": "76",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -14764,7 +14764,7 @@
     },
     "/_snapshot/{repository}/_status": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__snapshot_by_repository__status",
         "parameters": [
           {
@@ -14820,12 +14820,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java",
         "x-opensearch-source-line": "66",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_snapshot/{repository}/_verify": {
@@ -14978,7 +14978,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__snapshot_by_repository_by_snapshot",
         "parameters": [
           {
@@ -15042,12 +15042,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetSnapshotsAction.java",
         "x-opensearch-source-line": "61",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -15392,7 +15392,7 @@
     },
     "/_snapshot/{repository}/{snapshot}/_status": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__snapshot_by_repository_by_snapshot__status",
         "parameters": [
           {
@@ -15456,12 +15456,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestSnapshotsStatusAction.java",
         "x-opensearch-source-line": "65",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_snapshot/{repository}/{snapshot}/{index}/_status": {
@@ -15548,7 +15548,7 @@
     },
     "/_stats": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__stats",
         "parameters": [],
         "responses": {
@@ -15587,12 +15587,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesStatsAction.java",
         "x-opensearch-source-line": "70",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_stats/{metric}": {
@@ -15779,7 +15779,7 @@
     },
     "/_tasks": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__tasks",
         "parameters": [],
         "responses": {
@@ -15818,12 +15818,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestListTasksAction.java",
         "x-opensearch-source-line": "75",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_tasks/_cancel": {
@@ -15887,7 +15887,7 @@
     },
     "/_tasks/{task_id}": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__tasks_by_task_id",
         "parameters": [
           {
@@ -15935,12 +15935,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestGetTaskAction.java",
         "x-opensearch-source-line": "58",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_tasks/{task_id}/_cancel": {
@@ -16013,7 +16013,7 @@
     },
     "/_template": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__template",
         "parameters": [],
         "responses": {
@@ -16052,12 +16052,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java",
         "x-opensearch-source-line": "69",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/_template/{name}": {
@@ -16118,7 +16118,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__template_by_name",
         "parameters": [
           {
@@ -16166,15 +16166,15 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java",
         "x-opensearch-source-line": "69",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head__template_by_name",
         "parameters": [
           {
@@ -16216,12 +16216,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java",
         "x-opensearch-source-line": "69",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -17510,7 +17510,7 @@
         "x-steelsearch-status": "stubbed"
       },
       "get": {
-        "description": "Steelsearch needs full OpenSearch semantics, not only a development shell.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index",
         "parameters": [
           {
@@ -17563,10 +17563,10 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java",
         "x-opensearch-source-line": "65",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "stubbed"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head_by_index",
         "parameters": [
           {
@@ -17608,12 +17608,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java",
         "x-opensearch-source-line": "65",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch needs full OpenSearch semantics, not only a development shell.",
@@ -17684,7 +17684,7 @@
     },
     "/{index}/_alias": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__alias",
         "parameters": [
           {
@@ -17732,15 +17732,15 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "81",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head_by_index__alias",
         "parameters": [
           {
@@ -17782,12 +17782,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "82",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -17922,7 +17922,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__alias_by_name",
         "parameters": [
           {
@@ -17978,15 +17978,15 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "83",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head_by_index__alias_by_name",
         "parameters": [
           {
@@ -18036,12 +18036,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetAliasesAction.java",
         "x-opensearch-source-line": "84",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -19704,7 +19704,7 @@
         "x-steelsearch-status": "planned"
       },
       "get": {
-        "description": "Steelsearch needs full OpenSearch semantics, not only a development shell.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__doc_by_id",
         "parameters": [
           {
@@ -19765,10 +19765,10 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetAction.java",
         "x-opensearch-source-line": "71",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "stubbed"
+        "x-steelsearch-status": "implemented-read"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head_by_index__doc_by_id",
         "parameters": [
           {
@@ -19818,12 +19818,12 @@
         "tags": [
           "document-and-bulk"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope document-write-path",
+        "x-evidence-profile": "document-write-path",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetAction.java",
         "x-opensearch-source-line": "71",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -20556,7 +20556,7 @@
     },
     "/{index}/_mapping": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__mapping",
         "parameters": [
           {
@@ -20604,12 +20604,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java",
         "x-opensearch-source-line": "87",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -22084,7 +22084,7 @@
     },
     "/{index}/_search": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__search",
         "parameters": [
           {
@@ -22156,12 +22156,12 @@
         "tags": [
           "search"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchAction.java",
         "x-opensearch-source-line": "127",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -22816,7 +22816,7 @@
     },
     "/{index}/_settings": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__settings",
         "parameters": [
           {
@@ -22864,12 +22864,12 @@
         "tags": [
           "index-and-metadata"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope index-metadata",
+        "x-evidence-profile": "index-metadata",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetSettingsAction.java",
         "x-opensearch-source-line": "66",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "put": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -23278,7 +23278,7 @@
         "x-steelsearch-status": "planned"
       },
       "head": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "head_by_index__source_by_id",
         "parameters": [
           {
@@ -23328,12 +23328,12 @@
         "tags": [
           "document-and-bulk"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope document-write-path",
+        "x-evidence-profile": "document-write-path",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestGetSourceAction.java",
         "x-opensearch-source-line": "70",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       }
     },
     "/{index}/_split/{target}": {

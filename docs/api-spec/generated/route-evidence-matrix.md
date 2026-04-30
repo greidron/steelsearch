@@ -60,24 +60,24 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/_cleanup` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_cluster/voting_config_exclusions` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/allocation/explain` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/allocation/explain` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_cluster/allocation/explain` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_cluster/routing/awareness/weights` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/settings` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | stubbed | GET | `/_cluster/health` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cluster/health/{index}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/health` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cluster/health/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | PUT | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_cluster/reroute` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_search_shards` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_search_shards` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/{index}/_search_shards` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/{index}/_search_shards` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/state` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/state/{metric}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/state/{metric}/{indices}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/stats` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/state` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cluster/state/{metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cluster/state/{metric}/{indices}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cluster/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cluster/stats/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cluster/stats/{metric}/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
@@ -90,21 +90,21 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | DELETE | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_scripts/{id}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cluster/decommission/awareness/{awareness_attribute_name}/_status` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_snapshot` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_snapshot/{repository}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_script_context` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_script_language` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_snapshot/{repository}/{snapshot}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_scripts/{id}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_tasks/{task_id}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_tasks` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_tasks/{task_id}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_nodes/hot_threads` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/hot_threads` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/{metrics}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/info/{metrics}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_nodes/stats` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_nodes/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/stats` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/stats/{metric}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/stats/{metric}` | `deferred` | `no canonical runtime compare owner` |
@@ -114,7 +114,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/usage` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/usage/{metric}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/usage/{metric}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/pending_tasks` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/pending_tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_filecache/prune` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
@@ -132,9 +132,9 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | POST | `/_remotestore/_restore` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/{snapshot}/_restore` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_snapshot/{repository}/{snapshot}/{index}/_status` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot/{repository}/{snapshot}/_status` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot/{repository}/_status` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot/_status` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_snapshot/{repository}/{snapshot}/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_snapshot/{repository}/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_snapshot/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/_verify` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `_wlm/stats` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `_wlm/{nodeId}/stats` | `deferred` | `no canonical runtime compare owner` |
@@ -158,8 +158,8 @@ status and the canonical comparison/profile owner when one exists.
 | index-and-metadata | planned | POST | `/{index}/_close` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | PUT | `/_data_stream/{name}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | stubbed | PUT | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
-| index-and-metadata | planned | GET | `/_data_stream/_stats` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_data_stream/{name}/_stats` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/_data_stream/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_data_stream/{name}/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | DELETE | `/_component_template/{name}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | DELETE | `/_index_template/{name}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | DELETE | `/_data_stream/{name}` | `deferred` | `no canonical runtime compare owner` |
@@ -172,37 +172,37 @@ status and the canonical comparison/profile owner when one exists.
 | index-and-metadata | planned | POST | `/{index}/_flush` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | POST | `/_forcemerge` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | POST | `/{index}/_forcemerge` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_alias` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_aliases` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_alias/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | HEAD | `/_alias/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/{index}/_alias` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | HEAD | `/{index}/_alias` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/{index}/_alias/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | HEAD | `/{index}/_alias/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_component_template` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_component_template/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | HEAD | `/_component_template/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_index_template` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_index_template/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | HEAD | `/_index_template/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_data_stream` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_data_stream/{name}` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/_alias` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_aliases` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_alias/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/_alias/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/{index}/_alias` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/{index}/_alias` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/{index}/_alias/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/{index}/_alias/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_component_template` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_component_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/_component_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_index_template` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_index_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/_index_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_data_stream` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_data_stream/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/_mapping/field/{fields}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/{index}/_mapping/field/{fields}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_template` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_template/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | HEAD | `/_template/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | stubbed | GET | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
-| index-and-metadata | planned | HEAD | `/{index}` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/_template` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | GET | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-read | HEAD | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/{index}/ingestion/_state` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_mapping` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/_mapping` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/_mappings` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/{index}/_mapping` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/{index}/_mapping` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/{index}/_mappings` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_settings` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/_settings` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/_settings/{name}` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/{index}/_settings` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/{index}/_settings` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/{index}/_settings/{name}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/{index}/_setting/{name}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | DELETE | `/{index}/_alias/{name}` | `deferred` | `no canonical runtime compare owner` |
@@ -223,7 +223,7 @@ status and the canonical comparison/profile owner when one exists.
 | index-and-metadata | planned | GET | `/{index}/_segments` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/_shard_stores` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/{index}/_shard_stores` | `deferred` | `no canonical runtime compare owner` |
-| index-and-metadata | planned | GET | `/_stats` | `deferred` | `no canonical runtime compare owner` |
+| index-and-metadata | implemented-read | GET | `/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | planned | GET | `/_stats/{metric}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/{index}/_stats` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/{index}/_stats/{metric}` | `deferred` | `no canonical runtime compare owner` |
@@ -274,26 +274,26 @@ status and the canonical comparison/profile owner when one exists.
 | search | planned | POST | `/_validate/query` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | GET | `/{index}/_validate/query` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | POST | `/{index}/_validate/query` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/aliases` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/aliases/{alias}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/aliases` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/aliases/{alias}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/allocation` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/allocation/{nodes}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/recovery` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/recovery/{index}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/count` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/count` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/count/{index}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/fielddata` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/fielddata/{fields}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/health` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/indices` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/health` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/indices` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/indices/{index}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/nodeattrs` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/nodes` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/nodes` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/pending_tasks` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/pit_segments` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/pit_segments/_all` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/plugins` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/plugins` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/repositories` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/segments` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/segments/{index}` | `deferred` | `no canonical runtime compare owner` |
@@ -315,10 +315,10 @@ status and the canonical comparison/profile owner when one exists.
 | document-and-bulk | planned | POST | `/{index}/_bulk/stream` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | planned | PUT | `/{index}/_bulk/stream` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | planned | DELETE | `/{index}/_doc/{id}` | `deferred` | `no canonical runtime compare owner` |
-| document-and-bulk | stubbed | GET | `/{index}/_doc/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
-| document-and-bulk | planned | HEAD | `/{index}/_doc/{id}` | `deferred` | `no canonical runtime compare owner` |
+| document-and-bulk | implemented-read | GET | `/{index}/_doc/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
+| document-and-bulk | implemented-read | HEAD | `/{index}/_doc/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | planned | GET | `/{index}/_source/{id}` | `deferred` | `no canonical runtime compare owner` |
-| document-and-bulk | planned | HEAD | `/{index}/_source/{id}` | `deferred` | `no canonical runtime compare owner` |
+| document-and-bulk | implemented-read | HEAD | `/{index}/_source/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | planned | POST | `/{index}/_doc/{id}` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | stubbed | PUT | `/{index}/_doc/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | planned | POST | `/{index}/_create/{id}` | `deferred` | `no canonical runtime compare owner` |
@@ -370,9 +370,9 @@ status and the canonical comparison/profile owner when one exists.
 | search | planned | GET | `/{index}/_msearch` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | POST | `/{index}/_msearch` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | PUT | `/_search/pipeline/{id}` | `deferred` | `no canonical runtime compare owner` |
-| search | planned | GET | `/_search` | `deferred` | `no canonical runtime compare owner` |
+| search | implemented-read | GET | `/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | planned | POST | `/_search` | `deferred` | `no canonical runtime compare owner` |
-| search | planned | GET | `/{index}/_search` | `deferred` | `no canonical runtime compare owner` |
+| search | implemented-read | GET | `/{index}/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | planned | POST | `/{index}/_search` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | GET | `/_search/scroll` | `deferred` | `no canonical runtime compare owner` |
 | search | planned | POST | `/_search/scroll` | `deferred` | `no canonical runtime compare owner` |

@@ -16,6 +16,8 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
     let openapi_path = "/home/ubuntu/steelsearch/docs/api-spec/generated/openapi.json";
     let route_matrix_path =
         "/home/ubuntu/steelsearch/docs/api-spec/generated/route-evidence-matrix.md";
+    let runtime_ledger_path =
+        "/home/ubuntu/steelsearch/docs/api-spec/generated/runtime-route-ledger.json";
     let rest_tsv_path = "/home/ubuntu/steelsearch/docs/rust-port/generated/source-rest-routes.tsv";
 
     let openapi_text =
@@ -45,6 +47,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
 
     let cluster_health_get = &paths["/_cluster/health"]["get"];
     assert_eq!(cluster_health_get["x-steelsearch-family"], "root-cluster-node");
+    assert_eq!(cluster_health_get["x-steelsearch-status"], "implemented-read");
     assert!(cluster_health_get["x-evidence-profile"].is_string());
     assert!(cluster_health_get["x-evidence-entrypoint"].is_string());
     assert_eq!(cluster_health_get["operationId"], "get__cluster_health");
@@ -94,10 +97,14 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
     );
 
     let cat_health_get = &paths["/_cat/health"]["get"];
+    assert_eq!(cat_health_get["x-steelsearch-status"], "implemented-read");
     assert_eq!(
         cat_health_get["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/CatHealthResponse"
     );
+
+    let cat_aliases_get = &paths["/_cat/aliases"]["get"];
+    assert_eq!(cat_aliases_get["x-steelsearch-status"], "implemented-read");
 
     let cat_nodes_get = &paths["/_cat/nodes"]["get"];
     assert_eq!(
@@ -142,6 +149,19 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
     ));
     assert!(route_matrix.contains("`/_cluster/health`"));
     assert!(route_matrix.contains("`/_search`"));
+    assert!(route_matrix.contains("| root-cluster-node | implemented-read | GET | `/_cluster/health` |"));
+    assert!(route_matrix.contains("| root-cluster-node | implemented-read | GET | `/_cat/aliases` |"));
+
+    let runtime_ledger_text =
+        fs::read_to_string(runtime_ledger_path).expect("runtime route ledger should exist");
+    let runtime_ledger: Value =
+        serde_json::from_str(&runtime_ledger_text).expect("runtime route ledger should parse");
+    assert_eq!(runtime_ledger["summary"]["implemented-read"], 58);
+    assert!(runtime_ledger["routes"]
+        .as_array()
+        .expect("runtime ledger routes should be array")
+        .iter()
+        .any(|route| route["path"] == "/_cat/aliases" && route["runtime_status"] == "implemented-read"));
 
     let mut literal_routes = BTreeSet::new();
     let rest_tsv = fs::read_to_string(rest_tsv_path).expect("source rest route tsv should exist");

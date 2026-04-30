@@ -1871,7 +1871,7 @@
 
 - [ ] Swagger/runtime route parity backlog (generated from `docs/api-spec/generated/route-evidence-matrix.md` planned+stubbed inventory)
   - [x] canonical planned/stubbed inventory를 runtime-backed route ledger로 재분류 (`docs/api-spec/generated/runtime-route-ledger.{json,md}` 생성)
-  - [ ] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
+  - [x] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
   - [ ] runtime-backed ledger의 `missing-route` 항목을 family별 구현 우선순위로 재정렬하고 false positive를 제거
   - [ ] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
   - [ ] root/cluster/node runtime route parity
