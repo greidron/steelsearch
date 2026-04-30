@@ -34,7 +34,11 @@ report = {
         "passed": True,
         "note": (
             "Coverage audit runner completed. "
-            "If cargo-llvm-cov is missing, line/branch percentage coverage is not available yet."
+            + (
+                "Line/branch percentage coverage can be measured with cargo llvm-cov."
+                if llvm_cov_status == "available"
+                else "If cargo-llvm-cov is missing, line/branch percentage coverage is not available yet."
+            )
         ),
     },
 }

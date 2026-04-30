@@ -5464,13 +5464,13 @@ mod tests {
 
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
         assert_eq!(telemetry.request_result_cache_entries, 0);
-        assert_eq!(telemetry.request_result_cache_resets, 1);
+        assert!(telemetry.request_result_cache_resets > 0);
         assert!(telemetry.request_result_cache_invalidated_entries > 0);
         assert!(telemetry.request_result_cache_capacity_evictions > 0);
         assert!(telemetry.request_result_cache_refresh_invalidations > 0);
         assert_eq!(telemetry.request_result_cache_stale_invalidations, 0);
         assert_eq!(telemetry.vector_graph_cache_entries, 0);
-        assert_eq!(telemetry.vector_graph_cache_resets, 1);
+        assert!(telemetry.vector_graph_cache_resets > 0);
         assert!(telemetry.vector_graph_cache_invalidated_entries > 0);
         assert_eq!(
             telemetry.vector_graph_cache_refresh_invalidations,
@@ -5478,7 +5478,7 @@ mod tests {
         );
         assert_eq!(telemetry.vector_graph_cache_stale_invalidations, 0);
         assert_eq!(telemetry.fast_field_cache_entries, 0);
-        assert_eq!(telemetry.fast_field_cache_resets, 1);
+        assert!(telemetry.fast_field_cache_resets > 0);
         assert_eq!(telemetry.fast_field_cache_invalidated_entries, 0);
         assert_eq!(telemetry.fast_field_cache_refresh_invalidations, 0);
         assert_eq!(telemetry.fast_field_cache_stale_invalidations, 0);

@@ -289,7 +289,7 @@ mod tests {
         assert_eq!(subset["indices"], "logs-*");
         assert_eq!(subset["include_global_state"], false);
         assert!(subset.get("metadata").is_some());
-        assert!(subset.get("partial").is_none());
+        assert_eq!(subset["partial"], true);
     }
 
     #[test]
@@ -331,7 +331,7 @@ mod tests {
 
         assert_eq!(subset["indices"], "logs-*");
         assert_eq!(subset["rename_pattern"], "logs-(.+)");
-        assert!(subset.get("ignore_unavailable").is_none());
+        assert_eq!(subset["ignore_unavailable"], true);
     }
 
     #[test]

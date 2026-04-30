@@ -107,6 +107,11 @@ Current result:
 - [run-coverage-audit.sh](/home/ubuntu/steelsearch/tools/run-coverage-audit.sh)
   now emits a canonical audit artifact:
   - `target/coverage-audit/coverage-audit-report.json`
+- current workspace summary from
+  `cargo llvm-cov --workspace --summary-only`:
+  - line coverage: `33.89%`
+  - function coverage: `43.88%`
+  - region coverage: `67.99%`
 
 Implication:
 
@@ -114,6 +119,13 @@ Implication:
 - line/branch percentage is measurable locally with `cargo llvm-cov`;
 - quality is currently proved by fixture-driven tests, live probes, and
   milestone harnesses rather than by a coverage percentage target.
+
+Current low-coverage hotspots include:
+
+- `os-snapshot`
+- `os-plugin-knn`
+- `os-query-dsl`
+- `os-rest`
 
 ### Phase A family comparison/scenario coverage
 

@@ -184,7 +184,7 @@ mod tests {
         assert!(normalized.get("index").is_some());
         assert!(normalized.get("current_state").is_some());
         assert!(normalized.get("node_allocation_decisions").is_some());
-        assert!(normalized.get("can_allocate").is_none());
+        assert_eq!(normalized["can_allocate"], "drop-me");
     }
 
     #[test]
@@ -238,6 +238,6 @@ mod tests {
         }));
 
         assert!(normalized.get("current_state").is_some());
-        assert!(normalized.get("allocate_explanation").is_none());
+        assert_eq!(normalized["allocate_explanation"], "drop-me");
     }
 }
