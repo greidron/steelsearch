@@ -593,6 +593,18 @@
         "primary": true
       },
       "extract": "allocation_explain"
+    },
+    {
+      "name": "decommission_awareness_delete_ack",
+      "area": "operational",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "delete-decommission-awareness",
+          "method": "DELETE",
+          "path": "/_cluster/decommission/awareness"
+        }
+      ]
     }
   ]
 }

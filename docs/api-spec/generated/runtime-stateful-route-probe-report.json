@@ -8,7 +8,7 @@
       "passed": 1
     },
     "root-cluster-node": {
-      "passed": 4
+      "passed": 5
     },
     "search": {
       "passed": 1
@@ -21,6 +21,20 @@
     }
   },
   "cases": [
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness",
+      "method": "DELETE",
+      "name": "decommission_awareness_delete",
+      "path": "/_cluster/decommission/awareness",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
@@ -103,7 +117,7 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -122,7 +136,7 @@
       "name": "search_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":2}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":2}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -231,6 +245,6 @@
     }
   ],
   "summary": {
-    "passed": 9
+    "passed": 10
   }
 }
