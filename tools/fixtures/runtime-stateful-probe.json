@@ -51,6 +51,15 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "cluster_reroute_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/reroute",
+      "method": "POST",
+      "path": "/_cluster/reroute",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "allocation_explain_get",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/allocation/explain",

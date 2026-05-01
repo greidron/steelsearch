@@ -4405,7 +4405,7 @@
     },
     "/_cluster/reroute": {
       "post": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post__cluster_reroute",
         "parameters": [],
         "requestBody": {
@@ -4454,12 +4454,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterRerouteAction.java",
         "x-opensearch-source-line": "95",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_cluster/routing/awareness/weights": {

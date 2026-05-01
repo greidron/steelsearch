@@ -629,6 +629,24 @@
           "path": "/_cluster/decommission/awareness/zone/zone-a"
         }
       ]
+    },
+    {
+      "name": "cluster_reroute_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_cluster/reroute",
+      "body": {},
+      "extract": "cluster_reroute"
+    },
+    {
+      "name": "cluster_reroute_explain_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_cluster/reroute?dry_run=true&explain=true",
+      "body": {
+        "commands": []
+      },
+      "extract": "cluster_reroute"
     }
   ]
 }

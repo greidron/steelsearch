@@ -8,7 +8,7 @@
       "passed": 1
     },
     "root-cluster-node": {
-      "passed": 6
+      "passed": 7
     },
     "search": {
       "passed": 1
@@ -45,6 +45,21 @@
       "result": {
         "body": "{\"error\":{\"reason\":\"[DecommissionAttribute{attributeName='zone', attributeValue='zone-a'}] invalid awareness attribute requested for decommissioning\",\"root_cause\":[{\"reason\":\"[DecommissionAttribute{attributeName='zone', attributeValue='zone-a'}] invalid awareness attribute requested for decommissioning\",\"type\":\"decommissioning_failed_exception\"}],\"type\":\"decommissioning_failed_exception\"},\"status\":400}",
         "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/reroute",
+      "method": "POST",
+      "name": "cluster_reroute_post",
+      "path": "/_cluster/reroute",
+      "result": {
+        "body": "{\"acknowledged\":true,\"state\":{\"blocks\":{},\"cluster_manager_node\":\"steelsearch-dev-node\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"remote-store-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"remote-store-stats-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"remote-store-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"remote-store-stats-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "status": "passed"
@@ -131,7 +146,7 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -150,7 +165,7 @@
       "name": "search_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":2}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":2}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -259,6 +274,6 @@
     }
   ],
   "summary": {
-    "passed": 11
+    "passed": 12
   }
 }

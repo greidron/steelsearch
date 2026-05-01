@@ -1473,6 +1473,9 @@ impl SteelNode {
             (RestMethod::Delete, "/_cluster/decommission/awareness") => {
                 Some(self.handle_cluster_decommission_delete_route())
             }
+            (RestMethod::Post, "/_cluster/reroute") => {
+                Some(self.handle_cluster_reroute_route(request))
+            }
             (RestMethod::Get, "/_cluster/pending_tasks") => Some(RestResponse::json(
                 200,
                 pending_tasks_route_registration::invoke_pending_tasks_live_route(
@@ -4780,6 +4783,30 @@ impl SteelNode {
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_cluster_reroute_route(&self, request: &RestRequest) -> RestResponse {
+        let state = self.cluster_state_body();
+        let mut response = serde_json::Map::new();
+        response.insert("acknowledged".to_string(), Value::Bool(true));
+        response.insert(
+            "state".to_string(),
+            serde_json::json!({
+                "cluster_uuid": state["cluster_uuid"].clone(),
+                "version": state["version"].clone(),
+                "state_uuid": state["state_uuid"].clone(),
+                "master_node": state["master_node"].clone(),
+                "cluster_manager_node": state["master_node"].clone(),
+                "blocks": state["blocks"].clone(),
+                "nodes": state["nodes"].clone(),
+                "routing_table": state["routing_table"].clone(),
+                "routing_nodes": state["routing_nodes"].clone()
+            }),
+        );
+        if request.query_params.get("explain").is_some_and(|value| value == "true") {
+            response.insert("explanations".to_string(), Value::Array(Vec::new()));
+        }
+        RestResponse::json(200, Value::Object(response))
     }
 
     fn cluster_setting_csv(&self, key: &str) -> Vec<String> {
@@ -12864,6 +12891,41 @@ mod tests {
         ));
         assert_eq!(final_status.status, 200);
         assert_eq!(final_status.body, serde_json::json!({}));
+    }
+
+    #[test]
+    fn cluster_reroute_route_serves_bounded_state_and_optional_explanations() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-reroute-probe").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index.number_of_shards": 1,
+                        "index.number_of_replicas": 0
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let plain = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_cluster/reroute").with_json_body(
+                serde_json::json!({}),
+            ),
+        );
+        assert_eq!(plain.status, 200);
+        assert_eq!(plain.body["acknowledged"], Value::Bool(true));
+        assert!(plain.body["state"]["routing_table"]["indices"].is_object());
+
+        let explain = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_cluster/reroute?dry_run=true&explain=true")
+                .with_json_body(serde_json::json!({ "commands": [] })),
+        );
+        assert_eq!(explain.status, 200);
+        assert!(explain.body["explanations"].is_array());
     }
 
     #[test]

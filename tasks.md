@@ -1878,8 +1878,7 @@
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
     - [x] runtime-backed summary: implemented-read=82, missing-route=0, requires-stateful-probe=36, unprobeable-expression=10
-    - [x] `/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}` (PUT) [requires-stateful-probe]
-    - [ ] `/_cluster/reroute` (POST) [requires-stateful-probe]
+    - [x] `/_cluster/reroute` (POST) [requires-stateful-probe]
     - [ ] `/_cluster/routing/awareness/weights` (DELETE) [requires-stateful-probe]
     - [ ] `/_cluster/routing/awareness/{attribute}/weights` (DELETE, GET, PUT) [requires-stateful-probe]
     - [ ] `/_cluster/voting_config_exclusions` (DELETE, POST) [requires-stateful-probe]

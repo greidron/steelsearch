@@ -559,7 +559,7 @@
       "method": "GET",
       "path": "/_cluster/settings",
       "probe": {
-        "body": "{\"persistent\":{\"cluster\":{\"routing\":{\"allocation\":{\"awareness\":{\"attributes\":\"zone\",\"force\":{\"zone\":{\"values\":\"zone-a,zone-b\"}}},\"enable\":\"all\"}}}},\"transient\":{\"cluster\":{\"info\":{\"update\":{\"interval\":\"30s\"}}}}}",
+        "body": "{\"persistent\":{\"cluster\":{\"routing\":{\"allocation\":{\"enable\":\"all\"}}}},\"transient\":{\"cluster\":{\"info\":{\"update\":{\"interval\":\"30s\"}}}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -813,14 +813,14 @@
     },
     {
       "concrete_path": null,
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "PUT",
       "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
       "probe": null,
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": null,

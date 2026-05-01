@@ -1205,6 +1205,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "error_type": error.get("type") if isinstance(error, dict) else None,
             "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
         }
+    if kind == "cluster_reroute":
+        state = body.get("state") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "acknowledged": body.get("acknowledged") if isinstance(body, dict) else None,
+            "state_present": isinstance(state, dict),
+            "routing_table_present": isinstance(state, dict) and isinstance(state.get("routing_table"), dict),
+            "explanations_present": isinstance(body, dict) and isinstance(body.get("explanations"), list),
+        }
     if kind == "weighted_routing":
         weights = body.get("weights") if isinstance(body, dict) else None
         return {
