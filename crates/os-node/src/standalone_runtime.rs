@@ -1544,6 +1544,20 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_remote/info" {
             return Some(RestResponse::json(200, serde_json::json!({})));
         }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_remotestore/metadata/")
+            && request.path.trim_start_matches("/_remotestore/metadata/").split('/').count() == 1
+        {
+            let index = request.path.trim_start_matches("/_remotestore/metadata/");
+            return Some(self.handle_remote_store_metadata_route(index));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_remotestore/stats/")
+            && request.path.trim_start_matches("/_remotestore/stats/").split('/').count() == 1
+        {
+            let index = request.path.trim_start_matches("/_remotestore/stats/");
+            return Some(self.handle_remote_store_stats_route(index));
+        }
         if request.method == RestMethod::Get && request.path == "/_nodes" {
             return Some(RestResponse::json(200, self.nodes_info_body()));
         }
@@ -5109,6 +5123,107 @@ impl SteelNode {
             "cluster_name": view.cluster_name,
             "dangling_indices": []
         })
+    }
+
+    fn handle_remote_store_metadata_route(&self, index: &str) -> RestResponse {
+        if !self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .contains(index)
+        {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "index_not_found_exception",
+                                "reason": format!("no such index [{index}]"),
+                                "index": index,
+                                "resource.id": index,
+                                "resource.type": "index_or_alias",
+                                "index_uuid": "_na_"
+                            }
+                        ],
+                        "type": "index_not_found_exception",
+                        "reason": format!("no such index [{index}]"),
+                        "index": index,
+                        "resource.id": index,
+                        "resource.type": "index_or_alias",
+                        "index_uuid": "_na_"
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": self.index_primary_shard_count(index),
+                    "successful": 0,
+                    "failed": self.index_primary_shard_count(index),
+                    "failures": [
+                        {
+                            "shard": 0,
+                            "index": index,
+                            "status": "INTERNAL_SERVER_ERROR",
+                            "reason": {
+                                "type": "illegal_state_exception",
+                                "reason": "Remote store not enabled for index"
+                            }
+                        }
+                    ]
+                },
+                "indices": {}
+            }),
+        )
+    }
+
+    fn handle_remote_store_stats_route(&self, index: &str) -> RestResponse {
+        if !self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .contains(index)
+        {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "index_not_found_exception",
+                                "reason": format!("no such index [{index}]"),
+                                "index": index,
+                                "resource.id": index,
+                                "resource.type": "index_or_alias",
+                                "index_uuid": "_na_"
+                            }
+                        ],
+                        "type": "index_not_found_exception",
+                        "reason": format!("no such index [{index}]"),
+                        "index": index,
+                        "resource.id": index,
+                        "resource.type": "index_or_alias",
+                        "index_uuid": "_na_"
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": 0,
+                    "successful": 0,
+                    "failed": 0
+                },
+                "indices": {}
+            }),
+        )
     }
 
     fn handle_script_context_route(&self) -> RestResponse {
@@ -12664,6 +12779,45 @@ mod tests {
         let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remote/info"));
         assert_eq!(response.status, 200);
         assert_eq!(response.body, serde_json::json!({}));
+    }
+
+    #[test]
+    fn remote_store_metadata_and_stats_routes_match_bounded_source_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let missing_metadata = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remotestore/metadata/missing-index"));
+        assert_eq!(missing_metadata.status, 404);
+        assert_eq!(missing_metadata.body["error"]["type"], "index_not_found_exception");
+        assert_eq!(missing_metadata.body["error"]["index"], "missing-index");
+
+        let missing_stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remotestore/stats/missing-index"));
+        assert_eq!(missing_stats.status, 404);
+        assert_eq!(missing_stats.body["error"]["type"], "index_not_found_exception");
+        assert_eq!(missing_stats.body["error"]["index"], "missing-index");
+
+        let mut node = node;
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/remote-store-probe")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let metadata = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remotestore/metadata/remote-store-probe"));
+        assert_eq!(metadata.status, 200);
+        assert_eq!(metadata.body["_shards"]["total"], 1);
+        assert_eq!(metadata.body["_shards"]["successful"], 0);
+        assert_eq!(metadata.body["_shards"]["failed"], 1);
+        assert_eq!(metadata.body["_shards"]["failures"][0]["reason"]["type"], "illegal_state_exception");
+        assert_eq!(metadata.body["indices"], serde_json::json!({}));
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remotestore/stats/remote-store-probe"));
+        assert_eq!(stats.status, 200);
+        assert_eq!(stats.body["_shards"]["total"], 0);
+        assert_eq!(stats.body["_shards"]["successful"], 0);
+        assert_eq!(stats.body["_shards"]["failed"], 0);
+        assert_eq!(stats.body["indices"], serde_json::json!({}));
     }
 
     #[test]

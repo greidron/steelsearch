@@ -184,10 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_remote/info"
-    },
-    {
-      "method": "GET",
       "path": "/_remotestore/metadata/{index}"
     },
     {

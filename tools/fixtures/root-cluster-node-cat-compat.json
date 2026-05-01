@@ -342,6 +342,58 @@
       "extract": "remote_info"
     },
     {
+      "name": "remote_store_metadata_missing_index",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_remotestore/metadata/missing-index",
+      "extract": "remote_store_missing_index"
+    },
+    {
+      "name": "remote_store_metadata_existing_index",
+      "area": "operational",
+      "extract": "remote_store_metadata",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/remote-store-probe",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-remote-store-metadata",
+          "method": "GET",
+          "path": "/_remotestore/metadata/remote-store-probe"
+        }
+      ]
+    },
+    {
+      "name": "remote_store_stats_missing_index",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_remotestore/stats/missing-index",
+      "extract": "remote_store_missing_index"
+    },
+    {
+      "name": "remote_store_stats_existing_index",
+      "area": "operational",
+      "extract": "remote_store_stats",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/remote-store-stats-probe",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-remote-store-stats",
+          "method": "GET",
+          "path": "/_remotestore/stats/remote-store-stats-probe"
+        }
+      ]
+    },
+    {
       "name": "nodes_info_shape",
       "area": "operational",
       "method": "GET",

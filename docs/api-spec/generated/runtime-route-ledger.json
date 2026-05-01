@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 79,
-      "missing-route": 3,
+      "implemented-read": 81,
+      "missing-route": 1,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -588,7 +588,7 @@
       "method": "GET",
       "path": "/_cluster/health",
       "probe": {
-        "body": "{\"active_primary_shards\":11,\"active_shards\":11,\"active_shards_percent_as_number\":50.0,\"cluster_name\":\"steelsearch-dev\",\"delayed_unassigned_shards\":0,\"initializing_shards\":0,\"number_of_data_nodes\":1,\"number_of_in_flight_fetch\":0,\"number_of_nodes\":1,\"number_of_pending_tasks\":2,\"relocating_shards\":0,\"status\":\"yellow\",\"task_max_waiting_in_queue_millis\":0,\"timed_out\":false,\"unassigned_shards\":11}",
+        "body": "{\"active_primary_shards\":13,\"active_shards\":13,\"active_shards_percent_as_number\":50.0,\"cluster_name\":\"steelsearch-dev\",\"delayed_unassigned_shards\":0,\"initializing_shards\":0,\"number_of_data_nodes\":1,\"number_of_in_flight_fetch\":0,\"number_of_nodes\":1,\"number_of_pending_tasks\":2,\"relocating_shards\":0,\"status\":\"yellow\",\"task_max_waiting_in_queue_millis\":0,\"timed_out\":false,\"unassigned_shards\":13}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -638,7 +638,7 @@
       "method": "GET",
       "path": "/_search_shards",
       "probe": {
-        "body": "{\"indices\":{\"logs-000001\":{},\"logs-cat-next-000001\":{},\"logs-compat\":{},\"logs-compat-alias-000001\":{},\"logs-root-cat-000001\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"metrics-000001\":{},\"metrics-cat-next-000001\":{},\"metrics-compat-alias-000001\":{},\"metrics-root-cat-000001\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-000001-0\"},\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-cat-next-000001-0\"},\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-compat-0\"},\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-compat-alias-000001-0\"},\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-root-cat-000001-0\"},\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-000001-0\"},\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-cat-next-000001-0\"},\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-compat-alias-000001-0\"},\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-root-cat-000001-0\"},\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "body": "{\"indices\":{\"logs-000001\":{},\"logs-cat-next-000001\":{},\"logs-compat\":{},\"logs-compat-alias-000001\":{},\"logs-root-cat-000001\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"metrics-000001\":{},\"metrics-cat-next-000001\":{},\"metrics-compat-alias-000001\":{},\"metrics-root-cat-000001\":{},\"remote-store-probe\":{},\"remote-store-stats-probe\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-000001-0\"},\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-cat-next-000001-0\"},\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-compat-0\"},\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-compat-alias-000001-0\"},\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-root-cat-000001-0\"},\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-000001-0\"},\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-cat-next-000001-0\"},\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-compat-alias-000001-0\"},\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-root-cat-000001-0\"},\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-remote-store-probe-0\"},\"index\":\"remote-store-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-remote-store-stats-probe-0\"},\"index\":\"remote-store-stats-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -688,7 +688,7 @@
       "method": "GET",
       "path": "/_cluster/state",
       "probe": {
-        "body": "{\"blocks\":{},\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-000001\":{\"state\":\"open\"},\"logs-cat-next-000001\":{\"state\":\"open\"},\"logs-compat\":{\"state\":\"open\"},\"logs-compat-alias-000001\":{\"state\":\"open\"},\"logs-root-cat-000001\":{\"state\":\"open\"},\"logs-stateful-created\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"},\"metrics-000001\":{\"state\":\"open\"},\"metrics-cat-next-000001\":{\"state\":\"open\"},\"metrics-compat-alias-000001\":{\"state\":\"open\"},\"metrics-root-cat-000001\":{\"state\":\"open\"}}},\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}",
+        "body": "{\"blocks\":{},\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-000001\":{\"state\":\"open\"},\"logs-cat-next-000001\":{\"state\":\"open\"},\"logs-compat\":{\"state\":\"open\"},\"logs-compat-alias-000001\":{\"state\":\"open\"},\"logs-root-cat-000001\":{\"state\":\"open\"},\"logs-stateful-created\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"},\"metrics-000001\":{\"state\":\"open\"},\"metrics-cat-next-000001\":{\"state\":\"open\"},\"metrics-compat-alias-000001\":{\"state\":\"open\"},\"metrics-root-cat-000001\":{\"state\":\"open\"},\"remote-store-probe\":{\"state\":\"open\"},\"remote-store-stats-probe\":{\"state\":\"open\"}}},\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"remote-store-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"remote-store-stats-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"remote-store-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"remote-store-stats-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -702,7 +702,7 @@
       "method": "GET",
       "path": "/_cluster/state/{metric}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-000001\":{\"state\":\"open\"},\"logs-cat-next-000001\":{\"state\":\"open\"},\"logs-compat\":{\"state\":\"open\"},\"logs-compat-alias-000001\":{\"state\":\"open\"},\"logs-root-cat-000001\":{\"state\":\"open\"},\"logs-stateful-created\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"},\"metrics-000001\":{\"state\":\"open\"},\"metrics-cat-next-000001\":{\"state\":\"open\"},\"metrics-compat-alias-000001\":{\"state\":\"open\"},\"metrics-root-cat-000001\":{\"state\":\"open\"}}}}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-000001\":{\"state\":\"open\"},\"logs-cat-next-000001\":{\"state\":\"open\"},\"logs-compat\":{\"state\":\"open\"},\"logs-compat-alias-000001\":{\"state\":\"open\"},\"logs-root-cat-000001\":{\"state\":\"open\"},\"logs-stateful-created\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"},\"metrics-000001\":{\"state\":\"open\"},\"metrics-cat-next-000001\":{\"state\":\"open\"},\"metrics-compat-alias-000001\":{\"state\":\"open\"},\"metrics-root-cat-000001\":{\"state\":\"open\"},\"remote-store-probe\":{\"state\":\"open\"},\"remote-store-stats-probe\":{\"state\":\"open\"}}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -730,7 +730,7 @@
       "method": "GET",
       "path": "/_cluster/stats",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":13,\"docs\":{\"count\":0},\"shards\":{\"total\":13}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -744,7 +744,7 @@
       "method": "GET",
       "path": "/_cluster/stats/nodes/{nodeId}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":13,\"docs\":{\"count\":0},\"shards\":{\"total\":13}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -758,7 +758,7 @@
       "method": "GET",
       "path": "/_cluster/stats/{metric}/nodes/{nodeId}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":13,\"docs\":{\"count\":0},\"shards\":{\"total\":13}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -772,7 +772,7 @@
       "method": "GET",
       "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":13,\"docs\":{\"count\":0},\"shards\":{\"total\":13}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1023,7 +1023,7 @@
     },
     {
       "concrete_path": "/_nodes",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes",
@@ -1031,9 +1031,9 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node",
@@ -1351,11 +1351,11 @@
       "method": "GET",
       "path": "/_remotestore/metadata/{index}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_remotestore/metadata/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_remotestore/metadata/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_shards\":{\"failed\":1,\"failures\":[{\"index\":\"logs-compat\",\"reason\":{\"reason\":\"Remote store not enabled for index\",\"type\":\"illegal_state_exception\"},\"shard\":0,\"status\":\"INTERNAL_SERVER_ERROR\"}],\"successful\":0,\"total\":1},\"indices\":{}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1376,11 +1376,11 @@
       "method": "GET",
       "path": "/_remotestore/stats/{index}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_remotestore/stats/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_remotestore/stats/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":0,\"total\":0},\"indices\":{}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -2579,7 +2579,7 @@
       "method": "GET",
       "path": "/_stats",
       "probe": {
-        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":11,\"total\":11},\"indices\":{\"logs-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-cat-next-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-compat\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-compat-alias-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-root-cat-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-created\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-cat-next-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-compat-alias-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-root-cat-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
+        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":13,\"total\":13},\"indices\":{\"logs-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-cat-next-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-compat\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-compat-alias-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-root-cat-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-created\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-cat-next-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-compat-alias-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-root-cat-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"remote-store-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"remote-store-stats-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -3213,7 +3213,7 @@
       "method": "GET",
       "path": "/_cat/allocation",
       "probe": {
-        "body": "11 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
+        "body": "13 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3227,7 +3227,7 @@
       "method": "GET",
       "path": "/_cat/allocation/{nodes}",
       "probe": {
-        "body": "11 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
+        "body": "13 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3255,7 +3255,7 @@
       "method": "GET",
       "path": "/_cat/recovery",
       "probe": {
-        "body": "logs-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-created 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
+        "body": "logs-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-created 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nremote-store-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nremote-store-stats-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3339,7 +3339,7 @@
       "method": "GET",
       "path": "/_cat/health",
       "probe": {
-        "body": "0 00:00:00 steelsearch-dev yellow 1 1 11 11 0 0 11 2 0s 50.0%\n",
+        "body": "0 00:00:00 steelsearch-dev yellow 1 1 13 13 0 0 13 2 0s 50.0%\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3353,7 +3353,7 @@
       "method": "GET",
       "path": "/_cat/indices",
       "probe": {
-        "body": "yellow open logs-000001 1 0 1 0b\nyellow open logs-cat-next-000001 1 0 1 0b\nyellow open logs-compat 1 0 0 0b\nyellow open logs-compat-alias-000001 1 0 0 0b\nyellow open logs-root-cat-000001 1 0 1 0b\nyellow open logs-stateful-created 1 0 0 0b\nyellow open logs-stateful-probe 1 0 2 0b\nyellow open metrics-000001 1 0 1 0b\nyellow open metrics-cat-next-000001 1 0 1 0b\nyellow open metrics-compat-alias-000001 1 0 0 0b\nyellow open metrics-root-cat-000001 1 0 1 0b\n",
+        "body": "yellow open logs-000001 1 0 1 0b\nyellow open logs-cat-next-000001 1 0 1 0b\nyellow open logs-compat 1 0 0 0b\nyellow open logs-compat-alias-000001 1 0 0 0b\nyellow open logs-root-cat-000001 1 0 1 0b\nyellow open logs-stateful-created 1 0 0 0b\nyellow open logs-stateful-probe 1 0 2 0b\nyellow open metrics-000001 1 0 1 0b\nyellow open metrics-cat-next-000001 1 0 1 0b\nyellow open metrics-compat-alias-000001 1 0 0 0b\nyellow open metrics-root-cat-000001 1 0 1 0b\nyellow open remote-store-probe 1 0 0 0b\nyellow open remote-store-stats-probe 1 0 0 0b\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3479,7 +3479,7 @@
       "method": "GET",
       "path": "/_cat/segments",
       "probe": {
-        "body": "logs-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-cat-next-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-compat 0 p 0.0.0.0 _0 0 0 0b\nlogs-compat-alias-000001 0 p 0.0.0.0 _0 0 0 0b\nlogs-root-cat-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-stateful-created 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-probe 0 p 0.0.0.0 _0 0 2 0b\nmetrics-000001 0 p 0.0.0.0 _0 0 1 0b\nmetrics-cat-next-000001 0 p 0.0.0.0 _0 0 1 0b\nmetrics-compat-alias-000001 0 p 0.0.0.0 _0 0 0 0b\nmetrics-root-cat-000001 0 p 0.0.0.0 _0 0 1 0b\n",
+        "body": "logs-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-cat-next-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-compat 0 p 0.0.0.0 _0 0 0 0b\nlogs-compat-alias-000001 0 p 0.0.0.0 _0 0 0 0b\nlogs-root-cat-000001 0 p 0.0.0.0 _0 0 1 0b\nlogs-stateful-created 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-probe 0 p 0.0.0.0 _0 0 2 0b\nmetrics-000001 0 p 0.0.0.0 _0 0 1 0b\nmetrics-cat-next-000001 0 p 0.0.0.0 _0 0 1 0b\nmetrics-compat-alias-000001 0 p 0.0.0.0 _0 0 0 0b\nmetrics-root-cat-000001 0 p 0.0.0.0 _0 0 1 0b\nremote-store-probe 0 p 0.0.0.0 _0 0 0 0b\nremote-store-stats-probe 0 p 0.0.0.0 _0 0 0 0b\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3507,7 +3507,7 @@
       "method": "GET",
       "path": "/_cat/shards",
       "probe": {
-        "body": "logs-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-000001 0 r UNASSIGNED 0 0b  \nlogs-cat-next-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-cat-next-000001 0 r UNASSIGNED 0 0b  \nlogs-compat 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat 0 r UNASSIGNED 0 0b  \nlogs-compat-alias-000001 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat-alias-000001 0 r UNASSIGNED 0 0b  \nlogs-root-cat-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-root-cat-000001 0 r UNASSIGNED 0 0b  \nlogs-stateful-created 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-created 0 r UNASSIGNED 0 0b  \nlogs-stateful-probe 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-probe 0 r UNASSIGNED 0 0b  \nmetrics-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-000001 0 r UNASSIGNED 0 0b  \nmetrics-cat-next-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-cat-next-000001 0 r UNASSIGNED 0 0b  \nmetrics-compat-alias-000001 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nmetrics-compat-alias-000001 0 r UNASSIGNED 0 0b  \nmetrics-root-cat-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-root-cat-000001 0 r UNASSIGNED 0 0b  \n",
+        "body": "logs-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-000001 0 r UNASSIGNED 0 0b  \nlogs-cat-next-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-cat-next-000001 0 r UNASSIGNED 0 0b  \nlogs-compat 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat 0 r UNASSIGNED 0 0b  \nlogs-compat-alias-000001 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-compat-alias-000001 0 r UNASSIGNED 0 0b  \nlogs-root-cat-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-root-cat-000001 0 r UNASSIGNED 0 0b  \nlogs-stateful-created 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-created 0 r UNASSIGNED 0 0b  \nlogs-stateful-probe 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-probe 0 r UNASSIGNED 0 0b  \nmetrics-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-000001 0 r UNASSIGNED 0 0b  \nmetrics-cat-next-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-cat-next-000001 0 r UNASSIGNED 0 0b  \nmetrics-compat-alias-000001 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nmetrics-compat-alias-000001 0 r UNASSIGNED 0 0b  \nmetrics-root-cat-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-root-cat-000001 0 r UNASSIGNED 0 0b  \nremote-store-probe 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nremote-store-probe 0 r UNASSIGNED 0 0b  \nremote-store-stats-probe 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nremote-store-stats-probe 0 r UNASSIGNED 0 0b  \n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 112,
-    "missing-route": 72,
+    "implemented-read": 114,
+    "missing-route": 70,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

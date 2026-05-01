@@ -1241,6 +1241,36 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "cluster_keys": sorted(body.keys()) if isinstance(body, dict) else None,
         }
+    if kind == "remote_store_metadata":
+        shards = body.get("_shards") if isinstance(body, dict) else None
+        failures = shards.get("failures") if isinstance(shards, dict) else None
+        first_failure = failures[0] if isinstance(failures, list) and failures else {}
+        reason = first_failure.get("reason") if isinstance(first_failure, dict) else {}
+        return {
+            "status": response["status"],
+            "shards_total": shards.get("total") if isinstance(shards, dict) else None,
+            "shards_successful": shards.get("successful") if isinstance(shards, dict) else None,
+            "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
+            "failure_reason_type": reason.get("type") if isinstance(reason, dict) else None,
+            "failure_reason": reason.get("reason") if isinstance(reason, dict) else None,
+            "indices_keys": sorted(body.get("indices", {}).keys()) if isinstance(body, dict) and isinstance(body.get("indices"), dict) else None,
+        }
+    if kind == "remote_store_missing_index":
+        error = body.get("error") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "error_index": error.get("index") if isinstance(error, dict) else None,
+        }
+    if kind == "remote_store_stats":
+        shards = body.get("_shards") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "shards_total": shards.get("total") if isinstance(shards, dict) else None,
+            "shards_successful": shards.get("successful") if isinstance(shards, dict) else None,
+            "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
+            "indices_keys": sorted(body.get("indices", {}).keys()) if isinstance(body, dict) and isinstance(body.get("indices"), dict) else None,
+        }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {

@@ -4,7 +4,6 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 ## root-cluster-node
 
-- `/_remote/info` (GET)
 - `/_remotestore/metadata/{index}` (GET)
 - `/_remotestore/stats/{index}` (GET)
 - `/_snapshot/{repository}/{snapshot}/{index}/_status` (GET)

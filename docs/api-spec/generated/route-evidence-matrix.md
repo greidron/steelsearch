@@ -124,7 +124,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | PUT | `/_scripts/{id}/{context}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_nodes/reload_secure_settings` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_nodes/{nodeId}/reload_secure_settings` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_remote/info` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_remote/info` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_remotestore/metadata/{index}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_remotestore/metadata/{index}/{shard_id}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_remotestore/stats/{index}` | `deferred` | `no canonical runtime compare owner` |
