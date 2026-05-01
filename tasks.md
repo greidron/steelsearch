@@ -1877,9 +1877,7 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=70, missing-route=12, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_search_shards` (GET, POST) [missing-route]
-    - [ ] `/{index}/_search_shards` (GET, POST) [missing-route]
+    - [x] runtime-backed summary: implemented-read=72, missing-route=10, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_scripts/{id}` (DELETE, GET, POST, PUT) [missing-route]
     - [ ] `/_cat` (GET) [missing-route]
     - [ ] `/_dangling` (GET) [missing-route]
@@ -1900,6 +1898,8 @@
     - [ ] `/_nodes/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_nodes/{nodeId}/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_tasks/{task_id}/_cancel` (POST) [requires-stateful-probe]
+    - [x] `/_search_shards` (GET, POST) [requires-stateful-probe]
+    - [x] `/{index}/_search_shards` (GET, POST) [requires-stateful-probe]
     - [ ] `/_scripts/{id}/{context}` (POST, PUT) [requires-stateful-probe]
     - [ ] `/` (DELETE) [requires-stateful-probe]
     - [ ] `/_dangling/{index_uuid}` (DELETE, POST) [requires-stateful-probe]

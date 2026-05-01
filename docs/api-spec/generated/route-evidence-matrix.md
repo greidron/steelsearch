@@ -70,9 +70,9 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-read | GET | `/_cluster/health/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | PUT | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_cluster/reroute` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_search_shards` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_search_shards` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_search_shards` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/{index}/_search_shards` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/{index}/_search_shards` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/{index}/_search_shards` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_cluster/state` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/state/{metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |

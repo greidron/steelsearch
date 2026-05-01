@@ -13876,7 +13876,7 @@
     },
     "/_search_shards": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__search_shards",
         "parameters": [
           {
@@ -13940,12 +13940,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java",
         "x-opensearch-source-line": "64",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
@@ -22520,7 +22520,7 @@
     },
     "/{index}/_search_shards": {
       "get": {
-        "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get_by_index__search_shards",
         "parameters": [
           {
@@ -22592,12 +22592,12 @@
         "tags": [
           "root-cluster-node"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node",
+        "x-evidence-profile": "root-cluster-node",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java",
         "x-opensearch-source-line": "66",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "planned"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
         "description": "Steelsearch still needs route implementation, error-shape parity, and compatibility tests.",

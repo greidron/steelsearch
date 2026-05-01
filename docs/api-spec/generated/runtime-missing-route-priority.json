@@ -184,14 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_search_shards"
-    },
-    {
-      "method": "GET",
-      "path": "/{index}/_search_shards"
-    },
-    {
-      "method": "GET",
       "path": "/_scripts/{id}"
     },
     {

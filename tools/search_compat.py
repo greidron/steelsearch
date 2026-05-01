@@ -1253,6 +1253,31 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "roles_present": isinstance(first.get("roles"), list),
             "http_present": isinstance(first.get("http"), dict),
         }
+    if kind == "search_shards":
+        indices = body.get("indices") or {}
+        shard_groups = body.get("shards") or []
+        first_group = shard_groups[0] if isinstance(shard_groups, list) and shard_groups else []
+        first_shard = first_group[0] if isinstance(first_group, list) and first_group else {}
+        fixture_indices = {"logs-root-cat-000001", "metrics-root-cat-000001"}
+        fixture_shard_groups = [
+            group
+            for group in shard_groups
+            if isinstance(group, list)
+            and group
+            and isinstance(group[0], dict)
+            and group[0].get("index") in fixture_indices
+        ] if isinstance(shard_groups, list) else []
+        return {
+            "status": response["status"],
+            "fixture_indices_present": sorted(fixture_indices & set(indices.keys()))
+            if isinstance(indices, dict)
+            else [],
+            "nodes_present": isinstance(body.get("nodes"), dict) and bool(body.get("nodes")),
+            "fixture_shard_group_count": len(fixture_shard_groups),
+            "first_state": first_shard.get("state"),
+            "first_primary": first_shard.get("primary"),
+            "first_search_only": first_shard.get("searchOnly"),
+        }
     if kind == "cluster_stats":
         return {
             "status": response["status"],

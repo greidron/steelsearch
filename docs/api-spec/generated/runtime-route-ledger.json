@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 70,
-      "missing-route": 12,
+      "implemented-read": 72,
+      "missing-route": 10,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -633,17 +633,17 @@
     },
     {
       "concrete_path": "/_search_shards",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_search_shards",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_search_shards] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_search_shards] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"indices\":{\"logs-000001\":{},\"logs-cat-next-000001\":{},\"logs-compat\":{},\"logs-compat-alias-000001\":{},\"logs-root-cat-000001\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"metrics-000001\":{},\"metrics-cat-next-000001\":{},\"metrics-compat-alias-000001\":{},\"metrics-root-cat-000001\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-000001-0\"},\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-cat-next-000001-0\"},\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-compat-0\"},\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-compat-alias-000001-0\"},\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-root-cat-000001-0\"},\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-000001-0\"},\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-cat-next-000001-0\"},\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-compat-alias-000001-0\"},\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-root-cat-000001-0\"},\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
       },
-      "profile": "`deferred`",
-      "runtime_status": "missing-route",
-      "source_status": "planned"
+      "profile": "`root-cluster-node`",
+      "runtime_status": "implemented-read",
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -658,17 +658,17 @@
     },
     {
       "concrete_path": "/logs-compat/_search_shards",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/{index}/_search_shards",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/logs-compat/_search_shards] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/logs-compat/_search_shards] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"indices\":{\"logs-compat\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-compat-0\"},\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
       },
-      "profile": "`deferred`",
-      "runtime_status": "missing-route",
-      "source_status": "planned"
+      "profile": "`root-cluster-node`",
+      "runtime_status": "implemented-read",
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -1000,7 +1000,7 @@
       "method": "GET",
       "path": "/_nodes/hot_threads",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "::: steelsearch-dev-node\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread 'steelsearch-dev[steelsearch-dev-node][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1014,7 +1014,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/hot_threads",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "::: steelsearch-dev-node\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread 'steelsearch-dev[steelsearch-dev-node][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1037,7 +1037,7 @@
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/{nodeId}",
@@ -1045,13 +1045,13 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node/http",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/{nodeId}/{metrics}",
@@ -1059,13 +1059,13 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node/info/http",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/{nodeId}/info/{metrics}",
@@ -1073,9 +1073,9 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/stats",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 103,
-    "missing-route": 81,
+    "implemented-read": 105,
+    "missing-route": 79,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

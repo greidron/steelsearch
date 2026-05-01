@@ -1536,9 +1536,10 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.nodes_usage_body()));
         }
-        if request.method == RestMethod::Get && self.nodes_info_variant_path_supported(&request.path)
+        if request.path == "/_search_shards"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            return Some(RestResponse::json(200, self.nodes_info_body()));
+            return Some(RestResponse::json(200, self.search_shards_body(None)));
         }
         if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
             return Some(self.handle_nodes_hot_threads_route(None));
@@ -1550,6 +1551,10 @@ impl SteelNode {
                 .trim_end_matches("/hot_threads")
                 .trim_end_matches('/');
             return Some(self.handle_nodes_hot_threads_route(Some(node_id)));
+        }
+        if request.method == RestMethod::Get && self.nodes_info_variant_path_supported(&request.path)
+        {
+            return Some(RestResponse::json(200, self.nodes_info_body()));
         }
         if matches!(
             (request.method, request.path.as_str()),
@@ -1927,6 +1932,11 @@ impl SteelNode {
         }
         if request.path == "/_search" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
             return Some(self.handle_index_search_route("_all", request));
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search_shards") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(RestResponse::json(200, self.search_shards_body(Some(index))));
+            }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_bulk") {
             if request.method == RestMethod::Post {
@@ -5056,6 +5066,74 @@ impl SteelNode {
             );
         }
         serde_json::json!({ "nodes": nodes })
+    }
+
+    fn search_shards_body(&self, target: Option<&str>) -> Value {
+        let created_indices = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .clone();
+        let mut selected_indices = created_indices
+            .into_iter()
+            .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
+            .collect::<Vec<_>>();
+        selected_indices.sort();
+
+        let default_node = DevelopmentClusterNode {
+            node_id: self.info.name.clone(),
+            node_name: self.info.name.clone(),
+            http_address: Some("127.0.0.1:9200".to_string()),
+            transport_address: "127.0.0.1:9300".to_string(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            local: true,
+        };
+        let view = self.cluster_view.clone().unwrap_or_default();
+        let local_node = view
+            .nodes
+            .iter()
+            .find(|candidate| candidate.local)
+            .cloned()
+            .or_else(|| view.nodes.first().cloned())
+            .unwrap_or(default_node);
+
+        let mut nodes = serde_json::Map::new();
+        nodes.insert(
+            local_node.node_id.clone(),
+            serde_json::json!({
+                "name": local_node.node_name,
+                "ephemeral_id": format!("{}-ephemeral", local_node.node_id),
+                "transport_address": local_node.transport_address,
+                "attributes": {
+                    "testattr": "test",
+                    "shard_indexing_pressure_enabled": "true"
+                }
+            }),
+        );
+
+        let mut indices = serde_json::Map::new();
+        let mut shards = Vec::new();
+        for index in selected_indices {
+            indices.insert(index.clone(), serde_json::json!({}));
+            shards.push(Value::Array(vec![serde_json::json!({
+                "state": "STARTED",
+                "primary": true,
+                "searchOnly": false,
+                "node": local_node.node_id,
+                "relocating_node": Value::Null,
+                "shard": 0,
+                "index": index,
+                "allocation_id": {
+                    "id": format!("alloc-{index}-0")
+                }
+            })]));
+        }
+
+        serde_json::json!({
+            "nodes": nodes,
+            "indices": indices,
+            "shards": shards
+        })
     }
 
     fn cluster_stats_body(&self) -> Value {
@@ -12306,6 +12384,53 @@ mod tests {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");
+        }
+    }
+
+    #[test]
+    fn search_shards_routes_serve_global_and_targeted_shapes_for_get_and_post() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-search-shards-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-search-shards-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        for (method, path, expected_groups) in [
+            (RestMethod::Get, "/_search_shards", 2usize),
+            (RestMethod::Post, "/_search_shards", 2usize),
+            (
+                RestMethod::Get,
+                "/logs-search-shards-*/_search_shards",
+                1usize,
+            ),
+            (
+                RestMethod::Post,
+                "/logs-search-shards-*/_search_shards",
+                1usize,
+            ),
+        ] {
+            let request = if method == RestMethod::Post {
+                RestRequest::new(method, path)
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}}}))
+            } else {
+                RestRequest::new(method, path)
+            };
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["nodes"].is_object(), "path {path}");
+            assert!(response.body["indices"].is_object(), "path {path}");
+            assert_eq!(
+                response.body["shards"].as_array().map(Vec::len).unwrap_or_default(),
+                expected_groups,
+                "path {path}"
+            );
         }
     }
 }

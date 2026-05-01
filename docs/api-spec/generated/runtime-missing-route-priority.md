@@ -4,8 +4,6 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 ## root-cluster-node
 
-- `/_search_shards` (GET)
-- `/{index}/_search_shards` (GET)
 - `/_scripts/{id}` (GET)
 - `/_cat` (GET)
 - `/_dangling` (GET)
