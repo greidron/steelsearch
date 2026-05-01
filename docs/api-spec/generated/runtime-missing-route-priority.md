@@ -4,8 +4,6 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 ## root-cluster-node
 
-- `/_cat/recovery` (GET)
-- `/_cat/recovery/{index}` (GET)
 - `/_cat/repositories` (GET)
 - `/_cat/snapshots` (GET)
 - `/_cat/snapshots/{repository}` (GET)

@@ -171,7 +171,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(runtime_ledger_path).expect("runtime route ledger should exist");
     let runtime_ledger: Value =
         serde_json::from_str(&runtime_ledger_text).expect("runtime route ledger should parse");
-    assert_eq!(runtime_ledger["summary"]["implemented-read"], 72);
+    assert_eq!(runtime_ledger["summary"]["implemented-read"], 76);
     assert!(runtime_ledger["routes"]
         .as_array()
         .expect("runtime ledger routes should be array")

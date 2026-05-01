@@ -1656,6 +1656,15 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_cat/pit_segments/_all" {
             return Some(self.handle_cat_pit_segments_route(request, true));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/recovery" {
+            return Some(self.handle_cat_recovery_route(request, None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_cat/recovery/") {
+            return Some(self.handle_cat_recovery_route(
+                request,
+                Some(request.path.trim_start_matches("/_cat/recovery/")),
+            ));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6377,6 +6386,84 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_recovery_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let mut rows = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
+            .map(|index| {
+                serde_json::json!({
+                    "index": index,
+                    "shard": "0",
+                    "time": "0s",
+                    "type": "peer",
+                    "stage": "done",
+                    "source_host": "127.0.0.1",
+                    "source_node": self.info.name.clone(),
+                    "target_host": "127.0.0.1",
+                    "target_node": self.info.name.clone(),
+                    "repository": "n/a",
+                    "snapshot": "n/a",
+                    "files": "0",
+                    "files_recovered": "0",
+                    "files_percent": "100.0%",
+                    "files_total": "0",
+                    "bytes": "0b",
+                    "bytes_recovered": "0b",
+                    "bytes_percent": "100.0%",
+                    "bytes_total": "0b",
+                    "translog_ops": "0",
+                    "translog_ops_recovered": "0",
+                    "translog_ops_percent": "100.0%"
+                })
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| {
+            left["index"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["index"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows.clone()));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("index shard time type stage source_host source_node target_host target_node repository snapshot files files_recovered files_percent files_total bytes bytes_recovered bytes_percent bytes_total translog_ops translog_ops_recovered translog_ops_percent".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+                row["index"].as_str().unwrap_or(""),
+                row["shard"].as_str().unwrap_or("0"),
+                row["time"].as_str().unwrap_or("0s"),
+                row["type"].as_str().unwrap_or("peer"),
+                row["stage"].as_str().unwrap_or("done"),
+                row["source_host"].as_str().unwrap_or("127.0.0.1"),
+                row["source_node"].as_str().unwrap_or(""),
+                row["target_host"].as_str().unwrap_or("127.0.0.1"),
+                row["target_node"].as_str().unwrap_or(""),
+                row["repository"].as_str().unwrap_or("n/a"),
+                row["snapshot"].as_str().unwrap_or("n/a"),
+                row["files"].as_str().unwrap_or("0"),
+                row["files_recovered"].as_str().unwrap_or("0"),
+                row["files_percent"].as_str().unwrap_or("100.0%"),
+                row["files_total"].as_str().unwrap_or("0"),
+                row["bytes"].as_str().unwrap_or("0b"),
+                row["bytes_recovered"].as_str().unwrap_or("0b"),
+                row["bytes_percent"].as_str().unwrap_or("100.0%"),
+                row["bytes_total"].as_str().unwrap_or("0b"),
+                row["translog_ops"].as_str().unwrap_or("0"),
+                row["translog_ops_recovered"].as_str().unwrap_or("0"),
+                row["translog_ops_percent"].as_str().unwrap_or("100.0%"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -11050,5 +11137,49 @@ mod tests {
         let pit_all_response = node.handle_rest_request(pit_all_request);
         assert_eq!(pit_all_response.status, 200);
         assert_eq!(pit_all_response.body, Value::Array(Vec::new()));
+    }
+
+    #[test]
+    fn cat_recovery_routes_serve_json_text_and_target_filters() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        {
+            let mut created_indices = node
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned");
+            created_indices.insert("logs-000001".to_string());
+            created_indices.insert("metrics-000001".to_string());
+        }
+
+        let mut recovery_json_request = RestRequest::new(RestMethod::Get, "/_cat/recovery");
+        recovery_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let recovery_json_response = node.handle_rest_request(recovery_json_request);
+        assert_eq!(recovery_json_response.status, 200);
+        assert_eq!(
+            recovery_json_response
+                .body
+                .as_array()
+                .expect("cat recovery array")
+                .len(),
+            2
+        );
+
+        let mut recovery_text_request = RestRequest::new(RestMethod::Get, "/_cat/recovery/logs-*");
+        recovery_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let recovery_text_response = node.handle_rest_request(recovery_text_request);
+        let recovery_text = recovery_text_response
+            .body
+            .as_str()
+            .expect("cat recovery text body");
+        assert!(recovery_text.contains("index shard time type stage source_host source_node target_host target_node repository snapshot files files_recovered files_percent files_total bytes bytes_recovered bytes_percent bytes_total translog_ops translog_ops_recovered translog_ops_percent"));
+        assert!(recovery_text.contains("logs-000001"));
+        assert!(!recovery_text.contains("metrics-000001"));
     }
 }

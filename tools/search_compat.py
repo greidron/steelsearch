@@ -103,6 +103,23 @@ CAT_PIT_SEGMENTS_REQUIRED_COLUMNS = {
     "docs.count",
     "size",
 }
+CAT_RECOVERY_REQUIRED_COLUMNS = {
+    "index",
+    "shard",
+    "time",
+    "type",
+    "stage",
+    "source_host",
+    "source_node",
+    "target_host",
+    "target_node",
+    "files",
+    "files_recovered",
+    "bytes",
+    "bytes_recovered",
+    "translog_ops",
+    "translog_ops_recovered",
+}
 CAT_ALLOCATION_REQUIRED_COLUMNS = {
     "shards",
     "disk.indices",
@@ -966,6 +983,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "row_count": row_count,
             "required_columns_present": sorted(CAT_PIT_SEGMENTS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_recovery":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_RECOVERY_REQUIRED_COLUMNS & columns),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}

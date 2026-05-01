@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 41,
-      "missing-route": 41,
+      "implemented-read": 43,
+      "missing-route": 39,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -986,7 +986,7 @@
       "method": "GET",
       "path": "/_tasks",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:3\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":3,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:5\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":5,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:1\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":1,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:3\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":3,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1224,7 +1224,7 @@
       "method": "GET",
       "path": "/_cluster/pending_tasks",
       "probe": {
-        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 3\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 4\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
+        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 1\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 2\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3255,11 +3255,11 @@
       "method": "GET",
       "path": "/_cat/recovery",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/recovery] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/recovery] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "logs-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-created 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3269,11 +3269,11 @@
       "method": "GET",
       "path": "/_cat/recovery/{index}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/recovery/logs-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/recovery/logs-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "logs-compat 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3409,7 +3409,7 @@
       "method": "GET",
       "path": "/_cat/pending_tasks",
       "probe": {
-        "body": "0 0ms HIGH publication round 3 true\n1 0ms HIGH publication round 4 true\n",
+        "body": "0 0ms HIGH publication round 1 true\n1 0ms HIGH publication round 2 true\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3418,7 +3418,7 @@
     },
     {
       "concrete_path": "/_cat/pit_segments",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/pit_segments",
@@ -3426,13 +3426,13 @@
         "body": "{\"error\":{\"reason\":\"Validation Failed: 1: no pit ids specified;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: no pit ids specified;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
         "status": 400
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/pit_segments/_all",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/pit_segments/_all",
@@ -3440,9 +3440,9 @@
         "body": "\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/plugins",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 74,
-    "missing-route": 110,
+    "implemented-read": 76,
+    "missing-route": 108,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

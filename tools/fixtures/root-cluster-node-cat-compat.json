@@ -14,6 +14,8 @@
     {"name": "cat_pending_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/pending_tasks?v=true", "accept": "text/plain", "extract": "cat_pending_tasks"},
     {"name": "cat_pit_segments_error", "area": "operational", "method": "GET", "path": "/_cat/pit_segments?format=json", "extract": "error_response"},
     {"name": "cat_pit_segments_all_text", "area": "operational", "method": "GET", "path": "/_cat/pit_segments/_all?v=true", "accept": "text/plain", "extract": "cat_pit_segments"},
+    {"name": "cat_recovery_text", "area": "operational", "method": "GET", "path": "/_cat/recovery?v=true", "accept": "text/plain", "extract": "cat_recovery"},
+    {"name": "cat_recovery_target_text", "area": "operational", "method": "GET", "path": "/_cat/recovery/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_recovery"},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
     {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},
