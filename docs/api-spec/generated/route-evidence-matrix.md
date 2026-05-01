@@ -105,11 +105,11 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/{metrics}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/info/{metrics}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_nodes/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_nodes/{nodeId}/stats` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_nodes/stats/{metric}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_nodes/{nodeId}/stats/{metric}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_nodes/stats/{metric}/{index_metric}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_nodes/{nodeId}/stats/{metric}/{index_metric}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_nodes/{nodeId}/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_nodes/stats/{metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_nodes/{nodeId}/stats/{metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_nodes/stats/{metric}/{index_metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_nodes/{nodeId}/stats/{metric}/{index_metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_nodes/usage` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/usage` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/usage/{metric}` | `deferred` | `no canonical runtime compare owner` |

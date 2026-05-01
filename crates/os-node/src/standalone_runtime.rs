@@ -1525,6 +1525,13 @@ impl SteelNode {
                 ),
             ));
         }
+        if request.method == RestMethod::Get && self.nodes_stats_variant_path_supported(&request.path)
+        {
+            return Some(RestResponse::json(
+                200,
+                stats_route_registration::invoke_nodes_stats_live_route(&self.nodes_stats_body()),
+            ));
+        }
         if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
             return Some(self.handle_nodes_hot_threads_route(None));
         }
@@ -5060,6 +5067,26 @@ impl SteelNode {
             "::: {node_name}\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread '{cluster_name}[{node_name}][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n"
         );
         RestResponse::text(200, body)
+    }
+
+    fn nodes_stats_variant_path_supported(&self, path: &str) -> bool {
+        let Some(remainder) = path.strip_prefix("/_nodes/") else {
+            return false;
+        };
+        let segments = remainder
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect::<Vec<_>>();
+        match segments.as_slice() {
+            ["stats", metric] => !metric.is_empty(),
+            ["stats", metric, index_metric] => !metric.is_empty() && !index_metric.is_empty(),
+            [node_id, "stats"] => !node_id.is_empty(),
+            [node_id, "stats", metric] => !node_id.is_empty() && !metric.is_empty(),
+            [node_id, "stats", metric, index_metric] => {
+                !node_id.is_empty() && !metric.is_empty() && !index_metric.is_empty()
+            }
+            _ => false,
+        }
     }
 
     fn index_stats_body(&self) -> Value {
@@ -12132,6 +12159,26 @@ mod tests {
             let text = response.body.as_str().expect("hot_threads text body");
             assert!(text.contains("Hot threads at"), "path {path}");
             assert!(text.contains("cpu usage by thread"), "path {path}");
+        }
+    }
+
+    #[test]
+    fn nodes_stats_variant_routes_serve_node_stats_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/_nodes/stats/indices",
+            "/_nodes/stats/indices/docs",
+            "/_nodes/_all/stats",
+            "/_nodes/_all/stats/indices",
+            "/_nodes/_all/stats/indices/docs",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["nodes"].is_object(), "path {path}");
         }
     }
 }

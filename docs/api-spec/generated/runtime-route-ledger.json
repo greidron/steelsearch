@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 58,
-      "missing-route": 24,
+      "implemented-read": 63,
+      "missing-route": 19,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -1098,11 +1098,11 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/stats",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1112,11 +1112,11 @@
       "method": "GET",
       "path": "/_nodes/stats/{metric}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/stats/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/stats/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1126,11 +1126,11 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/stats/{metric}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1140,11 +1140,11 @@
       "method": "GET",
       "path": "/_nodes/stats/{metric}/{index_metric}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/stats/metadata/docs] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/stats/metadata/docs] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1154,11 +1154,11 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/stats/{metric}/{index_metric}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata/docs] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/stats/metadata/docs] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 91,
-    "missing-route": 93,
+    "implemented-read": 96,
+    "missing-route": 88,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

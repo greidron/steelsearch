@@ -1208,6 +1208,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         }
     if kind == "hot_threads_text":
         raw = body.get("_raw") if isinstance(body, dict) else ""
+        raw = raw or ""
         return {
             "status": response["status"],
             "hot_threads_marker_present": "Hot threads at" in raw,
