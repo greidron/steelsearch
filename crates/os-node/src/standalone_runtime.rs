@@ -1556,6 +1556,9 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.nodes_info_body()));
         }
+        if request.method == RestMethod::Get && request.path == "/_dangling" {
+            return Some(RestResponse::json(200, self.dangling_indices_body()));
+        }
         if request.method == RestMethod::Get && request.path == "/_script_context" {
             return Some(self.handle_script_context_route());
         }
@@ -5087,6 +5090,19 @@ impl SteelNode {
             );
         }
         serde_json::json!({ "nodes": nodes })
+    }
+
+    fn dangling_indices_body(&self) -> Value {
+        let view = self.cluster_view.clone().unwrap_or_default();
+        serde_json::json!({
+            "_nodes": {
+                "total": view.nodes.len(),
+                "successful": view.nodes.len(),
+                "failed": 0,
+            },
+            "cluster_name": view.cluster_name,
+            "dangling_indices": []
+        })
     }
 
     fn handle_script_context_route(&self) -> RestResponse {
@@ -11783,6 +11799,36 @@ mod tests {
             assert!(body.contains("/_cat/aliases"), "path {path}");
             assert!(body.contains("/_cat/health"), "path {path}");
         }
+    }
+
+    #[test]
+    fn dangling_indices_route_serves_opensearch_shaped_empty_listing() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_dangling"));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["cluster_name"], "steelsearch-dev");
+        assert_eq!(response.body["_nodes"]["total"], 1);
+        assert_eq!(response.body["_nodes"]["successful"], 1);
+        assert_eq!(response.body["_nodes"]["failed"], 0);
+        assert_eq!(response.body["dangling_indices"], serde_json::json!([]));
     }
 
     #[test]

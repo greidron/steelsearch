@@ -1,12 +1,38 @@
 {
   "name": "root-cluster-node-cat-compat",
   "indices": [
-    {"name": "logs-root-cat-000001", "body": {}},
-    {"name": "metrics-root-cat-000001", "body": {}}
+    {
+      "name": "logs-root-cat-000001",
+      "body": {}
+    },
+    {
+      "name": "metrics-root-cat-000001",
+      "body": {}
+    }
   ],
   "bulk": [
-    {"index": "logs-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "log doc"}}]},
-    {"index": "metrics-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "metric doc"}}]}
+    {
+      "index": "logs-root-cat-000001",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "log doc"
+          }
+        }
+      ]
+    },
+    {
+      "index": "metrics-root-cat-000001",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "metric doc"
+          }
+        }
+      ]
+    }
   ],
   "repositories": [
     {
@@ -23,7 +49,9 @@
     {
       "name": "logs-template",
       "body": {
-        "index_patterns": ["logs-*"],
+        "index_patterns": [
+          "logs-*"
+        ],
         "order": 7,
         "version": 1
       }
@@ -33,71 +61,446 @@
     {
       "name": "metrics-template",
       "body": {
-        "index_patterns": ["metrics-*"],
+        "index_patterns": [
+          "metrics-*"
+        ],
         "priority": 11,
         "version": 2,
-        "composed_of": ["component-a"]
+        "composed_of": [
+          "component-a"
+        ]
       }
     }
   ],
   "cases": [
-    {"name": "cat_root_text", "area": "operational", "method": "GET", "path": "/_cat", "accept": "text/plain", "extract": "cat_help"},
-    {"name": "cat_allocation_text", "area": "operational", "method": "GET", "path": "/_cat/allocation?v=true", "accept": "text/plain", "extract": "cat_allocation"},
-    {"name": "cat_fielddata_text", "area": "operational", "method": "GET", "path": "/_cat/fielddata/message,user?v=true", "accept": "text/plain", "extract": "cat_fielddata"},
-    {"name": "cat_pending_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/pending_tasks?v=true", "accept": "text/plain", "extract": "cat_pending_tasks"},
-    {"name": "cat_pit_segments_error", "area": "operational", "method": "GET", "path": "/_cat/pit_segments?format=json", "extract": "error_response"},
-    {"name": "cat_pit_segments_all_text", "area": "operational", "method": "GET", "path": "/_cat/pit_segments/_all?v=true", "accept": "text/plain", "extract": "cat_pit_segments"},
-    {"name": "cat_recovery_text", "area": "operational", "method": "GET", "path": "/_cat/recovery?v=true", "accept": "text/plain", "extract": "cat_recovery"},
-    {"name": "cat_recovery_target_text", "area": "operational", "method": "GET", "path": "/_cat/recovery/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_recovery"},
-    {"name": "cat_repositories_text", "area": "operational", "method": "GET", "path": "/_cat/repositories?v=true", "accept": "text/plain", "extract": "cat_repositories"},
-    {"name": "cat_snapshots_error", "area": "operational", "method": "GET", "path": "/_cat/snapshots?format=json", "extract": "error_response"},
-    {"name": "cat_snapshots_json", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?format=json", "extract": "cat_snapshots"},
-    {"name": "cat_snapshots_text", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?v=true", "accept": "text/plain", "extract": "cat_snapshots"},
-    {"name": "cat_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/tasks?v=true", "accept": "text/plain", "extract": "cat_tasks"},
-    {"name": "cat_templates_text", "area": "operational", "method": "GET", "path": "/_cat/templates?v=true", "accept": "text/plain", "extract": "cat_templates"},
-    {"name": "cat_templates_target_text", "area": "operational", "method": "GET", "path": "/_cat/templates/logs-*?v=true", "accept": "text/plain", "extract": "cat_templates"},
-    {"name": "cat_thread_pool_text", "area": "operational", "method": "GET", "path": "/_cat/thread_pool?v=true", "accept": "text/plain", "extract": "cat_thread_pool"},
-    {"name": "cat_thread_pool_target_text", "area": "operational", "method": "GET", "path": "/_cat/thread_pool/search?v=true", "accept": "text/plain", "extract": "cat_thread_pool"},
-    {"name": "decommission_awareness_status", "area": "operational", "method": "GET", "path": "/_cluster/decommission/awareness/zone/_status", "extract": "decommission_status"},
-    {"name": "weighted_routing_awareness_weights", "area": "operational", "method": "GET", "path": "/_cluster/routing/awareness/zone/weights", "extract": "weighted_routing"},
-    {"name": "cluster_stats_nodes_all_shape", "area": "operational", "method": "GET", "path": "/_cluster/stats/nodes/_all", "extract": "cluster_stats"},
-    {"name": "cluster_stats_metric_nodes_shape", "area": "operational", "method": "GET", "path": "/_cluster/stats/indices/nodes/_all", "extract": "cluster_stats_indices_only"},
-    {"name": "cluster_stats_metric_index_metric_nodes_shape", "area": "operational", "method": "GET", "path": "/_cluster/stats/indices/docs/nodes/_all", "extract": "cluster_stats_index_metric"},
-    {"name": "nodes_hot_threads_text", "area": "operational", "method": "GET", "path": "/_nodes/hot_threads", "accept": "text/plain", "extract": "hot_threads_text"},
-    {"name": "nodes_hot_threads_target_text", "area": "operational", "method": "GET", "path": "/_nodes/_all/hot_threads", "accept": "text/plain", "extract": "hot_threads_text"},
-    {"name": "nodes_stats_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/stats/indices", "extract": "node_stats"},
-    {"name": "nodes_stats_metric_index_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/stats/indices/docs", "extract": "node_stats"},
-    {"name": "nodes_stats_target_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/stats", "extract": "node_stats"},
-    {"name": "nodes_stats_target_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/stats/indices", "extract": "node_stats"},
-    {"name": "nodes_stats_target_metric_index_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/stats/indices/docs", "extract": "node_stats"},
-    {"name": "nodes_usage_shape", "area": "operational", "method": "GET", "path": "/_nodes/usage", "extract": "node_usage"},
-    {"name": "nodes_usage_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/usage/rest_actions", "extract": "node_usage"},
-    {"name": "nodes_usage_target_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/usage", "extract": "node_usage"},
-    {"name": "nodes_usage_target_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/usage/rest_actions", "extract": "node_usage"},
-    {"name": "nodes_info_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all", "extract": "node_info"},
-    {"name": "nodes_info_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/http", "extract": "node_info"},
-    {"name": "nodes_info_info_metric_shape", "area": "operational", "method": "GET", "path": "/_nodes/_all/info/http", "extract": "node_info"},
-    {"name": "search_shards_global_get_shape", "area": "operational", "method": "GET", "path": "/_search_shards", "extract": "search_shards"},
-    {"name": "search_shards_global_post_shape", "area": "operational", "method": "POST", "path": "/_search_shards", "body": {"query": {"match_all": {}}}, "extract": "search_shards"},
-    {"name": "search_shards_target_get_shape", "area": "operational", "method": "GET", "path": "/logs-root-cat-*/_search_shards", "extract": "search_shards"},
-    {"name": "search_shards_target_post_shape", "area": "operational", "method": "POST", "path": "/logs-root-cat-*/_search_shards", "body": {"query": {"match_all": {}}}, "extract": "search_shards"},
-    {"name": "script_context_shape", "area": "operational", "method": "GET", "path": "/_script_context", "extract": "script_context"},
-    {"name": "script_language_shape", "area": "operational", "method": "GET", "path": "/_script_language", "extract": "script_language"},
-    {"name": "stored_script_put_get_shape", "area": "operational", "extract": "stored_script_get", "steps": [
-      {"name": "put-script", "method": "PUT", "path": "/_scripts/root-script-put", "body": {"script": {"lang": "painless", "source": "return params.value;"}}, "expected_status": 200},
-      {"name": "get-script", "method": "GET", "path": "/_scripts/root-script-put"}
-    ]},
-    {"name": "stored_script_post_get_shape", "area": "operational", "extract": "stored_script_get", "steps": [
-      {"name": "post-script", "method": "POST", "path": "/_scripts/root-script-post", "body": {"script": {"lang": "painless", "source": "return params.value + 1;"}}, "expected_status": 200},
-      {"name": "get-script", "method": "GET", "path": "/_scripts/root-script-post"}
-    ]},
-    {"name": "stored_script_delete_ack", "area": "operational", "extract": "acknowledged", "steps": [
-      {"name": "put-script", "method": "PUT", "path": "/_scripts/root-script-delete", "body": {"script": {"lang": "painless", "source": "return params.value;"}}, "expected_status": 200},
-      {"name": "delete-script", "method": "DELETE", "path": "/_scripts/root-script-delete"}
-    ]},
-    {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
-    {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
-    {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},
-    {"name": "cat_segments_text", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_segments"}
+    {
+      "name": "cat_root_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat",
+      "accept": "text/plain",
+      "extract": "cat_help"
+    },
+    {
+      "name": "dangling_indices_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_dangling",
+      "extract": "dangling_indices"
+    },
+    {
+      "name": "cat_allocation_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/allocation?v=true",
+      "accept": "text/plain",
+      "extract": "cat_allocation"
+    },
+    {
+      "name": "cat_fielddata_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/fielddata/message,user?v=true",
+      "accept": "text/plain",
+      "extract": "cat_fielddata"
+    },
+    {
+      "name": "cat_pending_tasks_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pending_tasks?v=true",
+      "accept": "text/plain",
+      "extract": "cat_pending_tasks"
+    },
+    {
+      "name": "cat_pit_segments_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pit_segments?format=json",
+      "extract": "error_response"
+    },
+    {
+      "name": "cat_pit_segments_all_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?v=true",
+      "accept": "text/plain",
+      "extract": "cat_pit_segments"
+    },
+    {
+      "name": "cat_recovery_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/recovery?v=true",
+      "accept": "text/plain",
+      "extract": "cat_recovery"
+    },
+    {
+      "name": "cat_recovery_target_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/recovery/logs-root-cat-*?v=true",
+      "accept": "text/plain",
+      "extract": "cat_recovery"
+    },
+    {
+      "name": "cat_repositories_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/repositories?v=true",
+      "accept": "text/plain",
+      "extract": "cat_repositories"
+    },
+    {
+      "name": "cat_snapshots_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/snapshots?format=json",
+      "extract": "error_response"
+    },
+    {
+      "name": "cat_snapshots_json",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/snapshots/repo-root-cat-probe?format=json",
+      "extract": "cat_snapshots"
+    },
+    {
+      "name": "cat_snapshots_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/snapshots/repo-root-cat-probe?v=true",
+      "accept": "text/plain",
+      "extract": "cat_snapshots"
+    },
+    {
+      "name": "cat_tasks_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/tasks?v=true",
+      "accept": "text/plain",
+      "extract": "cat_tasks"
+    },
+    {
+      "name": "cat_templates_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/templates?v=true",
+      "accept": "text/plain",
+      "extract": "cat_templates"
+    },
+    {
+      "name": "cat_templates_target_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/templates/logs-*?v=true",
+      "accept": "text/plain",
+      "extract": "cat_templates"
+    },
+    {
+      "name": "cat_thread_pool_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/thread_pool?v=true",
+      "accept": "text/plain",
+      "extract": "cat_thread_pool"
+    },
+    {
+      "name": "cat_thread_pool_target_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/thread_pool/search?v=true",
+      "accept": "text/plain",
+      "extract": "cat_thread_pool"
+    },
+    {
+      "name": "decommission_awareness_status",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/decommission/awareness/zone/_status",
+      "extract": "decommission_status"
+    },
+    {
+      "name": "weighted_routing_awareness_weights",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "extract": "weighted_routing"
+    },
+    {
+      "name": "cluster_stats_nodes_all_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/stats/nodes/_all",
+      "extract": "cluster_stats"
+    },
+    {
+      "name": "cluster_stats_metric_nodes_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/stats/indices/nodes/_all",
+      "extract": "cluster_stats_indices_only"
+    },
+    {
+      "name": "cluster_stats_metric_index_metric_nodes_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/stats/indices/docs/nodes/_all",
+      "extract": "cluster_stats_index_metric"
+    },
+    {
+      "name": "nodes_hot_threads_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/hot_threads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text"
+    },
+    {
+      "name": "nodes_hot_threads_target_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/hot_threads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text"
+    },
+    {
+      "name": "nodes_stats_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/stats/indices",
+      "extract": "node_stats"
+    },
+    {
+      "name": "nodes_stats_metric_index_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/stats/indices/docs",
+      "extract": "node_stats"
+    },
+    {
+      "name": "nodes_stats_target_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/stats",
+      "extract": "node_stats"
+    },
+    {
+      "name": "nodes_stats_target_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/stats/indices",
+      "extract": "node_stats"
+    },
+    {
+      "name": "nodes_stats_target_metric_index_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/stats/indices/docs",
+      "extract": "node_stats"
+    },
+    {
+      "name": "nodes_usage_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/usage",
+      "extract": "node_usage"
+    },
+    {
+      "name": "nodes_usage_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/usage/rest_actions",
+      "extract": "node_usage"
+    },
+    {
+      "name": "nodes_usage_target_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/usage",
+      "extract": "node_usage"
+    },
+    {
+      "name": "nodes_usage_target_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/usage/rest_actions",
+      "extract": "node_usage"
+    },
+    {
+      "name": "nodes_info_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all",
+      "extract": "node_info"
+    },
+    {
+      "name": "nodes_info_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/http",
+      "extract": "node_info"
+    },
+    {
+      "name": "nodes_info_info_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/info/http",
+      "extract": "node_info"
+    },
+    {
+      "name": "search_shards_global_get_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_search_shards",
+      "extract": "search_shards"
+    },
+    {
+      "name": "search_shards_global_post_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_search_shards",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_shards"
+    },
+    {
+      "name": "search_shards_target_get_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-root-cat-*/_search_shards",
+      "extract": "search_shards"
+    },
+    {
+      "name": "search_shards_target_post_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-root-cat-*/_search_shards",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_shards"
+    },
+    {
+      "name": "script_context_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_script_context",
+      "extract": "script_context"
+    },
+    {
+      "name": "script_language_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_script_language",
+      "extract": "script_language"
+    },
+    {
+      "name": "stored_script_put_get_shape",
+      "area": "operational",
+      "extract": "stored_script_get",
+      "steps": [
+        {
+          "name": "put-script",
+          "method": "PUT",
+          "path": "/_scripts/root-script-put",
+          "body": {
+            "script": {
+              "lang": "painless",
+              "source": "return params.value;"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-script",
+          "method": "GET",
+          "path": "/_scripts/root-script-put"
+        }
+      ]
+    },
+    {
+      "name": "stored_script_post_get_shape",
+      "area": "operational",
+      "extract": "stored_script_get",
+      "steps": [
+        {
+          "name": "post-script",
+          "method": "POST",
+          "path": "/_scripts/root-script-post",
+          "body": {
+            "script": {
+              "lang": "painless",
+              "source": "return params.value + 1;"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-script",
+          "method": "GET",
+          "path": "/_scripts/root-script-post"
+        }
+      ]
+    },
+    {
+      "name": "stored_script_delete_ack",
+      "area": "operational",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "put-script",
+          "method": "PUT",
+          "path": "/_scripts/root-script-delete",
+          "body": {
+            "script": {
+              "lang": "painless",
+              "source": "return params.value;"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "delete-script",
+          "method": "DELETE",
+          "path": "/_scripts/root-script-delete"
+        }
+      ]
+    },
+    {
+      "name": "cat_shards_json",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/shards/logs-root-cat-*?format=json",
+      "extract": "cat_shards"
+    },
+    {
+      "name": "cat_shards_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/shards/logs-root-cat-*?v=true",
+      "accept": "text/plain",
+      "extract": "cat_shards"
+    },
+    {
+      "name": "cat_segments_json",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/segments/logs-root-cat-*?format=json",
+      "extract": "cat_segments"
+    },
+    {
+      "name": "cat_segments_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/segments/logs-root-cat-*?v=true",
+      "accept": "text/plain",
+      "extract": "cat_segments"
+    }
   ]
 }

@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 109 |
-| missing-route | 75 |
+| implemented-read | 110 |
+| missing-route | 74 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 76 | 6 | 36 | 10 |
+| root-cluster-node | 77 | 5 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -45,7 +45,6 @@ Base URL: `http://127.0.0.1:19200`
 | root-cluster-node | GET | `/_remotestore/metadata/{index}` | `/_remotestore/metadata/logs-compat` | planned |
 | root-cluster-node | GET | `/_remotestore/stats/{index}` | `/_remotestore/stats/logs-compat` | planned |
 | root-cluster-node | GET | `/_snapshot/{repository}/{snapshot}/{index}/_status` | `/_snapshot/repo-compat/snap-compat/logs-compat/_status` | planned |
-| root-cluster-node | GET | `/_dangling` | `/_dangling` | planned |
 | index-and-metadata | GET | `/_analyze` | `/_analyze` | planned |
 | index-and-metadata | GET | `/{index}/_analyze` | `/logs-compat/_analyze` | planned |
 | index-and-metadata | GET | `/_flush` | `/_flush` | planned |

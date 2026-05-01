@@ -1225,6 +1225,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 if entry in raw
             ),
         }
+    if kind == "dangling_indices":
+        dangling_indices = body.get("dangling_indices") if isinstance(body, dict) else None
+        nodes = body.get("_nodes") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "cluster_name_present": bool(body.get("cluster_name")) if isinstance(body, dict) else False,
+            "dangling_indices_count": len(dangling_indices) if isinstance(dangling_indices, list) else None,
+            "nodes_total": nodes.get("total") if isinstance(nodes, dict) else None,
+            "nodes_successful": nodes.get("successful") if isinstance(nodes, dict) else None,
+            "nodes_failed": nodes.get("failed") if isinstance(nodes, dict) else None,
+        }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {
