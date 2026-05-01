@@ -1674,6 +1674,9 @@ impl SteelNode {
         if let Some(repository) = request.path.strip_prefix("/_cat/snapshots/") {
             return Some(self.handle_cat_snapshots_route(request, Some(repository)));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/tasks" {
+            return Some(self.handle_cat_tasks_route(request));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6575,6 +6578,85 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_tasks_route(&self, request: &RestRequest) -> RestResponse {
+        let mut rows = self
+            .task_records()
+            .into_iter()
+            .map(|task| {
+                serde_json::json!({
+                    "id": task.get("id").and_then(Value::as_u64).unwrap_or(0).to_string(),
+                    "action": task.get("action").and_then(Value::as_str).unwrap_or(""),
+                    "task_id": format!(
+                        "{}:{}",
+                        task.get("node").and_then(Value::as_str).unwrap_or("node-a"),
+                        task.get("id").and_then(Value::as_u64).unwrap_or(0)
+                    ),
+                    "parent_task_id": "-",
+                    "type": task.get("type").and_then(Value::as_str).unwrap_or("transport"),
+                    "start_time": task.get("start_time_in_millis").and_then(Value::as_u64).unwrap_or(1).to_string(),
+                    "timestamp": "00:00:00",
+                    "running_time_ns": task.get("running_time_in_nanos").and_then(Value::as_u64).unwrap_or(1).to_string(),
+                    "running_time": "0s",
+                    "node_id": task.get("node").and_then(Value::as_str).unwrap_or("node-a"),
+                    "ip": "127.0.0.1",
+                    "port": "9300",
+                    "node": self.info.name.clone(),
+                    "version": "3.7.0",
+                    "x_opaque_id": "-",
+                    "description": task.get("source").and_then(Value::as_str).unwrap_or(""),
+                    "resource_stats": ""
+                })
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| {
+            left["task_id"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["task_id"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows.clone()));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let detailed = request
+            .query_params
+            .get("detailed")
+            .is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            let mut header =
+                "action task_id parent_task_id type start_time timestamp running_time ip node"
+                    .to_string();
+            if detailed {
+                header.push_str(" description resource_stats");
+            }
+            lines.push(header);
+        }
+        for row in &rows {
+            let mut line = format!(
+                "{} {} {} {} {} {} {} {} {}",
+                row["action"].as_str().unwrap_or(""),
+                row["task_id"].as_str().unwrap_or(""),
+                row["parent_task_id"].as_str().unwrap_or("-"),
+                row["type"].as_str().unwrap_or("transport"),
+                row["start_time"].as_str().unwrap_or("1"),
+                row["timestamp"].as_str().unwrap_or("00:00:00"),
+                row["running_time"].as_str().unwrap_or("0s"),
+                row["ip"].as_str().unwrap_or("127.0.0.1"),
+                row["node"].as_str().unwrap_or(""),
+            );
+            if detailed {
+                line.push_str(&format!(
+                    " {} {}",
+                    row["description"].as_str().unwrap_or(""),
+                    row["resource_stats"].as_str().unwrap_or(""),
+                ));
+            }
+            lines.push(line);
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -11370,5 +11452,49 @@ mod tests {
         assert!(snapshots_text.contains(
             "id status start_epoch start_time end_epoch end_time duration indices successful_shards failed_shards total_shards"
         ));
+    }
+
+    #[test]
+    fn cat_tasks_route_serves_json_and_text_views() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node.task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 9,
+                task: ClusterManagerTask {
+                    source: "reroute shards".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let mut tasks_json_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        tasks_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let tasks_json_response = node.handle_rest_request(tasks_json_request);
+        assert_eq!(tasks_json_response.status, 200);
+        assert_eq!(tasks_json_response.body[0]["action"], "cluster:admin/reroute");
+
+        let mut tasks_text_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        tasks_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let tasks_text_response = node.handle_rest_request(tasks_text_request);
+        let tasks_text = tasks_text_response
+            .body
+            .as_str()
+            .expect("cat tasks text body");
+        assert!(tasks_text.contains(
+            "action task_id parent_task_id type start_time timestamp running_time ip node"
+        ));
+        assert!(tasks_text.contains("cluster:admin/reroute"));
     }
 }

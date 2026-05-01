@@ -137,6 +137,23 @@ CAT_SNAPSHOTS_REQUIRED_COLUMNS = {
     "failed_shards",
     "total_shards",
 }
+CAT_TASKS_REQUIRED_COLUMNS = {
+    "id",
+    "action",
+    "task_id",
+    "parent_task_id",
+    "type",
+    "start_time",
+    "timestamp",
+    "running_time_ns",
+    "running_time",
+    "node_id",
+    "ip",
+    "port",
+    "node",
+    "version",
+    "x_opaque_id",
+}
 CAT_ALLOCATION_REQUIRED_COLUMNS = {
     "shards",
     "disk.indices",
@@ -1066,6 +1083,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "row_count": row_count,
             "required_columns_present": sorted(CAT_SNAPSHOTS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_tasks":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_TASKS_REQUIRED_COLUMNS & columns),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}

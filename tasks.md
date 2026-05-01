@@ -1873,14 +1873,12 @@
   - [x] canonical planned/stubbed inventory를 runtime-backed route ledger로 재분류 (`docs/api-spec/generated/runtime-route-ledger.{json,md}` 생성)
   - [x] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
   - [x] runtime-backed ledger의 `missing-route` 항목을 family별 구현 우선순위로 재정렬하고 false positive를 제거 (`docs/api-spec/generated/runtime-missing-route-priority.{json,md}` 생성, implemented-read 항목은 `[x]`로 재분류)
-  - [x] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
+  - [ ] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=46, missing-route=36, requires-stateful-probe=36, unprobeable-expression=10
-    - [x] `/_cat/snapshots` (GET) [missing-route]
-    - [x] `/_cat/snapshots/{repository}` (GET) [missing-route]
-    - [ ] `/_cat/tasks` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=47, missing-route=35, requires-stateful-probe=36, unprobeable-expression=10
+    - [x] `/_cat/tasks` (GET) [missing-route]
     - [ ] `/_cat/templates` (GET) [missing-route]
     - [ ] `/_cat/templates/{name}` (GET) [missing-route]
     - [ ] `/_cat/thread_pool` (GET) [missing-route]
@@ -1970,6 +1968,8 @@
     - [x] `/_cat/segments/{index}` (GET) [implemented-read]
     - [x] `/_cat/shards` (GET) [implemented-read]
     - [x] `/_cat/shards/{index}` (GET) [implemented-read]
+    - [x] `/_cat/snapshots` (GET) [implemented-read]
+    - [x] `/_cat/snapshots/{repository}` (GET) [implemented-read]
     - [x] `/_cluster/health` (GET) [implemented-read]
     - [x] `/_cluster/health/{index}` (GET) [implemented-read]
     - [x] `/_cluster/pending_tasks` (GET) [implemented-read]

@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 79 |
-| missing-route | 105 |
+| implemented-read | 80 |
+| missing-route | 104 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 46 | 36 | 36 | 10 |
+| root-cluster-node | 47 | 35 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -101,7 +101,6 @@ Base URL: `http://127.0.0.1:19200`
 | search | GET | `/_validate/query` | `/_validate/query` | planned |
 | search | GET | `/{index}/_validate/query` | `/logs-compat/_validate/query` | planned |
 | root-cluster-node | GET | `/_cat` | `/_cat` | planned |
-| root-cluster-node | GET | `/_cat/tasks` | `/_cat/tasks` | planned |
 | root-cluster-node | GET | `/_cat/templates` | `/_cat/templates` | planned |
 | root-cluster-node | GET | `/_cat/templates/{name}` | `/_cat/templates/logs-read` | planned |
 | root-cluster-node | GET | `/_cat/thread_pool` | `/_cat/thread_pool` | planned |

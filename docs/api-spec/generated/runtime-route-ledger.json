@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 46,
-      "missing-route": 36,
+      "implemented-read": 47,
+      "missing-route": 35,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -3563,11 +3563,11 @@
       "method": "GET",
       "path": "/_cat/tasks",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/tasks] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/tasks] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "cluster:admin/publication steelsearch-dev-node:1 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\ncluster:admin/publication steelsearch-dev-node:3 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 79,
-    "missing-route": 105,
+    "implemented-read": 80,
+    "missing-route": 104,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

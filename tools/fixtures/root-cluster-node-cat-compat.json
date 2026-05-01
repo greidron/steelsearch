@@ -31,6 +31,7 @@
     {"name": "cat_snapshots_error", "area": "operational", "method": "GET", "path": "/_cat/snapshots?format=json", "extract": "error_response"},
     {"name": "cat_snapshots_json", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?format=json", "extract": "cat_snapshots"},
     {"name": "cat_snapshots_text", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?v=true", "accept": "text/plain", "extract": "cat_snapshots"},
+    {"name": "cat_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/tasks?v=true", "accept": "text/plain", "extract": "cat_tasks"},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
     {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},

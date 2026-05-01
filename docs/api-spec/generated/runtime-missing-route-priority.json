@@ -184,14 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_cat/snapshots"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/snapshots/{repository}"
-    },
-    {
-      "method": "GET",
       "path": "/_cat/tasks"
     },
     {
