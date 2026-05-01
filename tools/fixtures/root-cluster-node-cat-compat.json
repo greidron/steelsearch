@@ -57,6 +57,8 @@
     {"name": "cat_templates_target_text", "area": "operational", "method": "GET", "path": "/_cat/templates/logs-*?v=true", "accept": "text/plain", "extract": "cat_templates"},
     {"name": "cat_thread_pool_text", "area": "operational", "method": "GET", "path": "/_cat/thread_pool?v=true", "accept": "text/plain", "extract": "cat_thread_pool"},
     {"name": "cat_thread_pool_target_text", "area": "operational", "method": "GET", "path": "/_cat/thread_pool/search?v=true", "accept": "text/plain", "extract": "cat_thread_pool"},
+    {"name": "decommission_awareness_status", "area": "operational", "method": "GET", "path": "/_cluster/decommission/awareness/zone/_status", "extract": "decommission_status"},
+    {"name": "weighted_routing_awareness_weights", "area": "operational", "method": "GET", "path": "/_cluster/routing/awareness/zone/weights", "extract": "weighted_routing"},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
     {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},

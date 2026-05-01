@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 51,
-      "missing-route": 31,
+      "implemented-read": 53,
+      "missing-route": 29,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -574,11 +574,11 @@
       "method": "GET",
       "path": "/_cluster/routing/awareness/{attribute}/weights",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/routing/awareness/zone/weights] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/routing/awareness/zone/weights] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -874,11 +874,11 @@
       "method": "GET",
       "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/_status",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/decommission/awareness/zone/_status] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/decommission/awareness/zone/_status] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3572,7 +3572,7 @@
     },
     {
       "concrete_path": "/_cat/templates",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/templates",
@@ -3580,13 +3580,13 @@
         "body": "logs-template [logs-*] 7 1 []\nmetrics-template [metrics-*] 11 2 [component-a]\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/templates/logs-read",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/templates/{name}",
@@ -3594,13 +3594,13 @@
         "body": "\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/thread_pool",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/thread_pool",
@@ -3608,13 +3608,13 @@
         "body": "steelsearch-dev-node search 0 0 0\nsteelsearch-dev-node write 0 0 0\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/thread_pool/search",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/thread_pool/{thread_pool_patterns}",
@@ -3622,9 +3622,9 @@
         "body": "steelsearch-dev-node search 0 0 0\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 84,
-    "missing-route": 100,
+    "implemented-read": 86,
+    "missing-route": 98,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

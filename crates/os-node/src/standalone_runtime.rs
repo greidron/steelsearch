@@ -1470,6 +1470,9 @@ impl SteelNode {
             (RestMethod::Put, "/_cluster/settings") => {
                 Some(self.handle_cluster_settings_put_route(request))
             }
+            (RestMethod::Delete, "/_cluster/decommission/awareness") => {
+                Some(self.handle_cluster_decommission_delete_route())
+            }
             (RestMethod::Get, "/_cluster/pending_tasks") => Some(RestResponse::json(
                 200,
                 pending_tasks_route_registration::invoke_pending_tasks_live_route(
@@ -1688,6 +1691,45 @@ impl SteelNode {
         }
         if let Some(patterns) = request.path.strip_prefix("/_cat/thread_pool/") {
             return Some(self.handle_cat_thread_pool_route(request, Some(patterns)));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_cluster/decommission/awareness/")
+            && request.path.ends_with("/_status")
+        {
+            let attribute = request
+                .path
+                .trim_start_matches("/_cluster/decommission/awareness/")
+                .trim_end_matches("/_status")
+                .trim_end_matches('/');
+            return Some(self.handle_cluster_decommission_status_route(attribute));
+        }
+        if request.method == RestMethod::Put
+            && request.path.starts_with("/_cluster/decommission/awareness/")
+        {
+            let remainder = request
+                .path
+                .trim_start_matches("/_cluster/decommission/awareness/");
+            if let Some((attribute, value)) = remainder.split_once('/') {
+                return Some(self.handle_cluster_decommission_put_route(attribute, value));
+            }
+        }
+        if request.method == RestMethod::Delete && request.path == "/_cluster/routing/awareness/weights" {
+            return Some(self.handle_weighted_routing_delete_route(None));
+        }
+        if request.path.starts_with("/_cluster/routing/awareness/")
+            && request.path.ends_with("/weights")
+        {
+            let attribute = request
+                .path
+                .trim_start_matches("/_cluster/routing/awareness/")
+                .trim_end_matches("/weights")
+                .trim_end_matches('/');
+            return match request.method {
+                RestMethod::Get => Some(self.handle_weighted_routing_get_route(attribute)),
+                RestMethod::Put => Some(self.handle_weighted_routing_put_route(attribute, request)),
+                RestMethod::Delete => Some(self.handle_weighted_routing_delete_route(Some(attribute))),
+                _ => None,
+            };
         }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
@@ -4441,6 +4483,113 @@ impl SteelNode {
                 reason,
             ),
         }
+    }
+
+    fn handle_cluster_decommission_status_route(&self, attribute_name: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let state = manifest["cluster_admin_state"]["decommission_awareness"].clone();
+        if state["attribute_name"].as_str() != Some(attribute_name) {
+            return RestResponse::json(200, serde_json::json!({}));
+        }
+        let Some(attribute_value) = state["attribute_value"].as_str() else {
+            return RestResponse::json(200, serde_json::json!({}));
+        };
+        let status = state["status"].as_str().unwrap_or("successful");
+        RestResponse::json(200, serde_json::json!({ attribute_value: status }))
+    }
+
+    fn handle_cluster_decommission_put_route(
+        &self,
+        attribute_name: &str,
+        attribute_value: &str,
+    ) -> RestResponse {
+        self.metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["cluster_admin_state"]
+            ["decommission_awareness"] = serde_json::json!({
+            "attribute_name": attribute_name,
+            "attribute_value": attribute_value,
+            "status": "successful"
+        });
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_cluster_decommission_delete_route(&self) -> RestResponse {
+        self.metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["cluster_admin_state"]
+            ["decommission_awareness"] = Value::Null;
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_weighted_routing_get_route(&self, attribute: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let Some(state) = manifest["cluster_admin_state"]["weighted_routing"]
+            .get(attribute)
+            .cloned()
+        else {
+            return RestResponse::json(200, serde_json::json!({}));
+        };
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "weights": state["weights"].clone(),
+                "version": state["version"].as_i64().unwrap_or(0),
+                "discovered_cluster_manager": state["discovered_cluster_manager"].as_bool().unwrap_or(true)
+            }),
+        )
+    }
+
+    fn handle_weighted_routing_put_route(
+        &self,
+        attribute: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let weights = request_body
+            .get("weights")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let current_version = manifest["cluster_admin_state"]["weighted_routing"][attribute]["version"]
+            .as_i64()
+            .unwrap_or(-1);
+        manifest["cluster_admin_state"]["weighted_routing"][attribute] = serde_json::json!({
+            "weights": weights,
+            "version": current_version + 1,
+            "discovered_cluster_manager": true
+        });
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_weighted_routing_delete_route(&self, attribute: Option<&str>) -> RestResponse {
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        if let Some(attribute) = attribute {
+            if let Some(weighted_routing) = manifest["cluster_admin_state"]["weighted_routing"].as_object_mut() {
+                weighted_routing.remove(attribute);
+            }
+        } else {
+            manifest["cluster_admin_state"]["weighted_routing"] = serde_json::json!({});
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
     fn handle_tasks_get_route(&self, request: &RestRequest) -> RestResponse {
@@ -11783,5 +11932,87 @@ mod tests {
         assert!(thread_pool_text.contains("node_name name active queue rejected"));
         assert!(thread_pool_text.contains("search"));
         assert!(!thread_pool_text.contains("write"));
+    }
+
+    #[test]
+    fn decommission_status_and_weighted_routing_routes_round_trip_state() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let initial_status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/decommission/awareness/zone/_status",
+        ));
+        assert_eq!(initial_status.status, 200);
+        assert_eq!(initial_status.body, serde_json::json!({}));
+
+        let decommission_put = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_cluster/decommission/awareness/zone/zone-a",
+        ));
+        assert_eq!(decommission_put.status, 200);
+        assert_eq!(decommission_put.body["acknowledged"], true);
+
+        let status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/decommission/awareness/zone/_status",
+        ));
+        assert_eq!(status.status, 200);
+        assert_eq!(status.body, serde_json::json!({ "zone-a": "successful" }));
+
+        let mut weighted_put = RestRequest::new(
+            RestMethod::Put,
+            "/_cluster/routing/awareness/zone/weights",
+        );
+        weighted_put.body = serde_json::to_vec(&serde_json::json!({
+            "weights": {
+                "zone-a": "1.0",
+                "zone-b": "0.0"
+            }
+        }))
+        .expect("weighted routing body");
+        let weighted_put_response = node.handle_rest_request(weighted_put);
+        assert_eq!(weighted_put_response.status, 200);
+        assert_eq!(weighted_put_response.body["acknowledged"], true);
+
+        let weighted_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/routing/awareness/zone/weights",
+        ));
+        assert_eq!(weighted_get.status, 200);
+        assert_eq!(weighted_get.body["weights"]["zone-a"], "1.0");
+        assert_eq!(weighted_get.body["weights"]["zone-b"], "0.0");
+        assert_eq!(weighted_get.body["version"], 0);
+        assert_eq!(weighted_get.body["discovered_cluster_manager"], true);
+
+        let weighted_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/routing/awareness/zone/weights",
+        ));
+        assert_eq!(weighted_delete.status, 200);
+        assert_eq!(weighted_delete.body["acknowledged"], true);
+
+        let weighted_get_after_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/routing/awareness/zone/weights",
+        ));
+        assert_eq!(weighted_get_after_delete.status, 200);
+        assert_eq!(weighted_get_after_delete.body, serde_json::json!({}));
+
+        let decommission_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/decommission/awareness",
+        ));
+        assert_eq!(decommission_delete.status, 200);
+        assert_eq!(decommission_delete.body["acknowledged"], true);
+
+        let final_status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/decommission/awareness/zone/_status",
+        ));
+        assert_eq!(final_status.status, 200);
+        assert_eq!(final_status.body, serde_json::json!({}));
     }
 }

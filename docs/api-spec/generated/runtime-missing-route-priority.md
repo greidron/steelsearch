@@ -4,10 +4,6 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 ## root-cluster-node
 
-- `/_cat/thread_pool` (GET)
-- `/_cat/thread_pool/{thread_pool_patterns}` (GET)
-- `/_cluster/decommission/awareness/{awareness_attribute_name}/_status` (GET)
-- `/_cluster/routing/awareness/{attribute}/weights` (GET)
 - `/_cluster/stats/nodes/{nodeId}` (GET)
 - `/_cluster/stats/{metric}/nodes/{nodeId}` (GET)
 - `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` (GET)

@@ -1184,6 +1184,28 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 {"search"} & {name for name in pool_names if isinstance(name, str)}
             ),
         }
+    if kind == "decommission_status":
+        entries = []
+        if isinstance(body, dict):
+            entries = sorted(
+                (str(key), str(value))
+                for key, value in body.items()
+                if not str(key).startswith("_")
+            )
+        return {
+            "status": response["status"],
+            "entries": entries,
+        }
+    if kind == "weighted_routing":
+        weights = body.get("weights") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "weight_keys": sorted(weights.keys()) if isinstance(weights, dict) else [],
+            "weights": weights if isinstance(weights, dict) else {},
+            "version_present": isinstance(body, dict) and "version" in body,
+            "discovered_cluster_manager_present": isinstance(body, dict)
+            and "discovered_cluster_manager" in body,
+        }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}
         first = next(iter(nodes.values()), {}) if isinstance(nodes, dict) and nodes else {}

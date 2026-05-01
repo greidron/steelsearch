@@ -184,22 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_cat/thread_pool"
-    },
-    {
-      "method": "GET",
-      "path": "/_cat/thread_pool/{thread_pool_patterns}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/_status"
-    },
-    {
-      "method": "GET",
-      "path": "/_cluster/routing/awareness/{attribute}/weights"
-    },
-    {
-      "method": "GET",
       "path": "/_cluster/stats/nodes/{nodeId}"
     },
     {

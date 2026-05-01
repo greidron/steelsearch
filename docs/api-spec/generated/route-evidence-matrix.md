@@ -65,7 +65,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | DELETE | `/_cluster/routing/awareness/weights` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/routing/awareness/{attribute}/weights` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/health` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/health/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | PUT | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
@@ -89,7 +89,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | DELETE | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_scripts/{id}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/decommission/awareness/{awareness_attribute_name}/_status` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/decommission/awareness/{awareness_attribute_name}/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_snapshot` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_snapshot/{repository}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_script_context` | `deferred` | `no canonical runtime compare owner` |
@@ -304,8 +304,8 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-read | GET | `/_cat/tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/templates` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/templates/{name}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cat/thread_pool` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/thread_pool/{thread_pool_patterns}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/thread_pool` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/thread_pool/{thread_pool_patterns}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | document-and-bulk | planned | POST | `/_bulk` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_bulk` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | planned | PUT | `/_bulk` | `deferred` | `no canonical runtime compare owner` |
