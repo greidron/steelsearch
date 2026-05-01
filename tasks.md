@@ -1877,10 +1877,7 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=53, missing-route=29, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_cluster/stats/nodes/{nodeId}` (GET) [missing-route]
-    - [ ] `/_cluster/stats/{metric}/nodes/{nodeId}` (GET) [missing-route]
-    - [ ] `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=56, missing-route=26, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_nodes/hot_threads` (GET) [missing-route]
     - [ ] `/_nodes/stats/{metric}` (GET) [missing-route]
     - [ ] `/_nodes/stats/{metric}/{index_metric}` (GET) [missing-route]
@@ -1978,6 +1975,9 @@
     - [x] `/_cluster/state/{metric}` (GET) [implemented-read]
     - [x] `/_cluster/state/{metric}/{indices}` (GET) [implemented-read]
     - [x] `/_cluster/stats` (GET) [implemented-read]
+    - [x] `/_cluster/stats/nodes/{nodeId}` (GET) [implemented-read]
+    - [x] `/_cluster/stats/{metric}/nodes/{nodeId}` (GET) [implemented-read]
+    - [x] `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` (GET) [implemented-read]
     - [x] `/_nodes/stats` (GET) [implemented-read]
     - [x] `/_tasks` (GET) [implemented-read]
     - [x] `/_tasks/{task_id}` (GET) [implemented-read]

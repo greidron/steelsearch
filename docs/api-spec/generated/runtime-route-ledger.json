@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 53,
-      "missing-route": 29,
+      "implemented-read": 56,
+      "missing-route": 26,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -569,7 +569,7 @@
     },
     {
       "concrete_path": "/_cluster/routing/awareness/zone/weights",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cluster/routing/awareness/{attribute}/weights",
@@ -577,9 +577,9 @@
         "body": "{}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cluster/health",
@@ -744,11 +744,11 @@
       "method": "GET",
       "path": "/_cluster/stats/nodes/{nodeId}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/stats/nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/stats/nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -758,11 +758,11 @@
       "method": "GET",
       "path": "/_cluster/stats/{metric}/nodes/{nodeId}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -772,11 +772,11 @@
       "method": "GET",
       "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -869,7 +869,7 @@
     },
     {
       "concrete_path": "/_cluster/decommission/awareness/zone/_status",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cluster/decommission/awareness/{awareness_attribute_name}/_status",
@@ -877,9 +877,9 @@
         "body": "{}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_snapshot",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 86,
-    "missing-route": 98,
+    "implemented-read": 89,
+    "missing-route": 95,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

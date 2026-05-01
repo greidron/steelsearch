@@ -184,18 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_cluster/stats/nodes/{nodeId}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cluster/stats/{metric}/nodes/{nodeId}"
-    },
-    {
-      "method": "GET",
-      "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}"
-    },
-    {
-      "method": "GET",
       "path": "/_nodes/hot_threads"
     },
     {

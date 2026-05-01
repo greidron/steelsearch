@@ -1515,6 +1515,16 @@ impl SteelNode {
         if request.path == "/_settings" && request.method == RestMethod::Get {
             return Some(self.handle_settings_get_route(None));
         }
+        if request.method == RestMethod::Get
+            && self.cluster_stats_variant_path_supported(&request.path)
+        {
+            return Some(RestResponse::json(
+                200,
+                stats_route_registration::invoke_cluster_stats_live_route(
+                    &self.cluster_stats_body(),
+                ),
+            ));
+        }
         if matches!(
             (request.method, request.path.as_str()),
             (RestMethod::Get, "/_alias") | (RestMethod::Get, "/_aliases")
@@ -4982,6 +4992,24 @@ impl SteelNode {
                 "total_in_bytes": 0
             }
         })
+    }
+
+    fn cluster_stats_variant_path_supported(&self, path: &str) -> bool {
+        let Some(remainder) = path.strip_prefix("/_cluster/stats/") else {
+            return false;
+        };
+        let segments = remainder
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect::<Vec<_>>();
+        match segments.as_slice() {
+            ["nodes", node_id] => !node_id.is_empty(),
+            [metric, "nodes", node_id] => !metric.is_empty() && !node_id.is_empty(),
+            [metric, index_metric, "nodes", node_id] => {
+                !metric.is_empty() && !index_metric.is_empty() && !node_id.is_empty()
+            }
+            _ => false,
+        }
     }
 
     fn index_stats_body(&self) -> Value {
@@ -12014,5 +12042,27 @@ mod tests {
         ));
         assert_eq!(final_status.status, 200);
         assert_eq!(final_status.body, serde_json::json!({}));
+    }
+
+    #[test]
+    fn cluster_stats_node_variant_routes_serve_cluster_stats_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/_cluster/stats/nodes/_all",
+            "/_cluster/stats/nodes/os",
+            "/_cluster/stats/nodes/steel-node",
+            "/_cluster/stats/indices/nodes/_all",
+            "/_cluster/stats/os/indices/nodes/_all",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["cluster_name"].is_string(), "path {path}");
+            assert!(response.body["indices"]["count"].is_number(), "path {path}");
+            assert!(response.body["nodes"]["count"]["total"].is_number(), "path {path}");
+        }
     }
 }

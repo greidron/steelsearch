@@ -78,9 +78,9 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-read | GET | `/_cluster/state/{metric}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/state/{metric}/{indices}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cluster/stats/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/stats/{metric}/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cluster/stats/nodes/{nodeId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cluster/stats/{metric}/nodes/{nodeId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | PUT | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |

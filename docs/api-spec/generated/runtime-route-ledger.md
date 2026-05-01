@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 86 |
-| missing-route | 98 |
+| implemented-read | 89 |
+| missing-route | 95 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 53 | 29 | 36 | 10 |
+| root-cluster-node | 56 | 26 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -42,9 +42,6 @@ Base URL: `http://127.0.0.1:19200`
 | misc | GET | `/{index}/_field_caps` | `/logs-compat/_field_caps` | planned |
 | root-cluster-node | GET | `/_search_shards` | `/_search_shards` | planned |
 | root-cluster-node | GET | `/{index}/_search_shards` | `/logs-compat/_search_shards` | planned |
-| root-cluster-node | GET | `/_cluster/stats/nodes/{nodeId}` | `/_cluster/stats/nodes/steelsearch-dev-node` | planned |
-| root-cluster-node | GET | `/_cluster/stats/{metric}/nodes/{nodeId}` | `/_cluster/stats/metadata/nodes/steelsearch-dev-node` | planned |
-| root-cluster-node | GET | `/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}` | `/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node` | planned |
 | root-cluster-node | GET | `/_script_context` | `/_script_context` | planned |
 | root-cluster-node | GET | `/_script_language` | `/_script_language` | planned |
 | root-cluster-node | GET | `/_scripts/{id}` | `/_scripts/doc-1` | planned |
