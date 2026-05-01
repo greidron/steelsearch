@@ -96,8 +96,44 @@
       "path": "/_cluster/settings",
       "body": {
         "persistent": {
-          "cluster.routing.allocation.enable": "all"
+          "cluster.routing.allocation.enable": "all",
+          "cluster.routing.allocation.awareness.attributes": "zone",
+          "cluster.routing.allocation.awareness.force.zone.values": "zone-a,zone-b"
         }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "weighted_routing_attribute_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "PUT",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "body": {
+        "weights": {
+          "zone-a": "1.0",
+          "zone-b": "0.0"
+        },
+        "_version": -1
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "weighted_routing_attribute_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "GET",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "weighted_routing_attribute_delete",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "DELETE",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "body": {
+        "_version": 0
       },
       "expected_runtime_status": "stateful-route-present"
     },

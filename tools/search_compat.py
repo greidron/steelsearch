@@ -575,6 +575,14 @@ def resolve_placeholders(value: Any, previous_response: dict[str, Any]) -> Any:
     if value == "${last.id}":
         body = previous_response.get("body") or {}
         return body.get("id") or body.get("pit_id")
+    if value.startswith("${last.") and value.endswith("}"):
+        current: Any = previous_response
+        for part in value[len("${last.") : -1].split("."):
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return None
+        return current
     return value
 
 
@@ -1220,7 +1228,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "weight_keys": sorted(weights.keys()) if isinstance(weights, dict) else [],
             "weights": weights if isinstance(weights, dict) else {},
-            "version_present": isinstance(body, dict) and "version" in body,
+            "version_present": isinstance(body, dict) and "_version" in body,
             "discovered_cluster_manager_present": isinstance(body, dict)
             and "discovered_cluster_manager" in body,
         }

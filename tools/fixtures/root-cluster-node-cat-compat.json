@@ -223,9 +223,99 @@
     {
       "name": "weighted_routing_awareness_weights",
       "area": "operational",
-      "method": "GET",
-      "path": "/_cluster/routing/awareness/zone/weights",
-      "extract": "weighted_routing"
+      "extract": "weighted_routing",
+      "steps": [
+        {
+          "name": "configure-awareness",
+          "method": "PUT",
+          "path": "/_cluster/settings",
+          "body": {
+            "persistent": {
+              "cluster.routing.allocation.awareness.attributes": "zone",
+              "cluster.routing.allocation.awareness.force.zone.values": "zone-a,zone-b"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-current-version",
+          "method": "GET",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "expected_status": 200
+        },
+        {
+          "name": "put-weighted-routing",
+          "method": "PUT",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "body": {
+            "weights": {
+              "zone-a": "1.0",
+              "zone-b": "0.0"
+            },
+            "_version": "${last.body._version}"
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-weighted-routing",
+          "method": "GET",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "weighted_routing_attribute_delete_ack",
+      "area": "operational",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "configure-awareness",
+          "method": "PUT",
+          "path": "/_cluster/settings",
+          "body": {
+            "persistent": {
+              "cluster.routing.allocation.awareness.attributes": "zone",
+              "cluster.routing.allocation.awareness.force.zone.values": "zone-a,zone-b"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-current-version",
+          "method": "GET",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "expected_status": 200
+        },
+        {
+          "name": "put-weighted-routing",
+          "method": "PUT",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "body": {
+            "weights": {
+              "zone-a": "1.0",
+              "zone-b": "0.0"
+            },
+            "_version": "${last.body._version}"
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-version-for-delete",
+          "method": "GET",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "expected_status": 200
+        },
+        {
+          "name": "delete-weighted-routing",
+          "method": "DELETE",
+          "path": "/_cluster/routing/awareness/zone/weights",
+          "body": {
+            "_version": "${last.body._version}"
+          },
+          "expected_status": 200
+        }
+      ]
     },
     {
       "name": "weighted_routing_delete_global_error",

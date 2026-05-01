@@ -8,7 +8,7 @@
       "passed": 1
     },
     "root-cluster-node": {
-      "passed": 8
+      "passed": 11
     },
     "search": {
       "passed": 1
@@ -114,6 +114,8 @@
     {
       "body": {
         "persistent": {
+          "cluster.routing.allocation.awareness.attributes": "zone",
+          "cluster.routing.allocation.awareness.force.zone.values": "zone-a,zone-b",
           "cluster.routing.allocation.enable": "all"
         }
       },
@@ -124,8 +126,60 @@
       "name": "cluster_settings_put",
       "path": "/_cluster/settings",
       "result": {
-        "body": "{\"acknowledged\":true,\"persistent\":{\"cluster\":{\"routing\":{\"allocation\":{\"enable\":\"all\"}}}},\"transient\":{\"cluster\":{\"info\":{\"update\":{\"interval\":\"30s\"}}}}}",
+        "body": "{\"acknowledged\":true,\"persistent\":{\"cluster\":{\"routing\":{\"allocation\":{\"awareness\":{\"attributes\":\"zone\",\"force\":{\"zone\":{\"values\":\"zone-a,zone-b\"}}},\"enable\":\"all\"}}}},\"transient\":{\"cluster\":{\"info\":{\"update\":{\"interval\":\"30s\"}}}}}",
         "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "_version": -1,
+        "weights": {
+          "zone-a": "1.0",
+          "zone-b": "0.0"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "PUT",
+      "name": "weighted_routing_attribute_put",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"requested version is -1 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is -1 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
+        "status": 409
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "GET",
+      "name": "weighted_routing_attribute_get",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "result": {
+        "body": "{\"_version\":1,\"discovered_cluster_manager\":true,\"weights\":{}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "_version": 0
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "DELETE",
+      "name": "weighted_routing_attribute_delete",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"requested version is 0 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is 0 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
+        "status": 409
       },
       "runtime_status": "stateful-route-present",
       "status": "passed"
@@ -288,6 +342,6 @@
     }
   ],
   "summary": {
-    "passed": 13
+    "passed": 16
   }
 }

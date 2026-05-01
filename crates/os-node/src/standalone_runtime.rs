@@ -1802,7 +1802,7 @@ impl SteelNode {
             }
         }
         if request.method == RestMethod::Delete && request.path == "/_cluster/routing/awareness/weights" {
-            return Some(self.handle_weighted_routing_delete_route(None));
+            return Some(self.handle_weighted_routing_delete_route(None, request));
         }
         if request.path.starts_with("/_cluster/routing/awareness/")
             && request.path.ends_with("/weights")
@@ -1815,7 +1815,9 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_weighted_routing_get_route(attribute)),
                 RestMethod::Put => Some(self.handle_weighted_routing_put_route(attribute, request)),
-                RestMethod::Delete => Some(self.handle_weighted_routing_delete_route(Some(attribute))),
+                RestMethod::Delete => {
+                    Some(self.handle_weighted_routing_delete_route(Some(attribute), request))
+                }
                 _ => None,
             };
         }
@@ -4697,45 +4699,40 @@ impl SteelNode {
     }
 
     fn handle_weighted_routing_get_route(&self, attribute: &str) -> RestResponse {
-        let manifest = self
-            .metadata_manifest_state
-            .lock()
-            .expect("metadata manifest state lock poisoned");
-        let Some(state) = manifest["cluster_admin_state"]["weighted_routing"]
-            .get(attribute)
-            .cloned()
-        else {
+        let awareness_attributes =
+            self.cluster_setting_csv("cluster.routing.allocation.awareness.attributes");
+        if !awareness_attributes.iter().any(|configured| configured == attribute) {
             return RestResponse::json(
                 400,
                 serde_json::json!({
                     "error": {
+                        "root_cause": [{
+                            "type": "action_request_validation_exception",
+                            "reason": format!("Validation Failed: 1: invalid awareness attribute {attribute} requested for weighted routing;")
+                        }],
                         "type": "action_request_validation_exception",
-                        "reason": format!("no weighted routing weights configured for awareness attribute [{attribute}]")
-                    },
-                    "status": 400
-                }),
-            );
-        };
-        if match state["weights"].as_object() {
-            Some(weights) => weights.is_empty(),
-            None => true,
-        } {
-            return RestResponse::json(
-                400,
-                serde_json::json!({
-                    "error": {
-                        "type": "action_request_validation_exception",
-                        "reason": format!("no weighted routing weights configured for awareness attribute [{attribute}]")
+                        "reason": format!("Validation Failed: 1: invalid awareness attribute {attribute} requested for weighted routing;")
                     },
                     "status": 400
                 }),
             );
         }
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let state = manifest["cluster_admin_state"]["weighted_routing"]
+            .get(attribute)
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({ "weights": {} }));
+        let version = manifest["cluster_admin_state"]["weighted_routing_version"]
+            .as_i64()
+            .unwrap_or(-1);
         RestResponse::json(
             200,
             serde_json::json!({
                 "weights": state["weights"].clone(),
-                "version": state["version"].as_i64().unwrap_or(0),
+                "_version": version,
                 "discovered_cluster_manager": state["discovered_cluster_manager"].as_bool().unwrap_or(true)
             }),
         )
@@ -4746,7 +4743,41 @@ impl SteelNode {
         attribute: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        let awareness_attributes =
+            self.cluster_setting_csv("cluster.routing.allocation.awareness.attributes");
+        if !awareness_attributes.iter().any(|configured| configured == attribute) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "action_request_validation_exception",
+                            "reason": format!("Validation Failed: 1: invalid awareness attribute {attribute} requested for weighted routing;")
+                        }],
+                        "type": "action_request_validation_exception",
+                        "reason": format!("Validation Failed: 1: invalid awareness attribute {attribute} requested for weighted routing;")
+                    },
+                    "status": 400
+                }),
+            );
+        }
         let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let Some(requested_version) = request_body.get("_version").and_then(Value::as_i64) else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "action_request_validation_exception",
+                            "reason": "Validation Failed: 1: Version is missing;"
+                        }],
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: Version is missing;"
+                    },
+                    "status": 400
+                }),
+            );
+        };
         let weights = request_body
             .get("weights")
             .cloned()
@@ -4755,50 +4786,159 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let current_version = manifest["cluster_admin_state"]["weighted_routing"][attribute]["version"]
+        let current_version = manifest["cluster_admin_state"]["weighted_routing_version"]
             .as_i64()
             .unwrap_or(-1);
-        manifest["cluster_admin_state"]["weighted_routing"][attribute] = serde_json::json!({
-            "weights": weights,
-            "version": current_version + 1,
-            "discovered_cluster_manager": true
-        });
+        if requested_version != current_version {
+            return RestResponse::json(
+                409,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "unsupported_weighted_routing_state_exception",
+                            "reason": format!("requested version is {requested_version} but cluster weighted routing metadata is at a different version {current_version} ")
+                        }],
+                        "type": "unsupported_weighted_routing_state_exception",
+                        "reason": format!("requested version is {requested_version} but cluster weighted routing metadata is at a different version {current_version} ")
+                    },
+                    "status": 409
+                }),
+            );
+        }
+        manifest["cluster_admin_state"]["weighted_routing"][attribute] =
+            serde_json::json!({ "weights": weights });
+        manifest["cluster_admin_state"]["weighted_routing_version"] =
+            serde_json::json!(current_version + 1);
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn handle_weighted_routing_delete_route(&self, attribute: Option<&str>) -> RestResponse {
+    fn handle_weighted_routing_delete_route(
+        &self,
+        attribute: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(attribute) = attribute {
+            let awareness_attributes =
+                self.cluster_setting_csv("cluster.routing.allocation.awareness.attributes");
+            if !awareness_attributes.iter().any(|configured| configured == attribute) {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "root_cause": [{
+                                "type": "action_request_validation_exception",
+                                "reason": format!("Validation Failed: 1: invalid awareness attribute {attribute} requested for weighted routing;")
+                            }],
+                            "type": "action_request_validation_exception",
+                            "reason": format!("Validation Failed: 1: invalid awareness attribute {attribute} requested for weighted routing;")
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        }
+        let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let requested_version = request_body
+            .get("_version")
+            .and_then(Value::as_i64)
+            .unwrap_or(-2);
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
+        let current_version = manifest["cluster_admin_state"]["weighted_routing_version"]
+            .as_i64()
+            .unwrap_or(-1);
+        if requested_version != current_version {
+            return RestResponse::json(
+                409,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "unsupported_weighted_routing_state_exception",
+                            "reason": format!("requested version is {requested_version} but cluster weighted routing metadata is at a different version {current_version} ")
+                        }],
+                        "type": "unsupported_weighted_routing_state_exception",
+                        "reason": format!("requested version is {requested_version} but cluster weighted routing metadata is at a different version {current_version} ")
+                    },
+                    "status": 409
+                }),
+            );
+        }
         if let Some(attribute) = attribute {
-            if let Some(weighted_routing) = manifest["cluster_admin_state"]["weighted_routing"].as_object_mut() {
-                weighted_routing.remove(attribute);
-            }
-        } else {
-            let weighted_routing = manifest["cluster_admin_state"]["weighted_routing"]
-                .as_object()
-                .cloned()
-                .unwrap_or_default();
-            if weighted_routing.is_empty() {
+            let Some(weighted_routing) =
+                manifest["cluster_admin_state"]["weighted_routing"].as_object_mut()
+            else {
                 return RestResponse::json(
-                    409,
+                    404,
                     serde_json::json!({
                         "error": {
                             "root_cause": [{
-                                "type": "unsupported_weighted_routing_state_exception",
-                                "reason": "requested version is -2 but cluster weighted routing metadata is at a different version -1 "
+                                "type": "resource_not_found_exception",
+                                "reason": format!("weighted routing metadata does not have weights set for awareness attribute {attribute}")
                             }],
-                            "type": "unsupported_weighted_routing_state_exception",
-                            "reason": "requested version is -2 but cluster weighted routing metadata is at a different version -1 "
+                            "type": "resource_not_found_exception",
+                            "reason": format!("weighted routing metadata does not have weights set for awareness attribute {attribute}")
                         },
-                        "status": 409
+                        "status": 404
+                    }),
+                );
+            };
+            let missing = weighted_routing
+                .get(attribute)
+                .and_then(|state| state.get("weights"))
+                .and_then(Value::as_object)
+                .map(|weights| weights.is_empty())
+                .unwrap_or(true);
+            if missing {
+                return RestResponse::json(
+                    404,
+                    serde_json::json!({
+                        "error": {
+                            "root_cause": [{
+                                "type": "resource_not_found_exception",
+                                "reason": format!("weighted routing metadata does not have weights set for awareness attribute {attribute}")
+                            }],
+                            "type": "resource_not_found_exception",
+                            "reason": format!("weighted routing metadata does not have weights set for awareness attribute {attribute}")
+                        },
+                        "status": 404
+                    }),
+                );
+            }
+            weighted_routing.remove(attribute);
+            manifest["cluster_admin_state"]["weighted_routing_version"] =
+                serde_json::json!(current_version + 1);
+        } else {
+            let has_weights = manifest["cluster_admin_state"]["weighted_routing"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default()
+                .values()
+                .filter_map(|state| state.get("weights"))
+                .filter_map(Value::as_object)
+                .any(|weights| !weights.is_empty());
+            if !has_weights {
+                return RestResponse::json(
+                    404,
+                    serde_json::json!({
+                        "error": {
+                            "root_cause": [{
+                                "type": "resource_not_found_exception",
+                                "reason": "weighted routing metadata does not have weights set"
+                            }],
+                            "type": "resource_not_found_exception",
+                            "reason": "weighted routing metadata does not have weights set"
+                        },
+                        "status": 404
                     }),
                 );
             }
             manifest["cluster_admin_state"]["weighted_routing"] = serde_json::json!({});
+            manifest["cluster_admin_state"]["weighted_routing_version"] =
+                serde_json::json!(current_version + 1);
         }
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
@@ -12823,6 +12963,16 @@ mod tests {
             Value::String("unsupported_weighted_routing_state_exception".to_string())
         );
 
+        let weighted_get_invalid = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/routing/awareness/zone/weights",
+        ));
+        assert_eq!(weighted_get_invalid.status, 400);
+        assert_eq!(
+            weighted_get_invalid.body["error"]["type"],
+            Value::String("action_request_validation_exception".to_string())
+        );
+
         let decommission_put = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,
             "/_cluster/decommission/awareness/zone/zone-a",
@@ -12852,6 +13002,29 @@ mod tests {
         assert_eq!(status.status, 200);
         assert_eq!(status.body, serde_json::json!({}));
 
+        let weighted_get_empty = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/routing/awareness/zone/weights",
+        ));
+        assert_eq!(weighted_get_empty.status, 200);
+        assert_eq!(weighted_get_empty.body["weights"], serde_json::json!({}));
+        assert_eq!(weighted_get_empty.body["_version"], -1);
+
+        let weighted_put_missing_version = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/routing/awareness/zone/weights")
+                .with_json_body(serde_json::json!({
+                    "weights": {
+                        "zone-a": "1.0",
+                        "zone-b": "0.0"
+                    }
+                })),
+        );
+        assert_eq!(weighted_put_missing_version.status, 400);
+        assert_eq!(
+            weighted_put_missing_version.body["error"]["type"],
+            Value::String("action_request_validation_exception".to_string())
+        );
+
         let mut weighted_put = RestRequest::new(
             RestMethod::Put,
             "/_cluster/routing/awareness/zone/weights",
@@ -12860,7 +13033,8 @@ mod tests {
             "weights": {
                 "zone-a": "1.0",
                 "zone-b": "0.0"
-            }
+            },
+            "_version": -1
         }))
         .expect("weighted routing body");
         let weighted_put_response = node.handle_rest_request(weighted_put);
@@ -12888,13 +13062,23 @@ mod tests {
         assert_eq!(weighted_get.status, 200);
         assert_eq!(weighted_get.body["weights"]["zone-a"], "1.0");
         assert_eq!(weighted_get.body["weights"]["zone-b"], "0.0");
-        assert_eq!(weighted_get.body["version"], 0);
+        assert_eq!(weighted_get.body["_version"], 0);
         assert_eq!(weighted_get.body["discovered_cluster_manager"], true);
+
+        let weighted_delete_missing_version = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/routing/awareness/zone/weights",
+        ));
+        assert_eq!(weighted_delete_missing_version.status, 409);
+        assert_eq!(
+            weighted_delete_missing_version.body["error"]["type"],
+            Value::String("unsupported_weighted_routing_state_exception".to_string())
+        );
 
         let weighted_delete = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
             "/_cluster/routing/awareness/zone/weights",
-        ));
+        ).with_json_body(serde_json::json!({ "_version": 0 })));
         assert_eq!(weighted_delete.status, 200);
         assert_eq!(weighted_delete.body["acknowledged"], true);
 
@@ -12902,11 +13086,9 @@ mod tests {
             RestMethod::Get,
             "/_cluster/routing/awareness/zone/weights",
         ));
-        assert_eq!(weighted_get_after_delete.status, 400);
-        assert_eq!(
-            weighted_get_after_delete.body["error"]["type"],
-            "action_request_validation_exception"
-        );
+        assert_eq!(weighted_get_after_delete.status, 200);
+        assert_eq!(weighted_get_after_delete.body["weights"], serde_json::json!({}));
+        assert_eq!(weighted_get_after_delete.body["_version"], 1);
 
         let decommission_delete = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
