@@ -138,6 +138,22 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "voting_config_exclusions_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/voting_config_exclusions",
+      "method": "POST",
+      "path": "/_cluster/voting_config_exclusions?node_names=steel-node",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "voting_config_exclusions_delete",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/voting_config_exclusions",
+      "method": "DELETE",
+      "path": "/_cluster/voting_config_exclusions?wait_for_removal=false",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_create_put",
       "family": "index-and-metadata",
       "inventory_path": "/{index}",

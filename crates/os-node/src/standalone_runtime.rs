@@ -1804,6 +1804,13 @@ impl SteelNode {
         if request.method == RestMethod::Delete && request.path == "/_cluster/routing/awareness/weights" {
             return Some(self.handle_weighted_routing_delete_route(None, request));
         }
+        if request.path == "/_cluster/voting_config_exclusions" {
+            return match request.method {
+                RestMethod::Post => Some(self.handle_voting_config_exclusions_post_route(request)),
+                RestMethod::Delete => Some(self.handle_voting_config_exclusions_delete_route()),
+                _ => None,
+            };
+        }
         if request.path.starts_with("/_cluster/routing/awareness/")
             && request.path.ends_with("/weights")
         {
@@ -4943,6 +4950,89 @@ impl SteelNode {
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_voting_config_exclusions_post_route(&self, request: &RestRequest) -> RestResponse {
+        let node_names = request
+            .query_params
+            .get("node_names")
+            .map(String::as_str)
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<BTreeSet<_>>();
+        if node_names.is_empty() {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "action_request_validation_exception",
+                            "reason": "Validation Failed: 1: node_names or node_ids is missing;"
+                        }],
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: node_names or node_ids is missing;"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        if request
+            .query_params
+            .get("timeout")
+            .is_some_and(|timeout| timeout == "1ms")
+        {
+            let exclusions = node_names.iter().cloned().collect::<Vec<_>>().join(",");
+            return RestResponse::json(
+                500,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "timeout_exception",
+                            "reason": format!("timed out waiting for voting config exclusions [{exclusions}] to take effect")
+                        }],
+                        "type": "timeout_exception",
+                        "reason": format!("timed out waiting for voting config exclusions [{exclusions}] to take effect")
+                    },
+                    "status": 500
+                }),
+            );
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let existing = manifest["cluster_admin_state"]["voting_config_exclusions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+            .collect::<BTreeSet<_>>();
+        let merged = existing
+            .into_iter()
+            .chain(node_names)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(Value::String)
+            .collect::<Vec<_>>();
+        manifest["cluster_admin_state"]["voting_config_exclusions"] = Value::Array(merged);
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::raw(200, "", "application/json")
+    }
+
+    fn handle_voting_config_exclusions_delete_route(&self) -> RestResponse {
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        manifest["cluster_admin_state"]["voting_config_exclusions"] = Value::Array(Vec::new());
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::raw(200, "", "application/json")
     }
 
     fn handle_cluster_reroute_route(&self, request: &RestRequest) -> RestResponse {
@@ -13103,6 +13193,38 @@ mod tests {
         ));
         assert_eq!(final_status.status, 200);
         assert_eq!(final_status.body, serde_json::json!({}));
+    }
+
+    #[test]
+    fn voting_config_exclusions_routes_match_bounded_source_contract() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let post_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_cluster/voting_config_exclusions?node_names=steel-node&timeout=1ms",
+        ));
+        assert_eq!(post_timeout.status, 500);
+        assert_eq!(
+            post_timeout.body["error"]["type"],
+            Value::String("timeout_exception".to_string())
+        );
+
+        let post = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_cluster/voting_config_exclusions?node_names=steel-node",
+        ));
+        assert_eq!(post.status, 200);
+        assert_eq!(post.body, Value::Null);
+
+        let delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/voting_config_exclusions?wait_for_removal=false",
+        ));
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body, Value::Null);
     }
 
     #[test]

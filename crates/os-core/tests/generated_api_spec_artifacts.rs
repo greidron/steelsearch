@@ -182,7 +182,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(stateful_probe_report_path).expect("stateful route probe report should exist");
     let stateful_probe: Value =
         serde_json::from_str(&stateful_probe_text).expect("stateful route probe report should parse");
-    assert_eq!(stateful_probe["summary"]["passed"], 16);
+    assert_eq!(stateful_probe["summary"]["passed"], 18);
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -213,6 +213,11 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .expect("stateful probe cases should be array")
         .iter()
         .any(|case| case["inventory_path"] == "/_cluster/routing/awareness/{attribute}/weights" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_cluster/voting_config_exclusions" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")

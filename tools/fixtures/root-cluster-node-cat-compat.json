@@ -325,6 +325,27 @@
       "extract": "weighted_routing_delete_error"
     },
     {
+      "name": "voting_config_exclusions_post_timeout",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_cluster/voting_config_exclusions?node_names=runTask-0&timeout=1ms",
+      "extract": "voting_config_exclusions_error"
+    },
+    {
+      "name": "voting_config_exclusions_post_status",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_cluster/voting_config_exclusions?node_names=runTask-0",
+      "extract": "status_only"
+    },
+    {
+      "name": "voting_config_exclusions_delete_status",
+      "area": "operational",
+      "method": "DELETE",
+      "path": "/_cluster/voting_config_exclusions?wait_for_removal=false",
+      "extract": "status_only"
+    },
+    {
       "name": "cluster_stats_nodes_all_shape",
       "area": "operational",
       "method": "GET",

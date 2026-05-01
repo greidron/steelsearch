@@ -1880,7 +1880,7 @@
     - [x] runtime-backed summary: implemented-read=82, missing-route=0, requires-stateful-probe=36, unprobeable-expression=10
     - [x] `/_cluster/routing/awareness/weights` (DELETE) [requires-stateful-probe]
     - [x] `/_cluster/routing/awareness/{attribute}/weights` (DELETE, GET, PUT) [requires-stateful-probe]
-    - [ ] `/_cluster/voting_config_exclusions` (DELETE, POST) [requires-stateful-probe]
+    - [x] `/_cluster/voting_config_exclusions` (DELETE, POST) [requires-stateful-probe]
     - [ ] `/_nodes/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_nodes/{nodeId}/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_tasks/{task_id}/_cancel` (POST) [requires-stateful-probe]

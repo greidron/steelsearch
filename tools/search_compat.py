@@ -1241,6 +1241,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "error_type": error.get("type") if isinstance(error, dict) else None,
             "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
         }
+    if kind == "voting_config_exclusions_error":
+        error = body.get("error") if isinstance(body, dict) else None
+        root_cause = error.get("root_cause") if isinstance(error, dict) else None
+        first_root_cause = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
+        }
     if kind == "hot_threads_text":
         raw = body.get("_raw") if isinstance(body, dict) else ""
         raw = raw or ""

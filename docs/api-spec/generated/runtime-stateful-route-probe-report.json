@@ -8,7 +8,7 @@
       "passed": 1
     },
     "root-cluster-node": {
-      "passed": 11
+      "passed": 13
     },
     "search": {
       "passed": 1
@@ -57,7 +57,7 @@
       "name": "weighted_routing_delete_global",
       "path": "/_cluster/routing/awareness/weights",
       "result": {
-        "body": "{\"error\":{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version -1 \",\"root_cause\":[{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version -1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
+        "body": "{\"error\":{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
         "status": 409
       },
       "runtime_status": "stateful-route-present",
@@ -180,6 +180,34 @@
       "result": {
         "body": "{\"error\":{\"reason\":\"requested version is 0 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is 0 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
         "status": 409
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/voting_config_exclusions",
+      "method": "POST",
+      "name": "voting_config_exclusions_post",
+      "path": "/_cluster/voting_config_exclusions?node_names=steel-node",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/voting_config_exclusions",
+      "method": "DELETE",
+      "name": "voting_config_exclusions_delete",
+      "path": "/_cluster/voting_config_exclusions?wait_for_removal=false",
+      "result": {
+        "body": "",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "status": "passed"
@@ -342,6 +370,6 @@
     }
   ],
   "summary": {
-    "passed": 16
+    "passed": 18
   }
 }
