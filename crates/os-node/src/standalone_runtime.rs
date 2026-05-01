@@ -1541,6 +1541,9 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.search_shards_body(None)));
         }
+        if request.method == RestMethod::Get && request.path == "/_nodes" {
+            return Some(RestResponse::json(200, self.nodes_info_body()));
+        }
         if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
             return Some(self.handle_nodes_hot_threads_route(None));
         }
@@ -12655,7 +12658,7 @@ mod tests {
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
-        for path in ["/_nodes/_all", "/_nodes/_all/http", "/_nodes/_all/info/http"] {
+        for path in ["/_nodes", "/_nodes/_all", "/_nodes/_all/http", "/_nodes/_all/info/http"] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");

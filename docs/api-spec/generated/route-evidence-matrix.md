@@ -146,7 +146,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | GET | `_list/wlm_stats/{nodeId}/stats/{workloadGroupId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_dangling/{index_uuid}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_dangling/{index_uuid}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_dangling` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_dangling` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | index-and-metadata | planned | PUT | `/{index}/_block/{block}` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | GET | `/_analyze` | `deferred` | `no canonical runtime compare owner` |
 | index-and-metadata | planned | POST | `/_analyze` | `deferred` | `no canonical runtime compare owner` |

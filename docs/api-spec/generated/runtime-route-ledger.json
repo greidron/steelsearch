@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 77,
-      "missing-route": 5,
+      "implemented-read": 78,
+      "missing-route": 4,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -1028,11 +1028,11 @@
       "method": "GET",
       "path": "/_nodes",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 110,
-    "missing-route": 74,
+    "implemented-read": 111,
+    "missing-route": 73,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

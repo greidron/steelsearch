@@ -184,10 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_dangling"
-    },
-    {
-      "method": "GET",
       "path": "/_nodes"
     },
     {

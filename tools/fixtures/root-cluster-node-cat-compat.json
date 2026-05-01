@@ -328,6 +328,13 @@
       "extract": "node_usage"
     },
     {
+      "name": "nodes_info_root_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes",
+      "extract": "node_info"
+    },
+    {
       "name": "nodes_info_shape",
       "area": "operational",
       "method": "GET",
