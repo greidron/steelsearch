@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 78,
-      "missing-route": 4,
+      "implemented-read": 79,
+      "missing-route": 3,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -1337,11 +1337,11 @@
       "method": "GET",
       "path": "/_remote/info",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_remote/info] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_remote/info] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1595,7 +1595,7 @@
     },
     {
       "concrete_path": "/_dangling",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_dangling",
@@ -1603,9 +1603,9 @@
         "body": "{\"_nodes\":{\"failed\":0,\"successful\":1,\"total\":1},\"cluster_name\":\"steelsearch-dev\",\"dangling_indices\":[]}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 111,
-    "missing-route": 73,
+    "implemented-read": 112,
+    "missing-route": 72,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

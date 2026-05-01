@@ -1236,6 +1236,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "nodes_successful": nodes.get("successful") if isinstance(nodes, dict) else None,
             "nodes_failed": nodes.get("failed") if isinstance(nodes, dict) else None,
         }
+    if kind == "remote_info":
+        return {
+            "status": response["status"],
+            "cluster_keys": sorted(body.keys()) if isinstance(body, dict) else None,
+        }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {

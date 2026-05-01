@@ -335,6 +335,13 @@
       "extract": "node_info"
     },
     {
+      "name": "remote_info_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_remote/info",
+      "extract": "remote_info"
+    },
+    {
       "name": "nodes_info_shape",
       "area": "operational",
       "method": "GET",

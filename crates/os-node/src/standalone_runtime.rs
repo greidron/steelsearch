@@ -1541,6 +1541,9 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.search_shards_body(None)));
         }
+        if request.method == RestMethod::Get && request.path == "/_remote/info" {
+            return Some(RestResponse::json(200, serde_json::json!({})));
+        }
         if request.method == RestMethod::Get && request.path == "/_nodes" {
             return Some(RestResponse::json(200, self.nodes_info_body()));
         }
@@ -12649,6 +12652,18 @@ mod tests {
             assert_eq!(response.status, 200, "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");
         }
+    }
+
+    #[test]
+    fn remote_info_route_serves_empty_object_by_default() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remote/info"));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, serde_json::json!({}));
     }
 
     #[test]
