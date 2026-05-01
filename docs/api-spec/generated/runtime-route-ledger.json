@@ -621,14 +621,14 @@
     },
     {
       "concrete_path": null,
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "POST",
       "path": "/_cluster/reroute",
       "probe": null,
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": "/_search_shards",

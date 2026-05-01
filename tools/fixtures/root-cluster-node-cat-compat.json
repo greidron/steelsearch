@@ -228,6 +228,13 @@
       "extract": "weighted_routing"
     },
     {
+      "name": "weighted_routing_delete_global_error",
+      "area": "operational",
+      "method": "DELETE",
+      "path": "/_cluster/routing/awareness/weights",
+      "extract": "weighted_routing_delete_error"
+    },
+    {
       "name": "cluster_stats_nodes_all_shape",
       "area": "operational",
       "method": "GET",

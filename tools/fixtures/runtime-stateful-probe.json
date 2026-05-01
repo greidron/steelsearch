@@ -51,6 +51,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "weighted_routing_delete_global",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/weights",
+      "method": "DELETE",
+      "path": "/_cluster/routing/awareness/weights",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "cluster_reroute_post",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/reroute",

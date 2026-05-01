@@ -62,7 +62,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | PUT | `/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-stateful | GET | `/_cluster/allocation/explain` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | POST | `/_cluster/allocation/explain` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | DELETE | `/_cluster/routing/awareness/weights` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-stateful | DELETE | `/_cluster/routing/awareness/weights` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | DELETE | `/_cluster/routing/awareness/{attribute}/weights` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/routing/awareness/{attribute}/weights` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |

@@ -8,7 +8,7 @@
       "passed": 1
     },
     "root-cluster-node": {
-      "passed": 7
+      "passed": 8
     },
     "search": {
       "passed": 1
@@ -45,6 +45,20 @@
       "result": {
         "body": "{\"error\":{\"reason\":\"[DecommissionAttribute{attributeName='zone', attributeValue='zone-a'}] invalid awareness attribute requested for decommissioning\",\"root_cause\":[{\"reason\":\"[DecommissionAttribute{attributeName='zone', attributeValue='zone-a'}] invalid awareness attribute requested for decommissioning\",\"type\":\"decommissioning_failed_exception\"}],\"type\":\"decommissioning_failed_exception\"},\"status\":400}",
         "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/weights",
+      "method": "DELETE",
+      "name": "weighted_routing_delete_global",
+      "path": "/_cluster/routing/awareness/weights",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version -1 \",\"root_cause\":[{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version -1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
+        "status": 409
       },
       "runtime_status": "stateful-route-present",
       "status": "passed"
@@ -274,6 +288,6 @@
     }
   ],
   "summary": {
-    "passed": 12
+    "passed": 13
   }
 }

@@ -4778,6 +4778,26 @@ impl SteelNode {
                 weighted_routing.remove(attribute);
             }
         } else {
+            let weighted_routing = manifest["cluster_admin_state"]["weighted_routing"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            if weighted_routing.is_empty() {
+                return RestResponse::json(
+                    409,
+                    serde_json::json!({
+                        "error": {
+                            "root_cause": [{
+                                "type": "unsupported_weighted_routing_state_exception",
+                                "reason": "requested version is -2 but cluster weighted routing metadata is at a different version -1 "
+                            }],
+                            "type": "unsupported_weighted_routing_state_exception",
+                            "reason": "requested version is -2 but cluster weighted routing metadata is at a different version -1 "
+                        },
+                        "status": 409
+                    }),
+                );
+            }
             manifest["cluster_admin_state"]["weighted_routing"] = serde_json::json!({});
         }
         drop(manifest);
@@ -12792,6 +12812,16 @@ mod tests {
         ));
         assert_eq!(initial_status.status, 200);
         assert_eq!(initial_status.body, serde_json::json!({}));
+
+        let weighted_delete_empty = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/routing/awareness/weights",
+        ));
+        assert_eq!(weighted_delete_empty.status, 409);
+        assert_eq!(
+            weighted_delete_empty.body["error"]["type"],
+            Value::String("unsupported_weighted_routing_state_exception".to_string())
+        );
 
         let decommission_put = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,

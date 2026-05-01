@@ -1224,6 +1224,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "discovered_cluster_manager_present": isinstance(body, dict)
             and "discovered_cluster_manager" in body,
         }
+    if kind == "weighted_routing_delete_error":
+        error = body.get("error") if isinstance(body, dict) else None
+        root_cause = error.get("root_cause") if isinstance(error, dict) else None
+        first_root_cause = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
+        }
     if kind == "hot_threads_text":
         raw = body.get("_raw") if isinstance(body, dict) else ""
         raw = raw or ""
