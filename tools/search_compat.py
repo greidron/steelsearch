@@ -124,6 +124,19 @@ CAT_REPOSITORIES_REQUIRED_COLUMNS = {
     "id",
     "type",
 }
+CAT_SNAPSHOTS_REQUIRED_COLUMNS = {
+    "id",
+    "status",
+    "start_epoch",
+    "start_time",
+    "end_epoch",
+    "end_time",
+    "duration",
+    "indices",
+    "successful_shards",
+    "failed_shards",
+    "total_shards",
+}
 CAT_ALLOCATION_REQUIRED_COLUMNS = {
     "shards",
     "disk.indices",
@@ -321,7 +334,34 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 put_alias,
             )
         )
+    for repository in fixture.get("repositories", []):
+        body = resolve_fixture_placeholders(repository.get("body", {}))
+        put_repository = http_json(
+            base_url,
+            "PUT",
+            f"/_snapshot/{repository['name']}",
+            body,
+            timeout,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"repository:{repository['name']}",
+                status_for(put_repository),
+                put_repository,
+            )
+        )
     return steps
+
+
+def resolve_fixture_placeholders(value: Any) -> Any:
+    if isinstance(value, str):
+        return os.path.expandvars(value)
+    if isinstance(value, list):
+        return [resolve_fixture_placeholders(item) for item in value]
+    if isinstance(value, dict):
+        return {key: resolve_fixture_placeholders(item) for key, item in value.items()}
+    return value
 
 
 def run_case(case: dict[str, Any], targets: dict[str, str], timeout: float) -> dict[str, Any]:
@@ -1011,6 +1051,21 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "required_columns_present": sorted(CAT_REPOSITORIES_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_snapshots":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            row_count = len(rows)
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+            row_count = max(len(lines) - 1, 0)
+        return {
+            "status": response["status"],
+            "row_count": row_count,
+            "required_columns_present": sorted(CAT_SNAPSHOTS_REQUIRED_COLUMNS & columns),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}

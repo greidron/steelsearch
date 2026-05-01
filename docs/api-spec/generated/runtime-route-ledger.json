@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 44,
-      "missing-route": 38,
+      "implemented-read": 46,
+      "missing-route": 36,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -888,7 +888,7 @@
       "method": "GET",
       "path": "/_snapshot",
       "probe": {
-        "body": "{\"repo-stateful-probe\":{\"settings\":{\"location\":\"/tmp/steelsearch-stateful-probe-repo\"},\"type\":\"fs\"}}",
+        "body": "{\"repo-root-cat-probe\":{\"settings\":{\"location\":\"/home/ubuntu/OpenSearch/build/testclusters/runTask-0/repo/repo-root-cat-probe\"},\"type\":\"fs\"},\"repo-stateful-probe\":{\"settings\":{\"location\":\"/tmp/steelsearch-stateful-probe-repo\"},\"type\":\"fs\"}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3460,7 +3460,7 @@
     },
     {
       "concrete_path": "/_cat/repositories",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/repositories",
@@ -3468,9 +3468,9 @@
         "body": "\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/segments",
@@ -3535,11 +3535,11 @@
       "method": "GET",
       "path": "/_cat/snapshots",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/snapshots] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/snapshots] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: repository is missing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: repository is missing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3549,11 +3549,11 @@
       "method": "GET",
       "path": "/_cat/snapshots/{repository}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/snapshots/repo-compat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/snapshots/repo-compat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"},\"status\":404}",
         "status": 404
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 77,
-    "missing-route": 107,
+    "implemented-read": 79,
+    "missing-route": 105,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

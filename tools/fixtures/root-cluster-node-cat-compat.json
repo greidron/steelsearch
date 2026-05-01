@@ -8,6 +8,17 @@
     {"index": "logs-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "log doc"}}]},
     {"index": "metrics-root-cat-000001", "documents": [{"_id": "doc-1", "_source": {"message": "metric doc"}}]}
   ],
+  "repositories": [
+    {
+      "name": "repo-root-cat-probe",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-root-cat-probe"
+        }
+      }
+    }
+  ],
   "cases": [
     {"name": "cat_allocation_text", "area": "operational", "method": "GET", "path": "/_cat/allocation?v=true", "accept": "text/plain", "extract": "cat_allocation"},
     {"name": "cat_fielddata_text", "area": "operational", "method": "GET", "path": "/_cat/fielddata/message,user?v=true", "accept": "text/plain", "extract": "cat_fielddata"},
@@ -17,6 +28,9 @@
     {"name": "cat_recovery_text", "area": "operational", "method": "GET", "path": "/_cat/recovery?v=true", "accept": "text/plain", "extract": "cat_recovery"},
     {"name": "cat_recovery_target_text", "area": "operational", "method": "GET", "path": "/_cat/recovery/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_recovery"},
     {"name": "cat_repositories_text", "area": "operational", "method": "GET", "path": "/_cat/repositories?v=true", "accept": "text/plain", "extract": "cat_repositories"},
+    {"name": "cat_snapshots_error", "area": "operational", "method": "GET", "path": "/_cat/snapshots?format=json", "extract": "error_response"},
+    {"name": "cat_snapshots_json", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?format=json", "extract": "cat_snapshots"},
+    {"name": "cat_snapshots_text", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?v=true", "accept": "text/plain", "extract": "cat_snapshots"},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
     {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},

@@ -1668,6 +1668,12 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_cat/repositories" {
             return Some(self.handle_cat_repositories_route(request));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/snapshots" {
+            return Some(self.handle_cat_snapshots_route(request, None));
+        }
+        if let Some(repository) = request.path.strip_prefix("/_cat/snapshots/") {
+            return Some(self.handle_cat_snapshots_route(request, Some(repository)));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6480,6 +6486,95 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_snapshots_route(
+        &self,
+        request: &RestRequest,
+        repository: Option<&str>,
+    ) -> RestResponse {
+        let Some(repository) = repository else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "action_request_validation_exception",
+                                "reason": "Validation Failed: 1: repository is missing;"
+                            }
+                        ],
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: repository is missing;"
+                    },
+                    "status": 400
+                }),
+            );
+        };
+        if !self.snapshot_repository_exists(repository) {
+            return build_missing_snapshot_repository_response(repository);
+        }
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut rows = manifest["snapshots"]
+            .get(repository)
+            .and_then(Value::as_object)
+            .map(|snapshots| {
+                snapshots
+                    .values()
+                    .map(|snapshot| {
+                        serde_json::json!({
+                            "id": snapshot["snapshot"].as_str().unwrap_or(""),
+                            "status": snapshot["state"].as_str().unwrap_or("SUCCESS"),
+                            "start_epoch": "0",
+                            "start_time": "00:00:00",
+                            "end_epoch": "0",
+                            "end_time": "00:00:00",
+                            "duration": "0s",
+                            "indices": snapshot["indices"].as_array().map(|indices| indices.len()).unwrap_or(0).to_string(),
+                            "successful_shards": "1",
+                            "failed_shards": "0",
+                            "total_shards": "1",
+                            "reason": ""
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        drop(manifest);
+        rows.sort_by(|left, right| {
+            left["id"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["id"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows.clone()));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("id status start_epoch start_time end_epoch end_time duration indices successful_shards failed_shards total_shards".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {} {} {} {}",
+                row["id"].as_str().unwrap_or(""),
+                row["status"].as_str().unwrap_or("SUCCESS"),
+                row["start_epoch"].as_str().unwrap_or("0"),
+                row["start_time"].as_str().unwrap_or("00:00:00"),
+                row["end_epoch"].as_str().unwrap_or("0"),
+                row["end_time"].as_str().unwrap_or("00:00:00"),
+                row["duration"].as_str().unwrap_or("0s"),
+                row["indices"].as_str().unwrap_or("0"),
+                row["successful_shards"].as_str().unwrap_or("1"),
+                row["failed_shards"].as_str().unwrap_or("0"),
+                row["total_shards"].as_str().unwrap_or("1"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -11224,5 +11319,56 @@ mod tests {
             .as_str()
             .expect("cat repositories text body");
         assert!(repositories_text.contains("id type"));
+    }
+
+    #[test]
+    fn cat_snapshots_routes_serve_error_json_and_repository_views() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let mut snapshots_root_request = RestRequest::new(RestMethod::Get, "/_cat/snapshots");
+        snapshots_root_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let snapshots_root_response = node.handle_rest_request(snapshots_root_request);
+        assert_eq!(snapshots_root_response.status, 400);
+        assert_eq!(
+            snapshots_root_response.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+
+        let mut repository_request = RestRequest::new(RestMethod::Put, "/_snapshot/repo-cat-snapshots");
+        repository_request.body = serde_json::to_vec(&serde_json::json!({
+            "type": "fs",
+            "settings": { "location": "/tmp/repo-cat-snapshots" }
+        }))
+        .expect("snapshot repository body");
+        let repository_response = node.handle_rest_request(repository_request);
+        assert_eq!(repository_response.status, 200);
+
+        let mut snapshots_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/snapshots/repo-cat-snapshots");
+        snapshots_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let snapshots_json_response = node.handle_rest_request(snapshots_json_request);
+        assert_eq!(snapshots_json_response.status, 200);
+        assert_eq!(snapshots_json_response.body, Value::Array(Vec::new()));
+
+        let mut snapshots_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/snapshots/repo-cat-snapshots");
+        snapshots_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let snapshots_text_response = node.handle_rest_request(snapshots_text_request);
+        let snapshots_text = snapshots_text_response
+            .body
+            .as_str()
+            .expect("cat snapshots text body");
+        assert!(snapshots_text.contains(
+            "id status start_epoch start_time end_epoch end_time duration indices successful_shards failed_shards total_shards"
+        ));
     }
 }
