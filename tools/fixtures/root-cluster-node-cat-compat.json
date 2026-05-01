@@ -394,6 +394,13 @@
       ]
     },
     {
+      "name": "snapshot_index_status_missing_repository",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_snapshot/missing-repo/missing-snapshot/test-index/_status",
+      "extract": "snapshot_missing_repository"
+    },
+    {
       "name": "nodes_info_shape",
       "area": "operational",
       "method": "GET",

@@ -16,8 +16,7 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 81,
-      "missing-route": 1,
+      "implemented-read": 82,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -1332,7 +1331,7 @@
     },
     {
       "concrete_path": "/_remote/info",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_remote/info",
@@ -1340,9 +1339,9 @@
         "body": "{}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_remotestore/metadata/logs-compat",
@@ -1423,11 +1422,11 @@
       "method": "GET",
       "path": "/_snapshot/{repository}/{snapshot}/{index}/_status",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_snapshot/repo-compat/snap-compat/logs-compat/_status] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_snapshot/repo-compat/snap-compat/logs-compat/_status] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
+        "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"root_cause\":[{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"}],\"type\":\"repository_missing_exception\"},\"status\":404}",
         "status": 404
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1437,7 +1436,7 @@
       "method": "GET",
       "path": "/_snapshot/{repository}/{snapshot}/_status",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"[repo-compat:snap-compat] missing\",\"type\":\"snapshot_missing_exception\"},\"status\":404}",
+        "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"root_cause\":[{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"}],\"type\":\"repository_missing_exception\"},\"status\":404}",
         "status": 404
       },
       "profile": "`root-cluster-node`",
@@ -3549,7 +3548,7 @@
       "method": "GET",
       "path": "/_cat/snapshots/{repository}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"},\"status\":404}",
+        "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"root_cause\":[{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"}],\"type\":\"repository_missing_exception\"},\"status\":404}",
         "status": 404
       },
       "profile": "`root-cluster-node`",
@@ -4695,8 +4694,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 114,
-    "missing-route": 70,
+    "implemented-read": 115,
+    "missing-route": 69,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

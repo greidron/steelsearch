@@ -1882,6 +1882,11 @@ impl SteelNode {
                 {
                     Some(self.handle_snapshot_status_route(repository, snapshot))
                 }
+                ["_snapshot", repository, snapshot, _index, "_status"]
+                    if request.method == RestMethod::Get =>
+                {
+                    Some(self.handle_snapshot_status_route(repository, snapshot))
+                }
                 ["_snapshot", repository, snapshot, "_restore"]
                     if request.method == RestMethod::Post =>
                 {
@@ -3176,6 +3181,9 @@ impl SteelNode {
     }
 
     fn handle_snapshot_status_route(&self, repository: &str, snapshot: &str) -> RestResponse {
+        if !self.snapshot_repository_exists(repository) {
+            return build_missing_snapshot_repository_response(repository);
+        }
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
             return build_missing_snapshot_response(repository, snapshot);
         };
@@ -9478,6 +9486,12 @@ fn build_missing_snapshot_repository_response(repository: &str) -> RestResponse 
             "error": {
                 "type": "repository_missing_exception",
                 "reason": format!("[{repository}] missing"),
+                "root_cause": [
+                    {
+                        "type": "repository_missing_exception",
+                        "reason": format!("[{repository}] missing"),
+                    }
+                ]
             },
             "status": 404
         }),
@@ -12779,6 +12793,48 @@ mod tests {
         let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_remote/info"));
         assert_eq!(response.status, 200);
         assert_eq!(response.body, serde_json::json!({}));
+    }
+
+    #[test]
+    fn snapshot_index_status_route_delegates_to_snapshot_status_contract() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-index-status")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-index-status"}
+                })),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let create_index_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/snapshot-index-status-probe")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index_response.status, 200);
+
+        let snapshot_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-index-status/snap-index-status")
+                .with_json_body(serde_json::json!({
+                    "indices": "snapshot-index-status-probe",
+                    "include_global_state": false
+                })),
+        );
+        assert_eq!(snapshot_response.status, 200);
+
+        let status_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-status/snap-index-status/snapshot-index-status-probe/_status",
+        ));
+        assert_eq!(status_response.status, 200);
+        assert_eq!(status_response.body["snapshots"][0]["repository"], "repo-index-status");
+        assert_eq!(status_response.body["snapshots"][0]["snapshot"], "snap-index-status");
+        assert_eq!(status_response.body["snapshots"][0]["shards_stats"]["total"], 1);
+        assert_eq!(status_response.body["snapshots"][0]["shards_stats"]["done"], 1);
     }
 
     #[test]

@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 114 |
-| missing-route | 70 |
+| implemented-read | 115 |
+| missing-route | 69 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 81 | 1 | 36 | 10 |
+| root-cluster-node | 82 | 0 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -40,7 +40,6 @@ Base URL: `http://127.0.0.1:19200`
 | snapshot-migration-interop | GET | `/_scripts/painless/_execute` | `/_scripts/painless/_execute` | planned |
 | misc | GET | `/_field_caps` | `/_field_caps` | planned |
 | misc | GET | `/{index}/_field_caps` | `/logs-compat/_field_caps` | planned |
-| root-cluster-node | GET | `/_snapshot/{repository}/{snapshot}/{index}/_status` | `/_snapshot/repo-compat/snap-compat/logs-compat/_status` | planned |
 | index-and-metadata | GET | `/_analyze` | `/_analyze` | planned |
 | index-and-metadata | GET | `/{index}/_analyze` | `/logs-compat/_analyze` | planned |
 | index-and-metadata | GET | `/_flush` | `/_flush` | planned |

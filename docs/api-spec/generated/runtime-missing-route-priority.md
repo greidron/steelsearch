@@ -2,12 +2,6 @@
 
 This file lists safe read/head routes that currently probe as `missing-route`, ordered by family and implementation priority.
 
-## root-cluster-node
-
-- `/_remotestore/metadata/{index}` (GET)
-- `/_remotestore/stats/{index}` (GET)
-- `/_snapshot/{repository}/{snapshot}/{index}/_status` (GET)
-
 ## index-and-metadata
 
 - `/_mapping/field/{fields}` (GET)

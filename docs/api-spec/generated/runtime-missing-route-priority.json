@@ -181,20 +181,6 @@
       "path": "/{index}/_tier"
     }
   ],
-  "root-cluster-node": [
-    {
-      "method": "GET",
-      "path": "/_remotestore/metadata/{index}"
-    },
-    {
-      "method": "GET",
-      "path": "/_remotestore/stats/{index}"
-    },
-    {
-      "method": "GET",
-      "path": "/_snapshot/{repository}/{snapshot}/{index}/_status"
-    }
-  ],
   "search": [
     {
       "method": "GET",

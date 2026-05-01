@@ -1271,6 +1271,16 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
             "indices_keys": sorted(body.get("indices", {}).keys()) if isinstance(body, dict) and isinstance(body.get("indices"), dict) else None,
         }
+    if kind == "snapshot_missing_repository":
+        error = body.get("error") if isinstance(body, dict) else None
+        root_cause = error.get("root_cause") if isinstance(error, dict) else None
+        first_root = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "error_reason": error.get("reason") if isinstance(error, dict) else None,
+            "root_cause_type": first_root.get("type") if isinstance(first_root, dict) else None,
+        }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {

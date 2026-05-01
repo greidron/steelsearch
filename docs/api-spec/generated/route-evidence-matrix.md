@@ -125,13 +125,13 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | POST | `/_nodes/reload_secure_settings` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_nodes/{nodeId}/reload_secure_settings` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_remote/info` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_remotestore/metadata/{index}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_remotestore/metadata/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_remotestore/metadata/{index}/{shard_id}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_remotestore/stats/{index}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_remotestore/stats/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_remotestore/stats/{index}/{shard_id}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_remotestore/_restore` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/{snapshot}/_restore` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_snapshot/{repository}/{snapshot}/{index}/_status` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_snapshot/{repository}/{snapshot}/{index}/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_snapshot/{repository}/{snapshot}/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_snapshot/{repository}/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_snapshot/_status` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |

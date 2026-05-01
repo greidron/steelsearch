@@ -1877,10 +1877,7 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=82, missing-route=1, requires-stateful-probe=36, unprobeable-expression=10
-    - [x] `/_remotestore/metadata/{index}` (GET) [missing-route]
-    - [x] `/_remotestore/stats/{index}` (GET) [missing-route]
-    - [ ] `/_snapshot/{repository}/{snapshot}/{index}/_status` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=82, missing-route=0, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_cluster/allocation/explain` (GET, POST) [requires-stateful-probe]
     - [ ] `/_cluster/decommission/awareness` (DELETE) [requires-stateful-probe]
     - [ ] `/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}` (PUT) [requires-stateful-probe]
@@ -1979,12 +1976,15 @@
     - [x] `/_dangling` (GET) [implemented-read]
     - [x] `/_nodes` (GET) [implemented-read]
     - [x] `/_remote/info` (GET) [implemented-read]
+    - [x] `/_remotestore/metadata/{index}` (GET) [implemented-read]
+    - [x] `/_remotestore/stats/{index}` (GET) [implemented-read]
     - [x] `/_script_context` (GET) [implemented-read]
     - [x] `/_script_language` (GET) [implemented-read]
     - [x] `/_snapshot` (GET) [implemented-read]
     - [x] `/_snapshot/_status` (GET) [implemented-read]
     - [x] `/_snapshot/{repository}/_status` (GET) [implemented-read]
     - [x] `/_snapshot/{repository}/{snapshot}/_status` (GET) [implemented-read]
+    - [x] `/_snapshot/{repository}/{snapshot}/{index}/_status` (GET) [implemented-read]
   - [ ] index/metadata runtime route parity
     - [ ] unit test plan: index/template/alias/data-stream state mutation과 readback을 unit test로 고정
     - [ ] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` fixture에 OpenSearch compare와 setup/teardown 추가
