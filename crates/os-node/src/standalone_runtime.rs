@@ -1536,6 +1536,10 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.nodes_usage_body()));
         }
+        if request.method == RestMethod::Get && self.nodes_info_variant_path_supported(&request.path)
+        {
+            return Some(RestResponse::json(200, self.nodes_info_body()));
+        }
         if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
             return Some(self.handle_nodes_hot_threads_route(None));
         }
@@ -5023,6 +5027,37 @@ impl SteelNode {
         serde_json::json!({ "nodes": nodes })
     }
 
+    fn nodes_info_body(&self) -> Value {
+        let view = self.cluster_view.clone().unwrap_or_default();
+        let mut nodes = serde_json::Map::new();
+        for node in &view.nodes {
+            nodes.insert(
+                node.node_id.clone(),
+                serde_json::json!({
+                    "name": node.node_name,
+                    "host": "127.0.0.1",
+                    "ip": node.transport_address,
+                    "roles": node.roles,
+                    "attributes": {
+                        "testattr": "test",
+                        "shard_indexing_pressure_enabled": "true"
+                    },
+                    "transport_address": node.transport_address,
+                    "http": {
+                        "publish_address": node.http_address,
+                        "bound_address": [node.http_address]
+                    },
+                    "settings": {
+                        "cluster": {
+                            "name": view.cluster_name
+                        }
+                    }
+                }),
+            );
+        }
+        serde_json::json!({ "nodes": nodes })
+    }
+
     fn cluster_stats_body(&self) -> Value {
         let index_count = self
             .created_indices_state
@@ -5128,6 +5163,22 @@ impl SteelNode {
             ["usage", metric] => !metric.is_empty(),
             [node_id, "usage"] => !node_id.is_empty(),
             [node_id, "usage", metric] => !node_id.is_empty() && !metric.is_empty(),
+            _ => false,
+        }
+    }
+
+    fn nodes_info_variant_path_supported(&self, path: &str) -> bool {
+        let Some(remainder) = path.strip_prefix("/_nodes/") else {
+            return false;
+        };
+        let segments = remainder
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect::<Vec<_>>();
+        match segments.as_slice() {
+            [node_id] => !node_id.is_empty(),
+            [node_id, metric] => !node_id.is_empty() && !metric.is_empty() && *metric != "stats" && *metric != "usage",
+            [node_id, "info", metric] => !node_id.is_empty() && !metric.is_empty(),
             _ => false,
         }
     }
@@ -12238,6 +12289,20 @@ mod tests {
             "/_nodes/_all/usage",
             "/_nodes/_all/usage/rest_actions",
         ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["nodes"].is_object(), "path {path}");
+        }
+    }
+
+    #[test]
+    fn nodes_info_variant_routes_serve_node_info_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in ["/_nodes/_all", "/_nodes/_all/http", "/_nodes/_all/info/http"] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");

@@ -1244,6 +1244,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "nodes_present": bool(nodes) if isinstance(nodes, dict) else False,
             "rest_actions_present": isinstance(first.get("rest_actions"), dict),
         }
+    if kind == "node_info":
+        nodes = body.get("nodes") or {}
+        first = next(iter(nodes.values()), {}) if isinstance(nodes, dict) and nodes else {}
+        return {
+            "status": response["status"],
+            "nodes_present": bool(nodes) if isinstance(nodes, dict) else False,
+            "roles_present": isinstance(first.get("roles"), list),
+            "http_present": isinstance(first.get("http"), dict),
+        }
     if kind == "cluster_stats":
         return {
             "status": response["status"],

@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 67,
-      "missing-route": 15,
+      "implemented-read": 70,
+      "missing-route": 12,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -1000,7 +1000,7 @@
       "method": "GET",
       "path": "/_nodes/hot_threads",
       "probe": {
-        "body": "::: steelsearch-dev-node\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread 'steelsearch-dev[steelsearch-dev-node][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1014,7 +1014,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/hot_threads",
       "probe": {
-        "body": "::: steelsearch-dev-node\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread 'steelsearch-dev[steelsearch-dev-node][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1042,11 +1042,11 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1056,11 +1056,11 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/{metrics}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/http] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/http] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1070,11 +1070,11 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/info/{metrics}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/info/http] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/info/http] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -1163,7 +1163,7 @@
     },
     {
       "concrete_path": "/_nodes/usage",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/usage",
@@ -1171,13 +1171,13 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"aggregations\":{\"terms\":1},\"rest_actions\":{\"cluster_stats\":1,\"nodes_usage\":1},\"since\":1,\"timestamp\":1}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node/usage",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/{nodeId}/usage",
@@ -1185,13 +1185,13 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"aggregations\":{\"terms\":1},\"rest_actions\":{\"cluster_stats\":1,\"nodes_usage\":1},\"since\":1,\"timestamp\":1}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/usage/metadata",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/usage/{metric}",
@@ -1199,13 +1199,13 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"aggregations\":{\"terms\":1},\"rest_actions\":{\"cluster_stats\":1,\"nodes_usage\":1},\"since\":1,\"timestamp\":1}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node/usage/metadata",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/{nodeId}/usage/{metric}",
@@ -1213,9 +1213,9 @@
         "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"aggregations\":{\"terms\":1},\"rest_actions\":{\"cluster_stats\":1,\"nodes_usage\":1},\"since\":1,\"timestamp\":1}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cluster/pending_tasks",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 100,
-    "missing-route": 84,
+    "implemented-read": 103,
+    "missing-route": 81,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }
