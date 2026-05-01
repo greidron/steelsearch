@@ -184,10 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_scripts/{id}"
-    },
-    {
-      "method": "GET",
       "path": "/_cat"
     },
     {
@@ -209,14 +205,6 @@
     {
       "method": "GET",
       "path": "/_remotestore/stats/{index}"
-    },
-    {
-      "method": "GET",
-      "path": "/_script_context"
-    },
-    {
-      "method": "GET",
-      "path": "/_script_language"
     },
     {
       "method": "GET",

@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 105 |
-| missing-route | 79 |
+| implemented-read | 108 |
+| missing-route | 76 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 72 | 10 | 36 | 10 |
+| root-cluster-node | 75 | 7 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -40,9 +40,6 @@ Base URL: `http://127.0.0.1:19200`
 | snapshot-migration-interop | GET | `/_scripts/painless/_execute` | `/_scripts/painless/_execute` | planned |
 | misc | GET | `/_field_caps` | `/_field_caps` | planned |
 | misc | GET | `/{index}/_field_caps` | `/logs-compat/_field_caps` | planned |
-| root-cluster-node | GET | `/_script_context` | `/_script_context` | planned |
-| root-cluster-node | GET | `/_script_language` | `/_script_language` | planned |
-| root-cluster-node | GET | `/_scripts/{id}` | `/_scripts/doc-1` | planned |
 | root-cluster-node | GET | `/_nodes` | `/_nodes` | planned |
 | root-cluster-node | GET | `/_remote/info` | `/_remote/info` | planned |
 | root-cluster-node | GET | `/_remotestore/metadata/{index}` | `/_remotestore/metadata/logs-compat` | planned |

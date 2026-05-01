@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 72,
-      "missing-route": 10,
+      "implemented-read": 75,
+      "missing-route": 7,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -916,11 +916,11 @@
       "method": "GET",
       "path": "/_script_context",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_script_context] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_script_context] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"contexts\":[{\"methods\":[{\"name\":\"execute\",\"params\":[],\"return_type\":\"boolean\"},{\"name\":\"getDoc\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"filter\"},{\"methods\":[{\"name\":\"execute\",\"params\":[{\"name\":\"ctx\",\"type\":\"java.util.Map\"}],\"return_type\":\"void\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"ingest\"},{\"methods\":[{\"name\":\"execute\",\"params\":[{\"name\":\"explanation\",\"type\":\"org.opensearch.script.ScoreScript$ExplanationHolder\"}],\"return_type\":\"double\"},{\"name\":\"getDoc\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"get_score\",\"params\":[],\"return_type\":\"double\"}],\"name\":\"score\"},{\"methods\":[{\"name\":\"execute\",\"params\":[{\"name\":\"ctx\",\"type\":\"java.util.Map\"}],\"return_type\":\"void\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"search\"},{\"methods\":[{\"name\":\"execute\",\"params\":[],\"return_type\":\"java.lang.String\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"template\"},{\"methods\":[{\"name\":\"execute\",\"params\":[],\"return_type\":\"void\"},{\"name\":\"getCtx\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"update\"}]}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -930,11 +930,11 @@
       "method": "GET",
       "path": "/_script_language",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_script_language] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_script_language] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"language_contexts\":[{\"contexts\":[\"field\",\"filter\",\"score\",\"terms_set\"],\"language\":\"expression\"},{\"contexts\":[\"template\"],\"language\":\"mustache\"},{\"contexts\":[\"filter\",\"ingest\",\"score\",\"search\",\"template\",\"update\"],\"language\":\"painless\"}],\"types_allowed\":[\"inline\",\"stored\"]}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -958,11 +958,11 @@
       "method": "GET",
       "path": "/_scripts/{id}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_scripts/doc-1] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_scripts/doc-1] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_id\":\"doc-1\",\"found\":false}",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 105,
-    "missing-route": 79,
+    "implemented-read": 108,
+    "missing-route": 76,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

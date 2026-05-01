@@ -80,6 +80,20 @@
     {"name": "search_shards_global_post_shape", "area": "operational", "method": "POST", "path": "/_search_shards", "body": {"query": {"match_all": {}}}, "extract": "search_shards"},
     {"name": "search_shards_target_get_shape", "area": "operational", "method": "GET", "path": "/logs-root-cat-*/_search_shards", "extract": "search_shards"},
     {"name": "search_shards_target_post_shape", "area": "operational", "method": "POST", "path": "/logs-root-cat-*/_search_shards", "body": {"query": {"match_all": {}}}, "extract": "search_shards"},
+    {"name": "script_context_shape", "area": "operational", "method": "GET", "path": "/_script_context", "extract": "script_context"},
+    {"name": "script_language_shape", "area": "operational", "method": "GET", "path": "/_script_language", "extract": "script_language"},
+    {"name": "stored_script_put_get_shape", "area": "operational", "extract": "stored_script_get", "steps": [
+      {"name": "put-script", "method": "PUT", "path": "/_scripts/root-script-put", "body": {"script": {"lang": "painless", "source": "return params.value;"}}, "expected_status": 200},
+      {"name": "get-script", "method": "GET", "path": "/_scripts/root-script-put"}
+    ]},
+    {"name": "stored_script_post_get_shape", "area": "operational", "extract": "stored_script_get", "steps": [
+      {"name": "post-script", "method": "POST", "path": "/_scripts/root-script-post", "body": {"script": {"lang": "painless", "source": "return params.value + 1;"}}, "expected_status": 200},
+      {"name": "get-script", "method": "GET", "path": "/_scripts/root-script-post"}
+    ]},
+    {"name": "stored_script_delete_ack", "area": "operational", "extract": "acknowledged", "steps": [
+      {"name": "put-script", "method": "PUT", "path": "/_scripts/root-script-delete", "body": {"script": {"lang": "painless", "source": "return params.value;"}}, "expected_status": 200},
+      {"name": "delete-script", "method": "DELETE", "path": "/_scripts/root-script-delete"}
+    ]},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
     {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},

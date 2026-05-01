@@ -1278,6 +1278,46 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "first_primary": first_shard.get("primary"),
             "first_search_only": first_shard.get("searchOnly"),
         }
+    if kind == "script_context":
+        contexts = body.get("contexts") or []
+        names = {
+            item.get("name")
+            for item in contexts
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        } if isinstance(contexts, list) else set()
+        return {
+            "status": response["status"],
+            "required_contexts_present": sorted({"filter", "score", "template", "update"} & names),
+            "contexts_nonempty": bool(contexts) if isinstance(contexts, list) else False,
+        }
+    if kind == "script_language":
+        language_contexts = body.get("language_contexts") or []
+        languages = {
+            item.get("language")
+            for item in language_contexts
+            if isinstance(item, dict) and isinstance(item.get("language"), str)
+        } if isinstance(language_contexts, list) else set()
+        return {
+            "status": response["status"],
+            "types_allowed": sorted(set(body.get("types_allowed") or []) & {"inline", "stored"})
+            if isinstance(body.get("types_allowed"), list)
+            else [],
+            "required_languages_present": sorted({"mustache", "painless"} & languages),
+        }
+    if kind == "stored_script_get":
+        script = body.get("script") or {}
+        return {
+            "status": response["status"],
+            "found": body.get("found"),
+            "_id": body.get("_id"),
+            "lang": script.get("lang") if isinstance(script, dict) else None,
+            "source": script.get("source") if isinstance(script, dict) else None,
+        }
+    if kind == "acknowledged":
+        return {
+            "status": response["status"],
+            "acknowledged": body.get("acknowledged"),
+        }
     if kind == "cluster_stats":
         return {
             "status": response["status"],

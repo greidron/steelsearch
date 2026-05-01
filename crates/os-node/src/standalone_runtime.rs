@@ -1556,6 +1556,24 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.nodes_info_body()));
         }
+        if request.method == RestMethod::Get && request.path == "/_script_context" {
+            return Some(self.handle_script_context_route());
+        }
+        if request.method == RestMethod::Get && request.path == "/_script_language" {
+            return Some(self.handle_script_language_route());
+        }
+        if let Some(script_id) = request.path.strip_prefix("/_scripts/") {
+            if !script_id.is_empty() && !script_id.contains('/') {
+                return match request.method {
+                    RestMethod::Get => Some(self.handle_stored_script_get_route(script_id)),
+                    RestMethod::Put | RestMethod::Post => {
+                        Some(self.handle_stored_script_put_route(script_id, request))
+                    }
+                    RestMethod::Delete => Some(self.handle_stored_script_delete_route(script_id)),
+                    _ => None,
+                };
+            }
+        }
         if matches!(
             (request.method, request.path.as_str()),
             (RestMethod::Get, "/_alias") | (RestMethod::Get, "/_aliases")
@@ -5066,6 +5084,157 @@ impl SteelNode {
             );
         }
         serde_json::json!({ "nodes": nodes })
+    }
+
+    fn handle_script_context_route(&self) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "contexts": [
+                    {
+                        "name": "filter",
+                        "methods": [
+                            {"name": "execute", "return_type": "boolean", "params": []},
+                            {"name": "getDoc", "return_type": "java.util.Map", "params": []},
+                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
+                        ]
+                    },
+                    {
+                        "name": "ingest",
+                        "methods": [
+                            {"name": "execute", "return_type": "void", "params": [{"type": "java.util.Map", "name": "ctx"}]},
+                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
+                        ]
+                    },
+                    {
+                        "name": "score",
+                        "methods": [
+                            {"name": "execute", "return_type": "double", "params": [{"type": "org.opensearch.script.ScoreScript$ExplanationHolder", "name": "explanation"}]},
+                            {"name": "getDoc", "return_type": "java.util.Map", "params": []},
+                            {"name": "getParams", "return_type": "java.util.Map", "params": []},
+                            {"name": "get_score", "return_type": "double", "params": []}
+                        ]
+                    },
+                    {
+                        "name": "search",
+                        "methods": [
+                            {"name": "execute", "return_type": "void", "params": [{"type": "java.util.Map", "name": "ctx"}]},
+                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
+                        ]
+                    },
+                    {
+                        "name": "template",
+                        "methods": [
+                            {"name": "execute", "return_type": "java.lang.String", "params": []},
+                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
+                        ]
+                    },
+                    {
+                        "name": "update",
+                        "methods": [
+                            {"name": "execute", "return_type": "void", "params": []},
+                            {"name": "getCtx", "return_type": "java.util.Map", "params": []},
+                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
+                        ]
+                    }
+                ]
+            }),
+        )
+    }
+
+    fn handle_script_language_route(&self) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "types_allowed": ["inline", "stored"],
+                "language_contexts": [
+                    {
+                        "language": "expression",
+                        "contexts": ["field", "filter", "score", "terms_set"]
+                    },
+                    {
+                        "language": "mustache",
+                        "contexts": ["template"]
+                    },
+                    {
+                        "language": "painless",
+                        "contexts": ["filter", "ingest", "score", "search", "template", "update"]
+                    }
+                ]
+            }),
+        )
+    }
+
+    fn handle_stored_script_get_route(&self, script_id: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let script = manifest["stored_scripts"]
+            .as_object()
+            .and_then(|scripts| scripts.get(script_id))
+            .cloned();
+        RestResponse::json(
+            200,
+            match script {
+                Some(script) => serde_json::json!({
+                    "_id": script_id,
+                    "found": true,
+                    "script": script
+                }),
+                None => serde_json::json!({
+                    "_id": script_id,
+                    "found": false
+                }),
+            },
+        )
+    }
+
+    fn handle_stored_script_put_route(&self, script_id: &str, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let script = body.get("script").cloned().unwrap_or(Value::Null);
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let object = manifest.as_object_mut().expect("metadata manifest should be object");
+        let stored_scripts = object
+            .entry("stored_scripts".to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        stored_scripts
+            .as_object_mut()
+            .expect("stored scripts should be object")
+            .insert(script_id.to_string(), script);
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_stored_script_delete_route(&self, script_id: &str) -> RestResponse {
+        let removed = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["stored_scripts"]
+            .as_object_mut()
+            .and_then(|scripts| scripts.remove(script_id));
+        if removed.is_none() {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "resource_not_found_exception",
+                            "reason": format!("stored script [{script_id}] does not exist and cannot be deleted")
+                        }],
+                        "type": "resource_not_found_exception",
+                        "reason": format!("stored script [{script_id}] does not exist and cannot be deleted")
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
     fn search_shards_body(&self, target: Option<&str>) -> Value {
@@ -11100,6 +11269,7 @@ fn default_cluster_metadata_manifest() -> Value {
     serde_json::json!({
         "cluster_settings": default_cluster_settings_state(),
         "indices": {},
+        "stored_scripts": {},
         "templates": {
             "legacy_index_templates": {},
             "component_templates": {},
@@ -12432,5 +12602,58 @@ mod tests {
                 "path {path}"
             );
         }
+    }
+
+    #[test]
+    fn stored_script_and_script_introspection_routes_round_trip_expected_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let script_context = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_script_context"));
+        assert_eq!(script_context.status, 200);
+        assert!(script_context.body["contexts"].is_array());
+
+        let script_language = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_script_language"));
+        assert_eq!(script_language.status, 200);
+        assert!(script_language.body["types_allowed"].is_array());
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_scripts/test-script")
+                .with_json_body(serde_json::json!({
+                    "script": {
+                        "lang": "painless",
+                        "source": "return params.value;"
+                    }
+                })),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let get_response =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_scripts/test-script"));
+        assert_eq!(get_response.status, 200);
+        assert_eq!(get_response.body["_id"], Value::String("test-script".to_string()));
+        assert_eq!(get_response.body["found"], Value::Bool(true));
+        assert_eq!(get_response.body["script"]["lang"], Value::String("painless".to_string()));
+
+        let delete_response =
+            node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/_scripts/test-script"));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let missing_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_scripts/test-script"));
+        assert_eq!(missing_get.status, 200);
+        assert_eq!(missing_get.body["found"], Value::Bool(false));
+
+        let missing_delete =
+            node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/_scripts/test-script"));
+        assert_eq!(missing_delete.status, 404);
+        assert_eq!(
+            missing_delete.body["error"]["type"],
+            Value::String("resource_not_found_exception".to_string())
+        );
     }
 }

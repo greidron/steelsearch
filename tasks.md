@@ -1877,16 +1877,13 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=72, missing-route=10, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_scripts/{id}` (DELETE, GET, POST, PUT) [missing-route]
+    - [x] runtime-backed summary: implemented-read=75, missing-route=7, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_cat` (GET) [missing-route]
     - [ ] `/_dangling` (GET) [missing-route]
     - [ ] `/_nodes` (GET) [missing-route]
     - [ ] `/_remote/info` (GET) [missing-route]
     - [ ] `/_remotestore/metadata/{index}` (GET) [missing-route]
     - [ ] `/_remotestore/stats/{index}` (GET) [missing-route]
-    - [ ] `/_script_context` (GET) [missing-route]
-    - [ ] `/_script_language` (GET) [missing-route]
     - [ ] `/_snapshot/{repository}/{snapshot}/{index}/_status` (GET) [missing-route]
     - [ ] `/_cluster/allocation/explain` (GET, POST) [requires-stateful-probe]
     - [ ] `/_cluster/decommission/awareness` (DELETE) [requires-stateful-probe]
@@ -1898,8 +1895,9 @@
     - [ ] `/_nodes/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_nodes/{nodeId}/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_tasks/{task_id}/_cancel` (POST) [requires-stateful-probe]
-    - [x] `/_search_shards` (GET, POST) [requires-stateful-probe]
-    - [x] `/{index}/_search_shards` (GET, POST) [requires-stateful-probe]
+    - [ ] `/_search_shards` (GET, POST) [requires-stateful-probe]
+    - [ ] `/{index}/_search_shards` (GET, POST) [requires-stateful-probe]
+    - [x] `/_scripts/{id}` (DELETE, GET, POST, PUT) [requires-stateful-probe]
     - [ ] `/_scripts/{id}/{context}` (POST, PUT) [requires-stateful-probe]
     - [ ] `/` (DELETE) [requires-stateful-probe]
     - [ ] `/_dangling/{index_uuid}` (DELETE, POST) [requires-stateful-probe]
@@ -1981,6 +1979,8 @@
     - [x] `/_nodes/{nodeId}/{metrics}` (GET) [implemented-read]
     - [x] `/_tasks` (GET) [implemented-read]
     - [x] `/_tasks/{task_id}` (GET) [implemented-read]
+    - [x] `/_script_context` (GET) [implemented-read]
+    - [x] `/_script_language` (GET) [implemented-read]
     - [x] `/_snapshot` (GET) [implemented-read]
     - [x] `/_snapshot/_status` (GET) [implemented-read]
     - [x] `/_snapshot/{repository}/_status` (GET) [implemented-read]
