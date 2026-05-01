@@ -302,8 +302,8 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-read | GET | `/_cat/snapshots` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/snapshots/{repository}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cat/tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_cat/templates` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_cat/templates/{name}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_cat/templates` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_cat/templates/{name}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_cat/thread_pool` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_cat/thread_pool/{thread_pool_patterns}` | `deferred` | `no canonical runtime compare owner` |
 | document-and-bulk | planned | POST | `/_bulk` | `deferred` | `no canonical runtime compare owner` |

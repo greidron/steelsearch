@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 49,
-      "missing-route": 33,
+      "implemented-read": 51,
+      "missing-route": 31,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -3558,7 +3558,7 @@
     },
     {
       "concrete_path": "/_cat/tasks",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/tasks",
@@ -3566,9 +3566,9 @@
         "body": "cluster:admin/publication steelsearch-dev-node:1 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\ncluster:admin/publication steelsearch-dev-node:3 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/templates",
@@ -3605,11 +3605,11 @@
       "method": "GET",
       "path": "/_cat/thread_pool",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/thread_pool] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/thread_pool] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "steelsearch-dev-node search 0 0 0\nsteelsearch-dev-node write 0 0 0\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3619,11 +3619,11 @@
       "method": "GET",
       "path": "/_cat/thread_pool/{thread_pool_patterns}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/thread_pool/search] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/thread_pool/search] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "steelsearch-dev-node search 0 0 0\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 82,
-    "missing-route": 102,
+    "implemented-read": 84,
+    "missing-route": 100,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

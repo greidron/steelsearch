@@ -1877,11 +1877,9 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=49, missing-route=33, requires-stateful-probe=36, unprobeable-expression=10
-    - [x] `/_cat/templates` (GET) [missing-route]
-    - [x] `/_cat/templates/{name}` (GET) [missing-route]
-    - [ ] `/_cat/thread_pool` (GET) [missing-route]
-    - [ ] `/_cat/thread_pool/{thread_pool_patterns}` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=51, missing-route=31, requires-stateful-probe=36, unprobeable-expression=10
+    - [x] `/_cat/thread_pool` (GET) [missing-route]
+    - [x] `/_cat/thread_pool/{thread_pool_patterns}` (GET) [missing-route]
     - [ ] `/_cluster/decommission/awareness/{awareness_attribute_name}/_status` (GET) [missing-route]
     - [ ] `/_cluster/routing/awareness/{attribute}/weights` (DELETE, GET, PUT) [missing-route]
     - [ ] `/_cluster/stats/nodes/{nodeId}` (GET) [missing-route]
@@ -1970,6 +1968,8 @@
     - [x] `/_cat/snapshots` (GET) [implemented-read]
     - [x] `/_cat/snapshots/{repository}` (GET) [implemented-read]
     - [x] `/_cat/tasks` (GET) [implemented-read]
+    - [x] `/_cat/templates` (GET) [implemented-read]
+    - [x] `/_cat/templates/{name}` (GET) [implemented-read]
     - [x] `/_cluster/health` (GET) [implemented-read]
     - [x] `/_cluster/health/{index}` (GET) [implemented-read]
     - [x] `/_cluster/pending_tasks` (GET) [implemented-read]

@@ -1683,6 +1683,12 @@ impl SteelNode {
         if let Some(name) = request.path.strip_prefix("/_cat/templates/") {
             return Some(self.handle_cat_templates_route(request, Some(name)));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/thread_pool" {
+            return Some(self.handle_cat_thread_pool_route(request, None));
+        }
+        if let Some(patterns) = request.path.strip_prefix("/_cat/thread_pool/") {
+            return Some(self.handle_cat_thread_pool_route(request, Some(patterns)));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6753,6 +6759,97 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_thread_pool_route(
+        &self,
+        request: &RestRequest,
+        target: Option<&str>,
+    ) -> RestResponse {
+        let node_name = self.info.name.clone();
+        let mut rows = vec![
+            serde_json::json!({
+                "node_name": node_name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "search",
+                "type": "fixed",
+                "active": "0",
+                "pool_size": "1",
+                "queue": "0",
+                "queue_size": "1000",
+                "rejected": "0",
+                "largest": "1",
+                "completed": "0",
+                "total_wait_time": "0ms",
+                "core": "",
+                "max": "",
+                "size": "1",
+                "keep_alive": "",
+                "parallelism": ""
+            }),
+            serde_json::json!({
+                "node_name": self.info.name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "write",
+                "type": "fixed",
+                "active": "0",
+                "pool_size": "1",
+                "queue": "0",
+                "queue_size": "10000",
+                "rejected": "0",
+                "largest": "1",
+                "completed": "0",
+                "total_wait_time": "0ms",
+                "core": "",
+                "max": "",
+                "size": "1",
+                "keep_alive": "",
+                "parallelism": ""
+            }),
+        ];
+        if let Some(patterns) = target {
+            rows.retain(|row| {
+                wildcard_match(patterns, row["name"].as_str().unwrap_or_default())
+                    || patterns
+                        .split(',')
+                        .any(|pattern| wildcard_match(pattern.trim(), row["name"].as_str().unwrap_or_default()))
+            });
+        }
+        rows.sort_by(|left, right| {
+            left["name"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["name"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows.clone()));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("node_name name active queue rejected".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {}",
+                row["node_name"].as_str().unwrap_or(""),
+                row["name"].as_str().unwrap_or(""),
+                row["active"].as_str().unwrap_or("0"),
+                row["queue"].as_str().unwrap_or("0"),
+                row["rejected"].as_str().unwrap_or("0"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -11649,5 +11746,42 @@ mod tests {
         assert!(templates_text.contains("name index_patterns order version composed_of"));
         assert!(templates_text.contains("logs-template"));
         assert!(!templates_text.contains("metrics-template"));
+    }
+
+    #[test]
+    fn cat_thread_pool_routes_serve_json_text_and_target_filters() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let mut thread_pool_json_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool");
+        thread_pool_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let thread_pool_json_response = node.handle_rest_request(thread_pool_json_request);
+        assert_eq!(thread_pool_json_response.status, 200);
+        assert_eq!(
+            thread_pool_json_response
+                .body
+                .as_array()
+                .expect("cat thread_pool array")
+                .len(),
+            2
+        );
+
+        let mut thread_pool_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search");
+        thread_pool_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let thread_pool_text_response = node.handle_rest_request(thread_pool_text_request);
+        let thread_pool_text = thread_pool_text_response
+            .body
+            .as_str()
+            .expect("cat thread_pool text body");
+        assert!(thread_pool_text.contains("node_name name active queue rejected"));
+        assert!(thread_pool_text.contains("search"));
+        assert!(!thread_pool_text.contains("write"));
     }
 }

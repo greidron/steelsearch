@@ -161,6 +161,13 @@ CAT_TEMPLATES_REQUIRED_COLUMNS = {
     "version",
     "composed_of",
 }
+CAT_THREAD_POOL_REQUIRED_COLUMNS = {
+    "node_name",
+    "name",
+    "active",
+    "queue",
+    "rejected",
+}
 CAT_ALLOCATION_REQUIRED_COLUMNS = {
     "shards",
     "disk.indices",
@@ -1154,6 +1161,27 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "required_columns_present": sorted(CAT_TEMPLATES_REQUIRED_COLUMNS & columns),
             "fixture_templates_present": sorted(
                 {"logs-template"} & {name for name in template_names if isinstance(name, str)}
+            ),
+        }
+    if kind == "cat_thread_pool":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            pool_names = {row.get("name") for row in rows if isinstance(row, dict)}
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+            pool_names = set()
+            for line in lines[1:]:
+                parts = line.split()
+                if len(parts) >= 2:
+                    pool_names.add(parts[1])
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_THREAD_POOL_REQUIRED_COLUMNS & columns),
+            "fixture_thread_pools_present": sorted(
+                {"search"} & {name for name in pool_names if isinstance(name, str)}
             ),
         }
     if kind == "node_stats":
