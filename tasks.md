@@ -1877,13 +1877,9 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=63, missing-route=19, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_nodes/usage` (GET) [missing-route]
-    - [ ] `/_nodes/usage/{metric}` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=67, missing-route=15, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_nodes/{nodeId}` (GET) [missing-route]
     - [ ] `/_nodes/{nodeId}/info/{metrics}` (GET) [missing-route]
-    - [ ] `/_nodes/{nodeId}/usage` (GET) [missing-route]
-    - [ ] `/_nodes/{nodeId}/usage/{metric}` (GET) [missing-route]
     - [ ] `/_nodes/{nodeId}/{metrics}` (GET) [missing-route]
     - [ ] `/_search_shards` (GET, POST) [missing-route]
     - [ ] `/{index}/_search_shards` (GET, POST) [missing-route]
@@ -1975,10 +1971,14 @@
     - [x] `/_nodes/stats` (GET) [implemented-read]
     - [x] `/_nodes/stats/{metric}` (GET) [implemented-read]
     - [x] `/_nodes/stats/{metric}/{index_metric}` (GET) [implemented-read]
+    - [x] `/_nodes/usage` (GET) [implemented-read]
+    - [x] `/_nodes/usage/{metric}` (GET) [implemented-read]
     - [x] `/_nodes/{nodeId}/hot_threads` (GET) [implemented-read]
     - [x] `/_nodes/{nodeId}/stats` (GET) [implemented-read]
     - [x] `/_nodes/{nodeId}/stats/{metric}` (GET) [implemented-read]
     - [x] `/_nodes/{nodeId}/stats/{metric}/{index_metric}` (GET) [implemented-read]
+    - [x] `/_nodes/{nodeId}/usage` (GET) [implemented-read]
+    - [x] `/_nodes/{nodeId}/usage/{metric}` (GET) [implemented-read]
     - [x] `/_tasks` (GET) [implemented-read]
     - [x] `/_tasks/{task_id}` (GET) [implemented-read]
     - [x] `/_snapshot` (GET) [implemented-read]

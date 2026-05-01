@@ -184,27 +184,11 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_nodes/usage"
-    },
-    {
-      "method": "GET",
-      "path": "/_nodes/usage/{metric}"
-    },
-    {
-      "method": "GET",
       "path": "/_nodes/{nodeId}"
     },
     {
       "method": "GET",
       "path": "/_nodes/{nodeId}/info/{metrics}"
-    },
-    {
-      "method": "GET",
-      "path": "/_nodes/{nodeId}/usage"
-    },
-    {
-      "method": "GET",
-      "path": "/_nodes/{nodeId}/usage/{metric}"
     },
     {
       "method": "GET",
