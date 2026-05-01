@@ -98,8 +98,8 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | planned | GET | `/_scripts/{id}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/_tasks/{task_id}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_tasks` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | planned | GET | `/_nodes/hot_threads` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | GET | `/_nodes/{nodeId}/hot_threads` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-read | GET | `/_nodes/hot_threads` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-read | GET | `/_nodes/{nodeId}/hot_threads` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | GET | `/_nodes` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | GET | `/_nodes/{nodeId}/{metrics}` | `deferred` | `no canonical runtime compare owner` |

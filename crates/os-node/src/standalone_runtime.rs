@@ -1525,6 +1525,17 @@ impl SteelNode {
                 ),
             ));
         }
+        if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
+            return Some(self.handle_nodes_hot_threads_route(None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_nodes/") && request.path.ends_with("/hot_threads") {
+            let node_id = request
+                .path
+                .trim_start_matches("/_nodes/")
+                .trim_end_matches("/hot_threads")
+                .trim_end_matches('/');
+            return Some(self.handle_nodes_hot_threads_route(Some(node_id)));
+        }
         if matches!(
             (request.method, request.path.as_str()),
             (RestMethod::Get, "/_alias") | (RestMethod::Get, "/_aliases")
@@ -4546,8 +4557,32 @@ impl SteelNode {
             .get(attribute)
             .cloned()
         else {
-            return RestResponse::json(200, serde_json::json!({}));
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": format!("no weighted routing weights configured for awareness attribute [{attribute}]")
+                    },
+                    "status": 400
+                }),
+            );
         };
+        if match state["weights"].as_object() {
+            Some(weights) => weights.is_empty(),
+            None => true,
+        } {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": format!("no weighted routing weights configured for awareness attribute [{attribute}]")
+                    },
+                    "status": 400
+                }),
+            );
+        }
         RestResponse::json(
             200,
             serde_json::json!({
@@ -5010,6 +5045,21 @@ impl SteelNode {
             }
             _ => false,
         }
+    }
+
+    fn handle_nodes_hot_threads_route(&self, requested_node: Option<&str>) -> RestResponse {
+        let cluster_name = self
+            .cluster_view
+            .as_ref()
+            .map(|view| view.cluster_name.as_str())
+            .unwrap_or("steelsearch-dev");
+        let node_name = requested_node
+            .filter(|node| !node.is_empty() && *node != "_all")
+            .unwrap_or(self.info.name.as_str());
+        let body = format!(
+            "::: {node_name}\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread '{cluster_name}[{node_name}][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n"
+        );
+        RestResponse::text(200, body)
     }
 
     fn index_stats_body(&self) -> Value {
@@ -12026,8 +12076,11 @@ mod tests {
             RestMethod::Get,
             "/_cluster/routing/awareness/zone/weights",
         ));
-        assert_eq!(weighted_get_after_delete.status, 200);
-        assert_eq!(weighted_get_after_delete.body, serde_json::json!({}));
+        assert_eq!(weighted_get_after_delete.status, 400);
+        assert_eq!(
+            weighted_get_after_delete.body["error"]["type"],
+            "action_request_validation_exception"
+        );
 
         let decommission_delete = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
@@ -12063,6 +12116,22 @@ mod tests {
             assert!(response.body["cluster_name"].is_string(), "path {path}");
             assert!(response.body["indices"]["count"].is_number(), "path {path}");
             assert!(response.body["nodes"]["count"]["total"].is_number(), "path {path}");
+        }
+    }
+
+    #[test]
+    fn nodes_hot_threads_routes_serve_plaintext_views() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in ["/_nodes/hot_threads", "/_nodes/_all/hot_threads"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            let text = response.body.as_str().expect("hot_threads text body");
+            assert!(text.contains("Hot threads at"), "path {path}");
+            assert!(text.contains("cpu usage by thread"), "path {path}");
         }
     }
 }

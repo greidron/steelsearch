@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 56,
-      "missing-route": 26,
+      "implemented-read": 58,
+      "missing-route": 24,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -574,8 +574,8 @@
       "method": "GET",
       "path": "/_cluster/routing/awareness/{attribute}/weights",
       "probe": {
-        "body": "{}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"no weighted routing weights configured for awareness attribute [zone]\",\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
       },
       "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
@@ -739,7 +739,7 @@
     },
     {
       "concrete_path": "/_cluster/stats/nodes/steelsearch-dev-node",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cluster/stats/nodes/{nodeId}",
@@ -747,13 +747,13 @@
         "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cluster/stats/metadata/nodes/steelsearch-dev-node",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cluster/stats/{metric}/nodes/{nodeId}",
@@ -761,13 +761,13 @@
         "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cluster/stats/metadata/docs/nodes/steelsearch-dev-node",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}",
@@ -775,9 +775,9 @@
         "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":11,\"docs\":{\"count\":0},\"shards\":{\"total\":11}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -888,7 +888,7 @@
       "method": "GET",
       "path": "/_snapshot",
       "probe": {
-        "body": "{\"repo-root-cat-probe\":{\"settings\":{\"location\":\"/home/ubuntu/OpenSearch/build/testclusters/runTask-0/repo/repo-root-cat-probe\"},\"type\":\"fs\"},\"repo-stateful-probe\":{\"settings\":{\"location\":\"/tmp/steelsearch-stateful-probe-repo\"},\"type\":\"fs\"}}",
+        "body": "{\"repo-root-cat-probe\":{\"settings\":{\"location\":\"${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-root-cat-probe\"},\"type\":\"fs\"},\"repo-stateful-probe\":{\"settings\":{\"location\":\"/tmp/steelsearch-stateful-probe-repo\"},\"type\":\"fs\"}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -995,31 +995,31 @@
     },
     {
       "concrete_path": "/_nodes/hot_threads",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/hot_threads",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/hot_threads] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/hot_threads] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "::: steelsearch-dev-node\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread 'steelsearch-dev[steelsearch-dev-node][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n",
+        "status": 200
       },
-      "profile": "`deferred`",
-      "runtime_status": "missing-route",
-      "source_status": "planned"
+      "profile": "`root-cluster-node`",
+      "runtime_status": "implemented-read",
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes/steelsearch-dev-node/hot_threads",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_nodes/{nodeId}/hot_threads",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/hot_threads] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_nodes/steelsearch-dev-node/hot_threads] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "::: steelsearch-dev-node\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread 'steelsearch-dev[steelsearch-dev-node][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n",
+        "status": 200
       },
-      "profile": "`deferred`",
-      "runtime_status": "missing-route",
-      "source_status": "planned"
+      "profile": "`root-cluster-node`",
+      "runtime_status": "implemented-read",
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_nodes",
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 89,
-    "missing-route": 95,
+    "implemented-read": 91,
+    "missing-route": 93,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

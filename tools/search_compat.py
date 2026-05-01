@@ -1206,6 +1206,27 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "discovered_cluster_manager_present": isinstance(body, dict)
             and "discovered_cluster_manager" in body,
         }
+    if kind == "hot_threads_text":
+        raw = body.get("_raw") if isinstance(body, dict) else ""
+        return {
+            "status": response["status"],
+            "hot_threads_marker_present": "Hot threads at" in raw,
+        }
+    if kind == "cluster_stats_indices_only":
+        indices = body.get("indices") or {}
+        return {
+            "status": response["status"],
+            "cluster_name_present": bool(body.get("cluster_name")),
+            "index_count_present": "count" in indices,
+        }
+    if kind == "cluster_stats_index_metric":
+        indices = body.get("indices") or {}
+        docs = indices.get("docs") or {}
+        return {
+            "status": response["status"],
+            "cluster_name_present": bool(body.get("cluster_name")),
+            "docs_count_present": "count" in docs,
+        }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}
         first = next(iter(nodes.values()), {}) if isinstance(nodes, dict) and nodes else {}
