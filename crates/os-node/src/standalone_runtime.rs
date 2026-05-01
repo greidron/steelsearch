@@ -1664,6 +1664,9 @@ impl SteelNode {
             };
             return Some(self.handle_rollover_route(target, named));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat" {
+            return Some(self.handle_cat_root_route());
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/aliases" {
             return Some(self.handle_cat_aliases_route(request, None));
         }
@@ -6448,6 +6451,45 @@ impl SteelNode {
             ));
         }
         RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_cat_root_route(&self) -> RestResponse {
+        RestResponse::text(
+            200,
+            [
+                "=^.^=",
+                "/_cat/allocation",
+                "/_cat/shards",
+                "/_cat/shards/{index}",
+                "/_cat/nodes",
+                "/_cat/tasks",
+                "/_cat/indices",
+                "/_cat/indices/{index}",
+                "/_cat/segments",
+                "/_cat/segments/{index}",
+                "/_cat/count",
+                "/_cat/count/{index}",
+                "/_cat/recovery",
+                "/_cat/recovery/{index}",
+                "/_cat/health",
+                "/_cat/pending_tasks",
+                "/_cat/aliases",
+                "/_cat/aliases/{alias}",
+                "/_cat/thread_pool",
+                "/_cat/thread_pool/{thread_pools}",
+                "/_cat/plugins",
+                "/_cat/fielddata",
+                "/_cat/fielddata/{fields}",
+                "/_cat/nodeattrs",
+                "/_cat/repositories",
+                "/_cat/snapshots/{repository}",
+                "/_cat/templates",
+                "/_cat/pit_segments",
+                "/_cat/pit_segments/{pit_id}",
+            ]
+            .join("\n")
+                + "\n",
+        )
     }
 
     fn handle_cat_aliases_route(
@@ -11724,6 +11766,23 @@ mod tests {
         let text_body = text_response.body.as_str().expect("cat aliases text body");
         assert!(text_body.contains("alias index filter routing.index routing.search is_write_index"));
         assert!(text_body.contains("logs-read logs-000001"));
+    }
+
+    #[test]
+    fn cat_root_route_serves_plaintext_help_listing() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in ["/_cat", "/_cat?format=json"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            let body = response.body.as_str().expect("cat root text body");
+            assert!(body.contains("=^.^="), "path {path}");
+            assert!(body.contains("/_cat/aliases"), "path {path}");
+            assert!(body.contains("/_cat/health"), "path {path}");
+        }
     }
 
     #[test]

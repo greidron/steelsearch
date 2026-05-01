@@ -1873,12 +1873,11 @@
   - [x] canonical planned/stubbed inventory를 runtime-backed route ledger로 재분류 (`docs/api-spec/generated/runtime-route-ledger.{json,md}` 생성)
   - [x] runtime-backed ledger의 `implemented-read` 항목을 `route-evidence-matrix`/Swagger 상태와 동기화
   - [x] runtime-backed ledger의 `missing-route` 항목을 family별 구현 우선순위로 재정렬하고 false positive를 제거 (`docs/api-spec/generated/runtime-missing-route-priority.{json,md}` 생성, implemented-read 항목은 `[x]`로 재분류)
-  - [ ] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
+  - [x] runtime-backed ledger의 `requires-stateful-probe` 항목에 대해 stateful fixture/probe runner를 추가
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=75, missing-route=7, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_cat` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=77, missing-route=5, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_dangling` (GET) [missing-route]
     - [ ] `/_nodes` (GET) [missing-route]
     - [ ] `/_remote/info` (GET) [missing-route]
@@ -1895,8 +1894,8 @@
     - [ ] `/_nodes/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_nodes/{nodeId}/reload_secure_settings` (POST) [requires-stateful-probe]
     - [ ] `/_tasks/{task_id}/_cancel` (POST) [requires-stateful-probe]
-    - [ ] `/_search_shards` (GET, POST) [requires-stateful-probe]
-    - [ ] `/{index}/_search_shards` (GET, POST) [requires-stateful-probe]
+    - [x] `/_search_shards` (GET, POST) [requires-stateful-probe]
+    - [x] `/{index}/_search_shards` (GET, POST) [requires-stateful-probe]
     - [x] `/_scripts/{id}` (DELETE, GET, POST, PUT) [requires-stateful-probe]
     - [ ] `/_scripts/{id}/{context}` (POST, PUT) [requires-stateful-probe]
     - [ ] `/` (DELETE) [requires-stateful-probe]
@@ -1979,6 +1978,7 @@
     - [x] `/_nodes/{nodeId}/{metrics}` (GET) [implemented-read]
     - [x] `/_tasks` (GET) [implemented-read]
     - [x] `/_tasks/{task_id}` (GET) [implemented-read]
+    - [x] `/_cat` (GET) [implemented-read]
     - [x] `/_script_context` (GET) [implemented-read]
     - [x] `/_script_language` (GET) [implemented-read]
     - [x] `/_snapshot` (GET) [implemented-read]

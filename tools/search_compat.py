@@ -1213,6 +1213,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "hot_threads_marker_present": "Hot threads at" in raw,
         }
+    if kind == "cat_help":
+        raw = body.get("_raw") if isinstance(body, dict) else ""
+        raw = raw or ""
+        return {
+            "status": response["status"],
+            "help_banner_present": "=^.^=" in raw,
+            "required_entries_present": sorted(
+                entry
+                for entry in ["/_cat/aliases", "/_cat/health", "/_cat/nodes", "/_cat/shards"]
+                if entry in raw
+            ),
+        }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {

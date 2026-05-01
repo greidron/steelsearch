@@ -41,6 +41,7 @@
     }
   ],
   "cases": [
+    {"name": "cat_root_text", "area": "operational", "method": "GET", "path": "/_cat", "accept": "text/plain", "extract": "cat_help"},
     {"name": "cat_allocation_text", "area": "operational", "method": "GET", "path": "/_cat/allocation?v=true", "accept": "text/plain", "extract": "cat_allocation"},
     {"name": "cat_fielddata_text", "area": "operational", "method": "GET", "path": "/_cat/fielddata/message,user?v=true", "accept": "text/plain", "extract": "cat_fielddata"},
     {"name": "cat_pending_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/pending_tasks?v=true", "accept": "text/plain", "extract": "cat_pending_tasks"},

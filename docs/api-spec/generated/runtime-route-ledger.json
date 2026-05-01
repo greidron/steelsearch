@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 75,
-      "missing-route": 7,
+      "implemented-read": 76,
+      "missing-route": 6,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -911,7 +911,7 @@
     },
     {
       "concrete_path": "/_script_context",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_script_context",
@@ -919,13 +919,13 @@
         "body": "{\"contexts\":[{\"methods\":[{\"name\":\"execute\",\"params\":[],\"return_type\":\"boolean\"},{\"name\":\"getDoc\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"filter\"},{\"methods\":[{\"name\":\"execute\",\"params\":[{\"name\":\"ctx\",\"type\":\"java.util.Map\"}],\"return_type\":\"void\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"ingest\"},{\"methods\":[{\"name\":\"execute\",\"params\":[{\"name\":\"explanation\",\"type\":\"org.opensearch.script.ScoreScript$ExplanationHolder\"}],\"return_type\":\"double\"},{\"name\":\"getDoc\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"get_score\",\"params\":[],\"return_type\":\"double\"}],\"name\":\"score\"},{\"methods\":[{\"name\":\"execute\",\"params\":[{\"name\":\"ctx\",\"type\":\"java.util.Map\"}],\"return_type\":\"void\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"search\"},{\"methods\":[{\"name\":\"execute\",\"params\":[],\"return_type\":\"java.lang.String\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"template\"},{\"methods\":[{\"name\":\"execute\",\"params\":[],\"return_type\":\"void\"},{\"name\":\"getCtx\",\"params\":[],\"return_type\":\"java.util.Map\"},{\"name\":\"getParams\",\"params\":[],\"return_type\":\"java.util.Map\"}],\"name\":\"update\"}]}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_script_language",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_script_language",
@@ -933,9 +933,9 @@
         "body": "{\"language_contexts\":[{\"contexts\":[\"field\",\"filter\",\"score\",\"terms_set\"],\"language\":\"expression\"},{\"contexts\":[\"template\"],\"language\":\"mustache\"},{\"contexts\":[\"filter\",\"ingest\",\"score\",\"search\",\"template\",\"update\"],\"language\":\"painless\"}],\"types_allowed\":[\"inline\",\"stored\"]}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_snapshot/repo-compat/snap-compat",
@@ -953,7 +953,7 @@
     },
     {
       "concrete_path": "/_scripts/doc-1",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_scripts/{id}",
@@ -961,9 +961,9 @@
         "body": "{\"_id\":\"doc-1\",\"found\":false}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_tasks/1",
@@ -3241,11 +3241,11 @@
       "method": "GET",
       "path": "/_cat",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "=^.^=\n/_cat/allocation\n/_cat/shards\n/_cat/shards/{index}\n/_cat/nodes\n/_cat/tasks\n/_cat/indices\n/_cat/indices/{index}\n/_cat/segments\n/_cat/segments/{index}\n/_cat/count\n/_cat/count/{index}\n/_cat/recovery\n/_cat/recovery/{index}\n/_cat/health\n/_cat/pending_tasks\n/_cat/aliases\n/_cat/aliases/{alias}\n/_cat/thread_pool\n/_cat/thread_pool/{thread_pools}\n/_cat/plugins\n/_cat/fielddata\n/_cat/fielddata/{fields}\n/_cat/nodeattrs\n/_cat/repositories\n/_cat/snapshots/{repository}\n/_cat/templates\n/_cat/pit_segments\n/_cat/pit_segments/{pit_id}\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 108,
-    "missing-route": 76,
+    "implemented-read": 109,
+    "missing-route": 75,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 108 |
-| missing-route | 76 |
+| implemented-read | 109 |
+| missing-route | 75 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 75 | 7 | 36 | 10 |
+| root-cluster-node | 76 | 6 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -76,7 +76,6 @@ Base URL: `http://127.0.0.1:19200`
 | index-and-metadata | GET | `/{index}/_upgrade` | `/logs-compat/_upgrade` | planned |
 | search | GET | `/_validate/query` | `/_validate/query` | planned |
 | search | GET | `/{index}/_validate/query` | `/logs-compat/_validate/query` | planned |
-| root-cluster-node | GET | `/_cat` | `/_cat` | planned |
 | document-and-bulk | GET | `/{index}/_source/{id}` | `/logs-compat/_source/doc-1` | planned |
 | document-and-bulk | GET | `/_mget` | `/_mget` | planned |
 | document-and-bulk | GET | `/{index}/_mget` | `/logs-compat/_mget` | planned |
