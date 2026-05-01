@@ -207,6 +207,16 @@ VOLATILE_RESPONSE_KEYS = {
 }
 
 
+def flatten_json_paths(value: Any, prefix: str = "") -> list[str]:
+    if isinstance(value, dict):
+        paths: list[str] = []
+        for key, child in value.items():
+            next_prefix = f"{prefix}.{key}" if prefix else key
+            paths.extend(flatten_json_paths(child, next_prefix))
+        return paths
+    return [prefix] if prefix else []
+
+
 def excluded_case_names() -> set[str]:
     raw = os.environ.get("SEARCH_COMPAT_EXCLUDE_CASES", "")
     return {name.strip() for name in raw.split(",") if name.strip()}
@@ -670,6 +680,92 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "fields": sorted(properties.keys()),
             "number_of_shards": str(settings.get("number_of_shards")),
             "number_of_replicas": str(settings.get("number_of_replicas")),
+        }
+    if kind == "mapping_field":
+        indices = sorted(body.keys()) if isinstance(body, dict) else []
+        first_index = body.get(indices[0], {}) if indices else {}
+        mappings = first_index.get("mappings") if isinstance(first_index, dict) else {}
+        field_names = sorted(mappings.keys()) if isinstance(mappings, dict) else []
+        first_field = mappings.get(field_names[0], {}) if field_names else {}
+        return {
+            "status": response["status"],
+            "indices": indices,
+            "fields": field_names,
+            "first_full_name": first_field.get("full_name") if isinstance(first_field, dict) else None,
+        }
+    if kind == "settings_named":
+        payload = body if isinstance(body, dict) else {}
+        return {
+            "status": response["status"],
+            "indices": sorted(payload.keys()),
+            "setting_keys": {
+                index: sorted(
+                    flatten_json_paths((payload.get(index, {}).get("settings") or {}))
+                )
+                for index in sorted(payload.keys())
+            },
+        }
+    if kind == "index_stats":
+        payload = body if isinstance(body, dict) else {}
+        return {
+            "status": response["status"],
+            "shards_total": ((payload.get("_shards") or {}).get("total")),
+            "indices": sorted((payload.get("indices") or {}).keys()),
+        }
+    if kind == "analyze_tokens":
+        tokens = body.get("tokens") or []
+        return {
+            "status": response["status"],
+            "tokens": [token.get("token") for token in tokens if isinstance(token, dict)],
+        }
+    if kind == "flush_shards":
+        shards = body.get("_shards") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "shards_total": shards.get("total") if isinstance(shards, dict) else None,
+            "shards_successful": shards.get("successful") if isinstance(shards, dict) else None,
+            "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
+        }
+    if kind == "resolve_index":
+        return {
+            "status": response["status"],
+            "indices": sorted(
+                entry.get("name")
+                for entry in (body.get("indices") or [])
+                if isinstance(entry, dict) and entry.get("name") is not None
+            ),
+            "aliases": sorted(
+                entry.get("name")
+                for entry in (body.get("aliases") or [])
+                if isinstance(entry, dict) and entry.get("name") is not None
+            ),
+            "data_streams": sorted(
+                entry.get("name")
+                for entry in (body.get("data_streams") or [])
+                if isinstance(entry, dict) and entry.get("name") is not None
+            ),
+        }
+    if kind == "shard_stores":
+        indices = body.get("indices") or {}
+        return {
+            "status": response["status"],
+            "indices": sorted(indices.keys()) if isinstance(indices, dict) else [],
+        }
+    if kind == "upgrade_status":
+        indices = body.get("indices") or {}
+        return {
+            "status": response["status"],
+            "indices": sorted(indices.keys()) if isinstance(indices, dict) else [],
+            "size_in_bytes": body.get("size_in_bytes") if isinstance(body, dict) else None,
+            "size_to_upgrade_in_bytes": body.get("size_to_upgrade_in_bytes") if isinstance(body, dict) else None,
+            "size_to_upgrade_ancient_in_bytes": body.get("size_to_upgrade_ancient_in_bytes") if isinstance(body, dict) else None,
+        }
+    if kind == "ingestion_state":
+        return {
+            "status": response["status"],
+            "index": body.get("index") if isinstance(body, dict) else None,
+            "state": body.get("state") if isinstance(body, dict) else None,
+            "pipelines_count": len(body.get("pipelines") or []) if isinstance(body, dict) else None,
         }
     if kind == "alias_metadata":
         alias_pairs: list[str] = []
@@ -1250,6 +1346,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "error_type": error.get("type") if isinstance(error, dict) else None,
             "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
         }
+    if kind == "reload_secure_settings":
+        nodes = body.get("nodes") if isinstance(body, dict) else None
+        node_summary = body.get("_nodes") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "total": node_summary.get("total") if isinstance(node_summary, dict) else None,
+            "successful": node_summary.get("successful") if isinstance(node_summary, dict) else None,
+            "failed": node_summary.get("failed") if isinstance(node_summary, dict) else None,
+            "cluster_name_present": isinstance(body, dict) and isinstance(body.get("cluster_name"), str),
+            "node_count": len(nodes) if isinstance(nodes, dict) else 0,
+        }
     if kind == "hot_threads_text":
         raw = body.get("_raw") if isinstance(body, dict) else ""
         raw = raw or ""
@@ -1324,6 +1431,100 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "error_type": error.get("type") if isinstance(error, dict) else None,
             "error_reason": error.get("reason") if isinstance(error, dict) else None,
             "root_cause_type": first_root.get("type") if isinstance(first_root, dict) else None,
+        }
+    if kind == "snapshot_restore":
+        snapshot = body.get("snapshot") if isinstance(body, dict) else None
+        shards = snapshot.get("shards") if isinstance(snapshot, dict) else None
+        return {
+            "status": response["status"],
+            "accepted": body.get("accepted") if isinstance(body, dict) else None,
+            "snapshot_present": isinstance(snapshot, dict),
+            "snapshot_name_present": bool(snapshot.get("snapshot")) if isinstance(snapshot, dict) else False,
+            "shards_total": shards.get("total") if isinstance(shards, dict) else None,
+        }
+    if kind == "snapshot_repository":
+        if not isinstance(body, dict) or not body:
+            return {
+                "status": response["status"],
+                "repository_names": [],
+                "type": None,
+                "location_present": False,
+            }
+        repository_name = sorted(body.keys())[0]
+        repository = body.get(repository_name) or {}
+        settings = repository.get("settings") if isinstance(repository, dict) else {}
+        return {
+            "status": response["status"],
+            "repository_names": sorted(body.keys()),
+            "type": repository.get("type") if isinstance(repository, dict) else None,
+            "location_present": isinstance(settings, dict) and isinstance(settings.get("location"), str),
+        }
+    if kind == "snapshot_cleanup":
+        results = body.get("results") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "deleted_bytes": results.get("deleted_bytes") if isinstance(results, dict) else None,
+            "deleted_blobs": results.get("deleted_blobs") if isinstance(results, dict) else None,
+        }
+    if kind == "snapshot_repository_verify":
+        nodes = body.get("nodes") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "node_count": len(nodes) if isinstance(nodes, dict) else 0,
+            "node_names": sorted(
+                value.get("name")
+                for value in nodes.values()
+                if isinstance(value, dict) and isinstance(value.get("name"), str)
+            ) if isinstance(nodes, dict) else [],
+        }
+    if kind == "snapshot_create":
+        snapshot = body.get("snapshot") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "accepted": body.get("accepted") if isinstance(body, dict) else None,
+            "snapshot_name": snapshot.get("snapshot") if isinstance(snapshot, dict) else None,
+            "indices": snapshot.get("indices") if isinstance(snapshot, dict) else None,
+        }
+    if kind == "snapshot_readback":
+        snapshots = body.get("snapshots") if isinstance(body, dict) else None
+        first = snapshots[0] if isinstance(snapshots, list) and snapshots else {}
+        return {
+            "status": response["status"],
+            "snapshot_count": len(snapshots) if isinstance(snapshots, list) else 0,
+            "snapshot_name": first.get("snapshot") if isinstance(first, dict) else None,
+            "state": first.get("state") if isinstance(first, dict) else None,
+            "indices": first.get("indices") if isinstance(first, dict) else None,
+        }
+    if kind == "snapshot_delete":
+        snapshot = body.get("snapshot") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "acknowledged": body.get("acknowledged") if isinstance(body, dict) else None,
+            "snapshot_name": snapshot.get("snapshot") if isinstance(snapshot, dict) else None,
+            "repository": snapshot.get("repository") if isinstance(snapshot, dict) else None,
+        }
+    if kind == "recovery_api":
+        indices = sorted(body.keys()) if isinstance(body, dict) else []
+        first = body.get(indices[0], {}) if indices else {}
+        shards = first.get("shards") if isinstance(first, dict) else None
+        shard0 = shards[0] if isinstance(shards, list) and shards else {}
+        return {
+            "status": response["status"],
+            "indices": indices,
+            "first_stage": shard0.get("stage") if isinstance(shard0, dict) else None,
+            "first_primary": shard0.get("primary") if isinstance(shard0, dict) else None,
+        }
+    if kind == "segments_api":
+        indices = sorted(body.keys()) if isinstance(body, dict) else []
+        first = body.get(indices[0], {}) if indices else {}
+        shards = first.get("shards") if isinstance(first, dict) else {}
+        shard0 = shards.get("0") if isinstance(shards, dict) else None
+        first_segment = shard0[0] if isinstance(shard0, list) and shard0 else {}
+        return {
+            "status": response["status"],
+            "indices": indices,
+            "first_segment": first_segment.get("segment") if isinstance(first_segment, dict) else None,
+            "first_committed": first_segment.get("committed") if isinstance(first_segment, dict) else None,
         }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
@@ -1429,6 +1630,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "acknowledged": body.get("acknowledged"),
+        }
+    if kind == "accepted":
+        return {
+            "status": response["status"],
+            "accepted": body.get("accepted"),
         }
     if kind == "cluster_stats":
         return {

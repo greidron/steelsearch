@@ -171,7 +171,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(runtime_ledger_path).expect("runtime route ledger should exist");
     let runtime_ledger: Value =
         serde_json::from_str(&runtime_ledger_text).expect("runtime route ledger should parse");
-    assert_eq!(runtime_ledger["summary"]["implemented-read"], 115);
+    assert_eq!(runtime_ledger["summary"]["implemented-read"], 200);
     assert!(runtime_ledger["routes"]
         .as_array()
         .expect("runtime ledger routes should be array")
@@ -182,7 +182,447 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(stateful_probe_report_path).expect("stateful route probe report should exist");
     let stateful_probe: Value =
         serde_json::from_str(&stateful_probe_text).expect("stateful route probe report should parse");
-    assert_eq!(stateful_probe["summary"]["passed"], 18);
+    assert_eq!(stateful_probe["summary"]["passed"], 209);
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_field_caps" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_field_caps" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_tier/_cancel/{index}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_tier/{targetTier}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_plugins/_knn/models/_search" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_plugins/_knn/clear_cache/{index}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_plugins/_knn/models/{model_id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_plugins/_knn/models/{model_id}/_train" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_ingest/pipeline/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_ingest/pipeline/_simulate" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_ingest/pipeline/{id}/_simulate" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_scripts/painless/_execute" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_rank_eval" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_rank_eval" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_forcemerge" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_forcemerge" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_index_template/_simulate" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_index_template/_simulate/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_index_template/_simulate_index/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_index_template/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search/pipeline/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search/point_in_time/_all" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search/scroll" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search/scroll/{scroll_id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_msearch/template" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_render/template" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_render/template/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search/template" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_msearch/template" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_search/template" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_count" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_count" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_validate/query" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_validate/query" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search/point_in_time" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_search/point_in_time" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_msearch" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_explain/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_msearch" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_open" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_open" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_template/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_alias" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_alias/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_aliases" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_aliases/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_block/{block}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_clone/{target}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_scale" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_shrink/{target}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_split/{target}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_rollover" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_rollover/{new_index}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/ingestion/_pause" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/ingestion/_resume" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_upgrade" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_analyze" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_analyze" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_flush" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_flush/synced" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_flush" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_flush/synced" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_upgrade" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/ingestion/_state" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_mget" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_mget" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_mtermvectors" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_mtermvectors" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_refresh" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_refresh" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_termvectors" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_termvectors/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_bulk" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_bulk/stream" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_bulk" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_bulk/stream" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_delete_by_query/{taskId}/_rethrottle" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_reindex/{taskId}/_rethrottle" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_reindex" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_create/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_doc" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_doc/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_delete_by_query" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_update/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_update_by_query/{taskId}/_rethrottle" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_update_by_query" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -222,7 +662,161 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
-        .any(|case| case["inventory_path"] == "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)" && case["runtime_status"] == "stateful-route-present"));
+        .any(|case| case["inventory_path"] == "/_nodes/reload_secure_settings" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_nodes/{nodeId}/reload_secure_settings" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_settings" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_settings" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_mapping" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_mappings" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_alias" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_alias/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_aliases" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_aliases/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_cache/clear" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_cache/clear" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_close" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_close" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_component_template/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_data_stream/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_tasks/{task_id}/_cancel" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_dangling/{index_uuid}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_filecache/prune" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_remotestore/_restore" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_snapshot/{repository}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_snapshot/{repository}/_cleanup" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_snapshot/{repository}/_verify" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_snapshot/{repository}/{snapshot}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_search_shards" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/{index}/_search_shards" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_scripts/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_scripts/{id}/{context}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["inventory_path"] == "/_snapshot/{repository}/{snapshot}/_restore" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| {
+            (case["inventory_path"] == "/_plugins/_knn/models/_train"
+                || case["path"] == "/_plugins/_knn/models/_train")
+                && case["runtime_status"] == "stateful-route-present"
+        }));
 
     let mut literal_routes = BTreeSet::new();
     let rest_tsv = fs::read_to_string(rest_tsv_path).expect("source rest route tsv should exist");

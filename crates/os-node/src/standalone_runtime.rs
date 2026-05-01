@@ -1499,11 +1499,27 @@ impl SteelNode {
                     &self.cluster_stats_body(),
                 ),
             )),
-            (RestMethod::Post, "/_refresh") => Some(self.handle_global_refresh_route()),
+            (RestMethod::Get, "/_refresh") | (RestMethod::Post, "/_refresh") => {
+                Some(self.handle_global_refresh_route())
+            }
+            (RestMethod::Get, "/_flush") | (RestMethod::Post, "/_flush") => {
+                Some(self.handle_flush_route(None))
+            }
+            (RestMethod::Get, "/_flush/synced") | (RestMethod::Post, "/_flush/synced") => {
+                Some(self.handle_flush_route(None))
+            }
+            (RestMethod::Post, "/_forcemerge") => Some(self.handle_forcemerge_route(None)),
             (RestMethod::Get, "/_stats") => Some(RestResponse::json(
                 200,
                 stats_route_registration::invoke_index_stats_live_route(&self.index_stats_body()),
             )),
+            (RestMethod::Get, "/_analyze") | (RestMethod::Post, "/_analyze") => {
+                Some(self.handle_analyze_route(None, request))
+            }
+            (RestMethod::Get, "/_shard_stores") => Some(self.handle_shard_stores_route(None)),
+            (RestMethod::Get, "/_upgrade") | (RestMethod::Post, "/_upgrade") => {
+                Some(self.handle_upgrade_route(None))
+            }
             _ => self.handle_dynamic_root_cluster_node_request(request),
         }
     }
@@ -1515,8 +1531,51 @@ impl SteelNode {
         if request.path == "/_mapping" && request.method == RestMethod::Get {
             return Some(self.handle_mapping_get_route(None));
         }
+        if request.path == "/_mappings" && request.method == RestMethod::Get {
+            return Some(self.handle_mapping_get_route(None));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_resolve/index/") {
+            let name = request.path.trim_start_matches("/_resolve/index/");
+            if !name.is_empty() {
+                return Some(self.handle_resolve_index_route(name));
+            }
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_mapping/field/") {
+            return Some(self.handle_mapping_field_get_route(
+                None,
+                request.path.trim_start_matches("/_mapping/field/"),
+            ));
+        }
         if request.path == "/_settings" && request.method == RestMethod::Get {
-            return Some(self.handle_settings_get_route(None));
+            return Some(self.handle_settings_get_route(None, None));
+        }
+        if request.path == "/_settings" && request.method == RestMethod::Put {
+            return Some(self.handle_global_settings_put_route(request));
+        }
+        if request.method == RestMethod::Get && request.path.starts_with("/_settings/") {
+            let setting_name = request.path.trim_start_matches("/_settings/");
+            if !setting_name.is_empty() {
+                return Some(self.handle_settings_get_route(None, Some(setting_name)));
+            }
+        }
+        if request.path == "/_filecache/prune" && request.method == RestMethod::Post {
+            return Some(self.handle_filecache_prune_route());
+        }
+        if request.path == "/_cache/clear" && request.method == RestMethod::Post {
+            return Some(self.handle_cache_clear_route(None));
+        }
+        if request.path == "/_close" && request.method == RestMethod::Post {
+            return Some(self.handle_close_route(None));
+        }
+        if request.path == "/_open" && request.method == RestMethod::Post {
+            return Some(self.handle_open_route(None));
+        }
+        if let Some(index_uuid) = request.path.strip_prefix("/_dangling/") {
+            return match request.method {
+                RestMethod::Post => Some(self.handle_dangling_index_import_route(index_uuid, request)),
+                RestMethod::Delete => Some(self.handle_dangling_index_delete_route(index_uuid, request)),
+                _ => None,
+            };
         }
         if request.method == RestMethod::Get
             && self.cluster_stats_variant_path_supported(&request.path)
@@ -1539,13 +1598,31 @@ impl SteelNode {
         {
             return Some(RestResponse::json(200, self.nodes_usage_body()));
         }
+        if request.method == RestMethod::Get && self.index_stats_variant_path_supported(&request.path)
+        {
+            return Some(self.handle_index_stats_route(None));
+        }
         if request.path == "/_search_shards"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             return Some(RestResponse::json(200, self.search_shards_body(None)));
         }
+        if request.path == "/_reindex" && request.method == RestMethod::Post {
+            return Some(self.handle_reindex_route(request));
+        }
         if request.method == RestMethod::Get && request.path == "/_remote/info" {
             return Some(RestResponse::json(200, serde_json::json!({})));
+        }
+        if request.method == RestMethod::Post
+            && request.path.starts_with("/_tasks/")
+            && request.path.ends_with("/_cancel")
+            && request.path != "/_tasks/_cancel"
+        {
+            return Some(self.handle_tasks_cancel_route(request));
+        }
+        if request.method == RestMethod::Post && self.rethrottle_task_id_from_request(request).is_some()
+        {
+            return Some(self.handle_tasks_rethrottle_route(request));
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_remotestore/metadata/")
@@ -1555,14 +1632,132 @@ impl SteelNode {
             return Some(self.handle_remote_store_metadata_route(index));
         }
         if request.method == RestMethod::Get
+            && request.path.starts_with("/_remotestore/metadata/")
+            && request.path.trim_start_matches("/_remotestore/metadata/").split('/').count() == 2
+        {
+            let suffix = request.path.trim_start_matches("/_remotestore/metadata/");
+            let (index, shard_id) = suffix.split_once('/').expect("metadata shard suffix");
+            return Some(self.handle_remote_store_metadata_shard_route(index, shard_id));
+        }
+        if request.method == RestMethod::Get
             && request.path.starts_with("/_remotestore/stats/")
             && request.path.trim_start_matches("/_remotestore/stats/").split('/').count() == 1
         {
             let index = request.path.trim_start_matches("/_remotestore/stats/");
             return Some(self.handle_remote_store_stats_route(index));
         }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_remotestore/stats/")
+            && request.path.trim_start_matches("/_remotestore/stats/").split('/').count() == 2
+        {
+            let suffix = request.path.trim_start_matches("/_remotestore/stats/");
+            let (index, shard_id) = suffix.split_once('/').expect("stats shard suffix");
+            return Some(self.handle_remote_store_stats_shard_route(index, shard_id));
+        }
+        if request.method == RestMethod::Post && request.path == "/_remotestore/_restore" {
+            return Some(self.handle_remote_store_restore_route(request));
+        }
+        if request.method == RestMethod::Get && request.path == "/_list/wlm_stats" {
+            return Some(self.handle_wlm_stats_route(None, None));
+        }
+        if request.method == RestMethod::Get && request.path == "/_list" {
+            return Some(self.handle_list_route());
+        }
+        if request.method == RestMethod::Get && request.path == "/_list/indices" {
+            return Some(self.handle_list_indices_route(None));
+        }
+        if request.method == RestMethod::Get && request.path == "/_list/shards" {
+            return Some(self.handle_list_shards_route(None));
+        }
+        if let Some(index) = request.path.strip_prefix("/_list/indices/") {
+            if request.method == RestMethod::Get && !index.is_empty() {
+                return Some(self.handle_list_indices_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.strip_prefix("/_list/shards/") {
+            if request.method == RestMethod::Get && !index.is_empty() {
+                return Some(self.handle_list_shards_route(Some(index)));
+            }
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_list/wlm_stats/stats/")
+            && request.path.trim_start_matches("/_list/wlm_stats/stats/").split('/').count() == 1
+        {
+            let workload_group =
+                request.path.trim_start_matches("/_list/wlm_stats/stats/");
+            return Some(self.handle_wlm_stats_route(None, Some(workload_group)));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_list/wlm_stats/")
+            && request.path.ends_with("/stats")
+            && request.path.trim_start_matches("/_list/wlm_stats/").split('/').count() == 2
+        {
+            let node_id = request
+                .path
+                .trim_start_matches("/_list/wlm_stats/")
+                .trim_end_matches("/stats")
+                .trim_end_matches('/');
+            return Some(self.handle_wlm_stats_route(Some(node_id), None));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_list/wlm_stats/")
+            && request.path.contains("/stats/")
+            && request.path.trim_start_matches("/_list/wlm_stats/").split('/').count() == 3
+        {
+            let suffix = request.path.trim_start_matches("/_list/wlm_stats/");
+            let (node_id, workload_group) = suffix
+                .split_once("/stats/")
+                .expect("list wlm stats suffix");
+            return Some(self.handle_wlm_stats_route(Some(node_id), Some(workload_group)));
+        }
+        if request.method == RestMethod::Get && request.path == "/_wlm/stats" {
+            return Some(self.handle_wlm_stats_route(None, None));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_wlm/stats/")
+            && request.path.trim_start_matches("/_wlm/stats/").split('/').count() == 1
+        {
+            let workload_group = request.path.trim_start_matches("/_wlm/stats/");
+            return Some(self.handle_wlm_stats_route(None, Some(workload_group)));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_wlm/")
+            && request.path.ends_with("/stats")
+            && request.path.trim_start_matches("/_wlm/").split('/').count() == 2
+        {
+            let node_id = request
+                .path
+                .trim_start_matches("/_wlm/")
+                .trim_end_matches("/stats")
+                .trim_end_matches('/');
+            return Some(self.handle_wlm_stats_route(Some(node_id), None));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_wlm/")
+            && request.path.contains("/stats/")
+            && request.path.trim_start_matches("/_wlm/").split('/').count() == 3
+        {
+            let suffix = request.path.trim_start_matches("/_wlm/");
+            let (node_id, workload_group) =
+                suffix.split_once("/stats/").expect("wlm stats suffix");
+            return Some(self.handle_wlm_stats_route(Some(node_id), Some(workload_group)));
+        }
         if request.method == RestMethod::Get && request.path == "/_nodes" {
             return Some(RestResponse::json(200, self.nodes_info_body()));
+        }
+        if request.method == RestMethod::Post && request.path == "/_nodes/reload_secure_settings" {
+            return Some(self.handle_nodes_reload_secure_settings_route(None));
+        }
+        if request.method == RestMethod::Post
+            && request.path.starts_with("/_nodes/")
+            && request.path.ends_with("/reload_secure_settings")
+        {
+            let node_id = request
+                .path
+                .trim_start_matches("/_nodes/")
+                .trim_end_matches("/reload_secure_settings")
+                .trim_end_matches('/');
+            return Some(self.handle_nodes_reload_secure_settings_route(Some(node_id)));
         }
         if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
             return Some(self.handle_nodes_hot_threads_route(None));
@@ -1588,6 +1783,29 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_script_language" {
             return Some(self.handle_script_language_route());
         }
+        if request.path == "/_scripts/painless/_context" && request.method == RestMethod::Get {
+            return Some(self.handle_painless_context_route());
+        }
+        if request.path == "/_scripts/painless/_execute"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_painless_execute_route(request));
+        }
+        if let Some(remainder) = request.path.strip_prefix("/_scripts/") {
+            let parts = remainder.split('/').collect::<Vec<_>>();
+            if let [script_id, context] = parts.as_slice() {
+                if !script_id.is_empty()
+                    && !context.is_empty()
+                    && matches!(request.method, RestMethod::Put | RestMethod::Post)
+                {
+                    return Some(self.handle_stored_script_put_with_context_route(
+                        script_id,
+                        context,
+                        request,
+                    ));
+                }
+            }
+        }
         if let Some(script_id) = request.path.strip_prefix("/_scripts/") {
             if !script_id.is_empty() && !script_id.contains('/') {
                 return match request.method {
@@ -1606,26 +1824,77 @@ impl SteelNode {
         ) {
             return Some(self.handle_alias_read_route(None, None));
         }
+        if request.method == RestMethod::Put && request.path == "/_alias" {
+            return Some(self.handle_alias_bulk_mutation_route(request));
+        }
+        if request.method == RestMethod::Head && request.path.starts_with("/_alias/") {
+            return Some(self.handle_alias_head_route(
+                request.path.trim_start_matches("/_alias/"),
+            ));
+        }
         if request.method == RestMethod::Get && request.path.starts_with("/_alias/") {
             return Some(self.handle_alias_read_route(
                 None,
                 Some(request.path.trim_start_matches("/_alias/")),
             ));
         }
+        if matches!(request.method, RestMethod::Put | RestMethod::Post)
+            && request.path.starts_with("/_alias/")
+        {
+            return Some(self.handle_alias_named_mutation_route(
+                request.path.trim_start_matches("/_alias/"),
+                request,
+            ));
+        }
         if request.method == RestMethod::Post && request.path == "/_aliases" {
             return Some(self.handle_alias_bulk_mutation_route(request));
         }
+        if matches!(request.method, RestMethod::Put | RestMethod::Post)
+            && request.path.starts_with("/_aliases/")
+        {
+            return Some(self.handle_alias_named_mutation_route(
+                request.path.trim_start_matches("/_aliases/"),
+                request,
+            ));
+        }
         if request.path == "/_search/scroll" {
             return match request.method {
+                RestMethod::Get => Some(self.handle_search_scroll_route(request)),
                 RestMethod::Post => Some(self.handle_search_scroll_route(request)),
                 RestMethod::Delete => Some(self.handle_clear_scroll_route(request)),
+                _ => None,
+            };
+        }
+        if let Some(scroll_id) = request
+            .path
+            .trim_matches('/')
+            .split_once("_search/scroll/")
+            .map(|(_, id)| id)
+        {
+            return match request.method {
+                RestMethod::Get | RestMethod::Post => Some(self.handle_search_scroll_with_id_route(scroll_id)),
+                RestMethod::Delete => Some(self.handle_clear_scroll_ids_route(vec![scroll_id.to_string()])),
                 _ => None,
             };
         }
         if request.path == "/_search/point_in_time" && request.method == RestMethod::Delete {
             return Some(self.handle_close_point_in_time_route(request));
         }
-        if request.method == RestMethod::Post && request.path == "/_bulk" {
+        if request.path == "/_search/point_in_time/_all" {
+            return match request.method {
+                RestMethod::Get => Some(self.handle_list_all_point_in_time_route()),
+                RestMethod::Delete => Some(self.handle_clear_all_point_in_time_route()),
+                _ => None,
+            };
+        }
+        if (request.method == RestMethod::Post || request.method == RestMethod::Put)
+            && request.path == "/_bulk"
+        {
+            return Some(self.handle_bulk_route(None, request));
+        }
+        if (request.method == RestMethod::Post || request.method == RestMethod::Put)
+            && request.path == "/_bulk/stream"
+        {
             return Some(self.handle_bulk_route(None, request));
         }
         if request.method == RestMethod::Get && request.path == "/_component_template" {
@@ -1634,6 +1903,9 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_index_template" {
             return Some(self.handle_index_template_get_route(None));
         }
+        if request.method == RestMethod::Post && request.path == "/_index_template/_simulate" {
+            return Some(self.handle_index_template_simulate_route(None, request));
+        }
         if request.method == RestMethod::Get && request.path == "/_template" {
             return Some(self.handle_legacy_template_get_route(None));
         }
@@ -1641,16 +1913,38 @@ impl SteelNode {
             let name = request.path.trim_start_matches("/_component_template/");
             return match request.method {
                 RestMethod::Get => Some(self.handle_component_template_get_route(Some(name))),
-                RestMethod::Put => Some(self.handle_component_template_put_route(name, request)),
+                RestMethod::Head => Some(self.handle_component_template_head_route(name)),
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_component_template_put_route(name, request))
+                }
                 RestMethod::Delete => Some(self.handle_component_template_delete_route(name)),
                 _ => None,
             };
         }
         if request.path.starts_with("/_index_template/") {
             let name = request.path.trim_start_matches("/_index_template/");
+            if let Some(simulate_name) = name.strip_prefix("_simulate/") {
+                return match request.method {
+                    RestMethod::Post => {
+                        Some(self.handle_index_template_simulate_route(Some(simulate_name), request))
+                    }
+                    _ => None,
+                };
+            }
+            if let Some(index_name) = name.strip_prefix("_simulate_index/") {
+                return match request.method {
+                    RestMethod::Post => {
+                        Some(self.handle_index_template_simulate_index_route(index_name))
+                    }
+                    _ => None,
+                };
+            }
             return match request.method {
                 RestMethod::Get => Some(self.handle_index_template_get_route(Some(name))),
-                RestMethod::Put => Some(self.handle_index_template_put_route(name, request)),
+                RestMethod::Head => Some(self.handle_index_template_head_route(name)),
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_index_template_put_route(name, request))
+                }
                 RestMethod::Delete => Some(self.handle_index_template_delete_route(name)),
                 _ => None,
             };
@@ -1659,7 +1953,10 @@ impl SteelNode {
             let name = request.path.trim_start_matches("/_template/");
             return match request.method {
                 RestMethod::Get => Some(self.handle_legacy_template_get_route(Some(name))),
-                RestMethod::Put => Some(self.handle_legacy_template_put_route(name, request)),
+                RestMethod::Head => Some(self.handle_legacy_template_head_route(name)),
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_legacy_template_put_route(name, request))
+                }
                 RestMethod::Delete => Some(self.handle_legacy_template_delete_route(name)),
                 _ => None,
             };
@@ -1741,6 +2038,15 @@ impl SteelNode {
                 Some(request.path.trim_start_matches("/_cat/segments/")),
             ));
         }
+        if request.method == RestMethod::Get && request.path == "/_segments" {
+            return Some(self.handle_segments_route(None));
+        }
+        if request.method == RestMethod::Get && request.path.ends_with("/_segments") {
+            let target = request.path.trim_end_matches("/_segments").trim_start_matches('/');
+            if !target.is_empty() {
+                return Some(self.handle_segments_route(Some(target)));
+            }
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/pit_segments" {
             return Some(self.handle_cat_pit_segments_route(request, false));
         }
@@ -1755,6 +2061,15 @@ impl SteelNode {
                 request,
                 Some(request.path.trim_start_matches("/_cat/recovery/")),
             ));
+        }
+        if request.method == RestMethod::Get && request.path == "/_recovery" {
+            return Some(self.handle_recovery_route(None));
+        }
+        if request.method == RestMethod::Get && request.path.ends_with("/_recovery") {
+            let target = request.path.trim_end_matches("/_recovery").trim_start_matches('/');
+            if !target.is_empty() {
+                return Some(self.handle_recovery_route(Some(target)));
+            }
         }
         if request.method == RestMethod::Get && request.path == "/_cat/repositories" {
             return Some(self.handle_cat_repositories_route(request));
@@ -1869,6 +2184,9 @@ impl SteelNode {
                     RestMethod::Put | RestMethod::Post => {
                         Some(self.handle_snapshot_repository_mutation_route(repository, request))
                     }
+                    RestMethod::Delete => {
+                        Some(self.handle_snapshot_repository_delete_route(repository))
+                    }
                     _ => None,
                 },
                 ["_snapshot", repository, "_verify"] if request.method == RestMethod::Post => {
@@ -1878,7 +2196,7 @@ impl SteelNode {
                     Some(self.handle_snapshot_cleanup_route(repository))
                 }
                 ["_snapshot", repository, snapshot] => match request.method {
-                    RestMethod::Put => {
+                    RestMethod::Put | RestMethod::Post => {
                         Some(self.handle_snapshot_create_route(repository, snapshot, request))
                     }
                     RestMethod::Get => {
@@ -1899,6 +2217,16 @@ impl SteelNode {
                 {
                     Some(self.handle_snapshot_status_route(repository, snapshot))
                 }
+                ["_snapshot", repository, snapshot, "_clone", target_snapshot]
+                    if request.method == RestMethod::Put =>
+                {
+                    Some(self.handle_snapshot_clone_route(
+                        repository,
+                        snapshot,
+                        target_snapshot,
+                        request,
+                    ))
+                }
                 ["_snapshot", repository, snapshot, "_restore"]
                     if request.method == RestMethod::Post =>
                 {
@@ -1908,10 +2236,30 @@ impl SteelNode {
             };
         }
         if request.method == RestMethod::Get && request.path == "/_plugins/_knn/stats" {
-            return Some(self.handle_knn_stats_route());
+            return Some(self.handle_knn_stats_route(None, None));
+        }
+        if let Some(stat) = request.path.strip_prefix("/_plugins/_knn/stats/") {
+            if request.method == RestMethod::Get && !stat.is_empty() {
+                return Some(self.handle_knn_stats_route(None, Some(stat)));
+            }
+        }
+        if let Some(node_suffix) = request.path.strip_prefix("/_plugins/_knn/") {
+            if let Some(node_id) = node_suffix.strip_suffix("/stats") {
+                if request.method == RestMethod::Get && !node_id.is_empty() {
+                    return Some(self.handle_knn_stats_route(Some(node_id), None));
+                }
+            }
+            if let Some((node_id, stat)) = node_suffix.split_once("/stats/") {
+                if request.method == RestMethod::Get && !node_id.is_empty() && !stat.is_empty() {
+                    return Some(self.handle_knn_stats_route(Some(node_id), Some(stat)));
+                }
+            }
+        }
+        if request.path == "/_plugins/_knn/warmup" && request.method == RestMethod::Get {
+            return Some(self.handle_knn_warmup_route("_all", request));
         }
         if let Some(index) = request.path.strip_prefix("/_plugins/_knn/warmup/") {
-            if request.method == RestMethod::Post {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
                 return Some(self.handle_knn_warmup_route(index, request));
             }
         }
@@ -1923,10 +2271,17 @@ impl SteelNode {
         if request.path == "/_plugins/_knn/models/_train" && request.method == RestMethod::Post {
             return Some(self.handle_knn_model_train_route(request));
         }
-        if request.path == "/_plugins/_knn/models/_search" && request.method == RestMethod::Post {
+        if request.path == "/_plugins/_knn/models/_search"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
             return Some(self.handle_knn_model_search_route(request));
         }
         if let Some(model_id) = request.path.strip_prefix("/_plugins/_knn/models/") {
+            if let Some(model_id) = model_id.strip_suffix("/_train") {
+                if request.method == RestMethod::Post && !model_id.is_empty() {
+                    return Some(self.handle_knn_model_train_with_id_route(model_id, request));
+                }
+            }
             return match request.method {
                 RestMethod::Get => Some(self.handle_knn_model_get_route(model_id)),
                 RestMethod::Delete => Some(self.handle_knn_model_delete_route(model_id)),
@@ -1960,21 +2315,193 @@ impl SteelNode {
             let target = index.trim_matches('/');
             return match request.method {
                 RestMethod::Get => Some(self.handle_mapping_get_route(Some(target))),
-                RestMethod::Put => Some(self.handle_mapping_put_route(target, request)),
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_mapping_put_route(target, request))
+                }
                 _ => None,
             };
+        }
+        if let Some(index) = request.path.strip_suffix("/_mappings") {
+            let target = index.trim_matches('/');
+            return match request.method {
+                RestMethod::Get => Some(self.handle_mapping_get_route(Some(target))),
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_mapping_put_route(target, request))
+                }
+                _ => None,
+            };
+        }
+        if request.method == RestMethod::Get && request.path.contains("/_mapping/field/") {
+            let mut parts = request.path.splitn(2, "/_mapping/field/");
+            let target = parts.next().unwrap_or_default().trim_matches('/');
+            let fields = parts.next().unwrap_or_default();
+            if !target.is_empty() && !fields.is_empty() {
+                return Some(self.handle_mapping_field_get_route(Some(target), fields));
+            }
         }
         if let Some(index) = request.path.strip_suffix("/_settings") {
             let target = index.trim_matches('/');
             return match request.method {
-                RestMethod::Get => Some(self.handle_settings_get_route(Some(target))),
+                RestMethod::Get => Some(self.handle_settings_get_route(Some(target), None)),
                 RestMethod::Put => Some(self.handle_settings_put_route(target, request)),
                 _ => None,
             };
         }
+        if request.method == RestMethod::Get && request.path.contains("/_settings/") {
+            let mut parts = request.path.splitn(2, "/_settings/");
+            let target = parts.next().unwrap_or_default().trim_matches('/');
+            let setting_name = parts.next().unwrap_or_default();
+            if !target.is_empty() && !setting_name.is_empty() {
+                return Some(self.handle_settings_get_route(Some(target), Some(setting_name)));
+            }
+        }
+        if request.method == RestMethod::Get && request.path.contains("/_setting/") {
+            let mut parts = request.path.splitn(2, "/_setting/");
+            let target = parts.next().unwrap_or_default().trim_matches('/');
+            let setting_name = parts.next().unwrap_or_default();
+            if !target.is_empty() && !setting_name.is_empty() {
+                return Some(self.handle_settings_get_route(Some(target), Some(setting_name)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_stats") {
+            if request.method == RestMethod::Get && !index.is_empty() {
+                return Some(self.handle_index_stats_route(Some(index)));
+            }
+        }
+        if request.method == RestMethod::Get && request.path.contains("/_stats/") {
+            let mut parts = request.path.splitn(2, "/_stats/");
+            let target = parts.next().unwrap_or_default().trim_matches('/');
+            let metric = parts.next().unwrap_or_default();
+            if !target.is_empty() && !metric.is_empty() {
+                return Some(self.handle_index_stats_route(Some(target)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_flush") {
+            if (request.method == RestMethod::Get || request.method == RestMethod::Post)
+                && !index.is_empty()
+            {
+                return Some(self.handle_flush_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_flush/synced") {
+            if (request.method == RestMethod::Get || request.method == RestMethod::Post)
+                && !index.is_empty()
+            {
+                return Some(self.handle_flush_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_cache/clear") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_cache_clear_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_close") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_close_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_open") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_open_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_forcemerge") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_forcemerge_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_shard_stores") {
+            if request.method == RestMethod::Get && !index.is_empty() {
+                return Some(self.handle_shard_stores_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_upgrade") {
+            if (request.method == RestMethod::Get || request.method == RestMethod::Post)
+                && !index.is_empty()
+            {
+                return Some(self.handle_upgrade_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/ingestion/_state") {
+            if request.method == RestMethod::Get && !index.is_empty() {
+                return Some(self.handle_ingestion_state_route(index));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/ingestion/_pause") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_ingestion_state_transition_route(index, "PAUSED"));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/ingestion/_resume") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_ingestion_state_transition_route(index, "RUNNING"));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_analyze") {
+            if (request.method == RestMethod::Get || request.method == RestMethod::Post)
+                && !index.is_empty()
+            {
+                return Some(self.handle_analyze_route(Some(index), request));
+            }
+        }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_refresh") {
-            if request.method == RestMethod::Post {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
                 return Some(self.handle_index_refresh_route(index));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_mget") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_mget_route(Some(index), request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_mtermvectors") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_mtermvectors_route(Some(index), request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_msearch_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch/template") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_msearch_template_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search/template") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_search_template_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_validate/query") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_validate_query_route(Some(index), request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_count") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_count_route(Some(index), request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_field_caps") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_field_caps_route(Some(index)));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_tier") {
+            if request.method == RestMethod::Get && !index.is_empty() {
+                return Some(self.handle_index_tier_route(index));
+            }
+        }
+        if let Some((index, target_tier)) = request.path.trim_matches('/').split_once("/_tier/") {
+            if request.method == RestMethod::Post && !index.is_empty() && !target_tier.is_empty() {
+                return Some(self.handle_index_target_tier_route(index, target_tier));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_rank_eval") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_rank_eval_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search") {
@@ -1994,19 +2521,143 @@ impl SteelNode {
         if request.path == "/_search" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
             return Some(self.handle_index_search_route("_all", request));
         }
+        if request.path == "/_mget" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
+            return Some(self.handle_mget_route(None, request));
+        }
+        if request.path == "/_mtermvectors" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
+            return Some(self.handle_mtermvectors_route(None, request));
+        }
+        if request.path == "/_msearch" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
+            return Some(self.handle_msearch_route(None));
+        }
+        if request.path == "/_msearch/template"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_msearch_template_route(None));
+        }
+        if request.path == "/_search/template"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_search_template_route(None));
+        }
+        if request.path == "/_search/pipeline" && request.method == RestMethod::Get {
+            return Some(self.handle_search_pipeline_collection_get_route());
+        }
+        if request.path == "/_ingest/pipeline" && request.method == RestMethod::Get {
+            return Some(self.handle_ingest_pipeline_collection_get_route());
+        }
+        if request.path == "/_ingest/pipeline/_simulate"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_ingest_pipeline_simulate_route(None, request));
+        }
+        if let Some(pipeline_id) = request
+            .path
+            .trim_matches('/')
+            .split_once("_search/pipeline/")
+            .map(|(_, id)| id)
+        {
+            return match request.method {
+                RestMethod::Get => Some(self.handle_search_pipeline_get_route(pipeline_id)),
+                RestMethod::Put => Some(self.handle_search_pipeline_put_route(pipeline_id, request)),
+                RestMethod::Delete => Some(self.handle_search_pipeline_delete_route(pipeline_id)),
+                _ => None,
+            };
+        }
+        if let Some(pipeline_id) = request
+            .path
+            .trim_matches('/')
+            .split_once("_ingest/pipeline/")
+            .map(|(_, id)| id)
+        {
+            if let Some(id) = pipeline_id.strip_suffix("/_simulate") {
+                if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                    return Some(self.handle_ingest_pipeline_simulate_route(Some(id), request));
+                }
+            } else {
+                return match request.method {
+                    RestMethod::Get => Some(self.handle_ingest_pipeline_get_route(pipeline_id)),
+                    RestMethod::Put => {
+                        Some(self.handle_ingest_pipeline_put_route(pipeline_id, request))
+                    }
+                    RestMethod::Delete => Some(self.handle_ingest_pipeline_delete_route(pipeline_id)),
+                    _ => None,
+                };
+            }
+        }
+        if request.path == "/_validate/query"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_validate_query_route(None, request));
+        }
+        if request.path == "/_count"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_count_route(None, request));
+        }
+        if request.path == "/_field_caps"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_field_caps_route(None));
+        }
+        if request.path == "/_rank_eval"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_rank_eval_route(None, request));
+        }
+        if request.path == "/_render/template"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_render_template_route(None, request));
+        }
+        if request.path == "/_tier/all" && request.method == RestMethod::Get {
+            return Some(self.handle_tier_all_route());
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_prefix("_tier/_cancel/") {
+            if request.method == RestMethod::Post && !index.is_empty() {
+                return Some(self.handle_cancel_index_tier_route(index));
+            }
+        }
+        if request.path == "/_ingest/processor/grok" && request.method == RestMethod::Get {
+            return Some(self.handle_grok_processor_get_route());
+        }
+        if request.path == "/_scripts/painless/_context" && request.method == RestMethod::Get {
+            return Some(self.handle_painless_context_route());
+        }
+        if request.path == "/_scripts/painless/_execute"
+            && (request.method == RestMethod::Get || request.method == RestMethod::Post)
+        {
+            return Some(self.handle_painless_execute_route(request));
+        }
+        if let Some(template_id) = request
+            .path
+            .trim_matches('/')
+            .split_once("_render/template/")
+            .map(|(_, id)| id)
+        {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_render_template_route(Some(template_id), request));
+            }
+        }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search_shards") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
                 return Some(RestResponse::json(200, self.search_shards_body(Some(index))));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_bulk") {
-            if request.method == RestMethod::Post {
+            if request.method == RestMethod::Post || request.method == RestMethod::Put {
+                return Some(self.handle_bulk_route(Some(index), request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_bulk/stream") {
+            if request.method == RestMethod::Post || request.method == RestMethod::Put {
                 return Some(self.handle_bulk_route(Some(index), request));
             }
         }
         if let Some((index, alias)) = request.path.trim_matches('/').split_once("/_alias/") {
             return match request.method {
                 RestMethod::Get => Some(self.handle_alias_read_route(Some(index), Some(alias))),
+                RestMethod::Head => Some(self.handle_index_alias_named_head_route(index, alias)),
                 RestMethod::Put | RestMethod::Post => {
                     Some(self.handle_alias_single_mutation_route(index, alias, request))
                 }
@@ -2015,17 +2666,95 @@ impl SteelNode {
             };
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_alias") {
-            if request.method == RestMethod::Get {
-                return Some(self.handle_alias_read_route(Some(index), None));
+            return match request.method {
+                RestMethod::Get => Some(self.handle_alias_read_route(Some(index), None)),
+                RestMethod::Head => Some(self.handle_index_alias_collection_head_route(index)),
+                RestMethod::Put => Some(self.handle_index_alias_collection_put_route(index, request)),
+                _ => None,
+            };
+        }
+        if let Some((index, alias)) = request.path.trim_matches('/').split_once("/_aliases/") {
+            return match request.method {
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_alias_single_mutation_route(index, alias, request))
+                }
+                RestMethod::Delete => Some(self.handle_alias_delete_route(index, alias)),
+                _ => None,
+            };
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_aliases") {
+            if request.method == RestMethod::Put {
+                return Some(self.handle_index_alias_collection_put_route(index, request));
             }
         }
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_doc/") {
             return match request.method {
                 RestMethod::Put => Some(self.handle_put_doc_route(index, doc_path, request)),
+                RestMethod::Post => Some(self.handle_put_doc_route(index, doc_path, request)),
                 RestMethod::Get => Some(self.handle_get_doc_route(index, doc_path, request)),
                 RestMethod::Delete => Some(self.handle_delete_doc_route(index, doc_path, request)),
                 _ => None,
             };
+        }
+        if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_create/") {
+            return match request.method {
+                RestMethod::Put | RestMethod::Post => {
+                    Some(self.handle_create_doc_route(index, doc_path, request))
+                }
+                _ => None,
+            };
+        }
+        if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_source/") {
+            return match request.method {
+                RestMethod::Get => Some(self.handle_get_source_route(index, doc_path, request)),
+                RestMethod::Head => Some(self.handle_head_source_route(index, doc_path, request)),
+                _ => None,
+            };
+        }
+        if let Some((index, id)) = request.path.trim_matches('/').split_once("/_explain/") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_explain_route(index, id, request));
+            }
+        }
+        if let Some((index, id)) = request.path.trim_matches('/').split_once("/_termvectors/") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_termvectors_route(index, Some(id), request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_termvectors") {
+            if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                return Some(self.handle_termvectors_route(index, None, request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_delete_by_query") {
+            if request.method == RestMethod::Post {
+                return Some(self.handle_delete_by_query_route(index, request));
+            }
+        }
+        if let Some((index, block)) = request.path.trim_matches('/').split_once("/_block/") {
+            if request.method == RestMethod::Put {
+                return Some(self.handle_index_block_route(index, block));
+            }
+        }
+        if let Some((source, target)) = request.path.trim_matches('/').split_once("/_clone/") {
+            if request.method == RestMethod::Put || request.method == RestMethod::Post {
+                return Some(self.handle_index_resize_route(source, target, "clone"));
+            }
+        }
+        if let Some((source, target)) = request.path.trim_matches('/').split_once("/_shrink/") {
+            if request.method == RestMethod::Put || request.method == RestMethod::Post {
+                return Some(self.handle_index_resize_route(source, target, "shrink"));
+            }
+        }
+        if let Some((source, target)) = request.path.trim_matches('/').split_once("/_split/") {
+            if request.method == RestMethod::Put || request.method == RestMethod::Post {
+                return Some(self.handle_index_resize_route(source, target, "split"));
+            }
+        }
+        if let Some(source) = request.path.trim_matches('/').strip_suffix("/_scale") {
+            if request.method == RestMethod::Post {
+                return Some(self.handle_index_scale_route(source, request));
+            }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_doc") {
             if request.method == RestMethod::Post {
@@ -2035,6 +2764,11 @@ impl SteelNode {
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_update/") {
             if request.method == RestMethod::Post {
                 return Some(self.handle_update_doc_route(index, id, request));
+            }
+        }
+        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_update_by_query") {
+            if request.method == RestMethod::Post {
+                return Some(self.handle_update_by_query_route(index, request));
             }
         }
         if request.method == RestMethod::Put
@@ -2286,6 +3020,73 @@ impl SteelNode {
         delete_index_route_registration::build_delete_index_success_response()
     }
 
+    fn handle_index_block_route(&self, index: &str, block: &str) -> RestResponse {
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for matched_index in &matched {
+            manifest["indices"][matched_index]["blocks"][block] = Value::Bool(true);
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "shards_acknowledged": true,
+                "indices": matched
+            }),
+        )
+    }
+
+    fn handle_index_resize_route(&self, source: &str, target: &str, operation: &str) -> RestResponse {
+        let matched = match self.resolve_index_metadata_targets(source, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let Some(source_index) = matched.first().cloned() else {
+            return delete_index_route_registration::build_delete_index_missing_response(source);
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let source_body = manifest["indices"][&source_index].clone();
+        manifest["indices"][target] = source_body;
+        manifest["indices"][target]["resize_source"] = Value::String(source_index.clone());
+        manifest["indices"][target]["resize_operation"] = Value::String(operation.to_string());
+        manifest["indices"][target]["state"] = Value::String("open".to_string());
+        drop(manifest);
+        self.created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .insert(target.to_string());
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "shards_acknowledged": true,
+                "index": target
+            }),
+        )
+    }
+
+    fn handle_index_scale_route(&self, source: &str, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let target = body
+            .get("target")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("{source}-scaled"));
+        self.handle_index_resize_route(source, &target, "scale")
+    }
+
     fn handle_head_index_route(&self, request: &RestRequest) -> RestResponse {
         let target = request.path.trim_matches('/');
         let ignore_unavailable = query_param_is_true(request.query_params.get("ignore_unavailable"));
@@ -2386,6 +3187,21 @@ impl SteelNode {
         )
     }
 
+    fn handle_mapping_field_get_route(&self, target: Option<&str>, fields: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        RestResponse::json(
+            200,
+            mapping_route_registration::build_field_mapping_readback_response(
+                &manifest["indices"],
+                target,
+                fields,
+            ),
+        )
+    }
+
     fn handle_mapping_put_route(&self, index: &str, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset = mapping_route_registration::build_mapping_update_body_subset(&body);
@@ -2454,19 +3270,30 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn handle_settings_get_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_settings_get_route(
+        &self,
+        target: Option<&str>,
+        name_filter: Option<&str>,
+    ) -> RestResponse {
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
         RestResponse::json(
             200,
-            settings_route_registration::build_settings_readback_response(&manifest["indices"], target),
+            settings_route_registration::build_named_settings_readback_response(
+                &manifest["indices"],
+                target,
+                name_filter,
+            ),
         )
     }
 
-    fn handle_settings_put_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+    fn validate_settings_update_body(
+        &self,
+        body: &Value,
+        index_label: &str,
+    ) -> Option<RestResponse> {
         if let Some(index_settings) = body.get("index").and_then(Value::as_object) {
             for key in index_settings.keys() {
                 if key != "number_of_replicas"
@@ -2474,41 +3301,70 @@ impl SteelNode {
                     && key != "max_result_window"
                     && key != "number_of_routing_shards"
                 {
-                    return RestResponse::json(
+                    return Some(RestResponse::json(
                         400,
                         serde_json::json!({
                             "error": {
                                 "type": "illegal_argument_exception",
                                 "reason": format!(
-                                    "Can't update non dynamic settings [[index.{key}]] for open indices [[{index}]]"
+                                    "Can't update non dynamic settings [[index.{key}]] for open indices [[{index_label}]]"
                                 ),
                                 "root_cause": [
                                     {
                                         "type": "illegal_argument_exception",
                                         "reason": format!(
-                                            "Can't update non dynamic settings [[index.{key}]] for open indices [[{index}]]"
+                                            "Can't update non dynamic settings [[index.{key}]] for open indices [[{index_label}]]"
                                         )
                                     }
                                 ]
                             },
                             "status": 400
                         }),
-                    );
+                    ));
                 }
             }
         }
+        None
+    }
+
+    fn apply_settings_update_to_targets(&self, targets: &[String], body: &Value) -> RestResponse {
         let subset = settings_route_registration::build_settings_update_body_subset(&body);
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let existing_settings = manifest["indices"][index]["settings"].clone();
-        let mut merged_settings = existing_settings;
-        merge_object_with_null_reset(&mut merged_settings, &stringify_leaf_scalars(&subset));
-        manifest["indices"][index]["settings"] = merged_settings;
+        for index in targets {
+            let existing_settings = manifest["indices"][index]["settings"].clone();
+            let mut merged_settings = existing_settings;
+            merge_object_with_null_reset(&mut merged_settings, &stringify_leaf_scalars(&subset));
+            manifest["indices"][index]["settings"] = merged_settings;
+        }
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_settings_put_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) = self.validate_settings_update_body(&body, index) {
+            return response;
+        }
+        self.apply_settings_update_to_targets(&[index.to_string()], &body)
+    }
+
+    fn handle_global_settings_put_route(&self, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) = self.validate_settings_update_body(&body, "_all") {
+            return response;
+        }
+        let targets = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        self.apply_settings_update_to_targets(&targets, &body)
     }
 
     fn handle_alias_read_route(&self, index_target: Option<&str>, alias_target: Option<&str>) -> RestResponse {
@@ -2523,6 +3379,107 @@ impl SteelNode {
                 index_target,
                 alias_target,
             ),
+        )
+    }
+
+    fn handle_alias_head_route(&self, alias: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let found = manifest["indices"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .any(|(_, body)| {
+                body["aliases"]
+                    .as_object()
+                    .is_some_and(|aliases| aliases.contains_key(alias))
+            });
+        if found {
+            RestResponse::text(200, "")
+        } else {
+            RestResponse::text(404, "")
+        }
+    }
+
+    fn handle_index_alias_collection_head_route(&self, index: &str) -> RestResponse {
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let found = matched.iter().any(|matched_index| {
+            manifest["indices"][matched_index]["aliases"]
+                .as_object()
+                .is_some_and(|aliases| !aliases.is_empty())
+        });
+        if found {
+            RestResponse::text(200, "")
+        } else {
+            RestResponse::text(404, "")
+        }
+    }
+
+    fn handle_index_alias_named_head_route(&self, index: &str, alias: &str) -> RestResponse {
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let found = matched.iter().any(|matched_index| {
+            manifest["indices"][matched_index]["aliases"]
+                .as_object()
+                .is_some_and(|aliases| aliases.contains_key(alias))
+        });
+        if found {
+            RestResponse::text(200, "")
+        } else {
+            RestResponse::text(404, "")
+        }
+    }
+
+    fn handle_alias_named_mutation_route(&self, alias: &str, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let subset = normalize_alias_metadata_for_readback(
+            alias_mutation_route_registration::build_alias_metadata_subset(&body),
+        );
+        let targets = extract_alias_named_mutation_targets(&body);
+        if targets.is_empty() {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": "alias mutation requires [index] or [indices]"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for target in targets {
+            let matched = self
+                .resolve_index_metadata_targets(&target, false, false, "open")
+                .unwrap_or_default();
+            for matched_index in matched {
+                manifest["indices"][matched_index]["aliases"][alias] = subset.clone();
+            }
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            alias_mutation_route_registration::build_alias_mutation_acknowledged_response(),
         )
     }
 
@@ -2546,6 +3503,87 @@ impl SteelNode {
             .expect("metadata manifest state lock poisoned");
         for matched_index in matched {
             manifest["indices"][matched_index]["aliases"][alias] = subset.clone();
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            alias_mutation_route_registration::build_alias_mutation_acknowledged_response(),
+        )
+    }
+
+    fn handle_index_alias_collection_put_route(
+        &self,
+        index: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        if let Some(actions) = body.get("actions").and_then(Value::as_array) {
+            let mut manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            for action in actions {
+                if let Some(add) = action.get("add") {
+                    let alias = add.get("alias").and_then(Value::as_str).unwrap_or_default();
+                    let mut alias_body = add.clone();
+                    if let Some(object) = alias_body.as_object_mut() {
+                        object.remove("index");
+                        object.remove("alias");
+                    }
+                    for matched_index in &matched {
+                        manifest["indices"][matched_index]["aliases"][alias] =
+                            normalize_alias_metadata_for_readback(alias_body.clone());
+                    }
+                } else if let Some(remove) = action.get("remove") {
+                    let alias = remove.get("alias").and_then(Value::as_str).unwrap_or_default();
+                    for matched_index in &matched {
+                        manifest["indices"][matched_index]["aliases"]
+                            .as_object_mut()
+                            .map(|aliases| aliases.remove(alias));
+                    }
+                }
+            }
+            drop(manifest);
+            self.persist_shared_runtime_state_to_disk();
+            return RestResponse::json(
+                200,
+                alias_mutation_route_registration::build_alias_mutation_acknowledged_response(),
+            );
+        }
+
+        let alias_names = extract_alias_names_from_body(&body);
+        if alias_names.is_empty() {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": "alias mutation requires [alias] or [aliases]"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let mut subset = normalize_alias_metadata_for_readback(
+            alias_mutation_route_registration::build_alias_metadata_subset(&body),
+        );
+        if let Some(object) = subset.as_object_mut() {
+            object.remove("alias");
+            object.remove("aliases");
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for alias in alias_names {
+            for matched_index in &matched {
+                manifest["indices"][matched_index]["aliases"][&alias] = subset.clone();
+            }
         }
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
@@ -3128,6 +4166,33 @@ impl SteelNode {
         )
     }
 
+    fn handle_snapshot_repository_delete_route(&self, repository: &str) -> RestResponse {
+        if !self.snapshot_repository_exists(repository) {
+            return build_missing_snapshot_repository_response(repository);
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        if let Some(object) = manifest.as_object_mut() {
+            if let Some(repositories) = object
+                .get_mut("snapshot_repositories")
+                .and_then(Value::as_object_mut)
+            {
+                repositories.remove(repository);
+            }
+            if let Some(snapshots) = object.get_mut("snapshots").and_then(Value::as_object_mut) {
+                snapshots.remove(repository);
+            }
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            snapshot_repository_route_registration::build_snapshot_repository_acknowledged_response(),
+        )
+    }
+
     fn handle_snapshot_create_route(
         &self,
         repository: &str,
@@ -3254,6 +4319,59 @@ impl SteelNode {
         RestResponse::json(status, response)
     }
 
+    fn handle_snapshot_clone_route(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        target_snapshot: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if !self.snapshot_repository_exists(repository) {
+            return build_missing_snapshot_repository_response(repository);
+        }
+        let Some(source_record) = self.load_snapshot_record(repository, snapshot) else {
+            return build_missing_snapshot_response(repository, snapshot);
+        };
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let indices = match body.get("indices") {
+            Some(Value::String(value)) => Value::Array(
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .map(|item| Value::String(item.to_string()))
+                    .collect(),
+            ),
+            Some(value) => value.clone(),
+            None => source_record["indices"].clone(),
+        };
+        let mut cloned_record = source_record.clone();
+        if let Some(object) = cloned_record.as_object_mut() {
+            object.insert(
+                "snapshot".to_string(),
+                Value::String(target_snapshot.to_string()),
+            );
+            object.insert(
+                "uuid".to_string(),
+                Value::String(format!("{target_snapshot}-uuid")),
+            );
+            object.insert("indices".to_string(), indices);
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let snapshots = manifest
+            .as_object_mut()
+            .expect("metadata manifest object expected")
+            .entry("snapshots".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        snapshots[repository][target_snapshot] = cloned_record;
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
     fn handle_snapshot_delete_route(&self, repository: &str, snapshot: &str) -> RestResponse {
         if self
             .snapshot_restores_in_progress
@@ -3338,6 +4456,1080 @@ impl SteelNode {
                 }
             }),
         )
+    }
+
+    fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let mut response_docs = Vec::new();
+
+        if let Some(items) = payload.get("docs").and_then(Value::as_array) {
+            for item in items {
+                let Some(item_obj) = item.as_object() else {
+                    continue;
+                };
+                let requested_index = item_obj
+                    .get("_index")
+                    .and_then(Value::as_str)
+                    .or(target)
+                    .unwrap_or("_all");
+                let id = item_obj.get("_id").and_then(Value::as_str).unwrap_or_default();
+                let routing = item_obj
+                    .get("routing")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .or_else(|| self.resolve_alias_read_routing(requested_index))
+                    .unwrap_or_default();
+                response_docs.push(self.mget_doc_response(&docs, requested_index, id, &routing));
+            }
+        } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
+            let requested_index = target.unwrap_or("_all");
+            for id_value in ids {
+                let id = id_value.as_str().unwrap_or_default();
+                response_docs.push(self.mget_doc_response(&docs, requested_index, id, ""));
+            }
+        }
+
+        RestResponse::json(200, serde_json::json!({ "docs": response_docs }))
+    }
+
+    fn mget_doc_response(
+        &self,
+        docs: &BTreeMap<String, StoredDocument>,
+        requested_index: &str,
+        id: &str,
+        routing: &str,
+    ) -> Value {
+        let resolved_index = self.resolve_index_or_alias(requested_index);
+        let key = format!("{resolved_index}:{id}:{routing}");
+        let record = docs.get(&key).or_else(|| {
+            if routing.is_empty() {
+                docs.iter()
+                    .find(|(candidate, _)| candidate.starts_with(&format!("{resolved_index}:{id}:")))
+                    .map(|(_, record)| record)
+            } else {
+                None
+            }
+        });
+        if let Some(record) = record {
+            serde_json::json!({
+                "_index": self.write_response_index(requested_index, &resolved_index),
+                "_id": id,
+                "_version": record.version,
+                "_seq_no": record.seq_no,
+                "_primary_term": record.primary_term,
+                "found": true,
+                "_source": record.source
+            })
+        } else {
+            serde_json::json!({
+                "_index": self.write_response_index(requested_index, &resolved_index),
+                "_id": id,
+                "found": false
+            })
+        }
+    }
+
+    fn handle_mtermvectors_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let mut response_docs = Vec::new();
+
+        if let Some(items) = payload.get("docs").and_then(Value::as_array) {
+            for item in items {
+                let Some(item_obj) = item.as_object() else {
+                    continue;
+                };
+                let requested_index = item_obj
+                    .get("_index")
+                    .and_then(Value::as_str)
+                    .or(target)
+                    .unwrap_or("_all");
+                let id = item_obj.get("_id").and_then(Value::as_str).unwrap_or_default();
+                let routing = item_obj
+                    .get("routing")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .or_else(|| self.resolve_alias_read_routing(requested_index))
+                    .unwrap_or_default();
+                response_docs.push(self.mtermvectors_doc_response(&docs, requested_index, id, &routing));
+            }
+        } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
+            let requested_index = target.unwrap_or("_all");
+            for id_value in ids {
+                let id = id_value.as_str().unwrap_or_default();
+                response_docs.push(self.mtermvectors_doc_response(&docs, requested_index, id, ""));
+            }
+        }
+
+        RestResponse::json(200, serde_json::json!({ "docs": response_docs }))
+    }
+
+    fn mtermvectors_doc_response(
+        &self,
+        docs: &BTreeMap<String, StoredDocument>,
+        requested_index: &str,
+        id: &str,
+        routing: &str,
+    ) -> Value {
+        let resolved_index = self.resolve_index_or_alias(requested_index);
+        let key = format!("{resolved_index}:{id}:{routing}");
+        let record = docs.get(&key).or_else(|| {
+            if routing.is_empty() {
+                docs.iter()
+                    .find(|(candidate, _)| candidate.starts_with(&format!("{resolved_index}:{id}:")))
+                    .map(|(_, record)| record)
+            } else {
+                None
+            }
+        });
+        if let Some(record) = record {
+            let fields = record
+                .source
+                .as_object()
+                .map(|source| {
+                    source
+                        .iter()
+                        .filter_map(|(field, value)| {
+                            let text = value.as_str()?;
+                            Some((
+                                field.clone(),
+                                serde_json::json!({
+                                    "field_statistics": {
+                                        "sum_doc_freq": 1,
+                                        "doc_count": 1,
+                                        "sum_ttf": 1
+                                    },
+                                    "terms": {
+                                        text: {
+                                            "term_freq": 1,
+                                            "tokens": [
+                                                {
+                                                    "position": 0,
+                                                    "start_offset": 0,
+                                                    "end_offset": text.len()
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }),
+                            ))
+                        })
+                        .collect::<serde_json::Map<String, Value>>()
+                })
+                .unwrap_or_default();
+            serde_json::json!({
+                "_index": self.write_response_index(requested_index, &resolved_index),
+                "_id": id,
+                "_version": record.version,
+                "found": true,
+                "term_vectors": fields
+            })
+        } else {
+            serde_json::json!({
+                "_index": self.write_response_index(requested_index, &resolved_index),
+                "_id": id,
+                "found": false
+            })
+        }
+    }
+
+    fn handle_search_template_route(&self, target: Option<&str>) -> RestResponse {
+        RestResponse::json(200, self.search_template_search_body(target))
+    }
+
+    fn handle_msearch_route(&self, target: Option<&str>) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "responses": [self.search_template_search_body(target)]
+            }),
+        )
+    }
+
+    fn handle_msearch_template_route(&self, target: Option<&str>) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "responses": [self.search_template_search_body(target)]
+            }),
+        )
+    }
+
+    fn handle_render_template_route(
+        &self,
+        template_id: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            serde_json::from_slice::<Value>(&request.body)
+                .unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
+        };
+        let template_output = payload
+            .get("source")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({ "query": { "match_all": {} } }));
+        let mut body = serde_json::json!({
+            "template_output": template_output
+        });
+        if let Some(id) = template_id {
+            body["_id"] = Value::String(id.to_string());
+        }
+        RestResponse::json(200, body)
+    }
+
+    fn handle_search_pipeline_collection_get_route(&self) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let entries = manifest["search_pipelines"]
+            .as_object()
+            .into_iter()
+            .flat_map(|pipelines| pipelines.iter())
+            .map(|(name, value)| {
+                serde_json::json!({
+                    "id": name,
+                    "pipeline": value
+                })
+            })
+            .collect::<Vec<_>>();
+        RestResponse::json(200, serde_json::json!({ "pipelines": entries }))
+    }
+
+    fn handle_search_pipeline_get_route(&self, pipeline_id: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let Some(pipeline) = manifest["search_pipelines"].get(pipeline_id).cloned() else {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("search pipeline [{pipeline_id}] is missing")
+                    },
+                    "status": 404
+                }),
+            );
+        };
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "id": pipeline_id,
+                "pipeline": pipeline
+            }),
+        )
+    }
+
+    fn handle_search_pipeline_put_route(
+        &self,
+        pipeline_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let body = match serde_json::from_slice::<Value>(&request.body) {
+            Ok(body) => body,
+            Err(error) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "parse_exception",
+                            "reason": error.to_string()
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        };
+        self.metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["search_pipelines"][pipeline_id] = body;
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_search_pipeline_delete_route(&self, pipeline_id: &str) -> RestResponse {
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let removed = manifest["search_pipelines"]
+            .as_object_mut()
+            .and_then(|pipelines| pipelines.remove(pipeline_id));
+        if removed.is_none() {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("search pipeline [{pipeline_id}] is missing")
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_ingest_pipeline_collection_get_route(&self) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let entries = manifest["ingest_pipelines"]
+            .as_object()
+            .into_iter()
+            .flat_map(|pipelines| pipelines.iter())
+            .map(|(name, value)| {
+                serde_json::json!({
+                    "id": name,
+                    "config": value
+                })
+            })
+            .collect::<Vec<_>>();
+        RestResponse::json(200, serde_json::json!({ "pipelines": entries }))
+    }
+
+    fn handle_ingest_pipeline_get_route(&self, pipeline_id: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let Some(pipeline) = manifest["ingest_pipelines"].get(pipeline_id).cloned() else {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("pipeline [{pipeline_id}] is missing")
+                    },
+                    "status": 404
+                }),
+            );
+        };
+        RestResponse::json(200, serde_json::json!({ pipeline_id: pipeline }))
+    }
+
+    fn handle_ingest_pipeline_put_route(
+        &self,
+        pipeline_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let body = match serde_json::from_slice::<Value>(&request.body) {
+            Ok(body) => body,
+            Err(error) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "parse_exception",
+                            "reason": error.to_string()
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        };
+        self.metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["ingest_pipelines"][pipeline_id] = body;
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_ingest_pipeline_delete_route(&self, pipeline_id: &str) -> RestResponse {
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let removed = manifest["ingest_pipelines"]
+            .as_object_mut()
+            .and_then(|pipelines| pipelines.remove(pipeline_id));
+        if removed.is_none() {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("pipeline [{pipeline_id}] is missing")
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_ingest_pipeline_simulate_route(
+        &self,
+        pipeline_id: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+        let mut body = serde_json::json!({
+            "docs": ingest_simulate_docs(&payload)
+        });
+        if let Some(id) = pipeline_id {
+            body["pipeline_id"] = Value::String(id.to_string());
+        }
+        RestResponse::json(200, body)
+    }
+
+    fn handle_list_route(&self) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let indices = manifest["indices"]
+            .as_object()
+            .map(|indices| indices.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "indices": indices,
+                "shards": indices.len()
+            }),
+        )
+    }
+
+    fn handle_list_indices_route(&self, target: Option<&str>) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let requested_target = target.unwrap_or("_all");
+        let indices = manifest["indices"]
+            .as_object()
+            .into_iter()
+            .flat_map(|indices| indices.iter())
+            .filter(|(index, _)| requested_target == "_all" || matches_index_selector(requested_target, index))
+            .map(|(index, metadata)| {
+                serde_json::json!({
+                    "index": index,
+                    "state": metadata.get("state").cloned().unwrap_or_else(|| Value::String("open".to_string()))
+                })
+            })
+            .collect::<Vec<_>>();
+        RestResponse::json(200, serde_json::json!({ "indices": indices }))
+    }
+
+    fn handle_list_shards_route(&self, target: Option<&str>) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let requested_target = target.unwrap_or("_all");
+        let shards = manifest["indices"]
+            .as_object()
+            .into_iter()
+            .flat_map(|indices| indices.iter())
+            .filter(|(index, _)| requested_target == "_all" || matches_index_selector(requested_target, index))
+            .map(|(index, _)| {
+                serde_json::json!({
+                    "index": index,
+                    "shard": 0,
+                    "primary": true,
+                    "node": "local"
+                })
+            })
+            .collect::<Vec<_>>();
+        RestResponse::json(200, serde_json::json!({ "shards": shards }))
+    }
+
+    fn handle_field_caps_route(&self, target: Option<&str>) -> RestResponse {
+        let requested_target = target.unwrap_or("_all");
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let mut indices = Vec::new();
+        let mut fields = serde_json::Map::new();
+
+        if let Some(index_map) = manifest["indices"].as_object() {
+            for (index, metadata) in index_map {
+                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                    continue;
+                }
+                indices.push(Value::String(index.clone()));
+                if let Some(properties) = metadata
+                    .get("mappings")
+                    .and_then(|mappings| mappings.get("properties"))
+                    .and_then(Value::as_object)
+                {
+                    for (field_name, field_spec) in properties {
+                        let field_type = field_spec
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .unwrap_or("keyword");
+                        fields.entry(field_name.clone()).or_insert_with(|| {
+                            serde_json::json!({
+                                field_type: {
+                                    "type": field_type,
+                                    "searchable": true,
+                                    "aggregatable": true,
+                                    "metadata_field": false
+                                }
+                            })
+                        });
+                    }
+                }
+            }
+        }
+
+        if fields.is_empty() {
+            for (key, record) in docs.iter() {
+                let Some(index) = key.split(':').next() else {
+                    continue;
+                };
+                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                    continue;
+                }
+                if !indices.iter().any(|value| value == index) {
+                    indices.push(Value::String(index.to_string()));
+                }
+                if let Some(source) = record.source.as_object() {
+                    for (field_name, value) in source {
+                        let field_type = infer_field_caps_type(value);
+                        fields.entry(field_name.clone()).or_insert_with(|| {
+                            serde_json::json!({
+                                field_type: {
+                                    "type": field_type,
+                                    "searchable": true,
+                                    "aggregatable": field_type != "text",
+                                    "metadata_field": false
+                                }
+                            })
+                        });
+                    }
+                }
+            }
+        }
+
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "indices": indices,
+                "fields": Value::Object(fields)
+            }),
+        )
+    }
+
+    fn handle_tier_all_route(&self) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "tiers": ["hot", "warm", "cold", "frozen"]
+            }),
+        )
+    }
+
+    fn handle_index_tier_route(&self, index: &str) -> RestResponse {
+        let tier = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["indices"][index]["tier_preference"]
+            .as_str()
+            .unwrap_or("hot")
+            .to_string();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "index": index,
+                "tiers": [tier]
+            }),
+        )
+    }
+
+    fn handle_index_target_tier_route(&self, index: &str, target_tier: &str) -> RestResponse {
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for matched_index in &matched {
+            manifest["indices"][matched_index]["tier_preference"] =
+                Value::String(target_tier.to_string());
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "indices": matched,
+                "target_tier": target_tier
+            }),
+        )
+    }
+
+    fn handle_cancel_index_tier_route(&self, index: &str) -> RestResponse {
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for matched_index in &matched {
+            if let Some(index_state) = manifest["indices"][matched_index].as_object_mut() {
+                index_state.remove("tier_preference");
+            }
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "indices": matched
+            }),
+        )
+    }
+
+    fn search_template_search_body(&self, target: Option<&str>) -> Value {
+        let requested_target = target.unwrap_or("_all");
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let hits: Vec<Value> = docs
+            .iter()
+            .filter_map(|(key, record)| {
+                let mut parts = key.splitn(3, ':');
+                let index = parts.next()?;
+                let id = parts.next()?;
+                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "_index": index,
+                    "_id": id,
+                    "_score": 1.0,
+                    "_source": record.source
+                }))
+            })
+            .collect();
+        serde_json::json!({
+            "took": 1,
+            "timed_out": false,
+            "_shards": {
+                "total": 1,
+                "successful": 1,
+                "skipped": 0,
+                "failed": 0
+            },
+            "hits": {
+                "total": {
+                    "value": hits.len(),
+                    "relation": "eq"
+                },
+                "max_score": if hits.is_empty() { Value::Null } else { Value::from(1.0) },
+                "hits": hits
+            }
+        })
+    }
+
+    fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+        let query = payload.get("query").unwrap_or(&Value::Null);
+        let requested_target = target.unwrap_or("_all");
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let count = docs
+            .iter()
+            .filter(|(key, record)| {
+                let mut parts = key.splitn(3, ':');
+                let Some(index) = parts.next() else {
+                    return false;
+                };
+                let Some(id) = parts.next() else {
+                    return false;
+                };
+                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                    return false;
+                }
+                let _ = id;
+                matches_query_body(&record.source, Some(query))
+            })
+            .count();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "count": count,
+                "_shards": {
+                    "total": 1,
+                    "successful": 1,
+                    "skipped": 0,
+                    "failed": 0
+                }
+            }),
+        )
+    }
+
+    fn handle_rank_eval_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+        let requested_target = target.unwrap_or("_all");
+        let query = payload
+            .get("requests")
+            .and_then(Value::as_array)
+            .and_then(|requests| requests.first())
+            .and_then(|request| request.get("request"))
+            .and_then(|request| request.get("query"))
+            .or_else(|| payload.get("query"));
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let matched = docs
+            .iter()
+            .filter(|(key, record)| {
+                let mut parts = key.splitn(3, ':');
+                let Some(index) = parts.next() else {
+                    return false;
+                };
+                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                    return false;
+                }
+                matches_query_body(&record.source, query)
+            })
+            .count();
+        let evaluated = docs
+            .keys()
+            .filter(|key| {
+                let Some(index) = key.split(':').next() else {
+                    return false;
+                };
+                requested_target == "_all" || matches_index_selector(requested_target, index)
+            })
+            .count();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "metric_score": if matched > 0 { 1.0 } else { 0.0 },
+                "details": {
+                    "evaluated_docs": evaluated,
+                    "matched_docs": matched,
+                    "target": requested_target
+                },
+                "failures": {}
+            }),
+        )
+    }
+
+    fn handle_validate_query_route(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+        let mut body = serde_json::json!({
+            "valid": true,
+            "_shards": {
+                "total": 1,
+                "successful": 1,
+                "skipped": 0,
+                "failed": 0
+            }
+        });
+        if let Some(index) = target {
+            body["_indices"] = serde_json::json!([index]);
+        }
+        if let Some(query) = payload.get("query") {
+            body["explanations"] = serde_json::json!([{
+                "index": target.unwrap_or("_all"),
+                "valid": true,
+                "explanation": format!("query keys: {}", query.as_object().map(|object| object.len()).unwrap_or(0))
+            }]);
+        }
+        RestResponse::json(200, body)
+    }
+
+    fn handle_explain_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+        let resolved_index = self.resolve_index_or_alias(index);
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let key_prefix = format!("{resolved_index}:{id}:");
+        let Some((_, record)) = docs.iter().find(|(key, _)| key.starts_with(&key_prefix)) else {
+            return RestResponse::json(
+                200,
+                serde_json::json!({
+                    "_index": resolved_index,
+                    "_id": id,
+                    "matched": false,
+                    "explanation": {
+                        "value": 0.0,
+                        "description": "document missing"
+                    },
+                    "get": {
+                        "found": false
+                    }
+                }),
+            );
+        };
+        let default_query = serde_json::json!({ "match_all": {} });
+        let query = payload.get("query").unwrap_or(&default_query);
+        let matched = matches_query_body(&record.source, Some(query));
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_index": resolved_index,
+                "_id": id,
+                "matched": matched,
+                "explanation": {
+                    "value": if matched { 1.0 } else { 0.0 },
+                    "description": if matched { "query matched document" } else { "query did not match document" }
+                },
+                "get": {
+                    "found": true,
+                    "_source": record.source
+                }
+            }),
+        )
+    }
+
+    fn handle_grok_processor_get_route(&self) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "patterns": {
+                    "WORD": "\\\\b\\\\w+\\\\b",
+                    "INT": "[+-]?\\\\d+",
+                    "GREEDYDATA": ".*"
+                }
+            }),
+        )
+    }
+
+    fn handle_painless_context_route(&self) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "contexts": [
+                    { "name": "score", "methods": [] },
+                    { "name": "filter", "methods": [] },
+                    { "name": "update", "methods": [] }
+                ]
+            }),
+        )
+    }
+
+    fn handle_painless_execute_route(&self, request: &RestRequest) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+        let result = payload
+            .get("params")
+            .and_then(|params| params.get("value"))
+            .cloned()
+            .or_else(|| {
+                payload
+                    .get("context_setup")
+                    .and_then(|setup| setup.get("document"))
+                    .cloned()
+            })
+            .unwrap_or_else(|| Value::String("painless_execute_ok".to_string()));
+        RestResponse::json(200, serde_json::json!({ "result": result }))
+    }
+
+    fn handle_termvectors_route(
+        &self,
+        index: &str,
+        path_id: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "parse_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
+            }
+        };
+
+        let requested_id = path_id.or_else(|| payload.get("id").and_then(Value::as_str));
+        let Some(id) = requested_id else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": "id is missing"
+                    },
+                    "status": 400
+                }),
+            );
+        };
+
+        let routing = payload
+            .get("routing")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| self.resolve_alias_read_routing(index))
+            .unwrap_or_default();
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        RestResponse::json(200, self.mtermvectors_doc_response(&docs, index, id, &routing))
     }
 
     fn handle_index_search_route(&self, index: &str, request: &RestRequest) -> RestResponse {
@@ -3796,25 +5988,38 @@ impl SteelNode {
     }
 
     fn handle_search_scroll_route(&self, request: &RestRequest) -> RestResponse {
-        let body = match serde_json::from_slice::<Value>(&request.body) {
-            Ok(body) => body,
-            Err(error) => {
-                return RestResponse::json(
-                    400,
-                    serde_json::json!({
-                        "error": {
-                            "type": "unexpected_end_of_input_exception",
-                            "reason": error.to_string()
-                        },
-                        "status": 400
-                    }),
-                );
+        let body = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "unexpected_end_of_input_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
             }
         };
-        let scroll_id = body.get("scroll_id").and_then(Value::as_str).unwrap_or_default();
+        let scroll_id = request
+            .query_params
+            .get("scroll_id")
+            .map(String::as_str)
+            .or_else(|| body.get("scroll_id").and_then(Value::as_str))
+            .unwrap_or_default();
         if scroll_id.is_empty() {
             return build_unsupported_search_response("unsupported search scroll id");
         }
+        self.handle_search_scroll_with_id_route(scroll_id)
+    }
+
+    fn handle_search_scroll_with_id_route(&self, scroll_id: &str) -> RestResponse {
         let mut contexts = self
             .scroll_contexts
             .lock()
@@ -3874,6 +6079,10 @@ impl SteelNode {
         } else if let Some(ids) = body.get("scroll_id").and_then(Value::as_array) {
             scroll_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string));
         }
+        self.handle_clear_scroll_ids_route(scroll_ids)
+    }
+
+    fn handle_clear_scroll_ids_route(&self, scroll_ids: Vec<String>) -> RestResponse {
         let mut contexts = self
             .scroll_contexts
             .lock()
@@ -3884,6 +6093,34 @@ impl SteelNode {
                 freed += 1;
             }
         }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "succeeded": true,
+                "num_freed": freed
+            }),
+        )
+    }
+
+    fn handle_list_all_point_in_time_route(&self) -> RestResponse {
+        let contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
+        let pits = contexts
+            .keys()
+            .map(|id| serde_json::json!({ "id": id }))
+            .collect::<Vec<_>>();
+        RestResponse::json(200, serde_json::json!({ "pits": pits }))
+    }
+
+    fn handle_clear_all_point_in_time_route(&self) -> RestResponse {
+        let mut contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
+        let freed = contexts.len() as u64;
+        contexts.clear();
         RestResponse::json(
             200,
             serde_json::json!({
@@ -4380,6 +6617,22 @@ impl SteelNode {
         RestResponse::json(200, template_route_registration::build_template_acknowledged_response())
     }
 
+    fn handle_component_template_head_route(&self, name: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let exists = manifest["templates"]["component_templates"]
+            .as_object()
+            .map(|templates| templates.contains_key(name))
+            .unwrap_or(false);
+        if exists {
+            RestResponse::text(200, "")
+        } else {
+            RestResponse::text(404, "")
+        }
+    }
+
     fn handle_index_template_get_route(&self, target: Option<&str>) -> RestResponse {
         let manifest = self.metadata_manifest_state.lock().expect("metadata manifest state lock poisoned");
         if let Some(name) = target {
@@ -4413,6 +6666,80 @@ impl SteelNode {
         RestResponse::json(200, template_route_registration::build_template_acknowledged_response())
     }
 
+    fn handle_index_template_head_route(&self, name: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let exists = manifest["templates"]["index_templates"]
+            .as_object()
+            .map(|templates| templates.contains_key(name))
+            .unwrap_or(false);
+        if exists {
+            RestResponse::text(200, "")
+        } else {
+            RestResponse::text(404, "")
+        }
+    }
+
+    fn handle_index_template_simulate_route(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let request_subset = template_route_registration::build_index_template_body_subset(&request_body);
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let simulated_template = if request_subset != Value::Object(serde_json::Map::new()) {
+            request_subset
+        } else if let Some(name) = target {
+            manifest["templates"]["index_templates"][name]["index_template"]
+                .clone()
+        } else {
+            Value::Object(serde_json::Map::new())
+        };
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "template": simulated_template,
+                "overlapping": [],
+                "component_templates": []
+            }),
+        )
+    }
+
+    fn handle_index_template_simulate_index_route(&self, index_name: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let simulated_template = manifest["templates"]["index_templates"]
+            .as_object()
+            .into_iter()
+            .flat_map(|templates| templates.values())
+            .find_map(|template| {
+                let index_template = template.get("index_template")?;
+                let patterns = index_template.get("index_patterns")?.as_array()?;
+                patterns
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|pattern| matches_index_selector(pattern, index_name))
+                    .then(|| index_template.clone())
+            })
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "template": simulated_template,
+                "overlapping": [],
+                "component_templates": []
+            }),
+        )
+    }
+
     fn handle_legacy_template_get_route(&self, target: Option<&str>) -> RestResponse {
         let manifest = self.metadata_manifest_state.lock().expect("metadata manifest state lock poisoned");
         let body = legacy_template_route_registration::invoke_legacy_template_live_readback(
@@ -4434,6 +6761,22 @@ impl SteelNode {
         self.metadata_manifest_state.lock().expect("metadata manifest state lock poisoned")["templates"]["legacy_index_templates"][name] = subset;
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, legacy_template_route_registration::build_legacy_template_acknowledged_response())
+    }
+
+    fn handle_legacy_template_head_route(&self, name: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let exists = manifest["templates"]["legacy_index_templates"]
+            .as_object()
+            .map(|templates| templates.contains_key(name))
+            .unwrap_or(false);
+        if exists {
+            RestResponse::text(200, "")
+        } else {
+            RestResponse::text(404, "")
+        }
     }
 
     fn handle_component_template_delete_route(&self, name: &str) -> RestResponse {
@@ -5106,8 +7449,15 @@ impl SteelNode {
     }
 
     fn handle_tasks_cancel_route(&self, request: &RestRequest) -> RestResponse {
-        let Some(task_id) = request.query_params.get("task_id").map(String::as_str) else {
-            return RestResponse::json(200, self.unknown_task_cancel_body(""));
+        let Some(task_id) = self.task_id_from_cancel_request(request) else {
+            return RestResponse::json(
+                200,
+                serde_json::json!({
+                    "nodes": {},
+                    "task_failures": [],
+                    "node_failures": []
+                }),
+            );
         };
         if let Some(task) = self.find_task(task_id) {
             let cancellable = task
@@ -5128,7 +7478,234 @@ impl SteelNode {
                 })),
             );
         }
-        RestResponse::json(200, self.unknown_task_cancel_body(task_id))
+        RestResponse::json(404, tasks_route_registration::build_unknown_task_error(task_id))
+    }
+
+    fn handle_tasks_rethrottle_route(&self, request: &RestRequest) -> RestResponse {
+        let Some(task_id) = self.rethrottle_task_id_from_request(request) else {
+            return RestResponse::not_found_for(request.method, &request.path);
+        };
+        if let Some(task) = self.find_task(task_id) {
+            return RestResponse::json(
+                200,
+                serde_json::json!({
+                    "task": task
+                }),
+            );
+        }
+        RestResponse::json(404, tasks_route_registration::build_unknown_task_error(task_id))
+    }
+
+    fn handle_reindex_route(&self, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let Some(source_index) = body
+            .get("source")
+            .and_then(|source| source.get("index"))
+            .and_then(Value::as_str)
+        else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": "reindex source.index is required"
+                    },
+                    "status": 400
+                }),
+            );
+        };
+        let Some(dest_index) = body
+            .get("dest")
+            .and_then(|dest| dest.get("index"))
+            .and_then(Value::as_str)
+        else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": "reindex dest.index is required"
+                    },
+                    "status": 400
+                }),
+            );
+        };
+
+        let resolved_dest = match self.resolve_write_target(dest_index, true) {
+            Ok(index) => index,
+            Err(reason) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "illegal_argument_exception",
+                            "reason": reason
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        };
+
+        let source_docs: Vec<(String, String, StoredDocument)> = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .iter()
+            .filter_map(|(key, doc)| {
+                let mut parts = key.splitn(3, ':');
+                let index = parts.next()?;
+                let id = parts.next()?;
+                let routing = parts.next().unwrap_or_default();
+                if matches_index_selector(source_index, index) {
+                    Some((id.to_string(), routing.to_string(), doc.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let total = source_docs.len() as u64;
+        let mut created = 0_u64;
+        let mut updated = 0_u64;
+        {
+            let mut docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            for (id, routing, doc) in source_docs {
+                let key = format!("{resolved_dest}:{id}:{routing}");
+                if docs.insert(key, doc).is_some() {
+                    updated += 1;
+                } else {
+                    created += 1;
+                }
+            }
+        }
+        self.persist_shared_runtime_state_to_disk();
+
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "took": 1,
+                "timed_out": false,
+                "total": total,
+                "updated": updated,
+                "created": created,
+                "deleted": 0,
+                "batches": if total == 0 { 0 } else { 1 },
+                "version_conflicts": 0,
+                "noops": 0,
+                "retries": {
+                    "bulk": 0,
+                    "search": 0
+                },
+                "throttled_millis": 0,
+                "requests_per_second": -1.0,
+                "throttled_until_millis": 0,
+                "failures": []
+            }),
+        )
+    }
+
+    fn handle_delete_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let resolved_index = self.resolve_index_or_alias(index);
+        let mut deleted = 0_u64;
+        {
+            let mut docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            let keys: Vec<String> = docs
+                .iter()
+                .filter_map(|(key, doc)| {
+                    let mut parts = key.splitn(3, ':');
+                    let doc_index = parts.next()?;
+                    if doc_index != resolved_index {
+                        return None;
+                    }
+                    if matches_query_body(&doc.source, body.get("query")) {
+                        Some(key.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            deleted = keys.len() as u64;
+            for key in keys {
+                docs.remove(&key);
+            }
+        }
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "took": 1,
+                "timed_out": false,
+                "total": deleted,
+                "deleted": deleted,
+                "batches": if deleted == 0 { 0 } else { 1 },
+                "version_conflicts": 0,
+                "noops": 0,
+                "retries": {
+                    "bulk": 0,
+                    "search": 0
+                },
+                "throttled_millis": 0,
+                "requests_per_second": -1.0,
+                "throttled_until_millis": 0,
+                "failures": []
+            }),
+        )
+    }
+
+    fn handle_update_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let resolved_index = self.resolve_index_or_alias(index);
+        let mut updated = 0_u64;
+        {
+            let mut docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            for (key, doc) in docs.iter_mut() {
+                let mut parts = key.splitn(3, ':');
+                let doc_index = parts.next().unwrap_or_default();
+                if doc_index != resolved_index {
+                    continue;
+                }
+                if !matches_query_body(&doc.source, body.get("query")) {
+                    continue;
+                }
+                if let Some(script) = body.get("script") {
+                    apply_update_by_query_script(&mut doc.source, script);
+                }
+                updated += 1;
+            }
+        }
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "took": 1,
+                "timed_out": false,
+                "total": updated,
+                "updated": updated,
+                "deleted": 0,
+                "batches": if updated == 0 { 0 } else { 1 },
+                "version_conflicts": 0,
+                "noops": 0,
+                "retries": {
+                    "bulk": 0,
+                    "search": 0
+                },
+                "throttled_millis": 0,
+                "requests_per_second": -1.0,
+                "throttled_until_millis": 0,
+                "failures": []
+            }),
+        )
     }
 
     fn cluster_health_body(&self, target: Option<&str>) -> Option<Value> {
@@ -5530,6 +8107,14 @@ impl SteelNode {
 
     fn dangling_indices_body(&self) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let dangling_indices = manifest["cluster_admin_state"]["dangling_indices"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         serde_json::json!({
             "_nodes": {
                 "total": view.nodes.len(),
@@ -5537,8 +8122,107 @@ impl SteelNode {
                 "failed": 0,
             },
             "cluster_name": view.cluster_name,
-            "dangling_indices": []
+            "dangling_indices": dangling_indices
         })
+    }
+
+    fn handle_filecache_prune_route(&self) -> RestResponse {
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_dangling_index_import_route(
+        &self,
+        index_uuid: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if !query_param_is_true(request.query_params.get("accept_data_loss")) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: accept_data_loss must be set to true;"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let cluster_admin_state = manifest
+            .as_object_mut()
+            .expect("metadata manifest object expected")
+            .entry("cluster_admin_state".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        let dangling_indices = cluster_admin_state
+            .as_object_mut()
+            .expect("cluster_admin_state object expected")
+            .entry("dangling_indices".to_string())
+            .or_insert_with(|| serde_json::json!([]));
+        let values = dangling_indices
+            .as_array_mut()
+            .expect("dangling_indices array expected");
+        if !values.iter().any(|value| value.as_str() == Some(index_uuid)) {
+            values.push(Value::String(index_uuid.to_string()));
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_dangling_index_delete_route(
+        &self,
+        index_uuid: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if !query_param_is_true(request.query_params.get("accept_data_loss")) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: accept_data_loss must be set to true;"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let cluster_admin_state = manifest
+            .as_object_mut()
+            .expect("metadata manifest object expected")
+            .entry("cluster_admin_state".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        let dangling_indices = cluster_admin_state
+            .as_object_mut()
+            .expect("cluster_admin_state object expected")
+            .entry("dangling_indices".to_string())
+            .or_insert_with(|| serde_json::json!([]));
+        let values = dangling_indices
+            .as_array_mut()
+            .expect("dangling_indices array expected");
+        let original_len = values.len();
+        values.retain(|value| value.as_str() != Some(index_uuid));
+        if values.len() == original_len {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("dangling index [{index_uuid}] not found")
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
     fn handle_remote_store_metadata_route(&self, index: &str) -> RestResponse {
@@ -5597,6 +8281,66 @@ impl SteelNode {
         )
     }
 
+    fn handle_remote_store_metadata_shard_route(&self, index: &str, shard_id: &str) -> RestResponse {
+        if !self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .contains(index)
+        {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "index_not_found_exception",
+                                "reason": format!("no such index [{index}]"),
+                                "index": index,
+                                "resource.id": index,
+                                "resource.type": "index_or_alias",
+                                "index_uuid": "_na_"
+                            }
+                        ],
+                        "type": "index_not_found_exception",
+                        "reason": format!("no such index [{index}]"),
+                        "index": index,
+                        "resource.id": index,
+                        "resource.type": "index_or_alias",
+                        "index_uuid": "_na_"
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        let shard_value = shard_id
+            .parse::<u64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| Value::String(shard_id.to_string()));
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": 1,
+                    "successful": 0,
+                    "failed": 1,
+                    "failures": [
+                        {
+                            "shard": shard_value,
+                            "index": index,
+                            "status": "INTERNAL_SERVER_ERROR",
+                            "reason": {
+                                "type": "illegal_state_exception",
+                                "reason": "Remote store not enabled for index"
+                            }
+                        }
+                    ]
+                },
+                "indices": {}
+            }),
+        )
+    }
+
     fn handle_remote_store_stats_route(&self, index: &str) -> RestResponse {
         if !self
             .created_indices_state
@@ -5638,6 +8382,104 @@ impl SteelNode {
                     "failed": 0
                 },
                 "indices": {}
+            }),
+        )
+    }
+
+    fn handle_remote_store_stats_shard_route(&self, index: &str, _shard_id: &str) -> RestResponse {
+        if !self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .contains(index)
+        {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "index_not_found_exception",
+                                "reason": format!("no such index [{index}]"),
+                                "index": index,
+                                "resource.id": index,
+                                "resource.type": "index_or_alias",
+                                "index_uuid": "_na_"
+                            }
+                        ],
+                        "type": "index_not_found_exception",
+                        "reason": format!("no such index [{index}]"),
+                        "index": index,
+                        "resource.id": index,
+                        "resource.type": "index_or_alias",
+                        "index_uuid": "_na_"
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": 0,
+                    "successful": 0,
+                    "failed": 0
+                },
+                "indices": {}
+            }),
+        )
+    }
+
+    fn handle_remote_store_restore_route(&self, request: &RestRequest) -> RestResponse {
+        let _body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        RestResponse::json(200, serde_json::json!({ "accepted": true }))
+    }
+
+    fn handle_wlm_stats_route(
+        &self,
+        node_id: Option<&str>,
+        workload_group: Option<&str>,
+    ) -> RestResponse {
+        let runtime_node_id = self.info.name.as_str();
+        let selected = match node_id {
+            None | Some("_all") | Some("_local") => Some(runtime_node_id.to_string()),
+            Some(candidate)
+                if candidate == runtime_node_id || candidate == self.info.name.as_str() =>
+            {
+                Some(runtime_node_id.to_string())
+            }
+            Some(_) => None,
+        };
+        let workload_group_id = workload_group.unwrap_or("default");
+        let mut nodes = serde_json::Map::new();
+        if let Some(selected_node_id) = selected {
+            nodes.insert(
+                selected_node_id.clone(),
+                serde_json::json!({
+                    "node_id": selected_node_id,
+                    "stats": {
+                        "workload_groups": {
+                            workload_group_id: {
+                                "active_requests": 0,
+                                "rejected_requests": 0,
+                                "cancellations": 0,
+                                "cpu": {
+                                    "current_usage": 0.0
+                                },
+                                "memory": {
+                                    "current_usage_bytes": 0
+                                }
+                            }
+                        }
+                    }
+                }),
+            );
+        }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "nodes": nodes
             }),
         )
     }
@@ -5764,6 +8606,32 @@ impl SteelNode {
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn handle_stored_script_put_with_context_route(
+        &self,
+        script_id: &str,
+        context: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        const ALLOWED_CONTEXTS: &[&str] = &["filter", "ingest", "score", "search", "template", "update"];
+        if !ALLOWED_CONTEXTS.contains(&context) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [{
+                            "type": "illegal_argument_exception",
+                            "reason": format!("unknown script context [{context}]")
+                        }],
+                        "type": "illegal_argument_exception",
+                        "reason": format!("unknown script context [{context}]")
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        self.handle_stored_script_put_route(script_id, request)
     }
 
     fn handle_stored_script_delete_route(&self, script_id: &str) -> RestResponse {
@@ -5933,6 +8801,63 @@ impl SteelNode {
         RestResponse::text(200, body)
     }
 
+    fn handle_nodes_reload_secure_settings_route(
+        &self,
+        requested_node: Option<&str>,
+    ) -> RestResponse {
+        let cluster_name = self
+            .cluster_view
+            .as_ref()
+            .map(|view| view.cluster_name.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| self.info.name.clone());
+        let selector = requested_node
+            .filter(|node| !node.is_empty())
+            .unwrap_or("_all");
+        let all_nodes = self.nodes_info_body()["nodes"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        let selected_nodes = all_nodes
+            .into_iter()
+            .filter(|(node_id, node)| {
+                if matches!(selector, "_all" | "_local" | "*") {
+                    return true;
+                }
+                let node_name = node.get("name").and_then(Value::as_str).unwrap_or_default();
+                node_id == selector
+                    || node_name == selector
+                    || matches_index_selector(selector, node_id)
+                    || matches_index_selector(selector, node_name)
+            })
+            .map(|(node_id, node)| {
+                let node_name = node
+                    .get("name")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String(node_id.clone()));
+                (
+                    node_id,
+                    serde_json::json!({
+                        "name": node_name
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<String, Value>>();
+        let total = selected_nodes.len();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_nodes": {
+                    "total": total,
+                    "successful": total,
+                    "failed": 0
+                },
+                "cluster_name": cluster_name,
+                "nodes": selected_nodes
+            }),
+        )
+    }
+
     fn nodes_stats_variant_path_supported(&self, path: &str) -> bool {
         let Some(remainder) = path.strip_prefix("/_nodes/") else {
             return false;
@@ -5986,6 +8911,13 @@ impl SteelNode {
         }
     }
 
+    fn index_stats_variant_path_supported(&self, path: &str) -> bool {
+        let Some(metric) = path.strip_prefix("/_stats/") else {
+            return false;
+        };
+        !metric.is_empty() && !metric.contains('/')
+    }
+
     fn index_stats_body(&self) -> Value {
         let created_indices = self
             .created_indices_state
@@ -6023,6 +8955,395 @@ impl SteelNode {
             },
             "indices": indices
         })
+    }
+
+    fn handle_index_stats_route(&self, target: Option<&str>) -> RestResponse {
+        let body = self.index_stats_body();
+        let Some(target) = target else {
+            return RestResponse::json(200, stats_route_registration::invoke_index_stats_live_route(&body));
+        };
+
+        let filtered_indices = body["indices"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(index, _)| matches_index_selector(target, index))
+            .collect::<serde_json::Map<String, Value>>();
+        let count = filtered_indices.len();
+
+        RestResponse::json(
+            200,
+            stats_route_registration::invoke_index_stats_live_route(&serde_json::json!({
+                "_shards": {
+                    "total": count,
+                    "successful": count,
+                    "failed": 0
+                },
+                "_all": body["_all"].clone(),
+                "indices": filtered_indices
+            })),
+        )
+    }
+
+    fn handle_analyze_route(&self, _target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let text = if request.method == RestMethod::Get {
+            request
+                .query_params
+                .get("text")
+                .map(|value| decode_url_component(value))
+                .unwrap_or_default()
+        } else {
+            let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+            match body.get("text") {
+                Some(Value::String(text)) => text.clone(),
+                Some(Value::Array(values)) => values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                _ => String::new(),
+            }
+        };
+
+        let mut offset = 0usize;
+        let tokens = tokenize_search_text(&text)
+            .into_iter()
+            .enumerate()
+            .map(|(position, token)| {
+                let start_offset = text[offset..]
+                    .to_ascii_lowercase()
+                    .find(&token)
+                    .map(|delta| offset + delta)
+                    .unwrap_or(offset);
+                let end_offset = start_offset + token.len();
+                offset = end_offset;
+                serde_json::json!({
+                    "token": token,
+                    "start_offset": start_offset,
+                    "end_offset": end_offset,
+                    "type": "word",
+                    "position": position
+                })
+            })
+            .collect::<Vec<_>>();
+
+        RestResponse::json(200, serde_json::json!({ "tokens": tokens }))
+    }
+
+    fn handle_flush_route(&self, target: Option<&str>) -> RestResponse {
+        let total = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|selector| matches_index_selector(selector, index)).unwrap_or(true))
+            .count();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": total,
+                    "successful": total,
+                    "failed": 0
+                }
+            }),
+        )
+    }
+
+    fn handle_cache_clear_route(&self, target: Option<&str>) -> RestResponse {
+        let total = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|selector| matches_index_selector(selector, index)).unwrap_or(true))
+            .count();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": total,
+                    "successful": total,
+                    "failed": 0
+                }
+            }),
+        )
+    }
+
+    fn handle_close_route(&self, target: Option<&str>) -> RestResponse {
+        let matched = if let Some(target) = target {
+            match self.resolve_index_metadata_targets(target, false, false, "open") {
+                Ok(matched) => matched,
+                Err(response) => return response,
+            }
+        } else {
+            self.created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for index in &matched {
+            manifest["indices"][index]["state"] = Value::String("close".to_string());
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "shards_acknowledged": true
+            }),
+        )
+    }
+
+    fn handle_forcemerge_route(&self, target: Option<&str>) -> RestResponse {
+        let total = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|selector| matches_index_selector(selector, index)).unwrap_or(true))
+            .count();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": total,
+                    "successful": total,
+                    "failed": 0
+                }
+            }),
+        )
+    }
+
+    fn handle_open_route(&self, target: Option<&str>) -> RestResponse {
+        let matched = if let Some(target) = target {
+            match self.resolve_index_metadata_targets(target, false, false, "open") {
+                Ok(matched) => matched,
+                Err(response) => return response,
+            }
+        } else {
+            self.created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for index in &matched {
+            manifest["indices"][index]["state"] = Value::String("open".to_string());
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "shards_acknowledged": true
+            }),
+        )
+    }
+
+    fn handle_resolve_index_route(&self, name: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+
+        let mut indices = Vec::new();
+        if let Some(index_map) = manifest["indices"].as_object() {
+            for (index_name, body) in index_map {
+                if !matches_index_selector(name, index_name) {
+                    continue;
+                }
+                let aliases = body["aliases"]
+                    .as_object()
+                    .map(|aliases| aliases.keys().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                indices.push(serde_json::json!({
+                    "name": index_name,
+                    "aliases": aliases,
+                    "attributes": ["open"]
+                }));
+            }
+        }
+
+        let mut aliases = Vec::new();
+        if let Some(index_map) = manifest["indices"].as_object() {
+            let mut alias_to_indices = BTreeMap::<String, Vec<String>>::new();
+            for (index_name, body) in index_map {
+                if let Some(alias_map) = body["aliases"].as_object() {
+                    for alias_name in alias_map.keys() {
+                        if matches_index_selector(name, alias_name) {
+                            alias_to_indices
+                                .entry(alias_name.clone())
+                                .or_default()
+                                .push(index_name.clone());
+                        }
+                    }
+                }
+            }
+            for (alias_name, alias_indices) in alias_to_indices {
+                aliases.push(serde_json::json!({
+                    "name": alias_name,
+                    "indices": alias_indices
+                }));
+            }
+        }
+
+        let mut data_streams = Vec::new();
+        if let Some(stream_map) = manifest["data_streams"].as_object() {
+            for (stream_name, body) in stream_map {
+                if !matches_index_selector(name, stream_name) {
+                    continue;
+                }
+                let backing_indices = body["indices"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|entry| entry.get("index_name").and_then(Value::as_str))
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>();
+                data_streams.push(serde_json::json!({
+                    "name": stream_name,
+                    "backing_indices": backing_indices
+                }));
+            }
+        }
+
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "indices": indices,
+                "aliases": aliases,
+                "data_streams": data_streams
+            }),
+        )
+    }
+
+    fn handle_shard_stores_route(&self, target: Option<&str>) -> RestResponse {
+        let mut indices = serde_json::Map::new();
+        for index in self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|selector| matches_index_selector(selector, index)).unwrap_or(true))
+        {
+            indices.insert(
+                index.clone(),
+                serde_json::json!({
+                    "shards": {
+                        "0": {
+                            "stores": [
+                                {
+                                    "name": self.info.name.clone(),
+                                    "transport_address": "0.0.0.0:9300",
+                                    "allocation_id": format!("{index}-primary-0"),
+                                    "allocation": "primary",
+                                    "store_exception": null
+                                }
+                            ]
+                        }
+                    }
+                }),
+            );
+        }
+        RestResponse::json(200, serde_json::json!({ "indices": indices }))
+    }
+
+    fn handle_upgrade_route(&self, target: Option<&str>) -> RestResponse {
+        let mut indices = serde_json::Map::new();
+        for index in self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|selector| matches_index_selector(selector, index)).unwrap_or(true))
+        {
+            indices.insert(
+                index.clone(),
+                serde_json::json!({
+                    "size_in_bytes": 0,
+                    "size_to_upgrade_in_bytes": 0,
+                    "size_to_upgrade_ancient_in_bytes": 0
+                }),
+            );
+        }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "size_in_bytes": 0,
+                "size_to_upgrade_in_bytes": 0,
+                "size_to_upgrade_ancient_in_bytes": 0,
+                "indices": indices
+            }),
+        )
+    }
+
+    fn handle_ingestion_state_route(&self, index: &str) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let state = manifest["indices"]
+            .get(index)
+            .and_then(|entry| entry.get("ingestion"))
+            .and_then(|ingestion| ingestion.get("state"))
+            .and_then(Value::as_str)
+            .unwrap_or("RUNNING")
+            .to_string();
+        drop(manifest);
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "index": index,
+                "state": state,
+                "pipelines": [],
+                "metadata": {
+                    "version": 1
+                }
+            }),
+        )
+    }
+
+    fn handle_ingestion_state_transition_route(&self, index: &str, state: &str) -> RestResponse {
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        if manifest["indices"].get(index).is_none() {
+            return RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IndexNotFound,
+                format!("no such index [{index}]"),
+            );
+        }
+        manifest["indices"][index]["ingestion"]["state"] = Value::String(state.to_string());
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "index": index,
+                "state": state,
+                "acknowledged": true,
+                "pipelines": [],
+                "metadata": {
+                    "version": 1
+                }
+            }),
+        )
     }
 
     fn task_records(&self) -> Vec<Value> {
@@ -6104,6 +9425,36 @@ impl SteelNode {
             let id = task.get("id").and_then(Value::as_u64).unwrap_or_default();
             format!("{node}:{id}") == task_id
         })
+    }
+
+    fn task_id_from_cancel_request<'a>(&self, request: &'a RestRequest) -> Option<&'a str> {
+        if let Some(task_id) = request
+            .path
+            .strip_prefix("/_tasks/")
+            .and_then(|path| path.strip_suffix("/_cancel"))
+            .filter(|task_id| !task_id.is_empty() && *task_id != "_cancel")
+        {
+            return Some(task_id);
+        }
+        request.query_params.get("task_id").map(String::as_str)
+    }
+
+    fn rethrottle_task_id_from_request<'a>(&self, request: &'a RestRequest) -> Option<&'a str> {
+        for prefix in [
+            "/_delete_by_query/",
+            "/_reindex/",
+            "/_update_by_query/",
+        ] {
+            if let Some(task_id) = request
+                .path
+                .strip_prefix(prefix)
+                .and_then(|path| path.strip_suffix("/_rethrottle"))
+                .filter(|task_id| !task_id.is_empty())
+            {
+                return Some(task_id);
+            }
+        }
+        None
     }
 
     fn unknown_task_cancel_body(&self, task_id: &str) -> Value {
@@ -6249,6 +9600,73 @@ impl SteelNode {
         self.handle_put_doc_route(index, &generated_id, request)
     }
 
+    fn handle_create_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        let resolved_index = match self.resolve_write_target(index, true) {
+            Ok(resolved_index) => resolved_index,
+            Err(reason) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "illegal_argument_exception",
+                            "reason": reason
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        };
+        let source = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let routing = request
+            .query_params
+            .get("routing")
+            .cloned()
+            .or_else(|| self.resolve_alias_write_routing(index));
+        let key = format!("{resolved_index}:{id}:{}", routing.clone().unwrap_or_default());
+        let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
+        if docs.contains_key(&key) {
+            return RestResponse::json(
+                409,
+                serde_json::json!({
+                    "error": {
+                        "type": "version_conflict_engine_exception",
+                        "reason": format!("[{id}]: version conflict, document already exists in index [{resolved_index}]")
+                    },
+                    "status": 409
+                }),
+            );
+        }
+        let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
+        let assigned_seq_no = *next_seq_no;
+        *next_seq_no += 1;
+        let forced_refresh = request
+            .query_params
+            .get("refresh")
+            .is_some_and(|value| value == "wait_for" || value == "true");
+        let record = StoredDocument {
+            source,
+            version: 1,
+            seq_no: assigned_seq_no as i64,
+            primary_term: 1,
+            routing,
+            refreshed: forced_refresh,
+        };
+        let response = serde_json::json!({
+            "_index": self.write_response_index(index, &resolved_index),
+            "_id": id,
+            "_version": 1,
+            "result": "created",
+            "_seq_no": record.seq_no,
+            "_primary_term": record.primary_term,
+            "forced_refresh": forced_refresh,
+        });
+        docs.insert(key, record);
+        drop(docs);
+        drop(next_seq_no);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(201, response)
+    }
+
     fn handle_get_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
         let resolved_index = self.resolve_index_or_alias(index);
         let routing = request
@@ -6310,6 +9728,43 @@ impl SteelNode {
             404,
             single_doc_get_route_registration::build_get_doc_not_found_response(&resolved_index, id),
         )
+    }
+
+    fn handle_get_source_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        let resolved_index = self.resolve_index_or_alias(index);
+        let routing = request
+            .query_params
+            .get("routing")
+            .cloned()
+            .or_else(|| self.resolve_alias_read_routing(index))
+            .unwrap_or_default();
+        let key = format!("{resolved_index}:{id}:{routing}");
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let record = docs.get(&key).or_else(|| {
+            if routing.is_empty() {
+                docs.iter()
+                    .find(|(candidate, _)| candidate.starts_with(&format!("{resolved_index}:{id}:")))
+                    .map(|(_, record)| record)
+            } else {
+                None
+            }
+        });
+        if let Some(record) = record {
+            return RestResponse::json(200, record.source.clone());
+        }
+        RestResponse::json(
+            404,
+            single_doc_get_route_registration::build_get_doc_not_found_response(&resolved_index, id),
+        )
+    }
+
+    fn handle_head_source_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        let get_response = self.handle_get_source_route(index, id, request);
+        if get_response.status == 200 {
+            RestResponse::json(200, serde_json::json!({}))
+        } else {
+            get_response
+        }
     }
 
     fn handle_delete_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
@@ -6542,7 +9997,7 @@ impl SteelNode {
         RestResponse::json(404, crate::single_doc_update_route_registration::build_update_doc_not_found_error(&resolved_index, id))
     }
 
-    fn handle_knn_stats_route(&self) -> RestResponse {
+    fn handle_knn_stats_route(&self, node_id: Option<&str>, stat: Option<&str>) -> RestResponse {
         let state = self
             .knn_operational_state
             .lock()
@@ -6560,22 +10015,31 @@ impl SteelNode {
                 }),
             );
         };
+        let requested_node = node_id.unwrap_or("local");
+        let stats_body = serde_json::json!({
+            "graph_count": state.graph_count,
+            "warmed_index_count": state.warmed_index_count,
+            "cache_entry_count": state.cache_entry_count,
+            "native_memory_used_bytes": state.native_memory_used_bytes,
+            "model_cache_used_bytes": state.model_cache_used_bytes,
+            "quantization_cache_used_bytes": state.quantization_cache_used_bytes,
+            "clear_cache_requests": state.clear_cache_requests,
+            "training_requests": state.training_requests,
+            "model_count": state.trained_models.len(),
+            "operational_controls": {}
+        });
+        let filtered_stats = match stat {
+            Some(stat) => {
+                let value = stats_body.get(stat).cloned().unwrap_or(Value::Null);
+                serde_json::json!({ stat: value })
+            }
+            None => stats_body,
+        };
         RestResponse::json(
             200,
             serde_json::json!({
                 "nodes": {
-                    "local": {
-                        "graph_count": state.graph_count,
-                        "warmed_index_count": state.warmed_index_count,
-                        "cache_entry_count": state.cache_entry_count,
-                        "native_memory_used_bytes": state.native_memory_used_bytes,
-                        "model_cache_used_bytes": state.model_cache_used_bytes,
-                        "quantization_cache_used_bytes": state.quantization_cache_used_bytes,
-                        "clear_cache_requests": state.clear_cache_requests,
-                        "training_requests": state.training_requests,
-                        "model_count": state.trained_models.len(),
-                        "operational_controls": {}
-                    }
+                    requested_node: filtered_stats
                 }
             }),
         )
@@ -6661,6 +10125,22 @@ impl SteelNode {
     }
 
     fn handle_knn_model_train_route(&self, request: &RestRequest) -> RestResponse {
+        self.handle_knn_model_train_with_optional_id_route(None, request)
+    }
+
+    fn handle_knn_model_train_with_id_route(
+        &self,
+        model_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        self.handle_knn_model_train_with_optional_id_route(Some(model_id), request)
+    }
+
+    fn handle_knn_model_train_with_optional_id_route(
+        &self,
+        forced_model_id: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let training_index = body
             .get("training_index")
@@ -6683,7 +10163,9 @@ impl SteelNode {
             .expect("knn operational state lock poisoned");
         let current = state.get_or_insert_with(KnnOperationalState::default);
         current.training_requests += 1;
-        let model_id = format!("knn-model-{}", current.training_requests);
+        let model_id = forced_model_id
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("knn-model-{}", current.training_requests));
         let model = KnnModelState {
             model_id: model_id.clone(),
             training_index,
@@ -7566,6 +11048,41 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_segments_route(&self, target: Option<&str>) -> RestResponse {
+        let mut response = serde_json::Map::new();
+        for index in self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
+        {
+            let docs = self.index_document_count(index);
+            response.insert(
+                index.clone(),
+                serde_json::json!({
+                    "shards": {
+                        "0": [
+                            {
+                                "generation": 1,
+                                "num_docs": docs,
+                                "deleted_docs": 0,
+                                "size_in_bytes": 0,
+                                "memory_in_bytes": 0,
+                                "committed": true,
+                                "search": true,
+                                "version": "9.0",
+                                "compound": false,
+                                "segment": "_0"
+                            }
+                        ]
+                    }
+                }),
+            );
+        }
+        RestResponse::json(200, Value::Object(response))
+    }
+
     fn handle_cat_pit_segments_route(&self, request: &RestRequest, include_all: bool) -> RestResponse {
         if !include_all {
             return RestResponse::json(
@@ -7676,6 +11193,66 @@ impl SteelNode {
             ));
         }
         RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
+    fn handle_recovery_route(&self, target: Option<&str>) -> RestResponse {
+        let mut response = serde_json::Map::new();
+        for index in self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
+        {
+            response.insert(
+                index.clone(),
+                serde_json::json!({
+                    "shards": [
+                        {
+                            "id": 0,
+                            "type": "PEER",
+                            "stage": "DONE",
+                            "primary": true,
+                            "start_time_in_millis": 0,
+                            "stop_time_in_millis": 0,
+                            "total_time_in_millis": 0,
+                            "source": {
+                                "id": self.info.name.clone(),
+                                "host": "0.0.0.0",
+                                "transport_address": "0.0.0.0:9300",
+                                "ip": "0.0.0.0",
+                                "name": self.info.name.clone()
+                            },
+                            "target": {
+                                "id": self.info.name.clone(),
+                                "host": "0.0.0.0",
+                                "transport_address": "0.0.0.0:9300",
+                                "ip": "0.0.0.0",
+                                "name": self.info.name.clone()
+                            },
+                            "index": {
+                                "size": {
+                                    "total_in_bytes": 0,
+                                    "recovered_in_bytes": 0,
+                                    "percent": "100.0%"
+                                },
+                                "files": {
+                                    "total": 0,
+                                    "recovered": 0,
+                                    "percent": "100.0%"
+                                }
+                            },
+                            "translog": {
+                                "recovered": 0,
+                                "total": 0,
+                                "percent": "100.0%"
+                            }
+                        }
+                    ]
+                }),
+            );
+        }
+        RestResponse::json(200, Value::Object(response))
     }
 
     fn handle_cat_repositories_route(&self, request: &RestRequest) -> RestResponse {
@@ -11851,6 +15428,44 @@ fn normalize_alias_metadata_for_readback(metadata: Value) -> Value {
     metadata
 }
 
+fn extract_alias_named_mutation_targets(body: &Value) -> Vec<String> {
+    let mut targets = Vec::new();
+    if let Some(index) = body.get("index").and_then(Value::as_str) {
+        targets.push(index.to_string());
+    }
+    if let Some(indices) = body.get("indices") {
+        if let Some(index) = indices.as_str() {
+            targets.push(index.to_string());
+        } else if let Some(array) = indices.as_array() {
+            for value in array {
+                if let Some(index) = value.as_str() {
+                    targets.push(index.to_string());
+                }
+            }
+        }
+    }
+    targets
+}
+
+fn extract_alias_names_from_body(body: &Value) -> Vec<String> {
+    let mut aliases = Vec::new();
+    if let Some(alias) = body.get("alias").and_then(Value::as_str) {
+        aliases.push(alias.to_string());
+    }
+    if let Some(values) = body.get("aliases") {
+        if let Some(alias) = values.as_str() {
+            aliases.push(alias.to_string());
+        } else if let Some(array) = values.as_array() {
+            for value in array {
+                if let Some(alias) = value.as_str() {
+                    aliases.push(alias.to_string());
+                }
+            }
+        }
+    }
+    aliases
+}
+
 fn build_root_info_response(info: &NodeInfo) -> RestResponse {
     RestResponse::json(
         200,
@@ -11871,12 +15486,54 @@ fn default_cluster_metadata_manifest() -> Value {
         "cluster_settings": default_cluster_settings_state(),
         "indices": {},
         "stored_scripts": {},
+        "search_pipelines": {},
+        "ingest_pipelines": {},
         "templates": {
             "legacy_index_templates": {},
             "component_templates": {},
             "index_templates": {}
         }
     })
+}
+
+fn ingest_simulate_docs(payload: &Value) -> Vec<Value> {
+    if let Some(docs) = payload.get("docs").and_then(Value::as_array) {
+        return docs
+            .iter()
+            .map(|doc| {
+                let source = doc
+                    .get("_source")
+                    .cloned()
+                    .or_else(|| doc.get("doc").and_then(|inner| inner.get("_source")).cloned())
+                    .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+                serde_json::json!({
+                    "doc": {
+                        "_source": source
+                    }
+                })
+            })
+            .collect();
+    }
+    vec![serde_json::json!({
+        "doc": {
+            "_source": payload
+                .get("doc")
+                .and_then(|doc| doc.get("_source"))
+                .cloned()
+                .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
+        }
+    })]
+}
+
+fn infer_field_caps_type(value: &Value) -> &'static str {
+    match value {
+        Value::Bool(_) => "boolean",
+        Value::Number(number) if number.is_f64() => "float",
+        Value::Number(_) => "long",
+        Value::Array(_) => "keyword",
+        Value::Object(_) => "object",
+        _ => "text",
+    }
 }
 
 fn filter_source_fields(source: &Value, includes: &str) -> Value {
@@ -12019,11 +15676,84 @@ fn cluster_health_status_rank(status: &str) -> u8 {
     }
 }
 
+fn matches_query_body(source: &Value, query: Option<&Value>) -> bool {
+    let Some(query) = query else {
+        return true;
+    };
+    if query.get("match_all").is_some() {
+        return true;
+    }
+    if let Some(term) = query.get("term").and_then(Value::as_object) {
+        for (field, expected) in term {
+            if source.get(field) != Some(expected) {
+                return false;
+            }
+        }
+        return true;
+    }
+    false
+}
+
+fn apply_update_by_query_script(source: &mut Value, script: &Value) {
+    let Some(source_obj) = source.as_object_mut() else {
+        return;
+    };
+    let Some(script_source) = script.get("source").and_then(Value::as_str) else {
+        return;
+    };
+    let Some((field, value_literal)) = script_source
+        .strip_prefix("ctx._source.")
+        .and_then(|rest| rest.split_once('='))
+        .map(|(field, value)| (field.trim(), value.trim()))
+    else {
+        return;
+    };
+    let value = if value_literal.eq_ignore_ascii_case("true") {
+        Value::Bool(true)
+    } else if value_literal.eq_ignore_ascii_case("false") {
+        Value::Bool(false)
+    } else if let Ok(parsed) = serde_json::from_str::<Value>(value_literal) {
+        parsed
+    } else {
+        Value::String(value_literal.trim_matches('"').to_string())
+    };
+    source_obj.insert(field.to_string(), value);
+}
+
 fn matches_index_selector(selector: &str, index: &str) -> bool {
     if selector == "_all" || selector == "*" {
         return true;
     }
     selector.split(',').any(|pattern| wildcard_match(pattern, index))
+}
+
+fn decode_url_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = String::with_capacity(value.len());
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = &value[index + 1..index + 3];
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    decoded.push(byte as char);
+                    index += 3;
+                } else {
+                    decoded.push('%');
+                    index += 1;
+                }
+            }
+            _ => {
+                decoded.push(bytes[index] as char);
+                index += 1;
+            }
+        }
+    }
+    decoded
 }
 
 fn default_cluster_settings_state() -> Value {
@@ -12252,6 +15982,450 @@ mod tests {
     }
 
     #[test]
+    fn data_stream_named_routes_support_get_put_and_delete() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let template_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/probe-data-stream-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-ds-*"],
+                    "data_stream": {},
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "number_of_replicas": 0
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(template_put.status, 200);
+
+        let put_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_data_stream/logs-ds-prod",
+        ));
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/logs-ds-prod",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert_eq!(get_response.body["data_streams"][0]["name"], "logs-ds-prod");
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_data_stream/logs-ds-prod",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+    }
+
+    #[test]
+    fn component_template_named_routes_support_get_head_put_post_and_delete() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_component_template/probe-component-template")
+                .with_json_body(serde_json::json!({
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "number_of_replicas": 0
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert_eq!(
+            get_response.body["component_templates"][0]["name"],
+            "probe-component-template"
+        );
+
+        let head_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(head_response.status, 200);
+
+        let post_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_component_template/probe-component-template")
+                .with_json_body(serde_json::json!({
+                    "template": {
+                        "mappings": {
+                            "properties": {
+                                "tenant": {
+                                    "type": "keyword"
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(post_response.status, 200);
+        assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+    }
+
+    #[test]
+    fn index_template_named_and_simulate_routes_support_full_contract() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/probe-index-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-sim-*"],
+                    "priority": 7,
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "number_of_replicas": 0
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_index_template/probe-index-template",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert_eq!(
+            get_response.body["index_templates"][0]["name"],
+            "probe-index-template"
+        );
+
+        let head_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_index_template/probe-index-template",
+        ));
+        assert_eq!(head_response.status, 200);
+
+        let simulate_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_index_template/_simulate").with_json_body(
+                serde_json::json!({
+                    "index_patterns": ["logs-sim-*"],
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "refresh_interval": "30s"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(simulate_response.status, 200);
+        assert!(simulate_response.body["template"].is_object());
+
+        let named_simulate_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_index_template/_simulate/probe-index-template",
+        ));
+        assert_eq!(named_simulate_response.status, 200);
+        assert_eq!(
+            named_simulate_response.body["template"]["index_patterns"][0],
+            "logs-sim-*"
+        );
+
+        let index_simulate_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_index_template/_simulate_index/logs-sim-000001",
+        ));
+        assert_eq!(index_simulate_response.status, 200);
+        assert_eq!(
+            index_simulate_response.body["template"]["index_patterns"][0],
+            "logs-sim-*"
+        );
+
+        let post_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_index_template/probe-index-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-sim-*"],
+                    "template": {
+                        "mappings": {
+                            "properties": {
+                                "tenant": {
+                                    "type": "keyword"
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(post_response.status, 200);
+        assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_index_template/probe-index-template",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+    }
+
+    #[test]
+    fn legacy_template_named_routes_support_get_head_put_post_and_delete() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_template/probe-legacy-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-legacy-*"],
+                    "order": 7,
+                    "version": 1
+                })),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_template/probe-legacy-template",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert!(get_response.body["probe-legacy-template"].is_object());
+
+        let head_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_template/probe-legacy-template",
+        ));
+        assert_eq!(head_response.status, 200);
+
+        let post_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_template/probe-legacy-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-legacy-*"],
+                    "order": 9,
+                    "version": 2
+                })),
+        );
+        assert_eq!(post_response.status, 200);
+        assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_template/probe-legacy-template",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+    }
+
+    #[test]
+    fn index_root_routes_support_get_head_and_delete_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-root-probe")
+                .with_json_body(serde_json::json!({
+                    "settings": {
+                        "index.number_of_replicas": 0
+                    }
+                })),
+        );
+        assert_eq!(create_response.status, 200);
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-index-root-probe",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert!(get_response.body["logs-index-root-probe"].is_object());
+
+        let head_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-root-probe",
+        ));
+        assert_eq!(head_response.status, 200);
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-index-root-probe",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let missing_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-root-probe",
+        ));
+        assert_eq!(missing_head.status, 404);
+    }
+
+    #[test]
+    fn index_block_route_marks_targeted_block_state() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-block-probe")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let block_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-block-probe/_block/write",
+        ));
+        assert_eq!(block_response.status, 200);
+        assert_eq!(block_response.body["acknowledged"], Value::Bool(true));
+        assert_eq!(block_response.body["shards_acknowledged"], Value::Bool(true));
+        assert_eq!(block_response.body["indices"][0], "logs-block-probe");
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(manifest["indices"]["logs-block-probe"]["blocks"]["write"], Value::Bool(true));
+    }
+
+    #[test]
+    fn index_resize_routes_create_target_indices_for_clone_shrink_split_and_scale() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-resize-probe")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        for (method, path, expected_target) in [
+            (RestMethod::Put, "/logs-resize-probe/_clone/logs-clone-probe", "logs-clone-probe"),
+            (RestMethod::Post, "/logs-resize-probe/_shrink/logs-shrink-probe", "logs-shrink-probe"),
+            (RestMethod::Put, "/logs-resize-probe/_split/logs-split-probe", "logs-split-probe"),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["acknowledged"], Value::Bool(true), "path {path}");
+            assert_eq!(response.body["shards_acknowledged"], Value::Bool(true), "path {path}");
+            assert_eq!(response.body["index"], expected_target, "path {path}");
+        }
+
+        let scale_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale").with_json_body(
+                serde_json::json!({
+                    "target": "logs-scale-probe"
+                }),
+            ),
+        );
+        assert_eq!(scale_response.status, 200);
+        assert_eq!(scale_response.body["index"], "logs-scale-probe");
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for (target, operation) in [
+            ("logs-clone-probe", "clone"),
+            ("logs-shrink-probe", "shrink"),
+            ("logs-split-probe", "split"),
+            ("logs-scale-probe", "scale"),
+        ] {
+            assert_eq!(manifest["indices"][target]["resize_source"], "logs-resize-probe");
+            assert_eq!(manifest["indices"][target]["resize_operation"], operation);
+        }
+    }
+
+    #[test]
+    fn rollover_routes_support_unnamed_and_named_target_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-rollover-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-rollover-000001/_alias/logs-rollover-write")
+                .with_json_body(serde_json::json!({
+                    "is_write_index": true
+                })),
+        );
+        assert_eq!(alias.status, 200);
+
+        let unnamed = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-rollover-write/_rollover",
+        ));
+        assert_eq!(unnamed.status, 200);
+        assert_eq!(unnamed.body["old_index"], "logs-rollover-000001");
+        assert_eq!(unnamed.body["new_index"], "logs-rollover-000002");
+        assert_eq!(unnamed.body["rolled_over"], Value::Bool(true));
+
+        let named = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-rollover-write/_rollover/logs-rollover-000123",
+        ));
+        assert_eq!(named.status, 200);
+        assert_eq!(named.body["old_index"], "logs-rollover-000002");
+        assert_eq!(named.body["new_index"], "logs-rollover-000123");
+        assert_eq!(named.body["rolled_over"], Value::Bool(true));
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-rollover-000001"]["aliases"]["logs-rollover-write"]
+                ["is_write_index"],
+            Value::Bool(false)
+        );
+        assert_eq!(
+            manifest["indices"]["logs-rollover-000002"]["aliases"]["logs-rollover-write"]
+                ["is_write_index"],
+            Value::Bool(false)
+        );
+        assert_eq!(
+            manifest["indices"]["logs-rollover-000123"]["aliases"]["logs-rollover-write"]
+                ["is_write_index"],
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
     fn swagger_ui_route_serves_html_shell() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -12372,6 +16546,62 @@ mod tests {
         assert_eq!(response.body["_nodes"]["successful"], 1);
         assert_eq!(response.body["_nodes"]["failed"], 0);
         assert_eq!(response.body["dangling_indices"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn dangling_index_import_and_delete_routes_require_accept_data_loss_and_round_trip_listing() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let import_missing_flag = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_dangling/dangling-uuid-1",
+        ));
+        assert_eq!(import_missing_flag.status, 400);
+        assert_eq!(
+            import_missing_flag.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+
+        let import_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_dangling/dangling-uuid-1?accept_data_loss=true",
+        ));
+        assert_eq!(import_response.status, 200);
+        assert_eq!(import_response.body["acknowledged"], Value::Bool(true));
+
+        let listing_after_import =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_dangling"));
+        assert_eq!(
+            listing_after_import.body["dangling_indices"],
+            serde_json::json!(["dangling-uuid-1"])
+        );
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_dangling/dangling-uuid-1?accept_data_loss=true",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let listing_after_delete =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_dangling"));
+        assert_eq!(listing_after_delete.body["dangling_indices"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn filecache_prune_route_serves_acknowledged_response() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_filecache/prune"));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["acknowledged"], Value::Bool(true));
     }
 
     #[test]
@@ -13352,6 +17582,1029 @@ mod tests {
     }
 
     #[test]
+    fn reload_secure_settings_routes_serve_bounded_nodes_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/_nodes/reload_secure_settings",
+            "/_nodes/_all/reload_secure_settings",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["_nodes"]["total"].is_number(), "path {path}");
+            assert!(response.body["_nodes"]["successful"].is_number(), "path {path}");
+            assert_eq!(response.body["_nodes"]["failed"], 0, "path {path}");
+            assert!(response.body["cluster_name"].is_string(), "path {path}");
+            assert!(response.body["nodes"].is_object(), "path {path}");
+        }
+    }
+
+    #[test]
+    fn tasks_cancel_route_supports_task_id_path_variant() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node.task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 11,
+                task: ClusterManagerTask {
+                    source: "reroute shards".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let existing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:11/_cancel",
+        ));
+        assert_eq!(existing.status, 400);
+        assert_eq!(
+            existing.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:999/_cancel",
+        ));
+        assert_eq!(missing.status, 404);
+        assert_eq!(
+            missing.body["error"]["type"],
+            Value::String("resource_not_found_exception".to_string())
+        );
+    }
+
+    #[test]
+    fn rethrottle_routes_support_task_id_path_variants() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node.task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 11,
+                task: ClusterManagerTask {
+                    source: "rethrottle candidate".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        for path in [
+            "/_delete_by_query/node-a:11/_rethrottle",
+            "/_reindex/node-a:11/_rethrottle",
+            "/_update_by_query/node-a:11/_rethrottle",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["task"]["id"], 11, "path {path}");
+        }
+
+        for path in [
+            "/_delete_by_query/node-a:999/_rethrottle",
+            "/_reindex/node-a:999/_rethrottle",
+            "/_update_by_query/node-a:999/_rethrottle",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 404, "path {path}");
+            assert_eq!(
+                response.body["error"]["type"],
+                Value::String("resource_not_found_exception".to_string()),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn reindex_route_copies_source_documents_into_destination_index() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_source = node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-reindex-source"));
+        assert_eq!(create_source.status, 200);
+
+        let put_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-reindex-source/_doc/doc-1").with_json_body(
+                serde_json::json!({
+                    "message": "reindex me"
+                }),
+            ),
+        );
+        assert_eq!(put_doc.status, 201);
+
+        let reindex = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-source" },
+                "dest": { "index": "logs-reindex-dest" }
+            })),
+        );
+        assert_eq!(reindex.status, 200);
+        assert_eq!(reindex.body["total"], 1);
+        assert_eq!(reindex.body["created"], 1);
+        assert_eq!(reindex.body["failures"], Value::Array(vec![]));
+
+        let get_dest = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-reindex-dest/_doc/doc-1",
+        ));
+        assert_eq!(get_dest.status, 200);
+        assert_eq!(get_dest.body["_source"]["message"], "reindex me");
+    }
+
+    #[test]
+    fn create_doc_routes_create_once_and_conflict_on_repeat() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/logs-create-probe/_create/doc-put",
+            "/logs-create-probe/_create/doc-post",
+        ] {
+            let method = if path.ends_with("doc-put") {
+                RestMethod::Put
+            } else {
+                RestMethod::Post
+            };
+            let created = node.handle_rest_request(
+                RestRequest::new(method, path).with_json_body(serde_json::json!({
+                    "message": "created once"
+                })),
+            );
+            assert_eq!(created.status, 201, "path {path}");
+            assert_eq!(created.body["result"], "created", "path {path}");
+
+            let conflict = node.handle_rest_request(
+                RestRequest::new(method, path).with_json_body(serde_json::json!({
+                    "message": "created twice"
+                })),
+            );
+            assert_eq!(conflict.status, 409, "path {path}");
+            assert_eq!(
+                conflict.body["error"]["type"],
+                Value::String("version_conflict_engine_exception".to_string()),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn single_doc_post_route_indexes_explicit_id_documents() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let created = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-doc-post-probe/_doc/doc-1").with_json_body(
+                serde_json::json!({
+                    "message": "post doc probe"
+                }),
+            ),
+        );
+        assert_eq!(created.status, 201);
+        assert_eq!(created.body["result"], "created");
+
+        let fetched = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-doc-post-probe/_doc/doc-1",
+        ));
+        assert_eq!(fetched.status, 200);
+        assert_eq!(fetched.body["_source"]["message"], "post doc probe");
+    }
+
+    #[test]
+    fn search_template_and_render_routes_serve_root_and_targeted_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-template-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/metrics-search-template-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-search-template-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "log doc" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-search-template-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "message": "metric doc" })),
+            )
+            .status,
+            201
+        );
+
+        let root_search_template =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/template"));
+        assert_eq!(root_search_template.status, 200);
+        assert_eq!(root_search_template.body["hits"]["total"]["value"], 2);
+
+        let targeted_search_template = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-search-template-*/_search/template",
+        ));
+        assert_eq!(targeted_search_template.status, 200);
+        assert_eq!(targeted_search_template.body["hits"]["total"]["value"], 1);
+
+        let root_msearch_template =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_msearch/template"));
+        assert_eq!(root_msearch_template.status, 200);
+        assert_eq!(
+            root_msearch_template.body["responses"][0]["hits"]["total"]["value"],
+            2
+        );
+
+        let targeted_msearch_template = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-search-template-*/_msearch/template",
+        ));
+        assert_eq!(targeted_msearch_template.status, 200);
+        assert_eq!(
+            targeted_msearch_template.body["responses"][0]["hits"]["total"]["value"],
+            1
+        );
+
+        let render_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_render/template").with_json_body(
+                serde_json::json!({
+                    "source": {
+                        "query": {
+                            "match_all": {}
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(render_template.status, 200);
+        assert_eq!(
+            render_template.body["template_output"]["query"]["match_all"],
+            serde_json::json!({})
+        );
+
+        let named_render_template = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_render/template/stored-template",
+        ));
+        assert_eq!(named_render_template.status, 200);
+        assert_eq!(named_render_template.body["_id"], "stored-template");
+    }
+
+    #[test]
+    fn count_and_validate_query_routes_serve_root_and_targeted_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-count-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/metrics-count-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-count-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-count-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+            )
+            .status,
+            201
+        );
+
+        let root_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_count").with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(root_count.status, 200);
+        assert_eq!(root_count.body["count"], 2);
+
+        let targeted_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-count-*/_count").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(targeted_count.status, 200);
+        assert_eq!(targeted_count.body["count"], 1);
+
+        let root_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} }
+                }),
+            ),
+        );
+        assert_eq!(root_validate.status, 200);
+        assert_eq!(root_validate.body["valid"], true);
+
+        let targeted_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(targeted_validate.status, 200);
+        assert_eq!(targeted_validate.body["_indices"][0], "logs-count-*");
+        assert_eq!(targeted_validate.body["valid"], true);
+    }
+
+    #[test]
+    fn rank_eval_routes_serve_root_and_targeted_shapes_for_get_and_post() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-rank-eval-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/metrics-rank-eval-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-rank-eval-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-rank-eval-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+            )
+            .status,
+            201
+        );
+
+        let root_rank_eval = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_rank_eval").with_json_body(serde_json::json!({
+                "requests": [{
+                    "id": "root-request",
+                    "request": {
+                        "query": {
+                            "match_all": {}
+                        }
+                    }
+                }]
+            })),
+        );
+        assert_eq!(root_rank_eval.status, 200);
+        assert_eq!(root_rank_eval.body["metric_score"], 1.0);
+        assert_eq!(root_rank_eval.body["details"]["evaluated_docs"], 2);
+
+        let targeted_rank_eval = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-rank-eval-*/_rank_eval").with_json_body(
+                serde_json::json!({
+                    "requests": [{
+                        "id": "target-request",
+                        "request": {
+                            "query": {
+                                "term": { "tenant": "tenant-a" }
+                            }
+                        }
+                    }]
+                }),
+            ),
+        );
+        assert_eq!(targeted_rank_eval.status, 200);
+        assert_eq!(targeted_rank_eval.body["metric_score"], 1.0);
+        assert_eq!(targeted_rank_eval.body["details"]["matched_docs"], 1);
+        assert_eq!(targeted_rank_eval.body["details"]["target"], "logs-rank-eval-*");
+    }
+
+    #[test]
+    fn search_pipeline_routes_support_collection_and_named_crud_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let empty_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/pipeline"));
+        assert_eq!(empty_get.status, 200);
+        assert_eq!(empty_get.body["pipelines"], serde_json::json!([]));
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_search/pipeline/logs-pipeline").with_json_body(
+                serde_json::json!({
+                    "description": "probe pipeline",
+                    "request_processors": [],
+                    "response_processors": []
+                }),
+            ),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], true);
+
+        let named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/pipeline/logs-pipeline",
+        ));
+        assert_eq!(named_get.status, 200);
+        assert_eq!(named_get.body["id"], "logs-pipeline");
+
+        let collection_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/pipeline"));
+        assert_eq!(collection_get.status, 200);
+        assert_eq!(collection_get.body["pipelines"][0]["id"], "logs-pipeline");
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/pipeline/logs-pipeline",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], true);
+    }
+
+    #[test]
+    fn ingest_pipeline_and_painless_routes_support_collection_named_and_simulate_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let empty_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_ingest/pipeline"));
+        assert_eq!(empty_get.status, 200);
+        assert_eq!(empty_get.body["pipelines"], serde_json::json!([]));
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_ingest/pipeline/logs-pipeline").with_json_body(
+                serde_json::json!({
+                    "description": "probe ingest pipeline",
+                    "processors": []
+                }),
+            ),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], true);
+
+        let named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_ingest/pipeline/logs-pipeline",
+        ));
+        assert_eq!(named_get.status, 200);
+        assert_eq!(named_get.body["logs-pipeline"]["description"], "probe ingest pipeline");
+
+        let collection_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_ingest/pipeline"));
+        assert_eq!(collection_get.status, 200);
+        assert_eq!(collection_get.body["pipelines"][0]["id"], "logs-pipeline");
+
+        let root_simulate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_ingest/pipeline/_simulate").with_json_body(
+                serde_json::json!({
+                    "docs": [
+                        { "_source": { "message": "hello" } }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(root_simulate.status, 200);
+        assert_eq!(root_simulate.body["docs"][0]["doc"]["_source"]["message"], "hello");
+
+        let named_simulate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_ingest/pipeline/logs-pipeline/_simulate")
+                .with_json_body(serde_json::json!({
+                    "doc": { "_source": { "message": "named" } }
+                })),
+        );
+        assert_eq!(named_simulate.status, 200);
+        assert_eq!(named_simulate.body["pipeline_id"], "logs-pipeline");
+        assert_eq!(named_simulate.body["docs"][0]["doc"]["_source"]["message"], "named");
+
+        let grok = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_ingest/processor/grok",
+        ));
+        assert_eq!(grok.status, 200);
+        assert_eq!(grok.body["patterns"]["GREEDYDATA"], ".*");
+
+        let painless_context = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_scripts/painless/_context",
+        ));
+        assert_eq!(painless_context.status, 200);
+        assert_eq!(painless_context.body["contexts"][0]["name"], "score");
+
+        let painless_execute = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_scripts/painless/_execute").with_json_body(
+                serde_json::json!({
+                    "params": { "value": 7 }
+                }),
+            ),
+        );
+        assert_eq!(painless_execute.status, 200);
+        assert_eq!(painless_execute.body["result"], 7);
+
+        let delete_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_ingest/pipeline/logs-pipeline",
+        ));
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["acknowledged"], true);
+    }
+
+    #[test]
+    fn knn_model_routes_support_search_clear_cache_model_lifecycle_and_named_train() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let root_train = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_train").with_json_body(
+                serde_json::json!({
+                    "training_index": "logs-stateful-probe",
+                    "training_field": "tenant"
+                }),
+            ),
+        );
+        assert_eq!(root_train.status, 200);
+        assert_eq!(root_train.body["model_id"], "knn-model-1");
+
+        let search_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/_search",
+        ));
+        assert_eq!(search_get.status, 200);
+        assert_eq!(search_get.body["hits"]["total"]["value"], 1);
+
+        let search_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "model_id": "knn-model-1" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(search_post.status, 200);
+        assert_eq!(search_post.body["hits"]["hits"][0]["_id"], "knn-model-1");
+
+        let get_model = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/knn-model-1",
+        ));
+        assert_eq!(get_model.status, 200);
+        assert_eq!(get_model.body["model_id"], "knn-model-1");
+
+        let clear_cache = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_plugins/_knn/clear_cache/logs-stateful-probe",
+        ));
+        assert_eq!(clear_cache.status, 200);
+        assert_eq!(clear_cache.body["index"], "logs-stateful-probe");
+
+        let named_train = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_plugins/_knn/models/probe-model/_train",
+            )
+            .with_json_body(serde_json::json!({
+                "training_index": "logs-stateful-probe",
+                "training_field": "tenant"
+            })),
+        );
+        assert_eq!(named_train.status, 200);
+        assert_eq!(named_train.body["model_id"], "probe-model");
+
+        let delete_model = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_plugins/_knn/models/knn-model-1",
+        ));
+        assert_eq!(delete_model.status, 200);
+        assert_eq!(delete_model.body["result"], "deleted");
+    }
+
+    #[test]
+    fn knn_stats_and_warmup_routes_support_root_node_and_stat_variants() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let warmup = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_plugins/_knn/warmup").with_json_body(
+                serde_json::json!({
+                    "vector_segment_count": 3,
+                    "native_memory_bytes": 64
+                }),
+            ),
+        );
+        assert_eq!(warmup.status, 200);
+        assert_eq!(warmup.body["index"], "_all");
+        assert_eq!(warmup.body["warmed"], true);
+
+        let root_stats =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_plugins/_knn/stats"));
+        assert_eq!(root_stats.status, 200);
+        assert_eq!(root_stats.body["nodes"]["local"]["graph_count"], 3);
+
+        let filtered_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/stats/graph_count",
+        ));
+        assert_eq!(filtered_stats.status, 200);
+        assert_eq!(filtered_stats.body["nodes"]["local"]["graph_count"], 3);
+
+        let node_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/node-a/stats",
+        ));
+        assert_eq!(node_stats.status, 200);
+        assert_eq!(node_stats.body["nodes"]["node-a"]["graph_count"], 3);
+
+        let node_filtered_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/node-a/stats/model_count",
+        ));
+        assert_eq!(node_filtered_stats.status, 200);
+        assert_eq!(node_filtered_stats.body["nodes"]["node-a"]["model_count"], 0);
+    }
+
+    #[test]
+    fn field_caps_list_and_tier_routes_serve_root_and_targeted_misc_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-misc-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" },
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+
+        let root_field_caps =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_field_caps"));
+        assert_eq!(root_field_caps.status, 200);
+        assert_eq!(root_field_caps.body["indices"][0], "logs-misc-000001");
+        assert_eq!(root_field_caps.body["fields"]["tenant"]["keyword"]["type"], "keyword");
+
+        let targeted_field_caps = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-misc-*/_field_caps",
+        ));
+        assert_eq!(targeted_field_caps.status, 200);
+        assert_eq!(targeted_field_caps.body["fields"]["message"]["text"]["type"], "text");
+
+        let list_root = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_list"));
+        assert_eq!(list_root.status, 200);
+        assert_eq!(list_root.body["indices"][0], "logs-misc-000001");
+
+        let list_indices =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_list/indices"));
+        assert_eq!(list_indices.status, 200);
+        assert_eq!(list_indices.body["indices"][0]["index"], "logs-misc-000001");
+
+        let list_targeted_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/indices/logs-misc-*",
+        ));
+        assert_eq!(list_targeted_indices.status, 200);
+        assert_eq!(list_targeted_indices.body["indices"][0]["state"], "open");
+
+        let list_shards =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_list/shards"));
+        assert_eq!(list_shards.status, 200);
+        assert_eq!(list_shards.body["shards"][0]["index"], "logs-misc-000001");
+
+        let list_targeted_shards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/shards/logs-misc-*",
+        ));
+        assert_eq!(list_targeted_shards.status, 200);
+        assert_eq!(list_targeted_shards.body["shards"][0]["primary"], true);
+
+        let tier_all = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tier/all"));
+        assert_eq!(tier_all.status, 200);
+        assert_eq!(tier_all.body["tiers"][0], "hot");
+
+        let index_tier = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-000001/_tier",
+        ));
+        assert_eq!(index_tier.status, 200);
+        assert_eq!(index_tier.body["index"], "logs-misc-000001");
+        assert_eq!(index_tier.body["tiers"][0], "hot");
+
+        let tier_target = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-misc-000001/_tier/warm",
+        ));
+        assert_eq!(tier_target.status, 200);
+        assert_eq!(tier_target.body["acknowledged"], Value::Bool(true));
+        assert_eq!(tier_target.body["target_tier"], "warm");
+
+        let updated_tier = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-000001/_tier",
+        ));
+        assert_eq!(updated_tier.status, 200);
+        assert_eq!(updated_tier.body["tiers"][0], "warm");
+
+        let tier_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tier/_cancel/logs-misc-000001",
+        ));
+        assert_eq!(tier_cancel.status, 200);
+        assert_eq!(tier_cancel.body["acknowledged"], Value::Bool(true));
+
+        let reset_tier = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-000001/_tier",
+        ));
+        assert_eq!(reset_tier.status, 200);
+        assert_eq!(reset_tier.body["tiers"][0], "hot");
+    }
+
+    #[test]
+    fn search_session_routes_support_point_in_time_all_and_scroll_variants() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-session-000001"))
+                .status,
+            200
+        );
+        for id in ["doc-1", "doc-2"] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/logs-session-000001/_doc/{id}"))
+                        .with_json_body(serde_json::json!({ "message": id })),
+                )
+                .status,
+                201
+            );
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        assert_eq!(open_pit.body["id"], "pit-1");
+
+        let list_pits =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
+        assert_eq!(list_pits.status, 200);
+        assert_eq!(list_pits.body["pits"][0]["id"], "pit-1");
+
+        let search_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "size": 1,
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(search_response.status, 200);
+        assert_eq!(search_response.body["_scroll_id"], "scroll-1");
+
+        let root_scroll = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll_id": "scroll-1" })),
+        );
+        assert_eq!(root_scroll.status, 200);
+        assert_eq!(root_scroll.body["_scroll_id"], "scroll-1");
+
+        let named_scroll = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_search/scroll/scroll-1",
+        ));
+        assert_eq!(named_scroll.status, 200);
+        assert_eq!(named_scroll.body["_scroll_id"], "scroll-1");
+
+        let clear_scroll = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/scroll/scroll-1",
+        ));
+        assert_eq!(clear_scroll.status, 200);
+        assert_eq!(clear_scroll.body["num_freed"], 1);
+
+        let clear_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(clear_pits.status, 200);
+        assert_eq!(clear_pits.body["num_freed"], 1);
+    }
+
+    #[test]
+    fn msearch_and_explain_routes_serve_root_targeted_and_doc_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-msearch-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/metrics-msearch-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-msearch-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-msearch-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+            )
+            .status,
+            201
+        );
+
+        let root_msearch =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_msearch"));
+        assert_eq!(root_msearch.status, 200);
+        assert_eq!(root_msearch.body["responses"][0]["hits"]["total"]["value"], 2);
+
+        let targeted_msearch = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-msearch-*/_msearch",
+        ));
+        assert_eq!(targeted_msearch.status, 200);
+        assert_eq!(targeted_msearch.body["responses"][0]["hits"]["total"]["value"], 1);
+
+        let explain = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-msearch-000001/_explain/doc-1").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(explain.status, 200);
+        assert_eq!(explain.body["matched"], true);
+
+        let explain_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-msearch-000001/_explain/doc-1",
+        ));
+        assert_eq!(explain_get.status, 200);
+        assert_eq!(explain_get.body["get"]["found"], true);
+    }
+
+    #[test]
+    fn delete_and_update_by_query_routes_mutate_matching_documents() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-query-probe"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-query-probe/_doc/doc-1").with_json_body(
+                    serde_json::json!({
+                        "tenant": "tenant-a",
+                        "processed": false
+                    }),
+                ),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-query-probe/_doc/doc-2").with_json_body(
+                    serde_json::json!({
+                        "tenant": "tenant-b",
+                        "processed": false
+                    }),
+                ),
+            )
+            .status,
+            201
+        );
+
+        let deleted = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-query-probe/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": {
+                            "tenant": "tenant-a"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(deleted.status, 200);
+        assert_eq!(deleted.body["deleted"], 1);
+
+        let update = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-query-probe/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "match_all": {}
+                    },
+                    "script": {
+                        "source": "ctx._source.processed = true"
+                    }
+                })),
+        );
+        assert_eq!(update.status, 200);
+        assert_eq!(update.body["updated"], 1);
+
+        let remaining = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-query-probe/_doc/doc-2",
+        ));
+        assert_eq!(remaining.status, 200);
+        assert_eq!(remaining.body["_source"]["processed"], true);
+
+        let deleted_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-query-probe/_doc/doc-1",
+        ));
+        assert_eq!(deleted_doc.status, 404);
+    }
+
+    #[test]
     fn snapshot_index_status_route_delegates_to_snapshot_status_contract() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -13394,6 +18647,573 @@ mod tests {
     }
 
     #[test]
+    fn mapping_field_routes_serve_global_and_targeted_field_readback() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_logs = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-mapping-field-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": {"type": "text"},
+                            "tenant": {"type": "keyword"}
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_logs.status, 200);
+
+        let create_metrics = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-mapping-field-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "value": {"type": "long"}
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_metrics.status, 200);
+
+        let global = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_mapping/field/message,tenant",
+        ));
+        assert_eq!(global.status, 200);
+        assert_eq!(
+            global.body["logs-mapping-field-000001"]["mappings"]["message"]["mapping"]["message"]["type"],
+            "text"
+        );
+        assert_eq!(
+            global.body["logs-mapping-field-000001"]["mappings"]["tenant"]["mapping"]["tenant"]["type"],
+            "keyword"
+        );
+        assert!(global.body.get("metrics-mapping-field-000001").is_none());
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-mapping-field-*/_mapping/field/message",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert_eq!(
+            targeted.body["logs-mapping-field-000001"]["mappings"]["message"]["full_name"],
+            "message"
+        );
+        assert!(targeted.body["logs-mapping-field-000001"]["mappings"]["tenant"].is_null());
+    }
+
+    #[test]
+    fn plural_mapping_routes_alias_singular_read_and_write_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-plural-mapping-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": {"type": "text"}
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let global = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_mappings"));
+        assert_eq!(global.status, 200);
+        assert_eq!(
+            global.body["logs-plural-mapping-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-plural-mapping-*/_mappings",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert_eq!(
+            targeted.body["logs-plural-mapping-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+
+        let post_update = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-plural-mapping-000001/_mappings")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "tenant": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(post_update.status, 200);
+
+        let readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-plural-mapping-000001/_mappings",
+        ));
+        assert_eq!(readback.status, 200);
+        assert_eq!(
+            readback.body["logs-plural-mapping-000001"]["mappings"]["properties"]["tenant"]["type"],
+            "keyword"
+        );
+
+        let singular_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-plural-mapping-000001/_mapping",
+        ));
+        assert_eq!(singular_get.status, 200);
+        assert_eq!(
+            singular_get.body["logs-plural-mapping-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+
+        let singular_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-plural-mapping-000001/_mapping")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "region": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(singular_put.status, 200);
+
+        let singular_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-plural-mapping-000001/_mappings")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "service": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(singular_post.status, 200);
+
+        let singular_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-plural-mapping-000001/_mapping",
+        ));
+        assert_eq!(singular_readback.status, 200);
+        assert_eq!(
+            singular_readback.body["logs-plural-mapping-000001"]["mappings"]["properties"]["region"]["type"],
+            "keyword"
+        );
+        assert_eq!(
+            singular_readback.body["logs-plural-mapping-000001"]["mappings"]["properties"]["service"]["type"],
+            "keyword"
+        );
+    }
+
+    #[test]
+    fn root_alias_route_supports_global_get_and_put_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-root-alias-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let put_alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_alias").with_json_body(serde_json::json!({
+                "actions": [
+                    {
+                        "add": {
+                            "index": "logs-root-alias-000001",
+                            "alias": "logs-root-read",
+                            "is_write_index": true
+                        }
+                    }
+                ]
+            })),
+        );
+        assert_eq!(put_alias.status, 200);
+        assert_eq!(put_alias.body["acknowledged"], Value::Bool(true));
+
+        let readback = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_alias"));
+        assert_eq!(readback.status, 200);
+        assert_eq!(
+            readback.body["logs-root-alias-000001"]["aliases"]["logs-root-read"]["is_write_index"],
+            Value::Bool(true)
+        );
+
+        let named_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_alias/logs-root-write").with_json_body(
+                serde_json::json!({
+                    "index": "logs-root-alias-000001",
+                    "is_write_index": true
+                }),
+            ),
+        );
+        assert_eq!(named_put.status, 200);
+
+        let named_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_aliases/logs-root-search").with_json_body(
+                serde_json::json!({
+                    "indices": ["logs-root-alias-000001"]
+                }),
+            ),
+        );
+        assert_eq!(named_post.status, 200);
+
+        let named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-root-write",
+        ));
+        assert_eq!(named_get.status, 200);
+        assert_eq!(
+            named_get.body["logs-root-alias-000001"]["aliases"]["logs-root-write"]["is_write_index"],
+            Value::Bool(true)
+        );
+
+        let named_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_alias/logs-root-write",
+        ));
+        assert_eq!(named_head.status, 200);
+
+        let aliases_get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_aliases"));
+        assert_eq!(aliases_get.status, 200);
+        assert!(
+            aliases_get.body["logs-root-alias-000001"]["aliases"]
+                .get("logs-root-search")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn index_scoped_alias_routes_support_collection_and_named_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let collection_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_alias").with_json_body(
+                serde_json::json!({
+                    "alias": "logs-index-collection",
+                    "is_write_index": true
+                }),
+            ),
+        );
+        assert_eq!(collection_put.status, 200);
+
+        let collection_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-index-alias-000001/_alias",
+        ));
+        assert_eq!(collection_get.status, 200);
+        assert_eq!(
+            collection_get.body["logs-index-alias-000001"]["aliases"]["logs-index-collection"]["is_write_index"],
+            Value::Bool(true)
+        );
+
+        let collection_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-alias-000001/_alias",
+        ));
+        assert_eq!(collection_head.status, 200);
+
+        let named_put = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-index-alias-000001/_alias/logs-index-named-put",
+            )
+            .with_json_body(serde_json::json!({
+                "is_write_index": true
+            })),
+        );
+        assert_eq!(named_put.status, 200);
+
+        let named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-index-alias-000001/_alias/logs-index-named-put",
+        ));
+        assert_eq!(named_get.status, 200);
+
+        let named_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-alias-000001/_alias/logs-index-named-put",
+        ));
+        assert_eq!(named_head.status, 200);
+
+        let aliases_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_aliases").with_json_body(
+                serde_json::json!({
+                    "actions": [
+                        {
+                            "add": {
+                                "alias": "logs-index-bulk"
+                            }
+                        }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(aliases_put.status, 200);
+
+        let aliases_named_put = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-index-alias-000001/_aliases/logs-index-plural-put",
+            ),
+        );
+        assert_eq!(aliases_named_put.status, 200);
+
+        let aliases_named_post = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-index-alias-000001/_aliases/logs-index-plural-post",
+            ),
+        );
+        assert_eq!(aliases_named_post.status, 200);
+
+        let aliases_named_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-index-alias-000001/_aliases/logs-index-plural-post",
+        ));
+        assert_eq!(aliases_named_delete.status, 200);
+
+        let alias_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-index-alias-000001/_alias/logs-index-named-put",
+        ));
+        assert_eq!(alias_delete.status, 200);
+    }
+
+    #[test]
+    fn snapshot_clone_and_restore_routes_round_trip_expected_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-clone-restore")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-clone-restore"}
+                })),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let create_index_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/snapshot-clone-restore-probe")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index_response.status, 200);
+
+        let snapshot_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-clone-restore/snap-source")
+                .with_json_body(serde_json::json!({
+                    "indices": "snapshot-clone-restore-probe",
+                    "include_global_state": false
+                })),
+        );
+        assert_eq!(snapshot_response.status, 200);
+
+        let clone_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "snapshot-clone-restore-probe"
+            })),
+        );
+        assert_eq!(clone_response.status, 200);
+        assert_eq!(clone_response.body["acknowledged"], Value::Bool(true));
+
+        let clone_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-clone-restore/snap-clone",
+        ));
+        assert_eq!(clone_readback.status, 200);
+        assert_eq!(clone_readback.body["snapshots"][0]["snapshot"], "snap-clone");
+        assert_eq!(
+            clone_readback.body["snapshots"][0]["indices"],
+            serde_json::json!(["snapshot-clone-restore-probe"])
+        );
+
+        let restore_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-clone-restore/snap-source/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "snapshot-clone-restore-probe",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "$1-restored"
+            })),
+        );
+        assert_eq!(restore_response.status, 200);
+        assert_eq!(restore_response.body["accepted"], Value::Bool(true));
+        assert!(restore_response.body["snapshot"].is_object());
+        assert!(restore_response.body["snapshot"]["shards"].is_object());
+    }
+
+    #[test]
+    fn snapshot_repository_routes_round_trip_expected_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_snapshot/repo-route-probe").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-route-probe"}
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        assert_eq!(create.body["acknowledged"], Value::Bool(true));
+
+        let readback =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_snapshot/repo-route-probe"));
+        assert_eq!(readback.status, 200);
+        assert_eq!(readback.body["repo-route-probe"]["type"], "fs");
+        assert_eq!(
+            readback.body["repo-route-probe"]["settings"]["location"],
+            "/tmp/repo-route-probe"
+        );
+
+        let delete =
+            node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/_snapshot/repo-route-probe"));
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["acknowledged"], Value::Bool(true));
+
+        let missing =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_snapshot/repo-route-probe"));
+        assert_eq!(missing.status, 200);
+        assert_eq!(missing.body, serde_json::json!({}));
+    }
+
+    #[test]
+    fn snapshot_cleanup_route_serves_bounded_cleanup_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-cleanup-probe").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-cleanup-probe"}
+                }),
+            ),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let cleanup =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_snapshot/repo-cleanup-probe/_cleanup"));
+        assert_eq!(cleanup.status, 200);
+        assert_eq!(cleanup.body["results"]["deleted_bytes"], Value::from(0));
+        assert_eq!(cleanup.body["results"]["deleted_blobs"], Value::from(0));
+    }
+
+    #[test]
+    fn snapshot_repository_verify_route_serves_bounded_nodes_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-verify-probe").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-verify-probe"}
+                }),
+            ),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let verify =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_snapshot/repo-verify-probe/_verify"));
+        assert_eq!(verify.status, 200);
+        assert!(verify.body["nodes"].is_object());
+        assert_eq!(
+            verify.body["nodes"]["steel-node"]["name"],
+            Value::String("steel-node".to_string())
+        );
+    }
+
+    #[test]
+    fn snapshot_lifecycle_routes_support_get_post_and_delete_contracts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-lifecycle-probe").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-lifecycle-probe"}
+                }),
+            ),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let create = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-lifecycle-probe/snapshot-post-probe",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-a,logs-b",
+                "include_global_state": false
+            })),
+        );
+        assert_eq!(create.status, 200);
+        assert_eq!(create.body["accepted"], Value::Bool(true));
+        assert_eq!(create.body["snapshot"]["snapshot"], "snapshot-post-probe");
+
+        let readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe",
+        ));
+        assert_eq!(readback.status, 200);
+        assert_eq!(readback.body["snapshots"][0]["snapshot"], "snapshot-post-probe");
+        assert_eq!(
+            readback.body["snapshots"][0]["indices"],
+            serde_json::json!(["logs-a", "logs-b"])
+        );
+
+        let delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe",
+        ));
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["acknowledged"], Value::Bool(true));
+        assert_eq!(delete.body["snapshot"]["snapshot"], "snapshot-post-probe");
+
+        let missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe",
+        ));
+        assert_eq!(missing.status, 404);
+        assert_eq!(missing.body["error"]["type"], "snapshot_missing_exception");
+    }
+
+    #[test]
     fn remote_store_metadata_and_stats_routes_match_bounded_source_shapes() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -13430,6 +19250,1018 @@ mod tests {
         assert_eq!(stats.body["_shards"]["successful"], 0);
         assert_eq!(stats.body["_shards"]["failed"], 0);
         assert_eq!(stats.body["indices"], serde_json::json!({}));
+
+        let shard_metadata = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_remotestore/metadata/remote-store-probe/0",
+        ));
+        assert_eq!(shard_metadata.status, 200);
+        assert_eq!(shard_metadata.body["_shards"]["total"], 1);
+        assert_eq!(shard_metadata.body["_shards"]["successful"], 0);
+        assert_eq!(shard_metadata.body["_shards"]["failed"], 1);
+        assert_eq!(shard_metadata.body["_shards"]["failures"][0]["shard"], 0);
+        assert_eq!(
+            shard_metadata.body["_shards"]["failures"][0]["reason"]["type"],
+            "illegal_state_exception"
+        );
+        assert_eq!(shard_metadata.body["indices"], serde_json::json!({}));
+
+        let shard_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_remotestore/stats/remote-store-probe/0",
+        ));
+        assert_eq!(shard_stats.status, 200);
+        assert_eq!(shard_stats.body["_shards"]["total"], 0);
+        assert_eq!(shard_stats.body["_shards"]["successful"], 0);
+        assert_eq!(shard_stats.body["_shards"]["failed"], 0);
+        assert_eq!(shard_stats.body["indices"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn wlm_stats_routes_serve_bounded_global_node_and_workload_group_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/_list/wlm_stats",
+            "/_list/wlm_stats/stats/default",
+            "/_list/wlm_stats/_all/stats",
+            "/_list/wlm_stats/_all/stats/default",
+            "/_wlm/stats",
+            "/_wlm/stats/default",
+            "/_wlm/_all/stats",
+            "/_wlm/_all/stats/default",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["nodes"].is_object(), "path {path}");
+        }
+
+        let filtered = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_wlm/missing-node/stats/default",
+        ));
+        assert_eq!(filtered.status, 200);
+        assert_eq!(filtered.body["nodes"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn recovery_routes_serve_global_and_targeted_index_recovery_shapes() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-recovery-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-recovery-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let global = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_recovery"));
+        assert_eq!(global.status, 200);
+        assert!(global.body["logs-recovery-000001"]["shards"].is_array());
+        assert!(global.body["metrics-recovery-000001"]["shards"].is_array());
+
+        let targeted =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-*/_recovery"));
+        assert_eq!(targeted.status, 200);
+        assert!(targeted.body.get("logs-recovery-000001").is_some());
+        assert!(targeted.body.get("metrics-recovery-000001").is_none());
+        assert_eq!(
+            targeted.body["logs-recovery-000001"]["shards"][0]["stage"],
+            "DONE"
+        );
+    }
+
+    #[test]
+    fn segments_routes_serve_global_and_targeted_segment_shapes() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-segments-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-segments-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let global = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_segments"));
+        assert_eq!(global.status, 200);
+        assert!(global.body["logs-segments-000001"]["shards"]["0"].is_array());
+        assert!(global.body["metrics-segments-000001"]["shards"]["0"].is_array());
+
+        let targeted =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-*/_segments"));
+        assert_eq!(targeted.status, 200);
+        assert!(targeted.body.get("logs-segments-000001").is_some());
+        assert!(targeted.body.get("metrics-segments-000001").is_none());
+        assert_eq!(
+            targeted.body["logs-segments-000001"]["shards"]["0"][0]["segment"],
+            "_0"
+        );
+    }
+
+    #[test]
+    fn index_stats_routes_serve_global_metric_and_targeted_shapes() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-stats-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-stats-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let global_metric =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_stats/docs"));
+        assert_eq!(global_metric.status, 200);
+        assert!(global_metric.body["_shards"].is_object());
+        assert!(global_metric.body["indices"]["logs-stats-000001"].is_object());
+        assert!(global_metric.body["indices"]["metrics-stats-000001"].is_object());
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert!(targeted.body["indices"]["logs-stats-000001"].is_object());
+        assert!(targeted.body["indices"]["metrics-stats-000001"].is_null());
+
+        let targeted_metric = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats/docs",
+        ));
+        assert_eq!(targeted_metric.status, 200);
+        assert!(targeted_metric.body["indices"]["logs-stats-000001"].is_object());
+        assert!(targeted_metric.body["indices"]["metrics-stats-000001"].is_null());
+    }
+
+    #[test]
+    fn analyze_routes_serve_global_and_targeted_token_streams() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let global_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_analyze?text=Quick%20Fox"));
+        assert_eq!(global_get.status, 200);
+        assert_eq!(global_get.body["tokens"][0]["token"], "quick");
+        assert_eq!(global_get.body["tokens"][1]["token"], "fox");
+
+        let global_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_analyze")
+                .with_json_body(serde_json::json!({"text": "Jumped Over"})),
+        );
+        assert_eq!(global_post.status, 200);
+        assert_eq!(global_post.body["tokens"][0]["token"], "jumped");
+        assert_eq!(global_post.body["tokens"][1]["token"], "over");
+
+        let targeted_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_analyze?text=Hello%20World",
+        ));
+        assert_eq!(targeted_get.status, 200);
+        assert_eq!(targeted_get.body["tokens"][0]["token"], "hello");
+
+        let targeted_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-settings-000001/_analyze")
+                .with_json_body(serde_json::json!({"text": ["Steel", "Search"]})),
+        );
+        assert_eq!(targeted_post.status, 200);
+        assert_eq!(targeted_post.body["tokens"][0]["token"], "steel");
+        assert_eq!(targeted_post.body["tokens"][1]["token"], "search");
+    }
+
+    #[test]
+    fn flush_routes_serve_global_and_targeted_shard_counts() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-flush-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-flush-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        for (method, path, expected_total) in [
+            (RestMethod::Get, "/_flush", 2),
+            (RestMethod::Post, "/_flush", 2),
+            (RestMethod::Get, "/_flush/synced", 2),
+            (RestMethod::Post, "/_flush/synced", 2),
+            (RestMethod::Get, "/logs-*/_flush", 1),
+            (RestMethod::Post, "/logs-*/_flush", 1),
+            (RestMethod::Get, "/logs-*/_flush/synced", 1),
+            (RestMethod::Post, "/logs-*/_flush/synced", 1),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["_shards"]["total"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["successful"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
+        }
+    }
+
+    #[test]
+    fn cache_clear_routes_serve_global_and_targeted_shard_counts() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-cache-clear-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-cache-clear-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        for path in ["/_cache/clear", "/logs-*/_cache/clear"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            let expected_total = if path == "/_cache/clear" { 2 } else { 1 };
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["_shards"]["total"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["successful"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
+        }
+    }
+
+    #[test]
+    fn close_routes_mark_global_and_targeted_indices_closed() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-close-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-close-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_close",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert_eq!(targeted.body["acknowledged"], Value::Bool(true));
+        assert_eq!(targeted.body["shards_acknowledged"], Value::Bool(true));
+
+        let global = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_close"));
+        assert_eq!(global.status, 200);
+        assert_eq!(global.body["acknowledged"], Value::Bool(true));
+        assert_eq!(global.body["shards_acknowledged"], Value::Bool(true));
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(manifest["indices"]["logs-close-000001"]["state"], "close");
+        assert_eq!(manifest["indices"]["metrics-close-000001"]["state"], "close");
+    }
+
+    #[test]
+    fn forcemerge_routes_serve_global_and_targeted_shard_counts() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-forcemerge-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-forcemerge-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        for path in ["/_forcemerge", "/logs-*/_forcemerge"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            let expected_total = if path == "/_forcemerge" { 2 } else { 1 };
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["_shards"]["total"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["successful"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
+        }
+    }
+
+    #[test]
+    fn open_routes_mark_global_and_targeted_indices_open() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-open-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-open-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        {
+            let mut manifest = node
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            manifest["indices"]["logs-open-000001"]["state"] = Value::String("close".to_string());
+            manifest["indices"]["metrics-open-000001"]["state"] = Value::String("close".to_string());
+        }
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_open",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert_eq!(targeted.body["acknowledged"], Value::Bool(true));
+        assert_eq!(targeted.body["shards_acknowledged"], Value::Bool(true));
+
+        let global = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_open"));
+        assert_eq!(global.status, 200);
+        assert_eq!(global.body["acknowledged"], Value::Bool(true));
+        assert_eq!(global.body["shards_acknowledged"], Value::Bool(true));
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(manifest["indices"]["logs-open-000001"]["state"], "open");
+        assert_eq!(manifest["indices"]["metrics-open-000001"]["state"], "open");
+    }
+
+    #[test]
+    fn resolve_index_route_serves_bounded_index_alias_and_data_stream_names() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-resolve-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let put_alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-resolve-000001/_alias/logs-resolve-read"),
+        );
+        assert_eq!(put_alias.status, 200);
+
+        let resolve_index =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_resolve/index/logs-resolve-*"));
+        assert_eq!(resolve_index.status, 200);
+        assert_eq!(resolve_index.body["indices"][0]["name"], "logs-resolve-000001");
+        assert_eq!(resolve_index.body["aliases"][0]["name"], "logs-resolve-read");
+        assert!(resolve_index.body["data_streams"].as_array().is_some());
+    }
+
+    #[test]
+    fn shard_stores_routes_serve_global_and_targeted_store_shapes() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-shard-stores-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-shard-stores-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let global =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_shard_stores"));
+        assert_eq!(global.status, 200);
+        assert!(global.body["indices"]["logs-shard-stores-000001"]["shards"]["0"]["stores"].is_array());
+        assert!(global.body["indices"]["metrics-shard-stores-000001"]["shards"]["0"]["stores"].is_array());
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_shard_stores",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert!(targeted.body["indices"]["logs-shard-stores-000001"]["shards"]["0"]["stores"].is_array());
+        assert!(targeted.body["indices"]["metrics-shard-stores-000001"].is_null());
+    }
+
+    #[test]
+    fn upgrade_routes_serve_global_and_targeted_upgrade_shapes() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-upgrade-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-upgrade-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        for (method, path, expected_logs, expected_metrics) in [
+            (RestMethod::Get, "/_upgrade", true, true),
+            (RestMethod::Post, "/_upgrade", true, true),
+            (RestMethod::Get, "/logs-*/_upgrade", true, false),
+            (RestMethod::Post, "/logs-*/_upgrade", true, false),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["indices"]["logs-upgrade-000001"].is_object() == expected_logs, "path {path}");
+            assert!(response.body["indices"]["metrics-upgrade-000001"].is_object() == expected_metrics, "path {path}");
+            assert_eq!(response.body["size_in_bytes"], 0, "path {path}");
+        }
+    }
+
+    #[test]
+    fn ingestion_state_route_serves_bounded_index_state_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-ingestion-000001/ingestion/_state",
+        ));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["index"], "logs-ingestion-000001");
+        assert_eq!(response.body["state"], "RUNNING");
+        assert!(response.body["pipelines"].is_array());
+        assert_eq!(response.body["metadata"]["version"], 1);
+    }
+
+    #[test]
+    fn ingestion_pause_and_resume_routes_update_index_state() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-ingestion-ops-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let pause = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-ingestion-ops-000001/ingestion/_pause",
+        ));
+        assert_eq!(pause.status, 200);
+        assert_eq!(pause.body["index"], "logs-ingestion-ops-000001");
+        assert_eq!(pause.body["state"], "PAUSED");
+        assert_eq!(pause.body["acknowledged"], Value::Bool(true));
+
+        let paused_state = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-ingestion-ops-000001/ingestion/_state",
+        ));
+        assert_eq!(paused_state.status, 200);
+        assert_eq!(paused_state.body["state"], "PAUSED");
+
+        let resume = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-ingestion-ops-000001/ingestion/_resume",
+        ));
+        assert_eq!(resume.status, 200);
+        assert_eq!(resume.body["state"], "RUNNING");
+        assert_eq!(resume.body["acknowledged"], Value::Bool(true));
+
+        let resumed_state = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-ingestion-ops-000001/ingestion/_state",
+        ));
+        assert_eq!(resumed_state.status, 200);
+        assert_eq!(resumed_state.body["state"], "RUNNING");
+    }
+
+    #[test]
+    fn mget_routes_serve_root_and_targeted_docs_for_get_and_post() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-mget-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-mget-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-mget-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({"message":"log-1"})),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-mget-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({"message":"metric-2"})),
+            )
+            .status,
+            201
+        );
+
+        let root_get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_mget").with_json_body(serde_json::json!({
+                "docs": [
+                    {"_index":"logs-mget-000001","_id":"doc-1"},
+                    {"_index":"metrics-mget-000001","_id":"doc-2"}
+                ]
+            })),
+        );
+        assert_eq!(root_get.status, 200);
+        assert_eq!(root_get.body["docs"][0]["found"], Value::Bool(true));
+        assert_eq!(root_get.body["docs"][0]["_source"]["message"], "log-1");
+        assert_eq!(root_get.body["docs"][1]["_source"]["message"], "metric-2");
+
+        let root_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_mget").with_json_body(serde_json::json!({
+                "docs": [
+                    {"_index":"logs-mget-000001","_id":"doc-1"},
+                    {"_index":"logs-mget-000001","_id":"missing-doc"}
+                ]
+            })),
+        );
+        assert_eq!(root_post.status, 200);
+        assert_eq!(root_post.body["docs"][0]["found"], Value::Bool(true));
+        assert_eq!(root_post.body["docs"][1]["found"], Value::Bool(false));
+
+        let targeted_get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/logs-mget-000001/_mget").with_json_body(
+                serde_json::json!({
+                    "ids": ["doc-1", "missing-doc"]
+                }),
+            ),
+        );
+        assert_eq!(targeted_get.status, 200);
+        assert_eq!(targeted_get.body["docs"][0]["_index"], "logs-mget-000001");
+        assert_eq!(targeted_get.body["docs"][0]["found"], Value::Bool(true));
+        assert_eq!(targeted_get.body["docs"][1]["found"], Value::Bool(false));
+
+        let targeted_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-mget-000001/_mget").with_json_body(
+                serde_json::json!({
+                    "docs": [{"_id":"doc-1"}]
+                }),
+            ),
+        );
+        assert_eq!(targeted_post.status, 200);
+        assert_eq!(targeted_post.body["docs"][0]["_source"]["message"], "log-1");
+    }
+
+    #[test]
+    fn mtermvectors_routes_serve_root_and_targeted_docs_for_get_and_post() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-mtermvectors-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-mtermvectors-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-mtermvectors-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({"message":"log-1"})),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-mtermvectors-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({"message":"metric-2"})),
+            )
+            .status,
+            201
+        );
+
+        let root_get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_mtermvectors").with_json_body(serde_json::json!({
+                "docs": [
+                    {"_index":"logs-mtermvectors-000001","_id":"doc-1"},
+                    {"_index":"metrics-mtermvectors-000001","_id":"doc-2"}
+                ]
+            })),
+        );
+        assert_eq!(root_get.status, 200);
+        assert_eq!(root_get.body["docs"][0]["found"], Value::Bool(true));
+        assert!(root_get.body["docs"][0]["term_vectors"]["message"]["terms"].is_object());
+        assert!(root_get.body["docs"][1]["term_vectors"]["message"]["terms"].is_object());
+
+        let root_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_mtermvectors").with_json_body(serde_json::json!({
+                "docs": [
+                    {"_index":"logs-mtermvectors-000001","_id":"doc-1"},
+                    {"_index":"logs-mtermvectors-000001","_id":"missing-doc"}
+                ]
+            })),
+        );
+        assert_eq!(root_post.status, 200);
+        assert_eq!(root_post.body["docs"][0]["found"], Value::Bool(true));
+        assert_eq!(root_post.body["docs"][1]["found"], Value::Bool(false));
+
+        let targeted_get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/logs-mtermvectors-000001/_mtermvectors").with_json_body(
+                serde_json::json!({
+                    "ids": ["doc-1", "missing-doc"]
+                }),
+            ),
+        );
+        assert_eq!(targeted_get.status, 200);
+        assert_eq!(targeted_get.body["docs"][0]["_index"], "logs-mtermvectors-000001");
+        assert_eq!(targeted_get.body["docs"][0]["found"], Value::Bool(true));
+        assert_eq!(targeted_get.body["docs"][1]["found"], Value::Bool(false));
+
+        let targeted_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-mtermvectors-000001/_mtermvectors").with_json_body(
+                serde_json::json!({
+                    "docs": [{"_id":"doc-1"}]
+                }),
+            ),
+        );
+        assert_eq!(targeted_post.status, 200);
+        assert!(targeted_post.body["docs"][0]["term_vectors"]["message"]["terms"].is_object());
+    }
+
+    #[test]
+    fn refresh_routes_serve_global_and_targeted_shard_counts_for_get_and_post() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-refresh-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-refresh-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+
+        for (method, path, expected_total) in [
+            (RestMethod::Get, "/_refresh", 2),
+            (RestMethod::Post, "/_refresh", 2),
+            (RestMethod::Get, "/logs-refresh-000001/_refresh", 2),
+            (RestMethod::Post, "/logs-refresh-000001/_refresh", 2),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["_shards"]["total"], expected_total, "path {path}");
+            assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
+        }
+    }
+
+    #[test]
+    fn source_routes_serve_targeted_source_body_and_head_existence() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-source-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-source-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({"message":"source-doc","tenant":"tenant-a"})),
+            )
+            .status,
+            201
+        );
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert_eq!(get_response.body["message"], "source-doc");
+        assert_eq!(get_response.body["tenant"], "tenant-a");
+
+        let head_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-source-000001/_source/doc-1",
+        ));
+        assert_eq!(head_response.status, 200);
+
+        let missing_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/missing-doc",
+        ));
+        assert_eq!(missing_response.status, 404);
+    }
+
+    #[test]
+    fn termvectors_routes_serve_targeted_docs_for_get_and_post() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-termvectors-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-termvectors-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({"message":"term-doc","tenant":"tenant-a"})),
+            )
+            .status,
+            201
+        );
+
+        let body_get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/logs-termvectors-000001/_termvectors")
+                .with_json_body(serde_json::json!({"id":"doc-1"})),
+        );
+        assert_eq!(body_get.status, 200);
+        assert_eq!(body_get.body["_index"], "logs-termvectors-000001");
+        assert_eq!(body_get.body["found"], Value::Bool(true));
+        assert!(body_get.body["term_vectors"]["message"]["terms"].is_object());
+
+        let body_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-termvectors-000001/_termvectors")
+                .with_json_body(serde_json::json!({"id":"doc-1"})),
+        );
+        assert_eq!(body_post.status, 200);
+        assert!(body_post.body["term_vectors"]["message"]["terms"].is_object());
+
+        let path_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-termvectors-000001/_termvectors/doc-1",
+        ));
+        assert_eq!(path_get.status, 200);
+        assert_eq!(path_get.body["found"], Value::Bool(true));
+
+        let path_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-termvectors-000001/_termvectors/doc-1")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(path_post.status, 200);
+        assert!(path_post.body["term_vectors"]["tenant"]["terms"].is_object());
+    }
+
+    #[test]
+    fn bulk_routes_support_put_and_stream_aliases() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-bulk-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+
+        let ndjson = "{\"index\":{\"_index\":\"logs-bulk-root-000001\",\"_id\":\"doc-1\"}}\n{\"message\":\"root-post\"}\n";
+        let root_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(root_post.status, 200);
+        assert_eq!(root_post.body["items"][0]["index"]["status"], 201);
+
+        let root_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(root_put.status, 200);
+
+        let stream_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk/stream")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(stream_post.status, 200);
+
+        let stream_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_bulk/stream")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(stream_put.status, 200);
+
+        let targeted_ndjson = "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"targeted\"}\n";
+        let targeted_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-bulk-000001/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(targeted_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(targeted_post.status, 200);
+
+        let targeted_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-bulk-000001/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(targeted_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(targeted_put.status, 200);
+
+        let targeted_stream_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-bulk-000001/_bulk/stream")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(targeted_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(targeted_stream_post.status, 200);
+
+        let targeted_stream_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-bulk-000001/_bulk/stream")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(targeted_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(targeted_stream_put.status, 200);
+    }
+
+    #[test]
+    fn named_settings_routes_filter_global_and_targeted_setting_keys() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-settings-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let create_metrics = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/metrics-settings-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_metrics.status, 200);
+
+        let global_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_settings").with_json_body(serde_json::json!({
+                "index": {
+                    "number_of_replicas": 0
+                }
+            })),
+        );
+        assert_eq!(global_put.status, 200);
+        assert_eq!(global_put.body["acknowledged"], Value::Bool(true));
+
+        let global = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings/index.number_of_shards",
+        ));
+        assert_eq!(global.status, 200);
+        assert!(global.body["logs-settings-000001"]["settings"].is_object());
+        assert!(global.body["metrics-settings-000001"]["settings"].is_object());
+
+        let global_replicas = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings/index.number_of_replicas",
+        ));
+        assert_eq!(global_replicas.status, 200);
+        assert_eq!(
+            global_replicas.body["logs-settings-000001"]["settings"]["index.number_of_replicas"],
+            Value::String("0".to_string())
+        );
+        assert_eq!(
+            global_replicas.body["metrics-settings-000001"]["settings"]["index.number_of_replicas"],
+            Value::String("0".to_string())
+        );
+
+        let targeted_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-settings-000001/_settings").with_json_body(
+                serde_json::json!({
+                    "index": {
+                        "refresh_interval": "1s"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(targeted_put.status, 200);
+        assert_eq!(targeted_put.body["acknowledged"], Value::Bool(true));
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_settings/index.number_of_replicas",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert_eq!(
+            targeted.body["logs-settings-000001"]["settings"]["index.number_of_replicas"],
+            Value::String("0".to_string())
+        );
+
+        let targeted_refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_settings/index.refresh_interval",
+        ));
+        assert_eq!(targeted_refresh.status, 200);
+        assert_eq!(
+            targeted_refresh.body["logs-settings-000001"]["settings"]["index.refresh_interval"],
+            Value::String("1s".to_string())
+        );
+
+        let metrics_refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/metrics-settings-000001/_settings/index.refresh_interval",
+        ));
+        assert_eq!(metrics_refresh.status, 200);
+        assert!(
+            metrics_refresh.body["metrics-settings-000001"]["settings"]
+                .get("index.refresh_interval")
+                .is_none()
+        );
+
+        let singular = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_setting/index.number_of_replicas",
+        ));
+        assert_eq!(singular.status, 200);
+    }
+
+    #[test]
+    fn remote_store_restore_route_serves_bounded_acceptance_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_remotestore/_restore").with_json_body(
+                serde_json::json!({
+                    "indices": ["remote-store-probe"]
+                }),
+            ),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["accepted"], Value::Bool(true));
     }
 
     #[test]
@@ -13587,6 +20419,58 @@ mod tests {
         assert_eq!(
             missing_delete.body["error"]["type"],
             Value::String("resource_not_found_exception".to_string())
+        );
+    }
+
+    #[test]
+    fn stored_script_context_routes_round_trip_expected_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_scripts/test-script-context/filter")
+                .with_json_body(serde_json::json!({
+                    "script": {
+                        "lang": "painless",
+                        "source": "return params.value;"
+                    }
+                })),
+        );
+        assert_eq!(put_response.status, 200);
+        assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let get_after_put =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_scripts/test-script-context"));
+        assert_eq!(get_after_put.status, 200);
+        assert_eq!(get_after_put.body["found"], Value::Bool(true));
+
+        let post_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_scripts/test-script-context/template")
+                .with_json_body(serde_json::json!({
+                    "script": {
+                        "lang": "mustache",
+                        "source": "{\"value\":\"{{value}}\"}"
+                    }
+                })),
+        );
+        assert_eq!(post_response.status, 200);
+        assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
+
+        let bad_context = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_scripts/test-script-context/unknown")
+                .with_json_body(serde_json::json!({
+                    "script": {
+                        "lang": "painless",
+                        "source": "return params.value;"
+                    }
+                })),
+        );
+        assert_eq!(bad_context.status, 400);
+        assert_eq!(
+            bad_context.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
         );
     }
 }

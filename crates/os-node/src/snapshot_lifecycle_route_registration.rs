@@ -207,9 +207,14 @@ pub fn invoke_validated_snapshot_restore_live_route(body: &serde_json::Value) ->
     }
 }
 
-pub const SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE: [SnapshotLifecycleRouteRegistryEntry; 4] = [
+pub const SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE: [SnapshotLifecycleRouteRegistryEntry; 5] = [
     SnapshotLifecycleRouteRegistryEntry {
         method: SNAPSHOT_LIFECYCLE_ROUTE_METHOD_PUT,
+        path: CREATE_SNAPSHOT_ROUTE_PATH,
+        family: SNAPSHOT_LIFECYCLE_ROUTE_FAMILY,
+    },
+    SnapshotLifecycleRouteRegistryEntry {
+        method: SNAPSHOT_LIFECYCLE_ROUTE_METHOD_POST,
         path: CREATE_SNAPSHOT_ROUTE_PATH,
         family: SNAPSHOT_LIFECYCLE_ROUTE_FAMILY,
     },
@@ -247,6 +252,9 @@ pub fn run_snapshot_lifecycle_local_route_activation(
         ("PUT", "/_snapshot/{repository}/{snapshot}") => Some(
             (SNAPSHOT_LIFECYCLE_RUNTIME_REGISTRATION_BODY.create)(payload),
         ),
+        ("POST", "/_snapshot/{repository}/{snapshot}") => Some(
+            (SNAPSHOT_LIFECYCLE_RUNTIME_REGISTRATION_BODY.create)(payload),
+        ),
         ("GET", "/_snapshot/{repository}/{snapshot}") => Some(
             (SNAPSHOT_LIFECYCLE_RUNTIME_REGISTRATION_BODY.readback)(payload),
         ),
@@ -266,13 +274,14 @@ mod tests {
 
     #[test]
     fn snapshot_lifecycle_registry_table_covers_create_readback_status_and_restore() {
-        assert_eq!(SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE.len(), 4);
+        assert_eq!(SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE.len(), 5);
         assert_eq!(SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE[0].method, "PUT");
+        assert_eq!(SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE[1].method, "POST");
         assert_eq!(
-            SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE[2].path,
+            SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE[3].path,
             "/_snapshot/{repository}/{snapshot}/_status"
         );
-        assert_eq!(SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE[3].method, "POST");
+        assert_eq!(SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE[4].method, "POST");
     }
 
     #[test]
@@ -340,6 +349,15 @@ mod tests {
             "indices": ["logs-000001"],
             "include_global_state": false
         }));
+        let create_post = run_snapshot_lifecycle_local_route_activation(
+            "POST",
+            "/_snapshot/{repository}/{snapshot}",
+            &serde_json::json!({
+                "indices": ["logs-000002"],
+                "include_global_state": false
+            }),
+        )
+        .expect("post create route response");
         let readback = invoke_snapshot_readback_live_route(&serde_json::json!({
             "snapshot": "snapshot-a",
             "uuid": "snapshot-a-uuid",
@@ -363,6 +381,7 @@ mod tests {
         }));
 
         assert_eq!(create["accepted"], true);
+        assert_eq!(create_post["accepted"], true);
         assert_eq!(readback["snapshots"][0]["snapshot"], "snapshot-a");
         assert_eq!(status["snapshots"][0]["repository"], "repo-a");
         assert_eq!(restore["accepted"], true);

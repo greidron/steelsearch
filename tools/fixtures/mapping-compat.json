@@ -42,6 +42,42 @@
       }
     },
     {
+      "name": "get_plural_mapping_happy_path",
+      "method": "GET",
+      "path": "/_mappings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-mapping-000001.mappings.properties.message.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner"
+        ],
+        "body_paths_equal": [
+          "logs-compat-mapping-000001.mappings.properties.message.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner"
+        ]
+      }
+    },
+    {
+      "name": "get_targeted_plural_mapping_happy_path",
+      "method": "GET",
+      "path": "/logs-compat-mapping-*/_mappings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-mapping-000001.mappings.properties.message.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner"
+        ],
+        "body_paths_equal": [
+          "logs-compat-mapping-000001.mappings.properties.message.type",
+          "logs-compat-mapping-000001.mappings.dynamic",
+          "logs-compat-mapping-000001.mappings._meta.owner"
+        ]
+      }
+    },
+    {
       "name": "put_mapping_merge_dynamic_meta_and_properties",
       "method": "PUT",
       "path": "/logs-compat-mapping-000001/_mapping",
@@ -78,6 +114,42 @@
           "logs-compat-mapping-000001.mappings.dynamic",
           "logs-compat-mapping-000001.mappings._meta.owner",
           "logs-compat-mapping-000001.mappings._meta.rollout"
+        ]
+      }
+    },
+    {
+      "name": "get_global_field_mapping_happy_path",
+      "method": "GET",
+      "path": "/_mapping/field/message,level",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-mapping-000001.mappings.message.full_name",
+          "logs-compat-mapping-000001.mappings.message.mapping.message.type",
+          "logs-compat-mapping-000001.mappings.level.full_name",
+          "logs-compat-mapping-000001.mappings.level.mapping.level.type"
+        ],
+        "body_paths_equal": [
+          "logs-compat-mapping-000001.mappings.message.mapping.message.type",
+          "logs-compat-mapping-000001.mappings.level.mapping.level.type"
+        ]
+      }
+    },
+    {
+      "name": "get_index_field_mapping_happy_path",
+      "method": "GET",
+      "path": "/logs-compat-mapping-*/_mapping/field/message",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-mapping-000001.mappings.message.full_name",
+          "logs-compat-mapping-000001.mappings.message.mapping.message.type"
+        ],
+        "body_paths_absent": [
+          "logs-compat-mapping-000001.mappings.level"
+        ],
+        "body_paths_equal": [
+          "logs-compat-mapping-000001.mappings.message.mapping.message.type"
         ]
       }
     },

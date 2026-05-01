@@ -31,9 +31,267 @@
         "message": "stateful route probe",
         "tenant": "tenant-a"
       }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "body": {
+        "size": 1,
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "body": {
+        "size": 1,
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "body": {
+        "size": 1,
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "body": {
+        "size": 1,
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "body": {
+        "size": 1,
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m"
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m"
+    },
+    {
+      "method": "PUT",
+      "path": "/_index_template/probe-data-stream-template",
+      "body": {
+        "index_patterns": [
+          "logs-ds-*"
+        ],
+        "data_stream": {},
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/_index_template/probe-index-template",
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "priority": 7,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-index-root-probe",
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      }
     }
   ],
   "cases": [
+    {
+      "name": "rank_eval_root_get",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "GET",
+      "path": "/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "root-request",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_root_post",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "POST",
+      "path": "/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "root-request-post",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_target_get",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "target-request",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "target-request-post",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_put",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "PUT",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "body": {
+        "description": "stateful ingest pipeline",
+        "processors": []
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_get",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "GET",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_root_simulate_post",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/_simulate",
+      "method": "POST",
+      "path": "/_ingest/pipeline/_simulate",
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "simulate root"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_simulate_post",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}/_simulate",
+      "method": "POST",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline/_simulate",
+      "body": {
+        "doc": {
+          "_source": {
+            "message": "simulate named"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_delete",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "DELETE",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "painless_execute_post",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "POST",
+      "path": "/_scripts/painless/_execute",
+      "body": {
+        "params": {
+          "value": 7
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
     {
       "name": "decommission_awareness_delete",
       "family": "root-cluster-node",
@@ -154,6 +412,22 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "nodes_reload_secure_settings_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/reload_secure_settings",
+      "method": "POST",
+      "path": "/_nodes/reload_secure_settings",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "nodes_reload_secure_settings_target_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/{nodeId}/reload_secure_settings",
+      "method": "POST",
+      "path": "/_nodes/_all/reload_secure_settings",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_create_put",
       "family": "index-and-metadata",
       "inventory_path": "/{index}",
@@ -168,12 +442,595 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "analyze_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_analyze",
+      "method": "POST",
+      "path": "/_analyze",
+      "body": {
+        "text": "Bulk probe text"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "analyze_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_analyze",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_analyze",
+      "body": {
+        "text": "Target analyze text"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush",
+      "method": "POST",
+      "path": "/_flush",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_synced_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush/synced",
+      "method": "POST",
+      "path": "/_flush/synced",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_flush",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_synced_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush/synced",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_flush/synced",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "upgrade_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_upgrade",
+      "method": "POST",
+      "path": "/_upgrade",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "bulk_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_bulk",
       "method": "POST",
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "delete_by_query_rethrottle_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_delete_by_query/node-a:999/_rethrottle",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_rethrottle_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_reindex/node-a:999/_rethrottle",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-stateful-probe"
+        },
+        "dest": {
+          "index": "logs-stateful-reindex"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "create_doc_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_create/create-put-doc",
+      "body": {
+        "message": "create put probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "create_doc_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_create/create-post-doc",
+      "body": {
+        "message": "create post probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_doc_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_doc",
+      "body": {
+        "message": "generated doc probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_doc/doc-put-probe",
+      "body": {
+        "message": "put doc probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_doc/doc-post-probe",
+      "body": {
+        "message": "post doc probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_get",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_doc/doc-1",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_head",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "HEAD",
+      "path": "/logs-stateful-probe/_doc/doc-1",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_delete",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "DELETE",
+      "path": "/logs-stateful-probe/_doc/doc-post-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_update_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update/doc-1",
+      "body": {
+        "doc": {
+          "processed": true
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_pipeline_put",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "PUT",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "body": {
+        "description": "probe search pipeline",
+        "request_processors": [],
+        "response_processors": []
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_pipeline_get",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "GET",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_pipeline_delete",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "DELETE",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_all_get",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time/_all",
+      "method": "GET",
+      "path": "/_search/point_in_time/_all",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_all_delete",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time/_all",
+      "method": "DELETE",
+      "path": "/_search/point_in_time/_all",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_root_get",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "GET",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "scroll-1"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_named_post",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "POST",
+      "path": "/_search/scroll/scroll-2",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_named_delete",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "DELETE",
+      "path": "/_search/scroll/scroll-3",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_template_root_post",
+      "family": "search",
+      "inventory_path": "/_msearch/template",
+      "method": "POST",
+      "path": "/_msearch/template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "render_template_root_post",
+      "family": "search",
+      "inventory_path": "/_render/template",
+      "method": "POST",
+      "path": "/_render/template",
+      "body": {
+        "source": {
+          "query": {
+            "match_all": {}
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "render_template_named_get",
+      "family": "search",
+      "inventory_path": "/_render/template/{id}",
+      "method": "GET",
+      "path": "/_render/template/probe-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "render_template_named_post",
+      "family": "search",
+      "inventory_path": "/_render/template/{id}",
+      "method": "POST",
+      "path": "/_render/template/probe-template",
+      "body": {
+        "source": {
+          "query": {
+            "match_all": {}
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_template_root_post",
+      "family": "search",
+      "inventory_path": "/_search/template",
+      "method": "POST",
+      "path": "/_search/template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_template_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch/template",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_msearch/template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_template_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search/template",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "count_root_post",
+      "family": "search",
+      "inventory_path": "/_count",
+      "method": "POST",
+      "path": "/_count",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "count_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_count",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_count",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "validate_query_root_post",
+      "family": "search",
+      "inventory_path": "/_validate/query",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "validate_query_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_validate/query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_validate/query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_root_post",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_root_delete",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "id": "pit-1"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search/point_in_time",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_root_post",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "POST",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "scroll-4"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_root_delete",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "DELETE",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "scroll-5"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_root_post",
+      "family": "search",
+      "inventory_path": "/_msearch",
+      "method": "POST",
+      "path": "/_msearch",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "explain_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_explain/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_explain/doc-1",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_msearch",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "delete_by_query_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_delete_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_delete_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "update_by_query_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update_by_query",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "update_by_query_rethrottle_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_update_by_query/node-a:999/_rethrottle",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_root_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "POST",
+      "path": "/_bulk",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk root post\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_root_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "PUT",
+      "path": "/_bulk",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-2\"}}\n{\"message\":\"bulk root put\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_target_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_bulk",
+      "raw_body": "{\"index\":{\"_id\":\"doc-3\"}}\n{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_stream_root_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk/stream",
+      "method": "POST",
+      "path": "/_bulk/stream",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk stream root post\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_stream_root_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk/stream",
+      "method": "PUT",
+      "path": "/_bulk/stream",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-2\"}}\n{\"message\":\"bulk stream root put\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_stream_target_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk/stream",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_bulk/stream",
+      "raw_body": "{\"index\":{\"_id\":\"doc-4\"}}\n{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_stream_target_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk/stream",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_bulk/stream",
+      "raw_body": "{\"index\":{\"_id\":\"doc-5\"}}\n{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}\n",
       "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present"
     },
@@ -205,12 +1062,281 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "snapshot_repository_get",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "GET",
+      "path": "/_snapshot/repo-stateful-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_repository_post",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe-post",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo-post"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_repository_delete",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-stateful-probe-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_repository_cleanup_post",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/_cleanup",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe/_cleanup",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_repository_verify_post",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/_verify",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe/_verify",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_create_put",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe",
+      "body": {
+        "indices": "logs-stateful-probe",
+        "include_global_state": false
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_readback_get",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "GET",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_create_post",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-post",
+      "body": {
+        "indices": "logs-stateful-probe",
+        "include_global_state": false
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_delete_delete",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_clone_put",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_clone/snapshot-stateful-clone",
+      "body": {
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_restore_post",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_restore",
+      "body": {
+        "indices": "logs-stateful-probe",
+        "rename_pattern": "(.+)",
+        "rename_replacement": "$1-restored"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "tasks_cancel_post",
       "family": "root-cluster-node",
       "inventory_path": "/_tasks/_cancel",
       "method": "POST",
       "path": "/_tasks/_cancel",
       "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tasks_cancel_by_id_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/{task_id}/_cancel",
+      "method": "POST",
+      "path": "/_tasks/node-a:999/_cancel",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "dangling_import_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "POST",
+      "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "dangling_delete_delete",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "DELETE",
+      "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "filecache_prune_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_filecache/prune",
+      "method": "POST",
+      "path": "/_filecache/prune",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "remote_store_restore_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_remotestore/_restore",
+      "method": "POST",
+      "path": "/_remotestore/_restore",
+      "body": {
+        "indices": [
+          "logs-stateful-probe"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_global_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "GET",
+      "path": "/_search_shards",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_global_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "POST",
+      "path": "/_search_shards",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_target_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_search_shards",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_target_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search_shards",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "PUT",
+      "path": "/_scripts/probe-script",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "return params.value;"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "GET",
+      "path": "/_scripts/probe-script",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "POST",
+      "path": "/_scripts/probe-script",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": "{\"value\":\"{{value}}\"}"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_delete",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "DELETE",
+      "path": "/_scripts/probe-script",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_context_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}/{context}",
+      "method": "PUT",
+      "path": "/_scripts/probe-script-context/filter",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "return params.value;"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_context_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}/{context}",
+      "method": "POST",
+      "path": "/_scripts/probe-script-context/template",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": "{\"value\":\"{{value}}\"}"
+        }
+      },
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -224,6 +1350,1013 @@
         "training_index": "logs-stateful-probe",
         "training_field": "tenant"
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_search_get",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/_search",
+      "method": "GET",
+      "path": "/_plugins/_knn/models/_search",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_search_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/_search",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/_search",
+      "body": {
+        "query": {
+          "term": {
+            "model_id": "knn-model-1"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_clear_cache_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
+      "method": "POST",
+      "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_get",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}",
+      "method": "GET",
+      "path": "/_plugins/_knn/models/knn-model-1",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_delete",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}",
+      "method": "DELETE",
+      "path": "/_plugins/_knn/models/knn-model-1",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_train_by_id_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}/_train",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/probe-model/_train",
+      "body": {
+        "training_index": "logs-stateful-probe",
+        "training_field": "tenant"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "field_caps_root_post",
+      "family": "misc",
+      "inventory_path": "/_field_caps",
+      "method": "POST",
+      "path": "/_field_caps",
+      "body": {
+        "fields": [
+          "tenant",
+          "message"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "field_caps_target_post",
+      "family": "misc",
+      "inventory_path": "/{index}/_field_caps",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_field_caps",
+      "body": {
+        "fields": [
+          "tenant",
+          "message"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_global_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "GET",
+      "path": "/_settings",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_global_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "PUT",
+      "path": "/_settings",
+      "body": {
+        "index": {
+          "number_of_replicas": 0
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_target_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_settings",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_target_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_settings",
+      "body": {
+        "index": {
+          "refresh_interval": "1s"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mapping_target_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_mapping",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mapping_target_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_mapping",
+      "body": {
+        "properties": {
+          "probe_region": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mapping_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mapping",
+      "body": {
+        "properties": {
+          "probe_service": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mappings_target_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_mappings",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mappings_target_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_mappings",
+      "body": {
+        "properties": {
+          "probe_env": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mappings_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mappings",
+      "body": {
+        "properties": {
+          "probe_team": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_root_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias",
+      "method": "GET",
+      "path": "/_alias",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_root_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias",
+      "method": "PUT",
+      "path": "/_alias",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "index": "logs-stateful-probe",
+              "alias": "logs-stateful-root-read",
+              "is_write_index": true
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_root_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "GET",
+      "path": "/_aliases",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "PUT",
+      "path": "/_alias/logs-stateful-named-write",
+      "body": {
+        "index": "logs-stateful-probe",
+        "is_write_index": true
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "POST",
+      "path": "/_alias/logs-stateful-named-post",
+      "body": {
+        "indices": [
+          "logs-stateful-probe"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_named_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "GET",
+      "path": "/_alias/logs-stateful-root-read",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_named_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "HEAD",
+      "path": "/_alias/logs-stateful-root-read",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "PUT",
+      "path": "/_aliases/logs-stateful-plural-put",
+      "body": {
+        "index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "POST",
+      "path": "/_aliases/logs-stateful-plural-post",
+      "body": {
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "POST",
+      "path": "/_aliases",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "index": "logs-stateful-probe",
+              "alias": "logs-stateful-bulk-read"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_collection_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_alias",
+      "body": {
+        "alias": "logs-stateful-index-collection",
+        "is_write_index": true
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_collection_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_alias",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_collection_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "HEAD",
+      "path": "/logs-stateful-probe/_alias",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-put",
+      "body": {
+        "is_write_index": true
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "HEAD",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "DELETE",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_aliases",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "alias": "logs-stateful-index-bulk"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-put",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_named_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "DELETE",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_block_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_block/{block}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_block/write",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_clone_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-put",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_clone_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_shrink_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_shrink/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_shrink/logs-stateful-shrink-put",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_shrink_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_shrink/{target}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_shrink/logs-stateful-shrink-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_split_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_split/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_split/logs-stateful-split-put",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_split_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_split/{target}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_split/logs-stateful-split-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_scale_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_scale",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_scale",
+      "body": {
+        "target": "logs-stateful-scale-post"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_rollover_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover",
+      "method": "POST",
+      "path": "/logs-rollover-write/_rollover",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/logs-stateful-probe/_alias/logs-rollover-write",
+          "body": {
+            "is_write_index": true
+          }
+        }
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_rollover_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover/{new_index}",
+      "method": "POST",
+      "path": "/logs-rollover-write/_rollover/logs-rollover-probe-000002",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_pause_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_pause",
+      "method": "POST",
+      "path": "/logs-stateful-probe/ingestion/_pause",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_resume_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_resume",
+      "method": "POST",
+      "path": "/logs-stateful-probe/ingestion/_resume",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_upgrade_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_upgrade",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_upgrade",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_upgrade_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_upgrade",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_upgrade",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_state_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_state",
+      "method": "GET",
+      "path": "/logs-stateful-probe/ingestion/_state",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mget_root_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mget",
+      "method": "POST",
+      "path": "/_mget",
+      "body": {
+        "docs": [
+          {
+            "_index": "logs-stateful-probe",
+            "_id": "doc-1"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mget_target_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mget",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mget",
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mtermvectors_root_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mtermvectors",
+      "method": "POST",
+      "path": "/_mtermvectors",
+      "body": {
+        "docs": [
+          {
+            "_index": "logs-stateful-probe",
+            "_id": "doc-1"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mtermvectors_target_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mtermvectors",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mtermvectors",
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "refresh_root_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_refresh",
+      "method": "POST",
+      "path": "/_refresh",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "refresh_target_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_refresh",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_refresh",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "termvectors_target_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_termvectors",
+      "body": {
+        "id": "doc-1"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "termvectors_target_id_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_termvectors/doc-1",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cache_clear_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_cache/clear",
+      "method": "POST",
+      "path": "/_cache/clear",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cache_clear_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_cache/clear",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_cache/clear",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "close_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_close",
+      "method": "POST",
+      "path": "/_close",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "close_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_close",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_close",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "forcemerge_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_forcemerge",
+      "method": "POST",
+      "path": "/_forcemerge",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "forcemerge_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_forcemerge",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_forcemerge",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_simulate_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "path": "/_index_template/_simulate",
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "refresh_interval": "30s"
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_simulate_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate/{name}",
+      "method": "POST",
+      "path": "/_index_template/_simulate/probe-index-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_simulate_index_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate_index/{name}",
+      "method": "POST",
+      "path": "/_index_template/_simulate_index/logs-sim-000001",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "PUT",
+      "path": "/_index_template/probe-index-template",
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "priority": 7,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_named_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "GET",
+      "path": "/_index_template/probe-index-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_named_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "HEAD",
+      "path": "/_index_template/probe-index-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "POST",
+      "path": "/_index_template/probe-index-template",
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "template": {
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_named_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "DELETE",
+      "path": "/_index_template/probe-index-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "open_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_open",
+      "method": "POST",
+      "path": "/_open",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "open_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_open",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_open",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "legacy_template_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "PUT",
+      "path": "/_template/probe-legacy-template",
+      "body": {
+        "index_patterns": [
+          "logs-legacy-*"
+        ],
+        "order": 7,
+        "version": 1
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "legacy_template_named_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "GET",
+      "path": "/_template/probe-legacy-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "legacy_template_named_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "HEAD",
+      "path": "/_template/probe-legacy-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "legacy_template_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "POST",
+      "path": "/_template/probe-legacy-template",
+      "body": {
+        "index_patterns": [
+          "logs-legacy-*"
+        ],
+        "order": 9,
+        "version": 2
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "legacy_template_named_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "DELETE",
+      "path": "/_template/probe-legacy-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_root_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "GET",
+      "path": "/logs-index-root-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_root_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "HEAD",
+      "path": "/logs-index-root-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_root_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "DELETE",
+      "path": "/logs-index-root-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "PUT",
+      "path": "/_component_template/probe-component-template",
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_named_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "GET",
+      "path": "/_component_template/probe-component-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_named_head",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "HEAD",
+      "path": "/_component_template/probe-component-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_named_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "POST",
+      "path": "/_component_template/probe-component-template",
+      "body": {
+        "template": {
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_named_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "DELETE",
+      "path": "/_component_template/probe-component-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "data_stream_named_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "PUT",
+      "path": "/_data_stream/logs-ds-prod",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "data_stream_named_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "GET",
+      "path": "/_data_stream/logs-ds-prod",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "data_stream_named_delete",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "DELETE",
+      "path": "/_data_stream/logs-ds-prod",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tier_cancel_post",
+      "family": "misc",
+      "inventory_path": "/_tier/_cancel/{index}",
+      "method": "POST",
+      "path": "/_tier/_cancel/logs-stateful-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tier_target_post",
+      "family": "misc",
+      "inventory_path": "/{index}/_tier/{targetTier}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_tier/warm",
       "expected_runtime_status": "stateful-route-present"
     }
   ]

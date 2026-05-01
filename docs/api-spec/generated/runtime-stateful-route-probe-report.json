@@ -2,25 +2,248 @@
   "base_url": "http://127.0.0.1:19200",
   "by_family": {
     "document-and-bulk": {
-      "passed": 1
+      "passed": 31
     },
     "index-and-metadata": {
-      "passed": 1
+      "passed": 87
+    },
+    "misc": {
+      "passed": 4
     },
     "root-cluster-node": {
-      "passed": 13
+      "passed": 30
     },
     "search": {
-      "passed": 1
+      "passed": 32
+    },
+    "snapshot-migration": {
+      "passed": 6
     },
     "snapshot-migration-interop": {
-      "passed": 1
+      "passed": 12
     },
     "vector-and-ml": {
-      "passed": 1
+      "passed": 7
     }
   },
   "cases": [
+    {
+      "body": {
+        "requests": [
+          {
+            "id": "root-request",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "GET",
+      "name": "rank_eval_root_get",
+      "path": "/_rank_eval",
+      "result": {
+        "body": "{\"details\":{\"evaluated_docs\":1,\"matched_docs\":1,\"target\":\"_all\"},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "requests": [
+          {
+            "id": "root-request-post",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "POST",
+      "name": "rank_eval_root_post",
+      "path": "/_rank_eval",
+      "result": {
+        "body": "{\"details\":{\"evaluated_docs\":1,\"matched_docs\":1,\"target\":\"_all\"},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "requests": [
+          {
+            "id": "target-request",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "GET",
+      "name": "rank_eval_target_get",
+      "path": "/logs-stateful-probe/_rank_eval",
+      "result": {
+        "body": "{\"details\":{\"evaluated_docs\":1,\"matched_docs\":1,\"target\":\"logs-stateful-probe\"},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "requests": [
+          {
+            "id": "target-request-post",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "POST",
+      "name": "rank_eval_target_post",
+      "path": "/logs-stateful-probe/_rank_eval",
+      "result": {
+        "body": "{\"details\":{\"evaluated_docs\":1,\"matched_docs\":1,\"target\":\"logs-stateful-probe\"},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "description": "stateful ingest pipeline",
+        "processors": []
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "PUT",
+      "name": "ingest_pipeline_named_put",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "GET",
+      "name": "ingest_pipeline_named_get",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "result": {
+        "body": "{\"probe-ingest-pipeline\":{\"description\":\"stateful ingest pipeline\",\"processors\":[]}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "simulate root"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/_simulate",
+      "method": "POST",
+      "name": "ingest_pipeline_root_simulate_post",
+      "path": "/_ingest/pipeline/_simulate",
+      "result": {
+        "body": "{\"docs\":[{\"doc\":{\"_source\":{\"message\":\"simulate root\"}}}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "doc": {
+          "_source": {
+            "message": "simulate named"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}/_simulate",
+      "method": "POST",
+      "name": "ingest_pipeline_named_simulate_post",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline/_simulate",
+      "result": {
+        "body": "{\"docs\":[{\"doc\":{\"_source\":{\"message\":\"simulate named\"}}}],\"pipeline_id\":\"probe-ingest-pipeline\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "DELETE",
+      "name": "ingest_pipeline_named_delete",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "params": {
+          "value": 7
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "POST",
+      "name": "painless_execute_post",
+      "path": "/_scripts/painless/_execute",
+      "result": {
+        "body": "{\"result\":7}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
@@ -57,7 +280,7 @@
       "name": "weighted_routing_delete_global",
       "path": "/_cluster/routing/awareness/weights",
       "result": {
-        "body": "{\"error\":{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
+        "body": "{\"error\":{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version -1 \",\"root_cause\":[{\"reason\":\"requested version is -2 but cluster weighted routing metadata is at a different version -1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
         "status": 409
       },
       "runtime_status": "stateful-route-present",
@@ -72,7 +295,7 @@
       "name": "cluster_reroute_post",
       "path": "/_cluster/reroute",
       "result": {
-        "body": "{\"acknowledged\":true,\"state\":{\"blocks\":{},\"cluster_manager_node\":\"steelsearch-dev-node\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-cat-next-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-compat-alias-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-root-cat-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"remote-store-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"remote-store-stats-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-cat-next-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-compat-alias-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-root-cat-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"remote-store-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"remote-store-stats-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}}",
+        "body": "{\"acknowledged\":true,\"state\":{\"blocks\":{},\"cluster_manager_node\":\"steelsearch-dev-node\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-index-root-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -86,7 +309,7 @@
       "name": "allocation_explain_get",
       "path": "/_cluster/allocation/explain",
       "result": {
-        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"current_state\":\"unassigned\",\"index\":\"logs-000001\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1}],\"primary\":false,\"shard\":0,\"unassigned_info\":{\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
+        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"current_state\":\"unassigned\",\"index\":\"logs-index-root-probe\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1}],\"primary\":false,\"shard\":0,\"unassigned_info\":{\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -147,8 +370,8 @@
       "name": "weighted_routing_attribute_put",
       "path": "/_cluster/routing/awareness/zone/weights",
       "result": {
-        "body": "{\"error\":{\"reason\":\"requested version is -1 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is -1 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
-        "status": 409
+        "body": "{\"acknowledged\":true}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "status": "passed"
@@ -161,7 +384,7 @@
       "name": "weighted_routing_attribute_get",
       "path": "/_cluster/routing/awareness/zone/weights",
       "result": {
-        "body": "{\"_version\":1,\"discovered_cluster_manager\":true,\"weights\":{}}",
+        "body": "{\"_version\":0,\"discovered_cluster_manager\":true,\"weights\":{\"zone-a\":\"1.0\",\"zone-b\":\"0.0\"}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -178,8 +401,8 @@
       "name": "weighted_routing_attribute_delete",
       "path": "/_cluster/routing/awareness/zone/weights",
       "result": {
-        "body": "{\"error\":{\"reason\":\"requested version is 0 but cluster weighted routing metadata is at a different version 1 \",\"root_cause\":[{\"reason\":\"requested version is 0 but cluster weighted routing metadata is at a different version 1 \",\"type\":\"unsupported_weighted_routing_state_exception\"}],\"type\":\"unsupported_weighted_routing_state_exception\"},\"status\":409}",
-        "status": 409
+        "body": "{\"acknowledged\":true}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "status": "passed"
@@ -213,6 +436,34 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/reload_secure_settings",
+      "method": "POST",
+      "name": "nodes_reload_secure_settings_post",
+      "path": "/_nodes/reload_secure_settings",
+      "result": {
+        "body": "{\"_nodes\":{\"failed\":0,\"successful\":1,\"total\":1},\"cluster_name\":\"steelsearch-dev\",\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\"}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/{nodeId}/reload_secure_settings",
+      "method": "POST",
+      "name": "nodes_reload_secure_settings_target_post",
+      "path": "/_nodes/_all/reload_secure_settings",
+      "result": {
+        "body": "{\"_nodes\":{\"failed\":0,\"successful\":1,\"total\":1},\"cluster_name\":\"steelsearch-dev\",\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\"}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
       "body": {
         "settings": {
           "index.number_of_replicas": 0,
@@ -227,6 +478,110 @@
       "path": "/logs-stateful-created",
       "result": {
         "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-created\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "text": "Bulk probe text"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_analyze",
+      "method": "POST",
+      "name": "analyze_root_post",
+      "path": "/_analyze",
+      "result": {
+        "body": "{\"tokens\":[{\"end_offset\":4,\"position\":0,\"start_offset\":0,\"token\":\"bulk\",\"type\":\"word\"},{\"end_offset\":10,\"position\":1,\"start_offset\":5,\"token\":\"probe\",\"type\":\"word\"},{\"end_offset\":15,\"position\":2,\"start_offset\":11,\"token\":\"text\",\"type\":\"word\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "text": "Target analyze text"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_analyze",
+      "method": "POST",
+      "name": "analyze_target_post",
+      "path": "/logs-stateful-probe/_analyze",
+      "result": {
+        "body": "{\"tokens\":[{\"end_offset\":6,\"position\":0,\"start_offset\":0,\"token\":\"target\",\"type\":\"word\"},{\"end_offset\":14,\"position\":1,\"start_offset\":7,\"token\":\"analyze\",\"type\":\"word\"},{\"end_offset\":19,\"position\":2,\"start_offset\":15,\"token\":\"text\",\"type\":\"word\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush",
+      "method": "POST",
+      "name": "flush_root_post",
+      "path": "/_flush",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":3,\"total\":3}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush/synced",
+      "method": "POST",
+      "name": "flush_synced_root_post",
+      "path": "/_flush/synced",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":3,\"total\":3}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush",
+      "method": "POST",
+      "name": "flush_target_post",
+      "path": "/logs-stateful-probe/_flush",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush/synced",
+      "method": "POST",
+      "name": "flush_synced_target_post",
+      "path": "/logs-stateful-probe/_flush/synced",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_upgrade",
+      "method": "POST",
+      "name": "upgrade_root_post",
+      "path": "/_upgrade",
+      "result": {
+        "body": "{\"indices\":{\"logs-index-root-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-created\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -249,6 +604,821 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "name": "delete_by_query_rethrottle_post",
+      "path": "/_delete_by_query/node-a:999/_rethrottle",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex/{taskId}/_rethrottle",
+      "method": "POST",
+      "name": "reindex_rethrottle_post",
+      "path": "/_reindex/node-a:999/_rethrottle",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "dest": {
+          "index": "logs-stateful-reindex"
+        },
+        "source": {
+          "index": "logs-stateful-probe"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "name": "reindex_post",
+      "path": "/_reindex",
+      "result": {
+        "body": "{\"batches\":1,\"created\":2,\"deleted\":0,\"failures\":[],\"noops\":0,\"requests_per_second\":-1.0,\"retries\":{\"bulk\":0,\"search\":0},\"throttled_millis\":0,\"throttled_until_millis\":0,\"timed_out\":false,\"took\":1,\"total\":2,\"updated\":0,\"version_conflicts\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "message": "create put probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "PUT",
+      "name": "create_doc_put",
+      "path": "/logs-stateful-probe/_create/create-put-doc",
+      "result": {
+        "body": "{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "status": 201
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "message": "create post probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "POST",
+      "name": "create_doc_post",
+      "path": "/logs-stateful-probe/_create/create-post-doc",
+      "result": {
+        "body": "{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":2,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "status": 201
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "message": "generated doc probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc",
+      "method": "POST",
+      "name": "index_doc_post",
+      "path": "/logs-stateful-probe/_doc",
+      "result": {
+        "body": "{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":3,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "status": 201
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "message": "put doc probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "PUT",
+      "name": "single_doc_put",
+      "path": "/logs-stateful-probe/_doc/doc-put-probe",
+      "result": {
+        "body": "{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":4,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "status": 201
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "message": "post doc probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "POST",
+      "name": "single_doc_post",
+      "path": "/logs-stateful-probe/_doc/doc-post-probe",
+      "result": {
+        "body": "{\"_id\":\"doc-post-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":5,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "status": 201
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "GET",
+      "name": "single_doc_get",
+      "path": "/logs-stateful-probe/_doc/doc-1",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"},\"_version\":1,\"found\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "HEAD",
+      "name": "single_doc_head",
+      "path": "/logs-stateful-probe/_doc/doc-1",
+      "result": {
+        "body": "",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "DELETE",
+      "name": "single_doc_delete",
+      "path": "/logs-stateful-probe/_doc/doc-post-probe",
+      "result": {
+        "body": "{\"_id\":\"doc-post-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":6,\"_version\":2,\"forced_refresh\":false,\"result\":\"deleted\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "doc": {
+          "processed": true
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update/{id}",
+      "method": "POST",
+      "name": "single_doc_update_post",
+      "path": "/logs-stateful-probe/_update/doc-1",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":7,\"_version\":2,\"forced_refresh\":false,\"result\":\"updated\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "description": "probe search pipeline",
+        "request_processors": [],
+        "response_processors": []
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "PUT",
+      "name": "search_pipeline_put",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "GET",
+      "name": "search_pipeline_get",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "result": {
+        "body": "{\"id\":\"probe-search-pipeline\",\"pipeline\":{\"description\":\"probe search pipeline\",\"request_processors\":[],\"response_processors\":[]}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "DELETE",
+      "name": "search_pipeline_delete",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time/_all",
+      "method": "GET",
+      "name": "search_point_in_time_all_get",
+      "path": "/_search/point_in_time/_all",
+      "result": {
+        "body": "{\"pits\":[{\"id\":\"pit-1\"},{\"id\":\"pit-2\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time/_all",
+      "method": "DELETE",
+      "name": "search_point_in_time_all_delete",
+      "path": "/_search/point_in_time/_all",
+      "result": {
+        "body": "{\"num_freed\":2,\"succeeded\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "scroll_id": "scroll-1"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "GET",
+      "name": "search_scroll_root_get",
+      "path": "/_search/scroll",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-1\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "POST",
+      "name": "search_scroll_named_post",
+      "path": "/_search/scroll/scroll-2",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-2\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "DELETE",
+      "name": "search_scroll_named_delete",
+      "path": "/_search/scroll/scroll-3",
+      "result": {
+        "body": "{\"num_freed\":1,\"succeeded\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_msearch/template",
+      "method": "POST",
+      "name": "msearch_template_root_post",
+      "path": "/_msearch/template",
+      "result": {
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":8}},\"timed_out\":false,\"took\":1}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "source": {
+          "query": {
+            "match_all": {}
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_render/template",
+      "method": "POST",
+      "name": "render_template_root_post",
+      "path": "/_render/template",
+      "result": {
+        "body": "{\"template_output\":{\"query\":{\"match_all\":{}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_render/template/{id}",
+      "method": "GET",
+      "name": "render_template_named_get",
+      "path": "/_render/template/probe-template",
+      "result": {
+        "body": "{\"_id\":\"probe-template\",\"template_output\":{\"query\":{\"match_all\":{}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "source": {
+          "query": {
+            "match_all": {}
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_render/template/{id}",
+      "method": "POST",
+      "name": "render_template_named_post",
+      "path": "/_render/template/probe-template",
+      "result": {
+        "body": "{\"_id\":\"probe-template\",\"template_output\":{\"query\":{\"match_all\":{}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/template",
+      "method": "POST",
+      "name": "search_template_root_post",
+      "path": "/_search/template",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":8}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch/template",
+      "method": "POST",
+      "name": "msearch_template_target_post",
+      "path": "/logs-stateful-probe/_msearch/template",
+      "result": {
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":6}},\"timed_out\":false,\"took\":1}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_search/template",
+      "method": "POST",
+      "name": "search_template_target_post",
+      "path": "/logs-stateful-probe/_search/template",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":6}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_count",
+      "method": "POST",
+      "name": "count_root_post",
+      "path": "/_count",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"count\":8}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_count",
+      "method": "POST",
+      "name": "count_target_post",
+      "path": "/logs-stateful-probe/_count",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"count\":6}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_validate/query",
+      "method": "POST",
+      "name": "validate_query_root_post",
+      "path": "/_validate/query",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"explanations\":[{\"explanation\":\"query keys: 1\",\"index\":\"_all\",\"valid\":true}],\"valid\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_validate/query",
+      "method": "POST",
+      "name": "validate_query_target_post",
+      "path": "/logs-stateful-probe/_validate/query",
+      "result": {
+        "body": "{\"_indices\":[\"logs-stateful-probe\"],\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"explanations\":[{\"explanation\":\"query keys: 1\",\"index\":\"logs-stateful-probe\",\"valid\":true}],\"valid\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "name": "search_root_post",
+      "path": "/_search",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"no such index [_all]\",\"type\":\"index_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "id": "pit-1"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time",
+      "method": "DELETE",
+      "name": "search_point_in_time_root_delete",
+      "path": "/_search/point_in_time",
+      "result": {
+        "body": "{\"num_freed\":0,\"succeeded\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_search/point_in_time",
+      "method": "POST",
+      "name": "search_point_in_time_target_post",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "result": {
+        "body": "{\"id\":\"pit-3\",\"keep_alive\":\"1m\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "scroll_id": "scroll-4"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "POST",
+      "name": "search_scroll_root_post",
+      "path": "/_search/scroll",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-4\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "scroll_id": "scroll-5"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "DELETE",
+      "name": "search_scroll_root_delete",
+      "path": "/_search/scroll",
+      "result": {
+        "body": "{\"num_freed\":1,\"succeeded\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_msearch",
+      "method": "POST",
+      "name": "msearch_root_post",
+      "path": "/_msearch",
+      "result": {
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":8}},\"timed_out\":false,\"took\":1}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_explain/{id}",
+      "method": "POST",
+      "name": "explain_target_post",
+      "path": "/logs-stateful-probe/_explain/doc-1",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"explanation\":{\"description\":\"query matched document\",\"value\":1.0},\"get\":{\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"found\":true},\"matched\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch",
+      "method": "POST",
+      "name": "msearch_target_post",
+      "path": "/logs-stateful-probe/_msearch",
+      "result": {
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":6}},\"timed_out\":false,\"took\":1}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_delete_by_query",
+      "method": "POST",
+      "name": "delete_by_query_post",
+      "path": "/logs-stateful-probe/_delete_by_query",
+      "result": {
+        "body": "{\"batches\":1,\"deleted\":6,\"failures\":[],\"noops\":0,\"requests_per_second\":-1.0,\"retries\":{\"bulk\":0,\"search\":0},\"throttled_millis\":0,\"throttled_until_millis\":0,\"timed_out\":false,\"took\":1,\"total\":6,\"version_conflicts\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "name": "update_by_query_post",
+      "path": "/logs-stateful-probe/_update_by_query",
+      "result": {
+        "body": "{\"batches\":0,\"deleted\":0,\"failures\":[],\"noops\":0,\"requests_per_second\":-1.0,\"retries\":{\"bulk\":0,\"search\":0},\"throttled_millis\":0,\"throttled_until_millis\":0,\"timed_out\":false,\"took\":1,\"total\":0,\"updated\":0,\"version_conflicts\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "name": "update_by_query_rethrottle_post",
+      "path": "/_update_by_query/node-a:999/_rethrottle",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "POST",
+      "name": "bulk_root_post",
+      "path": "/_bulk",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk root post\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_primary_term\":1,\"_seq_no\":8,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "PUT",
+      "name": "bulk_root_put",
+      "path": "/_bulk",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-2\"}}\n{\"message\":\"bulk root put\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_primary_term\":1,\"_seq_no\":9,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
+      "method": "PUT",
+      "name": "bulk_target_put",
+      "path": "/logs-stateful-probe/_bulk",
+      "raw_body": "{\"index\":{\"_id\":\"doc-3\"}}\n{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":10,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk/stream",
+      "method": "POST",
+      "name": "bulk_stream_root_post",
+      "path": "/_bulk/stream",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk stream root post\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":11,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk/stream",
+      "method": "PUT",
+      "name": "bulk_stream_root_put",
+      "path": "/_bulk/stream",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-2\"}}\n{\"message\":\"bulk stream root put\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":12,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk/stream",
+      "method": "POST",
+      "name": "bulk_stream_target_post",
+      "path": "/logs-stateful-probe/_bulk/stream",
+      "raw_body": "{\"index\":{\"_id\":\"doc-4\"}}\n{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":13,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk/stream",
+      "method": "PUT",
+      "name": "bulk_stream_target_put",
+      "path": "/logs-stateful-probe/_bulk/stream",
+      "raw_body": "{\"index\":{\"_id\":\"doc-5\"}}\n{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":14,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
       "body": {
         "query": {
           "match_all": {}
@@ -261,7 +1431,7 @@
       "name": "search_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":2}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":10,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":13,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":14,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":3}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -288,6 +1458,182 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "GET",
+      "name": "snapshot_repository_get",
+      "path": "/_snapshot/repo-stateful-probe",
+      "result": {
+        "body": "{\"repo-stateful-probe\":{\"settings\":{\"location\":\"/tmp/steelsearch-stateful-probe-repo\"},\"type\":\"fs\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo-post"
+        },
+        "type": "fs"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "POST",
+      "name": "snapshot_repository_post",
+      "path": "/_snapshot/repo-stateful-probe-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "DELETE",
+      "name": "snapshot_repository_delete",
+      "path": "/_snapshot/repo-stateful-probe-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/_cleanup",
+      "method": "POST",
+      "name": "snapshot_repository_cleanup_post",
+      "path": "/_snapshot/repo-stateful-probe/_cleanup",
+      "result": {
+        "body": "{\"results\":{\"deleted_blobs\":0,\"deleted_bytes\":0}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/_verify",
+      "method": "POST",
+      "name": "snapshot_repository_verify_post",
+      "path": "/_snapshot/repo-stateful-probe/_verify",
+      "result": {
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\"}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "include_global_state": false,
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "PUT",
+      "name": "snapshot_create_put",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe",
+      "result": {
+        "body": "{\"accepted\":true,\"snapshot\":{\"ignore_unavailable\":false,\"include_global_state\":false,\"indices\":[\"logs-stateful-probe\"],\"metadata\":{},\"partial\":false,\"snapshot\":\"snapshot-stateful-probe\",\"state\":\"SUCCESS\",\"uuid\":\"snapshot-stateful-probe-uuid\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "GET",
+      "name": "snapshot_readback_get",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe",
+      "result": {
+        "body": "{\"snapshots\":[{\"include_global_state\":false,\"indices\":[\"logs-stateful-probe\"],\"metadata\":{},\"snapshot\":\"snapshot-stateful-probe\",\"state\":\"SUCCESS\",\"uuid\":\"snapshot-stateful-probe-uuid\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "include_global_state": false,
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "POST",
+      "name": "snapshot_create_post",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-post",
+      "result": {
+        "body": "{\"accepted\":true,\"snapshot\":{\"ignore_unavailable\":false,\"include_global_state\":false,\"indices\":[\"logs-stateful-probe\"],\"metadata\":{},\"partial\":false,\"snapshot\":\"snapshot-stateful-post\",\"state\":\"SUCCESS\",\"uuid\":\"snapshot-stateful-post-uuid\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "DELETE",
+      "name": "snapshot_delete_delete",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-post",
+      "result": {
+        "body": "{\"acknowledged\":true,\"snapshot\":{\"repository\":\"repo-stateful-probe\",\"snapshot\":\"snapshot-stateful-post\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}",
+      "method": "PUT",
+      "name": "snapshot_clone_put",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_clone/snapshot-stateful-clone",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "indices": "logs-stateful-probe",
+        "rename_pattern": "(.+)",
+        "rename_replacement": "$1-restored"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "method": "POST",
+      "name": "snapshot_restore_post",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_restore",
+      "result": {
+        "body": "{\"accepted\":true,\"snapshot\":{\"indices\":\"logs-stateful-probe\",\"shards\":{\"failed\":0,\"successful\":1,\"total\":1},\"snapshot\":\"snapshot-a\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
       "body": {},
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
@@ -296,7 +1642,256 @@
       "name": "tasks_cancel_post",
       "path": "/_tasks/_cancel",
       "result": {
-        "body": "{\"node_failures\":[{\"caused_by\":{\"node_id\":\"\",\"reason\":\"No such node []\",\"type\":\"no_such_node_exception\"},\"node_id\":\"\",\"reason\":\"Failed node []\",\"type\":\"failed_node_exception\"}],\"nodes\":{}}",
+        "body": "{\"node_failures\":[],\"nodes\":{},\"task_failures\":[]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/{task_id}/_cancel",
+      "method": "POST",
+      "name": "tasks_cancel_by_id_post",
+      "path": "/_tasks/node-a:999/_cancel",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "POST",
+      "name": "dangling_import_post",
+      "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "DELETE",
+      "name": "dangling_delete_delete",
+      "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_filecache/prune",
+      "method": "POST",
+      "name": "filecache_prune_post",
+      "path": "/_filecache/prune",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "indices": [
+          "logs-stateful-probe"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_remotestore/_restore",
+      "method": "POST",
+      "name": "remote_store_restore_post",
+      "path": "/_remotestore/_restore",
+      "result": {
+        "body": "{\"accepted\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "GET",
+      "name": "search_shards_global_get",
+      "path": "/_search_shards",
+      "result": {
+        "body": "{\"indices\":{\"logs-index-root-probe\":{},\"logs-stateful-bulk-root\":{},\"logs-stateful-bulk-stream-root\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"logs-stateful-reindex\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-index-root-probe-0\"},\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-root-0\"},\"index\":\"logs-stateful-bulk-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-stream-root-0\"},\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-0\"},\"index\":\"logs-stateful-reindex\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "POST",
+      "name": "search_shards_global_post",
+      "path": "/_search_shards",
+      "result": {
+        "body": "{\"indices\":{\"logs-index-root-probe\":{},\"logs-stateful-bulk-root\":{},\"logs-stateful-bulk-stream-root\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"logs-stateful-reindex\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-index-root-probe-0\"},\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-root-0\"},\"index\":\"logs-stateful-bulk-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-stream-root-0\"},\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-0\"},\"index\":\"logs-stateful-reindex\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "GET",
+      "name": "search_shards_target_get",
+      "path": "/logs-stateful-probe/_search_shards",
+      "result": {
+        "body": "{\"indices\":{\"logs-stateful-probe\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "POST",
+      "name": "search_shards_target_post",
+      "path": "/logs-stateful-probe/_search_shards",
+      "result": {
+        "body": "{\"indices\":{\"logs-stateful-probe\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "return params.value;"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "PUT",
+      "name": "stored_script_put",
+      "path": "/_scripts/probe-script",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "GET",
+      "name": "stored_script_get",
+      "path": "/_scripts/probe-script",
+      "result": {
+        "body": "{\"_id\":\"probe-script\",\"found\":true,\"script\":{\"lang\":\"painless\",\"source\":\"return params.value;\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": "{\"value\":\"{{value}}\"}"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "POST",
+      "name": "stored_script_post",
+      "path": "/_scripts/probe-script",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "DELETE",
+      "name": "stored_script_delete",
+      "path": "/_scripts/probe-script",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "return params.value;"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}/{context}",
+      "method": "PUT",
+      "name": "stored_script_context_put",
+      "path": "/_scripts/probe-script-context/filter",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": "{\"value\":\"{{value}}\"}"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}/{context}",
+      "method": "POST",
+      "name": "stored_script_context_post",
+      "path": "/_scripts/probe-script-context/template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -316,6 +1911,1595 @@
       "path": "/_plugins/_knn/models/_train",
       "result": {
         "body": "{\"model_id\":\"knn-model-1\",\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/_search",
+      "method": "GET",
+      "name": "knn_model_search_get",
+      "path": "/_plugins/_knn/models/_search",
+      "result": {
+        "body": "{\"hits\":{\"hits\":[{\"_id\":\"knn-model-1\",\"_source\":{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}}],\"total\":{\"relation\":\"eq\",\"value\":1}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "term": {
+            "model_id": "knn-model-1"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/_search",
+      "method": "POST",
+      "name": "knn_model_search_post",
+      "path": "/_plugins/_knn/models/_search",
+      "result": {
+        "body": "{\"hits\":{\"hits\":[{\"_id\":\"knn-model-1\",\"_source\":{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}}],\"total\":{\"relation\":\"eq\",\"value\":1}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
+      "method": "POST",
+      "name": "knn_clear_cache_post",
+      "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "result": {
+        "body": "{\"cleared_entries\":1,\"index\":\"logs-stateful-probe\",\"released_model_cache_bytes\":0,\"released_native_memory_bytes\":0,\"released_quantization_cache_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}",
+      "method": "GET",
+      "name": "knn_model_get",
+      "path": "/_plugins/_knn/models/knn-model-1",
+      "result": {
+        "body": "{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"model_id\":\"knn-model-1\",\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}",
+      "method": "DELETE",
+      "name": "knn_model_delete",
+      "path": "/_plugins/_knn/models/knn-model-1",
+      "result": {
+        "body": "{\"model_id\":\"knn-model-1\",\"result\":\"deleted\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "training_field": "tenant",
+        "training_index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}/_train",
+      "method": "POST",
+      "name": "knn_model_train_by_id_post",
+      "path": "/_plugins/_knn/models/probe-model/_train",
+      "result": {
+        "body": "{\"model_id\":\"probe-model\",\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "fields": [
+          "tenant",
+          "message"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "/_field_caps",
+      "method": "POST",
+      "name": "field_caps_root_post",
+      "path": "/_field_caps",
+      "result": {
+        "body": "{\"fields\":{\"@timestamp\":{\"date\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"date\"}},\"message\":{\"text\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"text\"}},\"tenant\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}}},\"indices\":[\"logs-index-root-probe\",\"logs-stateful-bulk-root\",\"logs-stateful-bulk-stream-root\",\"logs-stateful-created\",\"logs-stateful-probe\",\"logs-stateful-reindex\"]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "fields": [
+          "tenant",
+          "message"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "/{index}/_field_caps",
+      "method": "POST",
+      "name": "field_caps_target_post",
+      "path": "/logs-stateful-probe/_field_caps",
+      "result": {
+        "body": "{\"fields\":{\"message\":{\"text\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"text\"}},\"tenant\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}}},\"indices\":[\"logs-stateful-probe\"]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "GET",
+      "name": "settings_global_get",
+      "path": "/_settings",
+      "result": {
+        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index.number_of_replicas\":\"0\"}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\"}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\"}}},\"logs-stateful-created\":{\"settings\":{\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-probe\":{\"settings\":{\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\"}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": {
+          "number_of_replicas": 0
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "PUT",
+      "name": "settings_global_put",
+      "path": "/_settings",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "GET",
+      "name": "settings_target_get",
+      "path": "/logs-stateful-probe/_settings",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": {
+          "refresh_interval": "1s"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "PUT",
+      "name": "settings_target_put",
+      "path": "/logs-stateful-probe/_settings",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "GET",
+      "name": "mapping_target_get",
+      "path": "/logs-stateful-probe/_mapping",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"tenant\":{\"type\":\"keyword\"}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
+          "probe_region": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "PUT",
+      "name": "mapping_target_put",
+      "path": "/logs-stateful-probe/_mapping",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
+          "probe_service": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "POST",
+      "name": "mapping_target_post",
+      "path": "/logs-stateful-probe/_mapping",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "GET",
+      "name": "mappings_target_get",
+      "path": "/logs-stateful-probe/_mappings",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
+          "probe_env": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "PUT",
+      "name": "mappings_target_put",
+      "path": "/logs-stateful-probe/_mappings",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
+          "probe_team": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "POST",
+      "name": "mappings_target_post",
+      "path": "/logs-stateful-probe/_mappings",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias",
+      "method": "GET",
+      "name": "alias_root_get",
+      "path": "/_alias",
+      "result": {
+        "body": "{}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "alias": "logs-stateful-root-read",
+              "index": "logs-stateful-probe",
+              "is_write_index": true
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias",
+      "method": "PUT",
+      "name": "alias_root_put",
+      "path": "/_alias",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "GET",
+      "name": "aliases_root_get",
+      "path": "/_aliases",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-root-read\":{\"is_write_index\":true}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-probe",
+        "is_write_index": true
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "PUT",
+      "name": "alias_named_put",
+      "path": "/_alias/logs-stateful-named-write",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "indices": [
+          "logs-stateful-probe"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "POST",
+      "name": "alias_named_post",
+      "path": "/_alias/logs-stateful-named-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "GET",
+      "name": "alias_named_get",
+      "path": "/_alias/logs-stateful-root-read",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-root-read\":{\"is_write_index\":true}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "HEAD",
+      "name": "alias_named_head",
+      "path": "/_alias/logs-stateful-root-read",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "PUT",
+      "name": "aliases_named_put",
+      "path": "/_aliases/logs-stateful-plural-put",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "POST",
+      "name": "aliases_named_post",
+      "path": "/_aliases/logs-stateful-plural-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "alias": "logs-stateful-bulk-read",
+              "index": "logs-stateful-probe"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "POST",
+      "name": "aliases_root_post",
+      "path": "/_aliases",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "alias": "logs-stateful-index-collection",
+        "is_write_index": true
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "PUT",
+      "name": "index_alias_collection_put",
+      "path": "/logs-stateful-probe/_alias",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "GET",
+      "name": "index_alias_collection_get",
+      "path": "/logs-stateful-probe/_alias",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "HEAD",
+      "name": "index_alias_collection_head",
+      "path": "/logs-stateful-probe/_alias",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "is_write_index": true
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "PUT",
+      "name": "index_alias_named_put",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-put",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "POST",
+      "name": "index_alias_named_post",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "GET",
+      "name": "index_alias_named_get",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-index-collection\":{\"is_write_index\":true}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "HEAD",
+      "name": "index_alias_named_head",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "DELETE",
+      "name": "index_alias_named_delete",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "alias": "logs-stateful-index-bulk"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases",
+      "method": "PUT",
+      "name": "index_aliases_put",
+      "path": "/logs-stateful-probe/_aliases",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "PUT",
+      "name": "index_aliases_named_put",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-put",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "POST",
+      "name": "index_aliases_named_post",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "DELETE",
+      "name": "index_aliases_named_delete",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_block/{block}",
+      "method": "PUT",
+      "name": "index_block_put",
+      "path": "/logs-stateful-probe/_block/write",
+      "result": {
+        "body": "{\"acknowledged\":true,\"indices\":[\"logs-stateful-probe\"],\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "PUT",
+      "name": "index_clone_put",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-put",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-clone-put\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "POST",
+      "name": "index_clone_post",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-post",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-clone-post\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_shrink/{target}",
+      "method": "PUT",
+      "name": "index_shrink_put",
+      "path": "/logs-stateful-probe/_shrink/logs-stateful-shrink-put",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-shrink-put\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_shrink/{target}",
+      "method": "POST",
+      "name": "index_shrink_post",
+      "path": "/logs-stateful-probe/_shrink/logs-stateful-shrink-post",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-shrink-post\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_split/{target}",
+      "method": "PUT",
+      "name": "index_split_put",
+      "path": "/logs-stateful-probe/_split/logs-stateful-split-put",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-split-put\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_split/{target}",
+      "method": "POST",
+      "name": "index_split_post",
+      "path": "/logs-stateful-probe/_split/logs-stateful-split-post",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-split-post\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "target": "logs-stateful-scale-post"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_scale",
+      "method": "POST",
+      "name": "index_scale_post",
+      "path": "/logs-stateful-probe/_scale",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-scale-post\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover",
+      "method": "POST",
+      "name": "index_rollover_post",
+      "path": "/logs-rollover-write/_rollover",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"no rollover target [logs-rollover-write] found\",\"root_cause\":[{\"reason\":\"no rollover target [logs-rollover-write] found\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "setup": [
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-stateful-probe/_alias/logs-rollover-write"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover/{new_index}",
+      "method": "POST",
+      "name": "index_rollover_named_post",
+      "path": "/logs-rollover-write/_rollover/logs-rollover-probe-000002",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"no rollover target [logs-rollover-write] found\",\"root_cause\":[{\"reason\":\"no rollover target [logs-rollover-write] found\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_pause",
+      "method": "POST",
+      "name": "ingestion_pause_post",
+      "path": "/logs-stateful-probe/ingestion/_pause",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"PAUSED\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_resume",
+      "method": "POST",
+      "name": "ingestion_resume_post",
+      "path": "/logs-stateful-probe/ingestion/_resume",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_upgrade",
+      "method": "GET",
+      "name": "index_upgrade_get",
+      "path": "/logs-stateful-probe/_upgrade",
+      "result": {
+        "body": "{\"indices\":{\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_upgrade",
+      "method": "POST",
+      "name": "index_upgrade_post",
+      "path": "/logs-stateful-probe/_upgrade",
+      "result": {
+        "body": "{\"indices\":{\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_state",
+      "method": "GET",
+      "name": "ingestion_state_get",
+      "path": "/logs-stateful-probe/ingestion/_state",
+      "result": {
+        "body": "{\"index\":\"logs-stateful-probe\",\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "docs": [
+          {
+            "_id": "doc-1",
+            "_index": "logs-stateful-probe"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mget",
+      "method": "POST",
+      "name": "mget_root_post",
+      "path": "/_mget",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mget",
+      "method": "POST",
+      "name": "mget_target_post",
+      "path": "/logs-stateful-probe/_mget",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "docs": [
+          {
+            "_id": "doc-1",
+            "_index": "logs-stateful-probe"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mtermvectors",
+      "method": "POST",
+      "name": "mtermvectors_root_post",
+      "path": "/_mtermvectors",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mtermvectors",
+      "method": "POST",
+      "name": "mtermvectors_target_post",
+      "path": "/logs-stateful-probe/_mtermvectors",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_refresh",
+      "method": "POST",
+      "name": "refresh_root_post",
+      "path": "/_refresh",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":13,\"total\":13}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_refresh",
+      "method": "POST",
+      "name": "refresh_target_post",
+      "path": "/logs-stateful-probe/_refresh",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":2}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "id": "doc-1"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors",
+      "method": "POST",
+      "name": "termvectors_target_post",
+      "path": "/logs-stateful-probe/_termvectors",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors/{id}",
+      "method": "POST",
+      "name": "termvectors_target_id_post",
+      "path": "/logs-stateful-probe/_termvectors/doc-1",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_cache/clear",
+      "method": "POST",
+      "name": "cache_clear_root_post",
+      "path": "/_cache/clear",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":13,\"total\":13}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_cache/clear",
+      "method": "POST",
+      "name": "cache_clear_target_post",
+      "path": "/logs-stateful-probe/_cache/clear",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_close",
+      "method": "POST",
+      "name": "close_root_post",
+      "path": "/_close",
+      "result": {
+        "body": "{\"acknowledged\":true,\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_close",
+      "method": "POST",
+      "name": "close_target_post",
+      "path": "/logs-stateful-probe/_close",
+      "result": {
+        "body": "{\"acknowledged\":true,\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_forcemerge",
+      "method": "POST",
+      "name": "forcemerge_root_post",
+      "path": "/_forcemerge",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":13,\"total\":13}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_forcemerge",
+      "method": "POST",
+      "name": "forcemerge_target_post",
+      "path": "/logs-stateful-probe/_forcemerge",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "refresh_interval": "30s"
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "name": "index_template_simulate_post",
+      "path": "/_index_template/_simulate",
+      "result": {
+        "body": "{\"component_templates\":[],\"overlapping\":[],\"template\":{\"index_patterns\":[\"logs-sim-*\"],\"template\":{\"settings\":{\"index\":{\"refresh_interval\":\"30s\"}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate/{name}",
+      "method": "POST",
+      "name": "index_template_simulate_named_post",
+      "path": "/_index_template/_simulate/probe-index-template",
+      "result": {
+        "body": "{\"component_templates\":[],\"overlapping\":[],\"template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate_index/{name}",
+      "method": "POST",
+      "name": "index_template_simulate_index_post",
+      "path": "/_index_template/_simulate_index/logs-sim-000001",
+      "result": {
+        "body": "{\"component_templates\":[],\"overlapping\":[],\"template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "priority": 7,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "PUT",
+      "name": "index_template_named_put",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "GET",
+      "name": "index_template_named_get",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "{\"index_templates\":[{\"index_template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-index-template\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "HEAD",
+      "name": "index_template_named_head",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "template": {
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "POST",
+      "name": "index_template_named_post",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "DELETE",
+      "name": "index_template_named_delete",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_open",
+      "method": "POST",
+      "name": "open_root_post",
+      "path": "/_open",
+      "result": {
+        "body": "{\"acknowledged\":true,\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_open",
+      "method": "POST",
+      "name": "open_target_post",
+      "path": "/logs-stateful-probe/_open",
+      "result": {
+        "body": "{\"acknowledged\":true,\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index_patterns": [
+          "logs-legacy-*"
+        ],
+        "order": 7,
+        "version": 1
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "PUT",
+      "name": "legacy_template_named_put",
+      "path": "/_template/probe-legacy-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "GET",
+      "name": "legacy_template_named_get",
+      "path": "/_template/probe-legacy-template",
+      "result": {
+        "body": "{\"probe-legacy-template\":{\"index_patterns\":[\"logs-legacy-*\"],\"order\":7,\"version\":1}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "HEAD",
+      "name": "legacy_template_named_head",
+      "path": "/_template/probe-legacy-template",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index_patterns": [
+          "logs-legacy-*"
+        ],
+        "order": 9,
+        "version": 2
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "POST",
+      "name": "legacy_template_named_post",
+      "path": "/_template/probe-legacy-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "DELETE",
+      "name": "legacy_template_named_delete",
+      "path": "/_template/probe-legacy-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "GET",
+      "name": "index_root_get",
+      "path": "/logs-index-root-probe",
+      "result": {
+        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"},\"index.number_of_replicas\":\"0\"}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "HEAD",
+      "name": "index_root_head",
+      "path": "/logs-index-root-probe",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "DELETE",
+      "name": "index_root_delete",
+      "path": "/logs-index-root-probe",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "PUT",
+      "name": "component_template_named_put",
+      "path": "/_component_template/probe-component-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "GET",
+      "name": "component_template_named_get",
+      "path": "/_component_template/probe-component-template",
+      "result": {
+        "body": "{\"component_templates\":[{\"component_template\":{\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-component-template\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "HEAD",
+      "name": "component_template_named_head",
+      "path": "/_component_template/probe-component-template",
+      "result": {
+        "body": "",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "template": {
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "POST",
+      "name": "component_template_named_post",
+      "path": "/_component_template/probe-component-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "DELETE",
+      "name": "component_template_named_delete",
+      "path": "/_component_template/probe-component-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "PUT",
+      "name": "data_stream_named_put",
+      "path": "/_data_stream/logs-ds-prod",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "GET",
+      "name": "data_stream_named_get",
+      "path": "/_data_stream/logs-ds-prod",
+      "result": {
+        "body": "{\"data_streams\":[{\"generation\":1,\"indices\":[{\"index_name\":\".ds-logs-ds-prod-000001\"}],\"name\":\"logs-ds-prod\",\"status\":\"GREEN\",\"template\":\"probe-data-stream-template\",\"timestamp_field\":{\"name\":\"@timestamp\"}}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "DELETE",
+      "name": "data_stream_named_delete",
+      "path": "/_data_stream/logs-ds-prod",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "/_tier/_cancel/{index}",
+      "method": "POST",
+      "name": "tier_cancel_post",
+      "path": "/_tier/_cancel/logs-stateful-probe",
+      "result": {
+        "body": "{\"acknowledged\":true,\"indices\":[\"logs-stateful-probe\"]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "/{index}/_tier/{targetTier}",
+      "method": "POST",
+      "name": "tier_target_post",
+      "path": "/logs-stateful-probe/_tier/warm",
+      "result": {
+        "body": "{\"acknowledged\":true,\"indices\":[\"logs-stateful-probe\"],\"target_tier\":\"warm\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -367,9 +3551,150 @@
         "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"forced_refresh\":true,\"result\":\"created\"}",
         "status": 201
       }
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-1\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-2\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-3\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-4\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search?scroll=1m",
+      "result": {
+        "body": "{\"_scroll_id\":\"scroll-5\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "result": {
+        "body": "{\"id\":\"pit-1\",\"keep_alive\":\"1m\"}",
+        "status": 200
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "result": {
+        "body": "{\"id\":\"pit-2\",\"keep_alive\":\"1m\"}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "data_stream": {},
+        "index_patterns": [
+          "logs-ds-*"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      },
+      "method": "PUT",
+      "path": "/_index_template/probe-data-stream-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "priority": 7,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      },
+      "method": "PUT",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      }
+    },
+    {
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      },
+      "method": "PUT",
+      "path": "/logs-index-root-probe",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-index-root-probe\",\"shards_acknowledged\":true}",
+        "status": 200
+      }
     }
   ],
   "summary": {
-    "passed": 18
+    "passed": 209
   }
 }

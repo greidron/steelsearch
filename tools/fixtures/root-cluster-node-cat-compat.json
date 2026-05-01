@@ -89,6 +89,330 @@
       "extract": "dangling_indices"
     },
     {
+      "name": "dangling_import_ack",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_dangling/root-dangling-probe?accept_data_loss=true",
+      "extract": "acknowledged"
+    },
+    {
+      "name": "dangling_delete_ack",
+      "area": "operational",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "import-dangling",
+          "method": "POST",
+          "path": "/_dangling/root-dangling-probe-delete?accept_data_loss=true",
+          "expected_status": 200
+        },
+        {
+          "name": "delete-dangling",
+          "method": "DELETE",
+          "path": "/_dangling/root-dangling-probe-delete?accept_data_loss=true",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "filecache_prune_ack",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_filecache/prune",
+      "extract": "acknowledged"
+    },
+    {
+      "name": "remote_store_restore_accept",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_remotestore/_restore",
+      "body": {
+        "indices": [
+          "logs-root-cat-000001"
+        ]
+      },
+      "extract": "accepted"
+    },
+    {
+      "name": "settings_named_global_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_settings/index.number_of_shards",
+      "extract": "settings_named"
+    },
+    {
+      "name": "settings_named_target_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-000001/_settings/index.number_of_replicas",
+      "extract": "settings_named"
+    },
+    {
+      "name": "setting_named_target_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-000001/_setting/index.number_of_replicas",
+      "extract": "settings_named"
+    },
+    {
+      "name": "index_stats_metric_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_stats/docs",
+      "extract": "index_stats"
+    },
+    {
+      "name": "index_stats_target_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-*/_stats",
+      "extract": "index_stats"
+    },
+    {
+      "name": "index_stats_target_metric_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-*/_stats/docs",
+      "extract": "index_stats"
+    },
+    {
+      "name": "analyze_global_get_tokens",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_analyze?text=Quick%20Fox",
+      "extract": "analyze_tokens"
+    },
+    {
+      "name": "analyze_global_post_tokens",
+      "area": "metadata",
+      "method": "POST",
+      "path": "/_analyze",
+      "body": {
+        "text": "Jumped Over"
+      },
+      "extract": "analyze_tokens"
+    },
+    {
+      "name": "analyze_target_get_tokens",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-000001/_analyze?text=Hello%20World",
+      "extract": "analyze_tokens"
+    },
+    {
+      "name": "analyze_target_post_tokens",
+      "area": "metadata",
+      "method": "POST",
+      "path": "/logs-root-cat-000001/_analyze",
+      "body": {
+        "text": [
+          "Steel",
+          "Search"
+        ]
+      },
+      "extract": "analyze_tokens"
+    },
+    {
+      "name": "flush_global_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_flush",
+      "extract": "flush_shards"
+    },
+    {
+      "name": "flush_global_synced_shape",
+      "area": "metadata",
+      "method": "POST",
+      "path": "/_flush/synced",
+      "extract": "flush_shards"
+    },
+    {
+      "name": "flush_target_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-*/_flush",
+      "extract": "flush_shards"
+    },
+    {
+      "name": "flush_target_synced_shape",
+      "area": "metadata",
+      "method": "POST",
+      "path": "/logs-root-cat-*/_flush/synced",
+      "extract": "flush_shards"
+    },
+    {
+      "name": "resolve_index_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_resolve/index/logs-root-cat-*",
+      "extract": "resolve_index"
+    },
+    {
+      "name": "shard_stores_global_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_shard_stores",
+      "extract": "shard_stores"
+    },
+    {
+      "name": "shard_stores_target_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-*/_shard_stores",
+      "extract": "shard_stores"
+    },
+    {
+      "name": "upgrade_global_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/_upgrade",
+      "extract": "upgrade_status"
+    },
+    {
+      "name": "upgrade_global_post_shape",
+      "area": "metadata",
+      "method": "POST",
+      "path": "/_upgrade",
+      "extract": "upgrade_status"
+    },
+    {
+      "name": "upgrade_target_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-*/_upgrade",
+      "extract": "upgrade_status"
+    },
+    {
+      "name": "upgrade_target_post_shape",
+      "area": "metadata",
+      "method": "POST",
+      "path": "/logs-root-cat-*/_upgrade",
+      "extract": "upgrade_status"
+    },
+    {
+      "name": "ingestion_state_shape",
+      "area": "metadata",
+      "method": "GET",
+      "path": "/logs-root-cat-000001/ingestion/_state",
+      "extract": "ingestion_state"
+    },
+    {
+      "name": "snapshot_repository_get_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_snapshot/repo-root-cat-probe",
+      "extract": "snapshot_repository"
+    },
+    {
+      "name": "snapshot_repository_post_ack",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_snapshot/repo-root-cat-post-probe",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-root-cat-post-probe"
+        }
+      },
+      "extract": "acknowledged"
+    },
+    {
+      "name": "snapshot_repository_delete_ack",
+      "area": "operational",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "create-snapshot-repository",
+          "method": "PUT",
+          "path": "/_snapshot/repo-root-cat-delete-probe",
+          "body": {
+            "type": "fs",
+            "settings": {
+              "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-root-cat-delete-probe"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "delete-snapshot-repository",
+          "method": "DELETE",
+          "path": "/_snapshot/repo-root-cat-delete-probe",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "snapshot_repository_cleanup_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_snapshot/repo-root-cat-probe/_cleanup",
+      "extract": "snapshot_cleanup"
+    },
+    {
+      "name": "snapshot_repository_verify_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_snapshot/repo-root-cat-probe/_verify",
+      "extract": "snapshot_repository_verify"
+    },
+    {
+      "name": "snapshot_readback_shape",
+      "area": "operational",
+      "extract": "snapshot_readback",
+      "steps": [
+        {
+          "name": "create-snapshot-readback",
+          "method": "PUT",
+          "path": "/_snapshot/repo-root-cat-probe/root-cat-snapshot-readback",
+          "body": {
+            "indices": "logs-root-cat-000001",
+            "include_global_state": false
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "readback-snapshot",
+          "method": "GET",
+          "path": "/_snapshot/repo-root-cat-probe/root-cat-snapshot-readback",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "snapshot_create_post_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_snapshot/repo-root-cat-probe/root-cat-snapshot-post",
+      "body": {
+        "indices": "logs-root-cat-000001",
+        "include_global_state": false
+      },
+      "extract": "snapshot_create"
+    },
+    {
+      "name": "snapshot_delete_ack",
+      "area": "operational",
+      "extract": "snapshot_delete",
+      "steps": [
+        {
+          "name": "create-snapshot-delete",
+          "method": "PUT",
+          "path": "/_snapshot/repo-root-cat-probe/root-cat-snapshot-delete",
+          "body": {
+            "indices": "logs-root-cat-000001",
+            "include_global_state": false
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "delete-snapshot",
+          "method": "DELETE",
+          "path": "/_snapshot/repo-root-cat-probe/root-cat-snapshot-delete",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
       "name": "cat_allocation_text",
       "area": "operational",
       "method": "GET",
@@ -346,6 +670,27 @@
       "extract": "status_only"
     },
     {
+      "name": "tasks_cancel_by_id_missing",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_tasks/node-a:999/_cancel",
+      "extract": "error_response"
+    },
+    {
+      "name": "nodes_reload_secure_settings_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_nodes/reload_secure_settings",
+      "extract": "reload_secure_settings"
+    },
+    {
+      "name": "nodes_reload_secure_settings_target_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_nodes/_all/reload_secure_settings",
+      "extract": "reload_secure_settings"
+    },
+    {
       "name": "cluster_stats_nodes_all_shape",
       "area": "operational",
       "method": "GET",
@@ -486,6 +831,25 @@
       ]
     },
     {
+      "name": "remote_store_metadata_existing_index_shard",
+      "area": "operational",
+      "extract": "remote_store_metadata",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/remote-store-probe-shard",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-remote-store-metadata-shard",
+          "method": "GET",
+          "path": "/_remotestore/metadata/remote-store-probe-shard/0"
+        }
+      ]
+    },
+    {
       "name": "remote_store_stats_missing_index",
       "area": "operational",
       "method": "GET",
@@ -512,11 +876,188 @@
       ]
     },
     {
+      "name": "remote_store_stats_existing_index_shard",
+      "area": "operational",
+      "extract": "remote_store_stats",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/remote-store-stats-probe-shard",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-remote-store-stats-shard",
+          "method": "GET",
+          "path": "/_remotestore/stats/remote-store-stats-probe-shard/0"
+        }
+      ]
+    },
+    {
+      "name": "recovery_global_shape",
+      "area": "operational",
+      "extract": "recovery_api",
+      "steps": [
+        {
+          "name": "create-recovery-index-a",
+          "method": "PUT",
+          "path": "/logs-recovery-probe-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "create-recovery-index-b",
+          "method": "PUT",
+          "path": "/metrics-recovery-probe-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-recovery-global",
+          "method": "GET",
+          "path": "/_recovery"
+        }
+      ]
+    },
+    {
+      "name": "recovery_target_shape",
+      "area": "operational",
+      "extract": "recovery_api",
+      "steps": [
+        {
+          "name": "create-recovery-index-target-a",
+          "method": "PUT",
+          "path": "/logs-recovery-target-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "create-recovery-index-target-b",
+          "method": "PUT",
+          "path": "/metrics-recovery-target-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-recovery-target",
+          "method": "GET",
+          "path": "/logs-*/_recovery"
+        }
+      ]
+    },
+    {
+      "name": "segments_global_shape",
+      "area": "operational",
+      "extract": "segments_api",
+      "steps": [
+        {
+          "name": "create-segments-index-a",
+          "method": "PUT",
+          "path": "/logs-segments-probe-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "create-segments-index-b",
+          "method": "PUT",
+          "path": "/metrics-segments-probe-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-segments-global",
+          "method": "GET",
+          "path": "/_segments"
+        }
+      ]
+    },
+    {
+      "name": "segments_target_shape",
+      "area": "operational",
+      "extract": "segments_api",
+      "steps": [
+        {
+          "name": "create-segments-target-a",
+          "method": "PUT",
+          "path": "/logs-segments-target-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "create-segments-target-b",
+          "method": "PUT",
+          "path": "/metrics-segments-target-000001",
+          "body": {},
+          "expected_status": null
+        },
+        {
+          "name": "get-segments-target",
+          "method": "GET",
+          "path": "/logs-*/_segments"
+        }
+      ]
+    },
+    {
       "name": "snapshot_index_status_missing_repository",
       "area": "operational",
       "method": "GET",
       "path": "/_snapshot/missing-repo/missing-snapshot/test-index/_status",
       "extract": "snapshot_missing_repository"
+    },
+    {
+      "name": "snapshot_clone_ack",
+      "area": "operational",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "create-source-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/repo-root-cat-probe/root-snapshot-source",
+          "body": {
+            "indices": "logs-root-cat-000001",
+            "include_global_state": false
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "clone-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/repo-root-cat-probe/root-snapshot-source/_clone/root-snapshot-clone",
+          "body": {
+            "indices": "logs-root-cat-000001"
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "snapshot_restore_shape",
+      "area": "operational",
+      "extract": "snapshot_restore",
+      "steps": [
+        {
+          "name": "create-source-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/repo-root-cat-probe/root-snapshot-source",
+          "body": {
+            "indices": "logs-root-cat-000001",
+            "include_global_state": false
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "restore-snapshot",
+          "method": "POST",
+          "path": "/_snapshot/repo-root-cat-probe/root-snapshot-source/_restore",
+          "body": {
+            "indices": "logs-root-cat-000001",
+            "rename_pattern": "logs-root-cat-000001",
+            "rename_replacement": "logs-root-cat-restored"
+          },
+          "expected_status": 200
+        }
+      ]
     },
     {
       "name": "nodes_info_shape",
@@ -660,6 +1201,54 @@
           "name": "delete-script",
           "method": "DELETE",
           "path": "/_scripts/root-script-delete"
+        }
+      ]
+    },
+    {
+      "name": "stored_script_context_put_get_shape",
+      "area": "operational",
+      "extract": "stored_script_get",
+      "steps": [
+        {
+          "name": "put-script-context",
+          "method": "PUT",
+          "path": "/_scripts/root-script-context-put/filter",
+          "body": {
+            "script": {
+              "lang": "painless",
+              "source": "return params.value;"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-script-context",
+          "method": "GET",
+          "path": "/_scripts/root-script-context-put"
+        }
+      ]
+    },
+    {
+      "name": "stored_script_context_post_get_shape",
+      "area": "operational",
+      "extract": "stored_script_get",
+      "steps": [
+        {
+          "name": "post-script-context",
+          "method": "POST",
+          "path": "/_scripts/root-script-context-post/template",
+          "body": {
+            "script": {
+              "lang": "mustache",
+              "source": "{\"value\":\"{{value}}\"}"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "get-script-context-post",
+          "method": "GET",
+          "path": "/_scripts/root-script-context-post"
         }
       ]
     },

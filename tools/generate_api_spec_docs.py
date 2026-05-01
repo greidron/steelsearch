@@ -26,6 +26,17 @@ def read_tsv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f, delimiter="\t"))
 
 
+def include_rest_row(row: dict[str, str]) -> bool:
+    return not (
+        row["method"] == "DELETE"
+        and row["path_or_expression"] == "/"
+        and row["source"].endswith("RestDeleteIndexAction.java")
+    ) and not (
+        "/_opensearch_dashboards" in row["path_or_expression"]
+        and "route.getPath(" in row["path_or_expression"]
+    )
+
+
 def rest_family(row: dict[str, str]) -> str:
     src = row["source"]
     path = row["path_or_expression"]
@@ -395,6 +406,9 @@ def load_runtime_route_ledger() -> dict[tuple[str, str], str]:
         if not method or not path or not runtime_status:
             continue
         mapping[(method, path)] = runtime_status
+        normalized_path = normalize_openapi_path(path)
+        if normalized_path is not None:
+            mapping[(method, normalized_path)] = runtime_status
     return mapping
 
 
@@ -421,10 +435,15 @@ def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str
     updated: list[dict[str, str]] = []
     for row in rows:
         next_row = dict(row)
+        normalized_path = normalize_openapi_path(row["path_or_expression"])
         runtime_status = ledger.get((row["method"], row["path_or_expression"]))
+        if runtime_status is None and normalized_path is not None:
+            runtime_status = ledger.get((row["method"], normalized_path))
         if runtime_status == "implemented-read" and row["status"] in {"planned", "stubbed"}:
             next_row["status"] = "implemented-read"
         stateful_status = stateful_report.get((row["method"], row["path_or_expression"]))
+        if stateful_status is None and normalized_path is not None:
+            stateful_status = stateful_report.get((row["method"], normalized_path))
         if stateful_status == "stateful-route-present" and row["status"] in {"planned", "stubbed"}:
             next_row["status"] = "implemented-stateful"
         updated.append(next_row)
@@ -1290,7 +1309,7 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
 
 
 def main() -> None:
-    rest_rows = apply_runtime_route_status(read_tsv(REST_TSV))
+    rest_rows = apply_runtime_route_status([row for row in read_tsv(REST_TSV) if include_rest_row(row)])
     transport_rows = read_tsv(TRANSPORT_TSV)
     write_text(OUT_DIR / "rest-routes.md", render_rest_reference(rest_rows))
     write_text(OUT_DIR / "transport-actions.md", render_transport_reference(transport_rows))
