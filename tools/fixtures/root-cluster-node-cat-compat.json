@@ -605,6 +605,30 @@
           "path": "/_cluster/decommission/awareness"
         }
       ]
+    },
+    {
+      "name": "decommission_awareness_put_error",
+      "area": "operational",
+      "extract": "decommission_error",
+      "steps": [
+        {
+          "name": "set-awareness-attributes",
+          "method": "PUT",
+          "path": "/_cluster/settings",
+          "body": {
+            "persistent": {
+              "cluster.routing.allocation.awareness.attributes": "zone",
+              "cluster.routing.allocation.awareness.force.zone.values": "zone-a,zone-b"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "put-decommission-awareness",
+          "method": "PUT",
+          "path": "/_cluster/decommission/awareness/zone/zone-a"
+        }
+      ]
     }
   ]
 }

@@ -84,7 +84,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-stateful | PUT | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | POST | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | PUT | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |
-| root-cluster-node | planned | PUT | `/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}` | `deferred` | `no canonical runtime compare owner` |
+| root-cluster-node | implemented-stateful | PUT | `/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | DELETE | `/_cluster/decommission/awareness` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | planned | DELETE | `/_snapshot/{repository}` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | planned | DELETE | `/_snapshot/{repository}/{snapshot}` | `deferred` | `no canonical runtime compare owner` |

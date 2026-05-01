@@ -43,6 +43,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "decommission_awareness_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
+      "method": "PUT",
+      "path": "/_cluster/decommission/awareness/zone/zone-a",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "allocation_explain_get",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/allocation/explain",

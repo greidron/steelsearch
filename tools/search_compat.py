@@ -1196,6 +1196,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "entries": entries,
         }
+    if kind == "decommission_error":
+        error = body.get("error") if isinstance(body, dict) else None
+        root_cause = error.get("root_cause") if isinstance(error, dict) else None
+        first_root_cause = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
+        }
     if kind == "weighted_routing":
         weights = body.get("weights") if isinstance(body, dict) else None
         return {

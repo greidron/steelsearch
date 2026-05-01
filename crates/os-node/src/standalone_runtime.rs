@@ -4604,14 +4604,82 @@ impl SteelNode {
         attribute_name: &str,
         attribute_value: &str,
     ) -> RestResponse {
-        self.metadata_manifest_state
+        let configured_attributes =
+            self.cluster_setting_csv("cluster.routing.allocation.awareness.attributes");
+        if !configured_attributes.iter().any(|value| value == attribute_name) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "decommissioning_failed_exception",
+                                "reason": format!("[DecommissionAttribute{{attributeName='{attribute_name}', attributeValue='{attribute_value}'}}] invalid awareness attribute requested for decommissioning")
+                            }
+                        ],
+                        "type": "decommissioning_failed_exception",
+                        "reason": format!("[DecommissionAttribute{{attributeName='{attribute_name}', attributeValue='{attribute_value}'}}] invalid awareness attribute requested for decommissioning")
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let forced_values_key =
+            format!("cluster.routing.allocation.awareness.force.{attribute_name}.values");
+        let forced_values = self.cluster_setting_csv(&forced_values_key);
+        if !forced_values.iter().any(|value| value == attribute_value) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "decommissioning_failed_exception",
+                                "reason": format!("[DecommissionAttribute{{attributeName='{attribute_name}', attributeValue='{attribute_value}'}}] forced awareness attribute [{{}}] doesn't have the decommissioning attribute")
+                            }
+                        ],
+                        "type": "decommissioning_failed_exception",
+                        "reason": format!("[DecommissionAttribute{{attributeName='{attribute_name}', attributeValue='{attribute_value}'}}] forced awareness attribute [{{}}] doesn't have the decommissioning attribute")
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        let mut manifest = self
+            .metadata_manifest_state
             .lock()
-            .expect("metadata manifest state lock poisoned")["cluster_admin_state"]
-            ["decommission_awareness"] = serde_json::json!({
+            .expect("metadata manifest state lock poisoned");
+        let missing_weights = match manifest["cluster_admin_state"]["weighted_routing"][attribute_name]
+            ["weights"]
+            .as_object()
+        {
+            Some(weights) => weights.is_empty(),
+            None => true,
+        };
+        if missing_weights {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "decommissioning_failed_exception",
+                                "reason": format!("[DecommissionAttribute{{attributeName='{attribute_name}', attributeValue='{attribute_value}'}}] no weights are set to the attribute. Please set appropriate weights before triggering decommission action")
+                            }
+                        ],
+                        "type": "decommissioning_failed_exception",
+                        "reason": format!("[DecommissionAttribute{{attributeName='{attribute_name}', attributeValue='{attribute_value}'}}] no weights are set to the attribute. Please set appropriate weights before triggering decommission action")
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        manifest["cluster_admin_state"]["decommission_awareness"] = serde_json::json!({
             "attribute_name": attribute_name,
             "attribute_value": attribute_value,
             "status": "successful"
         });
+        drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
@@ -4712,6 +4780,31 @@ impl SteelNode {
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn cluster_setting_csv(&self, key: &str) -> Vec<String> {
+        let state = self
+            .cluster_settings_state
+            .lock()
+            .expect("cluster settings state lock poisoned");
+        let transient = state
+            .get("transient")
+            .and_then(Value::as_object)
+            .and_then(|section| section.get(key))
+            .and_then(Value::as_str);
+        let persistent = state
+            .get("persistent")
+            .and_then(Value::as_object)
+            .and_then(|section| section.get(key))
+            .and_then(Value::as_str);
+        transient
+            .or(persistent)
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
     }
 
     fn handle_tasks_get_route(&self, request: &RestRequest) -> RestResponse {
@@ -12677,15 +12770,30 @@ mod tests {
             RestMethod::Put,
             "/_cluster/decommission/awareness/zone/zone-a",
         ));
-        assert_eq!(decommission_put.status, 200);
-        assert_eq!(decommission_put.body["acknowledged"], true);
+        assert_eq!(decommission_put.status, 400);
+        assert_eq!(
+            decommission_put.body["error"]["type"],
+            Value::String("decommissioning_failed_exception".to_string())
+        );
+
+        let cluster_settings_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "cluster.routing.allocation.awareness.attributes": "zone",
+                        "cluster.routing.allocation.awareness.force.zone.values": "zone-a,zone-b"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(cluster_settings_put.status, 200);
 
         let status = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_cluster/decommission/awareness/zone/_status",
         ));
         assert_eq!(status.status, 200);
-        assert_eq!(status.body, serde_json::json!({ "zone-a": "successful" }));
+        assert_eq!(status.body, serde_json::json!({}));
 
         let mut weighted_put = RestRequest::new(
             RestMethod::Put,
@@ -12701,6 +12809,20 @@ mod tests {
         let weighted_put_response = node.handle_rest_request(weighted_put);
         assert_eq!(weighted_put_response.status, 200);
         assert_eq!(weighted_put_response.body["acknowledged"], true);
+
+        let decommission_put = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_cluster/decommission/awareness/zone/zone-a",
+        ));
+        assert_eq!(decommission_put.status, 200);
+        assert_eq!(decommission_put.body["acknowledged"], true);
+
+        let status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/decommission/awareness/zone/_status",
+        ));
+        assert_eq!(status.status, 200);
+        assert_eq!(status.body, serde_json::json!({ "zone-a": "successful" }));
 
         let weighted_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
