@@ -154,6 +154,13 @@ CAT_TASKS_REQUIRED_COLUMNS = {
     "version",
     "x_opaque_id",
 }
+CAT_TEMPLATES_REQUIRED_COLUMNS = {
+    "name",
+    "index_patterns",
+    "order",
+    "version",
+    "composed_of",
+}
 CAT_ALLOCATION_REQUIRED_COLUMNS = {
     "shards",
     "disk.indices",
@@ -366,6 +373,38 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 f"repository:{repository['name']}",
                 status_for(put_repository),
                 put_repository,
+            )
+        )
+    for template in fixture.get("legacy_templates", []):
+        put_template = http_json(
+            base_url,
+            "PUT",
+            f"/_template/{template['name']}",
+            resolve_fixture_placeholders(template.get("body", {})),
+            timeout,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"legacy_template:{template['name']}",
+                status_for(put_template),
+                put_template,
+            )
+        )
+    for template in fixture.get("index_templates", []):
+        put_template = http_json(
+            base_url,
+            "PUT",
+            f"/_index_template/{template['name']}",
+            resolve_fixture_placeholders(template.get("body", {})),
+            timeout,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"index_template:{template['name']}",
+                status_for(put_template),
+                put_template,
             )
         )
     return steps
@@ -1095,6 +1134,27 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "required_columns_present": sorted(CAT_TASKS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_templates":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+            template_names = {row.get("name") for row in rows if isinstance(row, dict)}
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+            template_names = set()
+            for line in lines[1:]:
+                parts = line.split()
+                if parts:
+                    template_names.add(parts[0])
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_TEMPLATES_REQUIRED_COLUMNS & columns),
+            "fixture_templates_present": sorted(
+                {"logs-template"} & {name for name in template_names if isinstance(name, str)}
+            ),
         }
     if kind == "node_stats":
         nodes = body.get("nodes") or {}

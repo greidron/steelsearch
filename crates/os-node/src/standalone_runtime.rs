@@ -1677,6 +1677,12 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path == "/_cat/tasks" {
             return Some(self.handle_cat_tasks_route(request));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/templates" {
+            return Some(self.handle_cat_templates_route(request, None));
+        }
+        if let Some(name) = request.path.strip_prefix("/_cat/templates/") {
+            return Some(self.handle_cat_templates_route(request, Some(name)));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6657,6 +6663,96 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_templates_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut rows = Vec::new();
+        if let Some(templates) = manifest["templates"]["legacy_index_templates"].as_object() {
+            for (name, template) in templates {
+                if target.map(|pattern| wildcard_match(pattern, name)).unwrap_or(true) {
+                    let patterns = template["index_patterns"]
+                        .as_array()
+                        .map(|patterns| {
+                            patterns
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    rows.push(serde_json::json!({
+                        "name": name,
+                        "index_patterns": format!("[{patterns}]"),
+                        "order": template.get("order").and_then(Value::as_u64).unwrap_or(0).to_string(),
+                        "version": template.get("version").and_then(Value::as_u64).map(|v| v.to_string()).unwrap_or_default(),
+                        "composed_of": "[]"
+                    }));
+                }
+            }
+        }
+        if let Some(templates) = manifest["templates"]["index_templates"].as_object() {
+            for (name, template) in templates {
+                if target.map(|pattern| wildcard_match(pattern, name)).unwrap_or(true) {
+                    let index_template = &template["index_template"];
+                    let patterns = index_template["index_patterns"]
+                        .as_array()
+                        .map(|patterns| {
+                            patterns
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    let composed_of = index_template["composed_of"]
+                        .as_array()
+                        .map(|items| {
+                            items.iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    rows.push(serde_json::json!({
+                        "name": name,
+                        "index_patterns": format!("[{patterns}]"),
+                        "order": index_template.get("priority").and_then(Value::as_u64).unwrap_or(0).to_string(),
+                        "version": index_template.get("version").and_then(Value::as_u64).map(|v| v.to_string()).unwrap_or_default(),
+                        "composed_of": format!("[{composed_of}]")
+                    }));
+                }
+            }
+        }
+        drop(manifest);
+        rows.sort_by(|left, right| {
+            left["name"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["name"].as_str().unwrap_or_default())
+        });
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows.clone()));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("name index_patterns order version composed_of".to_string());
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {}",
+                row["name"].as_str().unwrap_or(""),
+                row["index_patterns"].as_str().unwrap_or("[]"),
+                row["order"].as_str().unwrap_or("0"),
+                row["version"].as_str().unwrap_or(""),
+                row["composed_of"].as_str().unwrap_or("[]"),
+            ));
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -11496,5 +11592,62 @@ mod tests {
             "action task_id parent_task_id type start_time timestamp running_time ip node"
         ));
         assert!(tasks_text.contains("cluster:admin/reroute"));
+    }
+
+    #[test]
+    fn cat_templates_routes_serve_json_text_and_target_filters() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let mut legacy_template_request = RestRequest::new(RestMethod::Put, "/_template/logs-template");
+        legacy_template_request.body = serde_json::to_vec(&serde_json::json!({
+            "index_patterns": ["logs-*"],
+            "order": 7,
+            "version": 1
+        }))
+        .expect("legacy template body");
+        assert_eq!(node.handle_rest_request(legacy_template_request).status, 200);
+
+        let mut index_template_request =
+            RestRequest::new(RestMethod::Put, "/_index_template/metrics-template");
+        index_template_request.body = serde_json::to_vec(&serde_json::json!({
+            "index_patterns": ["metrics-*"],
+            "priority": 11,
+            "version": 2,
+            "composed_of": ["component-a"]
+        }))
+        .expect("index template body");
+        assert_eq!(node.handle_rest_request(index_template_request).status, 200);
+
+        let mut templates_json_request = RestRequest::new(RestMethod::Get, "/_cat/templates");
+        templates_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let templates_json_response = node.handle_rest_request(templates_json_request);
+        assert_eq!(templates_json_response.status, 200);
+        assert_eq!(
+            templates_json_response
+                .body
+                .as_array()
+                .expect("cat templates array")
+                .len(),
+            2
+        );
+
+        let mut templates_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/templates/logs-*");
+        templates_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let templates_text_response = node.handle_rest_request(templates_text_request);
+        let templates_text = templates_text_response
+            .body
+            .as_str()
+            .expect("cat templates text body");
+        assert!(templates_text.contains("name index_patterns order version composed_of"));
+        assert!(templates_text.contains("logs-template"));
+        assert!(!templates_text.contains("metrics-template"));
     }
 }

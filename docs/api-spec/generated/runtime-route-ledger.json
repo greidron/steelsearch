@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 47,
-      "missing-route": 35,
+      "implemented-read": 49,
+      "missing-route": 33,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -2061,7 +2061,7 @@
       "method": "GET",
       "path": "/_index_template",
       "probe": {
-        "body": "{\"index_templates\":[]}",
+        "body": "{\"index_templates\":[{\"index_template\":{\"composed_of\":[\"component-a\"],\"index_patterns\":[\"metrics-*\"],\"priority\":11,\"version\":2},\"name\":\"metrics-template\"}]}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2159,7 +2159,7 @@
       "method": "GET",
       "path": "/_template",
       "probe": {
-        "body": "{}",
+        "body": "{\"logs-template\":{\"index_patterns\":[\"logs-*\"],\"order\":7,\"version\":1}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -3530,7 +3530,7 @@
     },
     {
       "concrete_path": "/_cat/snapshots",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/snapshots",
@@ -3538,13 +3538,13 @@
         "body": "{\"error\":{\"reason\":\"Validation Failed: 1: repository is missing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: repository is missing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
         "status": 400
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/snapshots/repo-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/snapshots/{repository}",
@@ -3552,9 +3552,9 @@
         "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"},\"status\":404}",
         "status": 404
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/tasks",
@@ -3577,11 +3577,11 @@
       "method": "GET",
       "path": "/_cat/templates",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/templates] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/templates] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "logs-template [logs-*] 7 1 []\nmetrics-template [metrics-*] 11 2 [component-a]\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -3591,11 +3591,11 @@
       "method": "GET",
       "path": "/_cat/templates/{name}",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/templates/logs-read] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/templates/logs-read] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 80,
-    "missing-route": 104,
+    "implemented-read": 82,
+    "missing-route": 102,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

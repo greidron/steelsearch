@@ -19,6 +19,27 @@
       }
     }
   ],
+  "legacy_templates": [
+    {
+      "name": "logs-template",
+      "body": {
+        "index_patterns": ["logs-*"],
+        "order": 7,
+        "version": 1
+      }
+    }
+  ],
+  "index_templates": [
+    {
+      "name": "metrics-template",
+      "body": {
+        "index_patterns": ["metrics-*"],
+        "priority": 11,
+        "version": 2,
+        "composed_of": ["component-a"]
+      }
+    }
+  ],
   "cases": [
     {"name": "cat_allocation_text", "area": "operational", "method": "GET", "path": "/_cat/allocation?v=true", "accept": "text/plain", "extract": "cat_allocation"},
     {"name": "cat_fielddata_text", "area": "operational", "method": "GET", "path": "/_cat/fielddata/message,user?v=true", "accept": "text/plain", "extract": "cat_fielddata"},
@@ -32,6 +53,8 @@
     {"name": "cat_snapshots_json", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?format=json", "extract": "cat_snapshots"},
     {"name": "cat_snapshots_text", "area": "operational", "method": "GET", "path": "/_cat/snapshots/repo-root-cat-probe?v=true", "accept": "text/plain", "extract": "cat_snapshots"},
     {"name": "cat_tasks_text", "area": "operational", "method": "GET", "path": "/_cat/tasks?v=true", "accept": "text/plain", "extract": "cat_tasks"},
+    {"name": "cat_templates_text", "area": "operational", "method": "GET", "path": "/_cat/templates?v=true", "accept": "text/plain", "extract": "cat_templates"},
+    {"name": "cat_templates_target_text", "area": "operational", "method": "GET", "path": "/_cat/templates/logs-*?v=true", "accept": "text/plain", "extract": "cat_templates"},
     {"name": "cat_shards_json", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?format=json", "extract": "cat_shards"},
     {"name": "cat_shards_text", "area": "operational", "method": "GET", "path": "/_cat/shards/logs-root-cat-*?v=true", "accept": "text/plain", "extract": "cat_shards"},
     {"name": "cat_segments_json", "area": "operational", "method": "GET", "path": "/_cat/segments/logs-root-cat-*?format=json", "extract": "cat_segments"},

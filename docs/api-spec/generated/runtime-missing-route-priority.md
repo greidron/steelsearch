@@ -4,7 +4,6 @@ This file lists safe read/head routes that currently probe as `missing-route`, o
 
 ## root-cluster-node
 
-- `/_cat/tasks` (GET)
 - `/_cat/templates` (GET)
 - `/_cat/templates/{name}` (GET)
 - `/_cat/thread_pool` (GET)

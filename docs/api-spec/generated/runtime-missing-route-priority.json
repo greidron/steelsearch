@@ -184,10 +184,6 @@
   "root-cluster-node": [
     {
       "method": "GET",
-      "path": "/_cat/tasks"
-    },
-    {
-      "method": "GET",
       "path": "/_cat/templates"
     },
     {
