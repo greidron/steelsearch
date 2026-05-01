@@ -8,8 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 76 |
-| missing-route | 108 |
+| implemented-read | 77 |
+| missing-route | 107 |
 | requires-stateful-probe | 170 |
 | unprobeable-expression | 19 |
 
@@ -20,7 +20,7 @@ Base URL: `http://127.0.0.1:19200`
 | document-and-bulk | 3 | 9 | 29 | 0 |
 | index-and-metadata | 28 | 26 | 64 | 0 |
 | misc | 0 | 9 | 5 | 0 |
-| root-cluster-node | 43 | 39 | 36 | 10 |
+| root-cluster-node | 44 | 38 | 36 | 10 |
 | search | 2 | 18 | 26 | 2 |
 | snapshot-migration-interop | 0 | 7 | 5 | 0 |
 | vector-and-ml | 0 | 0 | 5 | 7 |
@@ -101,7 +101,6 @@ Base URL: `http://127.0.0.1:19200`
 | search | GET | `/_validate/query` | `/_validate/query` | planned |
 | search | GET | `/{index}/_validate/query` | `/logs-compat/_validate/query` | planned |
 | root-cluster-node | GET | `/_cat` | `/_cat` | planned |
-| root-cluster-node | GET | `/_cat/repositories` | `/_cat/repositories` | planned |
 | root-cluster-node | GET | `/_cat/snapshots` | `/_cat/snapshots` | planned |
 | root-cluster-node | GET | `/_cat/snapshots/{repository}` | `/_cat/snapshots/repo-compat` | planned |
 | root-cluster-node | GET | `/_cat/tasks` | `/_cat/tasks` | planned |

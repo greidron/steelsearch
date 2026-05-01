@@ -1877,8 +1877,7 @@
   - [ ] root/cluster/node runtime route parity
     - [x] unit test plan: `standalone_runtime.rs` unit tests로 exact route dispatch, path parameter, error envelope를 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` 또는 dedicated root compat fixture로 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=43, missing-route=39, requires-stateful-probe=36, unprobeable-expression=10
-    - [ ] `/_cat/repositories` (GET) [missing-route]
+    - [x] runtime-backed summary: implemented-read=44, missing-route=38, requires-stateful-probe=36, unprobeable-expression=10
     - [ ] `/_cat/snapshots` (GET) [missing-route]
     - [ ] `/_cat/snapshots/{repository}` (GET) [missing-route]
     - [ ] `/_cat/tasks` (GET) [missing-route]
@@ -1966,6 +1965,7 @@
     - [x] `/_cat/plugins` (GET) [implemented-read]
     - [x] `/_cat/recovery` (GET) [implemented-read]
     - [x] `/_cat/recovery/{index}` (GET) [implemented-read]
+    - [x] `/_cat/repositories` (GET) [implemented-read]
     - [x] `/_cat/segments` (GET) [implemented-read]
     - [x] `/_cat/segments/{index}` (GET) [implemented-read]
     - [x] `/_cat/shards` (GET) [implemented-read]

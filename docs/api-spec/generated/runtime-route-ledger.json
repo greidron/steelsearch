@@ -16,8 +16,8 @@
       "requires-stateful-probe": 5
     },
     "root-cluster-node": {
-      "implemented-read": 43,
-      "missing-route": 39,
+      "implemented-read": 44,
+      "missing-route": 38,
       "requires-stateful-probe": 36,
       "unprobeable-expression": 10
     },
@@ -3250,7 +3250,7 @@
     },
     {
       "concrete_path": "/_cat/recovery",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/recovery",
@@ -3258,13 +3258,13 @@
         "body": "logs-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-created 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-cat-next-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-compat-alias-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-root-cat-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/recovery/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_cat/recovery/{index}",
@@ -3272,9 +3272,9 @@
         "body": "logs-compat 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_cat/count",
@@ -3465,11 +3465,11 @@
       "method": "GET",
       "path": "/_cat/repositories",
       "probe": {
-        "body": "{\"error\":{\"reason\":\"no handler found for uri [/_cat/repositories] and method [GET]\",\"root_cause\":[{\"reason\":\"no handler found for uri [/_cat/repositories] and method [GET]\",\"type\":\"no_handler_found_exception\"}],\"type\":\"no_handler_found_exception\"},\"status\":404}",
-        "status": 404
+        "body": "\n",
+        "status": 200
       },
       "profile": "`deferred`",
-      "runtime_status": "missing-route",
+      "runtime_status": "implemented-read",
       "source_status": "planned"
     },
     {
@@ -4695,8 +4695,8 @@
     }
   ],
   "summary": {
-    "implemented-read": 76,
-    "missing-route": 108,
+    "implemented-read": 77,
+    "missing-route": 107,
     "requires-stateful-probe": 170,
     "unprobeable-expression": 19
   }

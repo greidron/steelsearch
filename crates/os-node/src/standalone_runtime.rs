@@ -1665,6 +1665,9 @@ impl SteelNode {
                 Some(request.path.trim_start_matches("/_cat/recovery/")),
             ));
         }
+        if request.method == RestMethod::Get && request.path == "/_cat/repositories" {
+            return Some(self.handle_cat_repositories_route(request));
+        }
         if request.method == RestMethod::Get && request.path == "/_cat/shards" {
             return Some(self.handle_cat_shards_route(request, None));
         }
@@ -6464,6 +6467,19 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
+    fn handle_cat_repositories_route(&self, request: &RestRequest) -> RestResponse {
+        let rows: Vec<Value> = Vec::new();
+        if request.query_params.get("format").is_some_and(|value| value == "json") {
+            return RestResponse::json(200, Value::Array(rows));
+        }
+        let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
+        let mut lines = Vec::new();
+        if verbose {
+            lines.push("id type".to_string());
+        }
+        RestResponse::text(200, lines.join("\n") + "\n")
+    }
+
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
         for index in self
@@ -11181,5 +11197,32 @@ mod tests {
         assert!(recovery_text.contains("index shard time type stage source_host source_node target_host target_node repository snapshot files files_recovered files_percent files_total bytes bytes_recovered bytes_percent bytes_total translog_ops translog_ops_recovered translog_ops_percent"));
         assert!(recovery_text.contains("logs-000001"));
         assert!(!recovery_text.contains("metrics-000001"));
+    }
+
+    #[test]
+    fn cat_repositories_route_serves_json_and_text_views() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let mut repositories_json_request = RestRequest::new(RestMethod::Get, "/_cat/repositories");
+        repositories_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let repositories_json_response = node.handle_rest_request(repositories_json_request);
+        assert_eq!(repositories_json_response.status, 200);
+        assert_eq!(repositories_json_response.body, Value::Array(Vec::new()));
+
+        let mut repositories_text_request = RestRequest::new(RestMethod::Get, "/_cat/repositories");
+        repositories_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let repositories_text_response = node.handle_rest_request(repositories_text_request);
+        let repositories_text = repositories_text_response
+            .body
+            .as_str()
+            .expect("cat repositories text body");
+        assert!(repositories_text.contains("id type"));
     }
 }
