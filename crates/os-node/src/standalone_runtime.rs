@@ -1462,7 +1462,7 @@ impl SteelNode {
             }
             (RestMethod::Get, "/_cluster/allocation/explain")
             | (RestMethod::Post, "/_cluster/allocation/explain") => {
-                Some(RestResponse::json(200, self.cluster_allocation_explain_body(request)))
+                Some(self.handle_cluster_allocation_explain_route(request))
             }
             (RestMethod::Get, "/_cluster/settings") => {
                 Some(self.handle_cluster_settings_get_route(request))
@@ -4913,6 +4913,44 @@ impl SteelNode {
             &persistent,
             &transient,
         )
+    }
+
+    fn handle_cluster_allocation_explain_route(&self, request: &RestRequest) -> RestResponse {
+        if request.body.is_empty() {
+            let created_index = self
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .next()
+                .cloned();
+            if let Some(index) = created_index {
+                let synthesized = RestRequest::new(request.method, request.path.as_str())
+                    .with_json_body(serde_json::json!({
+                        "index": index,
+                        "shard": 0,
+                        "primary": false
+                    }));
+                return RestResponse::json(200, self.cluster_allocation_explain_body(&synthesized));
+            }
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "root_cause": [
+                            {
+                                "type": "illegal_argument_exception",
+                                "reason": "unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]"
+                            }
+                        ],
+                        "type": "illegal_argument_exception",
+                        "reason": "unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        RestResponse::json(200, self.cluster_allocation_explain_body(request))
     }
 
     fn cluster_allocation_explain_body(&self, request: &RestRequest) -> Value {
@@ -12935,6 +12973,50 @@ mod tests {
                 "path {path}"
             );
         }
+    }
+
+    #[test]
+    fn cluster_allocation_explain_routes_match_bounded_get_and_post_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-stateful-probe").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index.number_of_shards": 1,
+                        "index.number_of_replicas": 1
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/allocation/explain",
+        ));
+        assert_eq!(get_response.status, 200);
+        assert_eq!(
+            get_response.body["current_state"],
+            Value::String("unassigned".to_string())
+        );
+
+        let post_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_cluster/allocation/explain").with_json_body(
+                serde_json::json!({
+                    "index": "logs-stateful-probe",
+                    "shard": 0,
+                    "primary": true
+                }),
+            ),
+        );
+        assert_eq!(post_response.status, 200);
+        assert_eq!(post_response.body["index"], Value::String("logs-stateful-probe".to_string()));
+        assert_eq!(post_response.body["primary"], Value::Bool(true));
+        assert_eq!(post_response.body["current_state"], Value::String("started".to_string()));
     }
 
     #[test]

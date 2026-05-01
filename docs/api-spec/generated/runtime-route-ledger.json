@@ -512,7 +512,7 @@
       "method": "GET",
       "path": "/_cluster/allocation/explain",
       "probe": {
-        "body": "{\"can_rebalance_cluster\":\"no\",\"can_rebalance_to_other_node\":\"no\",\"can_remain_on_current_node\":\"yes\",\"current_node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"id\":\"steelsearch-dev-node\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1},\"current_state\":\"started\",\"index\":\"logs-compat\",\"primary\":true,\"rebalance_explanation\":\"rebalancing is not allowed\",\"shard\":0}",
+        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"current_state\":\"unassigned\",\"index\":\"logs-000001\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1}],\"primary\":false,\"shard\":0,\"unassigned_info\":{\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1345,7 +1345,7 @@
     },
     {
       "concrete_path": "/_remotestore/metadata/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_remotestore/metadata/{index}",
@@ -1353,9 +1353,9 @@
         "body": "{\"_shards\":{\"failed\":1,\"failures\":[{\"index\":\"logs-compat\",\"reason\":{\"reason\":\"Remote store not enabled for index\",\"type\":\"illegal_state_exception\"},\"shard\":0,\"status\":\"INTERNAL_SERVER_ERROR\"}],\"successful\":0,\"total\":1},\"indices\":{}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -1370,7 +1370,7 @@
     },
     {
       "concrete_path": "/_remotestore/stats/logs-compat",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_remotestore/stats/{index}",
@@ -1378,9 +1378,9 @@
         "body": "{\"_shards\":{\"failed\":0,\"successful\":0,\"total\":0},\"indices\":{}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -1417,7 +1417,7 @@
     },
     {
       "concrete_path": "/_snapshot/repo-compat/snap-compat/logs-compat/_status",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node`",
       "family": "root-cluster-node",
       "method": "GET",
       "path": "/_snapshot/{repository}/{snapshot}/{index}/_status",
@@ -1425,9 +1425,9 @@
         "body": "{\"error\":{\"reason\":\"[repo-compat] missing\",\"root_cause\":[{\"reason\":\"[repo-compat] missing\",\"type\":\"repository_missing_exception\"}],\"type\":\"repository_missing_exception\"},\"status\":404}",
         "status": 404
       },
-      "profile": "`deferred`",
+      "profile": "`root-cluster-node`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_snapshot/repo-compat/snap-compat/_status",

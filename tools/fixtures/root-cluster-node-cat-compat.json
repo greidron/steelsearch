@@ -574,6 +574,25 @@
       "path": "/_cat/segments/logs-root-cat-*?v=true",
       "accept": "text/plain",
       "extract": "cat_segments"
+    },
+    {
+      "name": "allocation_explain_get_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/allocation/explain",
+      "extract": "allocation_explain_error"
+    },
+    {
+      "name": "allocation_explain_post_primary",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain",
+      "body": {
+        "index": "logs-root-cat-000001",
+        "shard": 0,
+        "primary": true
+      },
+      "extract": "allocation_explain"
     }
   ]
 }

@@ -1451,6 +1451,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "current_state": body.get("current_state"),
             "node_decisions_present": isinstance(decisions, list),
         }
+    if kind == "allocation_explain_error":
+        error = body.get("error") or {}
+        root_cause = error.get("root_cause") or []
+        first_root_cause = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        return {
+            "status": response["status"],
+            "error_type": error.get("type"),
+            "root_cause_type": first_root_cause.get("type"),
+        }
     return {"status": response["status"], "body": body}
 
 

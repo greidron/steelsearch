@@ -14,8 +14,12 @@
         },
         "mappings": {
           "properties": {
-            "message": { "type": "text" },
-            "tenant": { "type": "keyword" }
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
           }
         }
       }
@@ -30,6 +34,27 @@
     }
   ],
   "cases": [
+    {
+      "name": "allocation_explain_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "GET",
+      "path": "/_cluster/allocation/explain",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "allocation_explain_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain",
+      "body": {
+        "index": "logs-stateful-probe",
+        "shard": 0,
+        "primary": true
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
     {
       "name": "cluster_settings_put",
       "family": "root-cluster-node",

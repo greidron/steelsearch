@@ -8,7 +8,7 @@
       "passed": 1
     },
     "root-cluster-node": {
-      "passed": 2
+      "passed": 4
     },
     "search": {
       "passed": 1
@@ -21,6 +21,39 @@
     }
   },
   "cases": [
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "GET",
+      "name": "allocation_explain_get",
+      "path": "/_cluster/allocation/explain",
+      "result": {
+        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"current_state\":\"unassigned\",\"index\":\"logs-000001\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1}],\"primary\":false,\"shard\":0,\"unassigned_info\":{\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-probe",
+        "primary": true,
+        "shard": 0
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "POST",
+      "name": "allocation_explain_post",
+      "path": "/_cluster/allocation/explain",
+      "result": {
+        "body": "{\"can_rebalance_cluster\":\"no\",\"can_rebalance_to_other_node\":\"no\",\"can_remain_on_current_node\":\"yes\",\"current_node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"id\":\"steelsearch-dev-node\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1},\"current_state\":\"started\",\"index\":\"logs-stateful-probe\",\"primary\":true,\"rebalance_explanation\":\"rebalancing is not allowed\",\"shard\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "status": "passed"
+    },
     {
       "body": {
         "persistent": {
@@ -143,7 +176,7 @@
       "name": "knn_model_train_post",
       "path": "/_plugins/_knn/models/_train",
       "result": {
-        "body": "{\"model_id\":\"knn-model-2\",\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}",
+        "body": "{\"model_id\":\"knn-model-1\",\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -198,6 +231,6 @@
     }
   ],
   "summary": {
-    "passed": 7
+    "passed": 9
   }
 }
