@@ -1110,3 +1110,21 @@ Generated Markdown references derived from those TSV files live here:
 
 - [generated/rest-routes.md](./generated/rest-routes.md)
 - [generated/transport-actions.md](./generated/transport-actions.md)
+
+## Stateful Semantic Coverage Policy
+
+Stateful route promotion is no longer treated as a simple route-exists check.
+For a route family to count as semantically hardened, Steelsearch now expects
+representative probe coverage for:
+
+- `happy-path`: a normal successful request and bounded readback or mutation
+  contract.
+- `error-path`: a representative failure branch such as missing resource,
+  invalid input, conflict, or unsupported operation.
+- `idempotency-or-selector`: either repeated-call stability (`noop`, repeated
+  close/open/delete, etc.) or selector expansion semantics (wildcard/index
+  selector targeting).
+
+The generated stateful probe report records these categories per
+`inventory_path` and emits a separate `semantic_coverage_missing` section for
+routes that still have only route-presence evidence.

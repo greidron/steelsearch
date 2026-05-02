@@ -6,6 +6,8 @@ from collections import defaultdict
 import json
 from pathlib import Path
 
+from runtime_route_normalization import is_concrete_path, normalize_path
+
 
 ROOT = Path("/home/ubuntu/steelsearch")
 REST_TSV = ROOT / "docs/rust-port/generated/source-rest-routes.tsv"
@@ -471,45 +473,9 @@ def render_route_evidence_matrix(rows: list[dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
-OPENAPI_PATH_NORMALIZATION = {
-    "/ + ENDPOINT": "/_rank_eval",
-    "/{index}/ + ENDPOINT": "/{index}/_rank_eval",
-    "_wlm/workload_group/": "/_wlm/workload_group",
-    "_wlm/workload_group/{name}": "/_wlm/workload_group/{name}",
-    "_wlm/stats": "/_wlm/stats",
-    "_wlm/{nodeId}/stats": "/_wlm/{nodeId}/stats",
-    "_wlm/stats/{workloadGroupId}": "/_wlm/stats/{workloadGroupId}",
-    "_wlm/{nodeId}/stats/{workloadGroupId}": "/_wlm/{nodeId}/stats/{workloadGroupId}",
-    "_list/wlm_stats": "/_list/wlm_stats",
-    "_list/wlm_stats/{nodeId}/stats": "/_list/wlm_stats/{nodeId}/stats",
-    "_list/wlm_stats/stats/{workloadGroupId}": "/_list/wlm_stats/stats/{workloadGroupId}",
-    "_list/wlm_stats/{nodeId}/stats/{workloadGroupId}": "/_list/wlm_stats/{nodeId}/stats/{workloadGroupId}",
-    "/{index}/_tier/ + targetTier": "/{index}/_tier/{targetTier}",
-    'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)': "/_plugins/_knn/clear_cache/{index}",
-    'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': "/_plugins/_knn/models/{model_id}",
-    'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"': "/_plugins/_knn/{nodeId}/stats",
-    'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"': "/_plugins/_knn/{nodeId}/stats/{stat}",
-    'KNNPlugin.KNN_BASE_URI + "/stats/"': "/_plugins/_knn/stats",
-    'KNNPlugin.KNN_BASE_URI + "/stats/{stat}"': "/_plugins/_knn/stats/{stat}",
-    "KNNPlugin.KNN_BASE_URI + URL_PATH": "/_plugins/_knn/warmup",
-    'String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)': "/_plugins/_knn/models/_search",
-    'String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': "/_plugins/_knn/models/{model_id}/_train",
-    'String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)': "/_plugins/_knn/models/_train",
-}
-
-
 def normalize_openapi_path(path: str) -> str | None:
-    normalized = OPENAPI_PATH_NORMALIZATION.get(path, path)
-    normalized = normalized.rstrip("/") or "/"
-    if not normalized.startswith("/"):
-        normalized = "/" + normalized
-    if (
-        '"' in normalized
-        or " " in normalized
-        or "+" in normalized
-        or "(" in normalized
-        or ")" in normalized
-    ):
+    normalized = normalize_path(path)
+    if not is_concrete_path(normalized):
         return None
     return normalized
 

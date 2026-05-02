@@ -1547,7 +1547,11 @@ impl SteelNode {
             ));
         }
         if request.path == "/_settings" && request.method == RestMethod::Get {
-            return Some(self.handle_settings_get_route(None, None));
+            return Some(self.handle_settings_get_route(
+                None,
+                None,
+                query_param_is_true(request.query_params.get("flat_settings")),
+            ));
         }
         if request.path == "/_settings" && request.method == RestMethod::Put {
             return Some(self.handle_global_settings_put_route(request));
@@ -1555,7 +1559,11 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path.starts_with("/_settings/") {
             let setting_name = request.path.trim_start_matches("/_settings/");
             if !setting_name.is_empty() {
-                return Some(self.handle_settings_get_route(None, Some(setting_name)));
+                return Some(self.handle_settings_get_route(
+                    None,
+                    Some(setting_name),
+                    query_param_is_true(request.query_params.get("flat_settings")),
+                ));
             }
         }
         if request.path == "/_filecache/prune" && request.method == RestMethod::Post {
@@ -2342,7 +2350,11 @@ impl SteelNode {
         if let Some(index) = request.path.strip_suffix("/_settings") {
             let target = index.trim_matches('/');
             return match request.method {
-                RestMethod::Get => Some(self.handle_settings_get_route(Some(target), None)),
+                RestMethod::Get => Some(self.handle_settings_get_route(
+                    Some(target),
+                    None,
+                    query_param_is_true(request.query_params.get("flat_settings")),
+                )),
                 RestMethod::Put => Some(self.handle_settings_put_route(target, request)),
                 _ => None,
             };
@@ -2352,7 +2364,11 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
-                return Some(self.handle_settings_get_route(Some(target), Some(setting_name)));
+                return Some(self.handle_settings_get_route(
+                    Some(target),
+                    Some(setting_name),
+                    query_param_is_true(request.query_params.get("flat_settings")),
+                ));
             }
         }
         if request.method == RestMethod::Get && request.path.contains("/_setting/") {
@@ -2360,7 +2376,11 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
-                return Some(self.handle_settings_get_route(Some(target), Some(setting_name)));
+                return Some(self.handle_settings_get_route(
+                    Some(target),
+                    Some(setting_name),
+                    query_param_is_true(request.query_params.get("flat_settings")),
+                ));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_stats") {
@@ -2461,17 +2481,17 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                return Some(self.handle_msearch_route(Some(index)));
+                return Some(self.handle_msearch_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch/template") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                return Some(self.handle_msearch_template_route(Some(index)));
+                return Some(self.handle_msearch_template_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search/template") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                return Some(self.handle_search_template_route(Some(index)));
+                return Some(self.handle_search_template_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_validate/query") {
@@ -2528,17 +2548,17 @@ impl SteelNode {
             return Some(self.handle_mtermvectors_route(None, request));
         }
         if request.path == "/_msearch" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
-            return Some(self.handle_msearch_route(None));
+            return Some(self.handle_msearch_route(None, request));
         }
         if request.path == "/_msearch/template"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            return Some(self.handle_msearch_template_route(None));
+            return Some(self.handle_msearch_template_route(None, request));
         }
         if request.path == "/_search/template"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            return Some(self.handle_search_template_route(None));
+            return Some(self.handle_search_template_route(None, request));
         }
         if request.path == "/_search/pipeline" && request.method == RestMethod::Get {
             return Some(self.handle_search_pipeline_collection_get_route());
@@ -3274,6 +3294,7 @@ impl SteelNode {
         &self,
         target: Option<&str>,
         name_filter: Option<&str>,
+        flat_settings: bool,
     ) -> RestResponse {
         let manifest = self
             .metadata_manifest_state
@@ -3285,6 +3306,7 @@ impl SteelNode {
                 &manifest["indices"],
                 target,
                 name_filter,
+                flat_settings,
             ),
         )
     }
@@ -4440,18 +4462,30 @@ impl SteelNode {
     }
 
     fn handle_index_refresh_route(&self, index: &str) -> RestResponse {
+        let matched = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|candidate| matches_index_selector(index, candidate))
+            .cloned()
+            .collect::<Vec<_>>();
         self.documents_state
             .lock()
             .expect("documents state lock poisoned")
             .iter_mut()
-            .filter(|(key, _)| key.starts_with(&format!("{index}:")))
+            .filter(|(key, _)| {
+                matched
+                    .iter()
+                    .any(|candidate| key.starts_with(&format!("{candidate}:")))
+            })
             .for_each(|(_, record)| record.refreshed = true);
         RestResponse::json(
             200,
             serde_json::json!({
                 "_shards": {
-                    "total": 2,
-                    "successful": 1,
+                    "total": matched.len(),
+                    "successful": matched.len(),
                     "failed": 0
                 }
             }),
@@ -4672,26 +4706,53 @@ impl SteelNode {
         }
     }
 
-    fn handle_search_template_route(&self, target: Option<&str>) -> RestResponse {
-        RestResponse::json(200, self.search_template_search_body(target))
+    fn handle_search_template_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        match self.search_template_search_body(target, request, None) {
+            Ok(body) => RestResponse::json(200, body),
+            Err(response) => response,
+        }
     }
 
-    fn handle_msearch_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_msearch_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        if let Some(requests) = self.parse_msearch_requests(request) {
+            let responses = requests
+                .into_iter()
+                .map(|(header_target, body)| {
+                    let effective_target = header_target.as_deref().or(target).unwrap_or("_all");
+                    let request =
+                        RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
+                            .with_json_body(body);
+                    self.handle_index_search_route(effective_target, &request).body
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, serde_json::json!({ "responses": responses }));
+        }
         RestResponse::json(
             200,
-            serde_json::json!({
-                "responses": [self.search_template_search_body(target)]
-            }),
+            {
+                let effective_target = target.unwrap_or("_all");
+                let request =
+                    RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
+                        .with_json_body(serde_json::json!({
+                            "query": { "match_all": {} }
+                        }));
+                serde_json::json!({
+                    "responses": [self.handle_index_search_route(effective_target, &request).body]
+                })
+            },
         )
     }
 
-    fn handle_msearch_template_route(&self, target: Option<&str>) -> RestResponse {
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "responses": [self.search_template_search_body(target)]
-            }),
-        )
+    fn handle_msearch_template_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        match self.search_template_search_body(target, request, None) {
+            Ok(body) => RestResponse::json(
+                200,
+                serde_json::json!({
+                    "responses": [body]
+                }),
+            ),
+            Err(response) => response,
+        }
     }
 
     fn handle_render_template_route(
@@ -4705,10 +4766,10 @@ impl SteelNode {
             serde_json::from_slice::<Value>(&request.body)
                 .unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         };
-        let template_output = payload
-            .get("source")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({ "query": { "match_all": {} } }));
+        let template_output = match self.resolve_template_source(template_id, &payload) {
+            Ok(source) => source,
+            Err(response) => return response,
+        };
         let mut body = serde_json::json!({
             "template_output": template_output
         });
@@ -4716,6 +4777,49 @@ impl SteelNode {
             body["_id"] = Value::String(id.to_string());
         }
         RestResponse::json(200, body)
+    }
+
+    fn parse_msearch_requests(&self, request: &RestRequest) -> Option<Vec<(Option<String>, Value)>> {
+        if request.body.is_empty() {
+            return None;
+        }
+        let raw = std::str::from_utf8(&request.body).ok()?;
+        let lines = raw
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        if lines.is_empty() {
+            return None;
+        }
+
+        let mut requests = Vec::new();
+        let mut index = 0;
+        while index < lines.len() {
+            let header = serde_json::from_str::<Value>(lines[index]).ok()?;
+            let body = if index + 1 < lines.len() {
+                serde_json::from_str::<Value>(lines[index + 1]).ok()?
+            } else {
+                Value::Object(serde_json::Map::new())
+            };
+            let target = header
+                .get("index")
+                .and_then(|value| match value {
+                    Value::String(single) => Some(single.clone()),
+                    Value::Array(values) => Some(
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                    _ => None,
+                })
+                .filter(|target| !target.is_empty());
+            requests.push((target, body));
+            index += 2;
+        }
+        Some(requests)
     }
 
     fn handle_search_pipeline_collection_get_route(&self) -> RestResponse {
@@ -5156,44 +5260,70 @@ impl SteelNode {
         )
     }
 
-    fn search_template_search_body(&self, target: Option<&str>) -> Value {
+    fn search_template_search_body(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+        template_id: Option<&str>,
+    ) -> Result<Value, RestResponse> {
+        let payload = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            serde_json::from_slice::<Value>(&request.body).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
+        };
+        let body = self.resolve_template_source(template_id, &payload)?;
         let requested_target = target.unwrap_or("_all");
-        let docs = self.documents_state.lock().expect("documents state lock poisoned");
-        let hits: Vec<Value> = docs
-            .iter()
-            .filter_map(|(key, record)| {
-                let mut parts = key.splitn(3, ':');
-                let index = parts.next()?;
-                let id = parts.next()?;
-                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
-                    return None;
-                }
-                Some(serde_json::json!({
-                    "_index": index,
-                    "_id": id,
-                    "_score": 1.0,
-                    "_source": record.source
-                }))
-            })
-            .collect();
-        serde_json::json!({
-            "took": 1,
-            "timed_out": false,
-            "_shards": {
-                "total": 1,
-                "successful": 1,
-                "skipped": 0,
-                "failed": 0
-            },
-            "hits": {
-                "total": {
-                    "value": hits.len(),
-                    "relation": "eq"
-                },
-                "max_score": if hits.is_empty() { Value::Null } else { Value::from(1.0) },
-                "hits": hits
-            }
-        })
+        let request = RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
+            .with_json_body(body);
+        let response = self.handle_index_search_route(requested_target, &request);
+        if response.status == 200 {
+            Ok(response.body)
+        } else {
+            Err(response)
+        }
+    }
+
+    fn resolve_template_source(
+        &self,
+        template_id: Option<&str>,
+        payload: &Value,
+    ) -> Result<Value, RestResponse> {
+        let stored_template_id = template_id.or_else(|| payload.get("id").and_then(Value::as_str));
+        let source = if let Some(source) = payload.get("source") {
+            source.clone()
+        } else if let Some(template_name) = stored_template_id {
+            let Some(source) = self.load_stored_script_source(template_name) else {
+                return Err(RestResponse::json(
+                    404,
+                    serde_json::json!({
+                        "error": {
+                            "type": "resource_not_found_exception",
+                            "reason": format!("stored script [{template_name}] not found")
+                        },
+                        "status": 404
+                    }),
+                ));
+            };
+            source
+        } else {
+            serde_json::json!({ "query": { "match_all": {} } })
+        };
+        Ok(substitute_template_params(
+            &source,
+            payload.get("params").and_then(Value::as_object),
+        ))
+    }
+
+    fn load_stored_script_source(&self, script_id: &str) -> Option<Value> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        manifest["stored_scripts"]
+            .as_object()
+            .and_then(|scripts| scripts.get(script_id))
+            .and_then(|script| script.get("source"))
+            .cloned()
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
@@ -5339,8 +5469,10 @@ impl SteelNode {
                 }
             }
         };
+        let query = payload.get("query");
+        let (valid, explanation) = validate_query_payload(query);
         let mut body = serde_json::json!({
-            "valid": true,
+            "valid": valid,
             "_shards": {
                 "total": 1,
                 "successful": 1,
@@ -5351,11 +5483,11 @@ impl SteelNode {
         if let Some(index) = target {
             body["_indices"] = serde_json::json!([index]);
         }
-        if let Some(query) = payload.get("query") {
+        if query.is_some() {
             body["explanations"] = serde_json::json!([{
                 "index": target.unwrap_or("_all"),
-                "valid": true,
-                "explanation": format!("query keys: {}", query.as_object().map(|object| object.len()).unwrap_or(0))
+                "valid": valid,
+                "explanation": explanation
             }]);
         }
         RestResponse::json(200, body)
@@ -7663,7 +7795,9 @@ impl SteelNode {
     fn handle_update_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
+        let mut total = 0_u64;
         let mut updated = 0_u64;
+        let mut noops = 0_u64;
         {
             let mut docs = self
                 .documents_state
@@ -7678,10 +7812,16 @@ impl SteelNode {
                 if !matches_query_body(&doc.source, body.get("query")) {
                     continue;
                 }
+                total += 1;
+                let original_source = doc.source.clone();
                 if let Some(script) = body.get("script") {
                     apply_update_by_query_script(&mut doc.source, script);
                 }
-                updated += 1;
+                if doc.source == original_source {
+                    noops += 1;
+                } else {
+                    updated += 1;
+                }
             }
         }
         self.persist_shared_runtime_state_to_disk();
@@ -7690,12 +7830,12 @@ impl SteelNode {
             serde_json::json!({
                 "took": 1,
                 "timed_out": false,
-                "total": updated,
+                "total": total,
                 "updated": updated,
                 "deleted": 0,
-                "batches": if updated == 0 { 0 } else { 1 },
+                "batches": if total == 0 { 0 } else { 1 },
                 "version_conflicts": 0,
-                "noops": 0,
+                "noops": noops,
                 "retries": {
                     "bulk": 0,
                     "search": 0
@@ -11902,6 +12042,9 @@ impl SteelNode {
         for selector in target.split(',').filter(|selector| !selector.is_empty()) {
             let mut matched = Vec::new();
             if let Some(indices) = manifest["indices"].as_object() {
+                if selector == "_all" {
+                    matched.extend(indices.keys().cloned());
+                }
                 for (index_name, index_body) in indices {
                     if selector == index_name || wildcard_match(selector, index_name) {
                         matched.push(index_name.clone());
@@ -15694,6 +15837,69 @@ fn matches_query_body(source: &Value, query: Option<&Value>) -> bool {
     false
 }
 
+fn validate_query_payload(query: Option<&Value>) -> (bool, String) {
+    let Some(query) = query else {
+        return (true, "no query provided".to_string());
+    };
+    if query.get("match_all").is_some() {
+        return (true, "match_all query".to_string());
+    }
+    if let Some(term) = query.get("term") {
+        if term.as_object().is_some_and(|object| !object.is_empty()) {
+            return (true, format!("term query fields: {}", term.as_object().map(|object| object.len()).unwrap_or(0)));
+        }
+        return (false, "term query requires at least one field".to_string());
+    }
+    if query.as_object().is_some_and(|object| object.is_empty()) {
+        return (false, "query object must not be empty".to_string());
+    }
+    (false, "unsupported query type".to_string())
+}
+
+fn substitute_template_params(
+    value: &Value,
+    params: Option<&serde_json::Map<String, Value>>,
+) -> Value {
+    let Some(params) = params else {
+        return value.clone();
+    };
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), substitute_template_params(value, Some(params))))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(
+            values
+                .iter()
+                .map(|value| substitute_template_params(value, Some(params)))
+                .collect(),
+        ),
+        Value::String(text) => {
+            if let Some(key) = text
+                .strip_prefix("{{")
+                .and_then(|value| value.strip_suffix("}}"))
+                .map(str::trim)
+            {
+                if let Some(replacement) = params.get(key) {
+                    return replacement.clone();
+                }
+            }
+            let mut rendered = text.clone();
+            for (key, replacement) in params {
+                let placeholder = format!("{{{{{key}}}}}");
+                let replacement_text = replacement
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| replacement.to_string());
+                rendered = rendered.replace(&placeholder, &replacement_text);
+            }
+            Value::String(rendered)
+        }
+        _ => value.clone(),
+    }
+}
+
 fn apply_update_by_query_script(source: &mut Value, script: &Value) {
     let Some(source_obj) = source.as_object_mut() else {
         return;
@@ -16018,12 +16224,30 @@ mod tests {
         assert_eq!(get_response.status, 200);
         assert_eq!(get_response.body["data_streams"][0]["name"], "logs-ds-prod");
 
+        let stats_response =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_data_stream/_stats"));
+        assert_eq!(stats_response.status, 200);
+        assert_eq!(stats_response.body["data_stream_count"], Value::from(1));
+        assert_eq!(stats_response.body["backing_indices"], Value::from(1));
+
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
             "/_data_stream/logs-ds-prod",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let missing_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/logs-ds-prod",
+        ));
+        assert_eq!(missing_get.status, 404);
+
+        let stats_after_delete =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_data_stream/_stats"));
+        assert_eq!(stats_after_delete.status, 200);
+        assert_eq!(stats_after_delete.body["data_stream_count"], Value::from(0));
+        assert_eq!(stats_after_delete.body["backing_indices"], Value::from(0));
     }
 
     #[test]
@@ -16081,12 +16305,34 @@ mod tests {
         assert_eq!(post_response.status, 200);
         assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
 
+        let post_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(post_readback.status, 200);
+        assert_eq!(
+            post_readback.body["component_templates"][0]["component_template"]["template"]["mappings"]["properties"]["tenant"]["type"],
+            "keyword"
+        );
+
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
             "/_component_template/probe-component-template",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let missing_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(missing_get.status, 404);
+
+        let missing_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(missing_head.status, 404);
     }
 
     #[test]
@@ -16184,12 +16430,34 @@ mod tests {
         assert_eq!(post_response.status, 200);
         assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
 
+        let post_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_index_template/probe-index-template",
+        ));
+        assert_eq!(post_readback.status, 200);
+        assert_eq!(
+            post_readback.body["index_templates"][0]["index_template"]["template"]["mappings"]["properties"]["tenant"]["type"],
+            "keyword"
+        );
+
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
             "/_index_template/probe-index-template",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let missing_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_index_template/probe-index-template",
+        ));
+        assert_eq!(missing_get.status, 404);
+
+        let missing_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_index_template/probe-index-template",
+        ));
+        assert_eq!(missing_head.status, 404);
     }
 
     #[test]
@@ -16234,12 +16502,32 @@ mod tests {
         assert_eq!(post_response.status, 200);
         assert_eq!(post_response.body["acknowledged"], Value::Bool(true));
 
+        let post_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_template/probe-legacy-template",
+        ));
+        assert_eq!(post_readback.status, 200);
+        assert_eq!(post_readback.body["probe-legacy-template"]["order"], Value::from(9));
+        assert_eq!(post_readback.body["probe-legacy-template"]["version"], Value::from(2));
+
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
             "/_template/probe-legacy-template",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
+
+        let missing_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_template/probe-legacy-template",
+        ));
+        assert_eq!(missing_get.status, 404);
+
+        let missing_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_template/probe-legacy-template",
+        ));
+        assert_eq!(missing_head.status, 404);
     }
 
     #[test]
@@ -17729,6 +18017,287 @@ mod tests {
     }
 
     #[test]
+    fn reindex_route_surfaces_wildcard_source_missing_dest_and_overwrite_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-reindex-source-a"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-reindex-source-b"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-reindex-dest"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-reindex-source-a/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "message": "from source a",
+                        "tenant": "tenant-a"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-reindex-source-b/_doc/doc-2")
+                    .with_json_body(serde_json::json!({
+                        "message": "from source b",
+                        "tenant": "tenant-b"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-reindex-dest/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "message": "stale dest copy",
+                        "tenant": "tenant-old"
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let missing_dest = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-source-*" }
+            })),
+        );
+        assert_eq!(missing_dest.status, 400);
+        assert_eq!(
+            missing_dest.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            missing_dest.body["error"]["reason"],
+            "reindex dest.index is required"
+        );
+
+        let wildcard_reindex = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-source-*" },
+                "dest": { "index": "logs-reindex-dest" }
+            })),
+        );
+        assert_eq!(wildcard_reindex.status, 200);
+        assert_eq!(wildcard_reindex.body["total"], 2);
+        assert_eq!(wildcard_reindex.body["updated"], 1);
+        assert_eq!(wildcard_reindex.body["created"], 1);
+        assert_eq!(wildcard_reindex.body["batches"], 1);
+        assert_eq!(wildcard_reindex.body["failures"], Value::Array(vec![]));
+
+        let overwritten_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-reindex-dest/_doc/doc-1",
+        ));
+        assert_eq!(overwritten_doc.status, 200);
+        assert_eq!(overwritten_doc.body["_source"]["message"], "from source a");
+        assert_eq!(overwritten_doc.body["_source"]["tenant"], "tenant-a");
+
+        let created_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-reindex-dest/_doc/doc-2",
+        ));
+        assert_eq!(created_doc.status, 200);
+        assert_eq!(created_doc.body["_source"]["message"], "from source b");
+        assert_eq!(created_doc.body["_source"]["tenant"], "tenant-b");
+    }
+
+    #[test]
+    fn delete_by_query_route_surfaces_matched_unmatched_and_repeated_delete_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-delete-query-probe"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-delete-query-probe/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-a",
+                        "message": "delete me"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-delete-query-probe/_doc/doc-2")
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-b",
+                        "message": "keep me"
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let matched = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-delete-query-probe/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    }
+                })),
+        );
+        assert_eq!(matched.status, 200);
+        assert_eq!(matched.body["total"], 1);
+        assert_eq!(matched.body["deleted"], 1);
+        assert_eq!(matched.body["batches"], 1);
+
+        let deleted_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-delete-query-probe/_doc/doc-1",
+        ));
+        assert_eq!(deleted_doc.status, 404);
+
+        let unmatched = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-delete-query-probe/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-z" }
+                    }
+                })),
+        );
+        assert_eq!(unmatched.status, 200);
+        assert_eq!(unmatched.body["total"], 0);
+        assert_eq!(unmatched.body["deleted"], 0);
+        assert_eq!(unmatched.body["batches"], 0);
+
+        let repeated = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-delete-query-probe/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    }
+                })),
+        );
+        assert_eq!(repeated.status, 200);
+        assert_eq!(repeated.body["total"], 0);
+        assert_eq!(repeated.body["deleted"], 0);
+        assert_eq!(repeated.body["batches"], 0);
+
+        let remaining_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-delete-query-probe/_doc/doc-2",
+        ));
+        assert_eq!(remaining_doc.status, 200);
+        assert_eq!(remaining_doc.body["_source"]["message"], "keep me");
+    }
+
+    #[test]
+    fn update_by_query_route_surfaces_matched_unmatched_and_noop_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-update-query-probe"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-update-query-probe/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-a",
+                        "processed": false
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-update-query-probe/_doc/doc-2")
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-b",
+                        "processed": false
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let matched = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-update-query-probe/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    },
+                    "script": {
+                        "source": "ctx._source.processed = true"
+                    }
+                })),
+        );
+        assert_eq!(matched.status, 200);
+        assert_eq!(matched.body["total"], 1);
+        assert_eq!(matched.body["updated"], 1);
+        assert_eq!(matched.body["noops"], 0);
+
+        let unmatched = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-update-query-probe/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-z" }
+                    },
+                    "script": {
+                        "source": "ctx._source.processed = true"
+                    }
+                })),
+        );
+        assert_eq!(unmatched.status, 200);
+        assert_eq!(unmatched.body["total"], 0);
+        assert_eq!(unmatched.body["updated"], 0);
+        assert_eq!(unmatched.body["noops"], 0);
+        assert_eq!(unmatched.body["batches"], 0);
+
+        let noop = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-update-query-probe/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    },
+                    "script": {
+                        "source": "ctx._source.processed = true"
+                    }
+                })),
+        );
+        assert_eq!(noop.status, 200);
+        assert_eq!(noop.body["total"], 1);
+        assert_eq!(noop.body["updated"], 0);
+        assert_eq!(noop.body["noops"], 1);
+
+        let updated = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-update-query-probe/_doc/doc-1",
+        ));
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
+    }
+
+    #[test]
     fn create_doc_routes_create_once_and_conflict_on_repeat() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -17764,6 +18333,97 @@ mod tests {
                 "path {path}"
             );
         }
+
+        let refresh_created = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-create-probe/_create/doc-refresh?refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "refresh-visible"
+            })),
+        );
+        assert_eq!(refresh_created.status, 201);
+        assert_eq!(refresh_created.body["forced_refresh"], Value::Bool(true));
+
+        let refresh_visible = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-create-probe/_doc/doc-refresh?realtime=false",
+        ));
+        assert_eq!(refresh_visible.status, 200);
+        assert_eq!(refresh_visible.body["_source"]["message"], "refresh-visible");
+    }
+
+    #[test]
+    fn update_doc_routes_surface_missing_noop_and_script_update_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-update-probe"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-update-probe/_doc/doc-1").with_json_body(
+                    serde_json::json!({
+                        "message": "stateful route probe",
+                        "tenant": "tenant-a"
+                    }),
+                ),
+            )
+            .status,
+            201
+        );
+
+        let missing = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-update-probe/_update/missing-doc")
+                .with_json_body(serde_json::json!({
+                    "doc": { "processed": true }
+                })),
+        );
+        assert_eq!(missing.status, 404);
+        assert_eq!(missing.body["error"]["type"], "document_missing_exception");
+
+        let noop = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-update-probe/_update/doc-1").with_json_body(
+                serde_json::json!({
+                    "doc": {
+                        "message": "stateful route probe",
+                        "tenant": "tenant-a"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(noop.status, 200);
+        assert_eq!(noop.body["result"], "noop");
+        assert_eq!(noop.body["_version"], 1);
+
+        let scripted = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-update-probe/_update/doc-1?refresh=true")
+                .with_json_body(serde_json::json!({
+                    "script": {
+                        "source": "ctx._source.processed = params.processed",
+                        "params": {
+                            "processed": true
+                        }
+                    }
+                })),
+        );
+        assert_eq!(scripted.status, 200);
+        assert_eq!(scripted.body["result"], "updated");
+        assert_eq!(scripted.body["_version"], 2);
+        assert_eq!(scripted.body["forced_refresh"], Value::Bool(true));
+
+        let updated = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-update-probe/_doc/doc-1?realtime=false",
+        ));
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
     }
 
     #[test]
@@ -17799,19 +18459,41 @@ mod tests {
         });
 
         assert_eq!(
-            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-template-000001"))
-                .status,
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-search-template-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" },
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
             200
         );
         assert_eq!(
-            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/metrics-search-template-000001"))
-                .status,
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-search-template-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" },
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
             200
         );
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-search-template-000001/_doc/doc-1")
-                    .with_json_body(serde_json::json!({ "message": "log doc" })),
+                    .with_json_body(serde_json::json!({ "message": "log doc", "tenant": "tenant-a" })),
             )
             .status,
             201
@@ -17819,10 +18501,30 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/metrics-search-template-000001/_doc/doc-2")
-                    .with_json_body(serde_json::json!({ "message": "metric doc" })),
+                    .with_json_body(serde_json::json!({ "message": "metric doc", "tenant": "tenant-b" })),
             )
             .status,
             201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_scripts/probe-template").with_json_body(
+                    serde_json::json!({
+                        "script": {
+                            "lang": "mustache",
+                            "source": {
+                                "query": {
+                                    "term": {
+                                        "tenant": "{{tenant}}"
+                                    }
+                                }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
         );
 
         let root_search_template =
@@ -17874,10 +18576,51 @@ mod tests {
 
         let named_render_template = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/_render/template/stored-template",
+            "/_render/template/probe-template",
         ));
         assert_eq!(named_render_template.status, 200);
-        assert_eq!(named_render_template.body["_id"], "stored-template");
+        assert_eq!(named_render_template.body["_id"], "probe-template");
+        assert_eq!(
+            named_render_template.body["template_output"]["query"]["term"]["tenant"],
+            "{{tenant}}"
+        );
+
+        let named_render_with_params = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_render/template/probe-template").with_json_body(
+                serde_json::json!({
+                    "params": {
+                        "tenant": "tenant-a"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(named_render_with_params.status, 200);
+        assert_eq!(
+            named_render_with_params.body["template_output"]["query"]["term"]["tenant"],
+            "tenant-a"
+        );
+
+        let named_search_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
+                serde_json::json!({
+                    "id": "probe-template",
+                    "params": {
+                        "tenant": "tenant-a"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(named_search_template.status, 200);
+        assert_eq!(named_search_template.body["hits"]["total"]["value"], 1);
+
+        let missing_named_search_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
+                serde_json::json!({
+                    "id": "missing-template"
+                }),
+            ),
+        );
+        assert_eq!(missing_named_search_template.status, 404);
     }
 
     #[test]
@@ -17900,7 +18643,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-count-000001/_doc/doc-1")
-                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+                    .with_json_body(serde_json::json!({ "tenant": "tenanta" })),
             )
             .status,
             201
@@ -17908,7 +18651,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/metrics-count-000001/_doc/doc-2")
-                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+                    .with_json_body(serde_json::json!({ "tenant": "tenantb" })),
             )
             .status,
             201
@@ -17922,11 +18665,21 @@ mod tests {
         assert_eq!(root_count.status, 200);
         assert_eq!(root_count.body["count"], 2);
 
+        let root_term_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_count").with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenanta" }
+                }
+            })),
+        );
+        assert_eq!(root_term_count.status, 200);
+        assert_eq!(root_term_count.body["count"], 1);
+
         let targeted_count = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-count-*/_count").with_json_body(
                 serde_json::json!({
                     "query": {
-                        "term": { "tenant": "tenant-a" }
+                        "term": { "tenant": "tenanta" }
                     }
                 }),
             ),
@@ -17948,7 +18701,7 @@ mod tests {
             RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query").with_json_body(
                 serde_json::json!({
                     "query": {
-                        "term": { "tenant": "tenant-a" }
+                        "term": { "tenant": "tenanta" }
                     }
                 }),
             ),
@@ -17956,6 +18709,53 @@ mod tests {
         assert_eq!(targeted_validate.status, 200);
         assert_eq!(targeted_validate.body["_indices"][0], "logs-count-*");
         assert_eq!(targeted_validate.body["valid"], true);
+
+        let root_invalid_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "range": { "tenant": { "gte": "a" } }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(root_invalid_validate.status, 200);
+        assert_eq!(root_invalid_validate.body["valid"], false);
+        assert_eq!(
+            root_invalid_validate.body["explanations"][0]["explanation"],
+            "unsupported query type"
+        );
+
+        let targeted_invalid_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": {}
+                }),
+            ),
+        );
+        assert_eq!(targeted_invalid_validate.status, 200);
+        assert_eq!(targeted_invalid_validate.body["valid"], false);
+        assert_eq!(
+            targeted_invalid_validate.body["explanations"][0]["explanation"],
+            "query object must not be empty"
+        );
+
+        let root_empty_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_validate/query")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(root_empty_validate.status, 200);
+        assert_eq!(root_empty_validate.body["valid"], true);
+        assert!(root_empty_validate.body.get("explanations").is_none());
+
+        let targeted_empty_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(targeted_empty_validate.status, 200);
+        assert_eq!(targeted_empty_validate.body["valid"], true);
+        assert_eq!(targeted_empty_validate.body["_indices"][0], "logs-count-*");
+        assert!(targeted_empty_validate.body.get("explanations").is_none());
     }
 
     #[test]
@@ -18384,6 +19184,20 @@ mod tests {
         ));
         assert_eq!(reset_tier.status, 200);
         assert_eq!(reset_tier.body["tiers"][0], "hot");
+
+        let repeated_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tier/_cancel/logs-misc-000001",
+        ));
+        assert_eq!(repeated_cancel.status, 200);
+        assert_eq!(repeated_cancel.body["acknowledged"], Value::Bool(true));
+
+        let tier_after_repeated_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-000001/_tier",
+        ));
+        assert_eq!(tier_after_repeated_cancel.status, 200);
+        assert_eq!(tier_after_repeated_cancel.body["tiers"][0], "hot");
     }
 
     #[test]
@@ -18416,10 +19230,18 @@ mod tests {
         assert_eq!(open_pit.status, 200);
         assert_eq!(open_pit.body["id"], "pit-1");
 
+        let second_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(second_open_pit.status, 200);
+        assert_eq!(second_open_pit.body["id"], "pit-2");
+
         let list_pits =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
         assert_eq!(list_pits.status, 200);
         assert_eq!(list_pits.body["pits"][0]["id"], "pit-1");
+        assert_eq!(list_pits.body["pits"][1]["id"], "pit-2");
 
         let search_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
@@ -18452,12 +19274,75 @@ mod tests {
         assert_eq!(clear_scroll.status, 200);
         assert_eq!(clear_scroll.body["num_freed"], 1);
 
+        let reused_scroll = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/scroll/scroll-1",
+        ));
+        assert_eq!(reused_scroll.status, 404);
+        assert_eq!(reused_scroll.body["error"]["type"], "search_context_missing_exception");
+
+        let second_search_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "size": 1,
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(second_search_response.status, 200);
+        assert_eq!(second_search_response.body["_scroll_id"], "scroll-2");
+
+        let root_scroll_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll_id": "scroll-2" })),
+        );
+        assert_eq!(root_scroll_post.status, 200);
+        assert_eq!(root_scroll_post.body["_scroll_id"], "scroll-2");
+
+        let root_scroll_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll_id": ["scroll-2"] })),
+        );
+        assert_eq!(root_scroll_delete.status, 200);
+        assert_eq!(root_scroll_delete.body["num_freed"], 1);
+
+        let reused_scroll_post = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_search/scroll/scroll-2",
+        ));
+        assert_eq!(reused_scroll_post.status, 404);
+        assert_eq!(reused_scroll_post.body["error"]["type"], "search_context_missing_exception");
+
+        let close_single_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "id": "pit-1" })),
+        );
+        assert_eq!(close_single_pit.status, 200);
+        assert_eq!(close_single_pit.body["num_freed"], 1);
+
+        let list_after_single_close =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
+        assert_eq!(list_after_single_close.status, 200);
+        assert_eq!(list_after_single_close.body["pits"].as_array().map(|pits| pits.len()), Some(1));
+        assert_eq!(list_after_single_close.body["pits"][0]["id"], "pit-2");
+
+        let close_array_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "id": ["pit-2", "pit-missing"] })),
+        );
+        assert_eq!(close_array_pit.status, 200);
+        assert_eq!(close_array_pit.body["num_freed"], 1);
+
+        let list_after_array_close =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
+        assert_eq!(list_after_array_close.status, 200);
+        assert_eq!(list_after_array_close.body["pits"].as_array().map(|pits| pits.len()), Some(0));
+
         let clear_pits = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
             "/_search/point_in_time/_all",
         ));
         assert_eq!(clear_pits.status, 200);
-        assert_eq!(clear_pits.body["num_freed"], 1);
+        assert_eq!(clear_pits.body["num_freed"], 0);
     }
 
     #[test]
@@ -18480,7 +19365,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-msearch-000001/_doc/doc-1")
-                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+                    .with_json_body(serde_json::json!({ "tenant": "tenanta" })),
             )
             .status,
             201
@@ -18488,7 +19373,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/metrics-msearch-000001/_doc/doc-2")
-                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+                    .with_json_body(serde_json::json!({ "tenant": "tenantb" })),
             )
             .status,
             201
@@ -18510,7 +19395,7 @@ mod tests {
             RestRequest::new(RestMethod::Post, "/logs-msearch-000001/_explain/doc-1").with_json_body(
                 serde_json::json!({
                     "query": {
-                        "term": { "tenant": "tenant-a" }
+                        "term": { "tenant": "tenanta" }
                     }
                 }),
             ),
@@ -18524,6 +19409,186 @@ mod tests {
         ));
         assert_eq!(explain_get.status, 200);
         assert_eq!(explain_get.body["get"]["found"], true);
+
+        let root_multi = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"index\":\"logs-msearch-000001\"}\n{\"query\":{\"match_all\":{}}}\n{\"index\":\"metrics-msearch-000001\"}\n{\"query\":{\"term\":{\"tenant\":\"tenantb\"}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(root_multi.status, 200);
+        assert_eq!(root_multi.body["responses"].as_array().map(Vec::len), Some(2));
+        assert_eq!(root_multi.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(root_multi.body["responses"][1]["hits"]["total"]["value"], 1);
+
+        let targeted_multi = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-msearch-*/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{}\n{\"query\":{\"match_all\":{}}}\n{}\n{\"query\":{\"term\":{\"tenant\":\"tenantb\"}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(targeted_multi.status, 200);
+        assert_eq!(targeted_multi.body["responses"].as_array().map(Vec::len), Some(2));
+        assert_eq!(targeted_multi.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(targeted_multi.body["responses"][1]["hits"]["total"]["value"], 0);
+    }
+
+    #[test]
+    fn explain_route_surfaces_matched_unmatched_and_missing_doc_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-explain-semantic"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-explain-semantic/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenanta" })),
+            )
+            .status,
+            201
+        );
+
+        let matched = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-explain-semantic/_explain/doc-1")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenanta" }
+                    }
+                })),
+        );
+        assert_eq!(matched.status, 200);
+        assert_eq!(matched.body["matched"], true);
+        assert_eq!(matched.body["get"]["found"], true);
+
+        let unmatched = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-explain-semantic/_explain/doc-1")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenantb" }
+                    }
+                })),
+        );
+        assert_eq!(unmatched.status, 200);
+        assert_eq!(unmatched.body["matched"], false);
+        assert_eq!(unmatched.body["get"]["found"], true);
+        assert_eq!(
+            unmatched.body["explanation"]["description"],
+            "query did not match document"
+        );
+
+        let missing = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-explain-semantic/_explain/doc-missing")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "match_all": {}
+                    }
+                })),
+        );
+        assert_eq!(missing.status, 200);
+        assert_eq!(missing.body["matched"], false);
+        assert_eq!(missing.body["get"]["found"], false);
+        assert_eq!(missing.body["explanation"]["description"], "document missing");
+    }
+
+    #[test]
+    fn search_routes_surface_match_all_term_missing_field_and_wildcard_target_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-semantic-a"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-semantic-b"))
+                .status,
+            200
+        );
+        for (path, body) in [
+            (
+                "/logs-search-semantic-a/_doc/doc-1",
+                serde_json::json!({ "tenant": "tenanta", "message": "alpha" }),
+            ),
+            (
+                "/logs-search-semantic-b/_doc/doc-2",
+                serde_json::json!({ "tenant": "tenantb", "message": "beta" }),
+            ),
+            (
+                "/logs-search-semantic-b/_doc/doc-3",
+                serde_json::json!({ "tenant": "tenanta", "message": "gamma" }),
+            ),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, path).with_json_body(body),
+                )
+                .status,
+                201
+            );
+        }
+
+        let root_match_all = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(root_match_all.status, 200);
+        assert_eq!(root_match_all.body["hits"]["total"]["value"], 3);
+
+        let root_term = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenanta" }
+                }
+            })),
+        );
+        assert_eq!(root_term.status, 200);
+        assert_eq!(root_term.body["hits"]["total"]["value"], 2);
+
+        let targeted_missing_field = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-semantic-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "missing_field": "tenanta" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(targeted_missing_field.status, 200);
+        assert_eq!(targeted_missing_field.body["hits"]["total"]["value"], 0);
+
+        let targeted_wildcard_match_all = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-semantic-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} }
+                }),
+            ),
+        );
+        assert_eq!(targeted_wildcard_match_all.status, 200);
+        assert_eq!(targeted_wildcard_match_all.body["hits"]["total"]["value"], 3);
+
+        let targeted_wildcard_term = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-semantic-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenanta" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(targeted_wildcard_term.status, 200);
+        assert_eq!(targeted_wildcard_term.body["hits"]["total"]["value"], 2);
     }
 
     #[test]
@@ -18810,6 +19875,88 @@ mod tests {
     }
 
     #[test]
+    fn mapping_routes_surface_merge_and_field_redefinition_fail_closed_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-mapping-semantic-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": {"type": "text"},
+                            "tenant": {"type": "keyword"}
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let merge = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-mapping-semantic-000001/_mapping")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "region": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(merge.status, 200);
+        assert_eq!(merge.body["acknowledged"], Value::Bool(true));
+
+        let readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-mapping-semantic-000001/_mapping",
+        ));
+        assert_eq!(readback.status, 200);
+        assert_eq!(
+            readback.body["logs-mapping-semantic-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+        assert_eq!(
+            readback.body["logs-mapping-semantic-000001"]["mappings"]["properties"]["tenant"]["type"],
+            "keyword"
+        );
+        assert_eq!(
+            readback.body["logs-mapping-semantic-000001"]["mappings"]["properties"]["region"]["type"],
+            "keyword"
+        );
+
+        let conflict = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-mapping-semantic-000001/_mapping")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "message": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(conflict.status, 400);
+        assert_eq!(conflict.body["error"]["type"], "illegal_argument_exception");
+        assert!(
+            conflict.body["error"]["reason"]
+                .as_str()
+                .expect("mapping conflict reason should be string")
+                .contains("mapper [message] cannot be changed from type [text] to [keyword]")
+        );
+
+        let after_conflict = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-mapping-semantic-000001/_mappings",
+        ));
+        assert_eq!(after_conflict.status, 200);
+        assert_eq!(
+            after_conflict.body["logs-mapping-semantic-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+        assert_eq!(
+            after_conflict.body["logs-mapping-semantic-000001"]["mappings"]["properties"]["region"]["type"],
+            "keyword"
+        );
+    }
+
+    #[test]
     fn root_alias_route_supports_global_get_and_put_contracts() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -18821,6 +19968,11 @@ mod tests {
                 .with_json_body(serde_json::json!({})),
         );
         assert_eq!(create.status, 200);
+        let create_second = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-root-alias-000002")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_second.status, 200);
 
         let put_alias = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/_alias").with_json_body(serde_json::json!({
@@ -18880,6 +20032,50 @@ mod tests {
         ));
         assert_eq!(named_head.status, 200);
 
+        let wildcard_named_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_alias/logs-root-wildcard").with_json_body(
+                serde_json::json!({
+                    "index": "logs-root-alias-*"
+                }),
+            ),
+        );
+        assert_eq!(wildcard_named_put.status, 200);
+
+        let wildcard_named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-root-wildcard",
+        ));
+        assert_eq!(wildcard_named_get.status, 200);
+        assert!(wildcard_named_get.body.get("logs-root-alias-000001").is_some());
+        assert!(wildcard_named_get.body.get("logs-root-alias-000002").is_some());
+
+        let duplicate_named_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_alias/logs-root-write").with_json_body(
+                serde_json::json!({
+                    "index": "logs-root-alias-000001",
+                    "is_write_index": true
+                }),
+            ),
+        );
+        assert_eq!(duplicate_named_put.status, 200);
+
+        let duplicate_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-root-write",
+        ));
+        assert_eq!(duplicate_readback.status, 200);
+        assert_eq!(
+            duplicate_readback
+                .body
+                .as_object()
+                .map(|indices| indices.len()),
+            Some(1)
+        );
+        assert_eq!(
+            duplicate_readback.body["logs-root-alias-000001"]["aliases"]["logs-root-write"]["is_write_index"],
+            Value::Bool(true)
+        );
+
         let aliases_get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_aliases"));
         assert_eq!(aliases_get.status, 200);
         assert!(
@@ -18901,6 +20097,11 @@ mod tests {
                 .with_json_body(serde_json::json!({})),
         );
         assert_eq!(create.status, 200);
+        let create_second = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-000002")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_second.status, 200);
 
         let collection_put = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_alias").with_json_body(
@@ -18927,6 +20128,23 @@ mod tests {
             "/logs-index-alias-000001/_alias",
         ));
         assert_eq!(collection_head.status, 200);
+
+        let wildcard_collection_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-*/_alias").with_json_body(
+                serde_json::json!({
+                    "alias": "logs-index-wildcard-collection"
+                }),
+            ),
+        );
+        assert_eq!(wildcard_collection_put.status, 200);
+
+        let wildcard_collection_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-index-wildcard-collection",
+        ));
+        assert_eq!(wildcard_collection_get.status, 200);
+        assert!(wildcard_collection_get.body.get("logs-index-alias-000001").is_some());
+        assert!(wildcard_collection_get.body.get("logs-index-alias-000002").is_some());
 
         let named_put = node.handle_rest_request(
             RestRequest::new(
@@ -18993,6 +20211,19 @@ mod tests {
             "/logs-index-alias-000001/_alias/logs-index-named-put",
         ));
         assert_eq!(alias_delete.status, 200);
+
+        let deleted_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-alias-000001/_alias/logs-index-named-put",
+        ));
+        assert_eq!(deleted_head.status, 404);
+
+        let deleted_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-index-alias-000001/_alias/logs-index-named-put",
+        ));
+        assert_eq!(deleted_get.status, 200);
+        assert_eq!(deleted_get.body, serde_json::json!({}));
     }
 
     #[test]
@@ -19456,19 +20687,23 @@ mod tests {
                 .with_json_body(serde_json::json!({})),
         );
         node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-flush-000002")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/metrics-flush-000001")
                 .with_json_body(serde_json::json!({})),
         );
 
         for (method, path, expected_total) in [
-            (RestMethod::Get, "/_flush", 2),
-            (RestMethod::Post, "/_flush", 2),
-            (RestMethod::Get, "/_flush/synced", 2),
-            (RestMethod::Post, "/_flush/synced", 2),
-            (RestMethod::Get, "/logs-*/_flush", 1),
-            (RestMethod::Post, "/logs-*/_flush", 1),
-            (RestMethod::Get, "/logs-*/_flush/synced", 1),
-            (RestMethod::Post, "/logs-*/_flush/synced", 1),
+            (RestMethod::Get, "/_flush", 3),
+            (RestMethod::Post, "/_flush", 3),
+            (RestMethod::Get, "/_flush/synced", 3),
+            (RestMethod::Post, "/_flush/synced", 3),
+            (RestMethod::Get, "/logs-*/_flush", 2),
+            (RestMethod::Post, "/logs-*/_flush", 2),
+            (RestMethod::Get, "/logs-*/_flush/synced", 2),
+            (RestMethod::Post, "/logs-*/_flush/synced", 2),
         ] {
             let response = node.handle_rest_request(RestRequest::new(method, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -19489,13 +20724,17 @@ mod tests {
                 .with_json_body(serde_json::json!({})),
         );
         node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-cache-clear-000002")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/metrics-cache-clear-000001")
                 .with_json_body(serde_json::json!({})),
         );
 
         for path in ["/_cache/clear", "/logs-*/_cache/clear"] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
-            let expected_total = if path == "/_cache/clear" { 2 } else { 1 };
+            let expected_total = if path == "/_cache/clear" { 3 } else { 2 };
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(response.body["_shards"]["total"], expected_total, "path {path}");
             assert_eq!(response.body["_shards"]["successful"], expected_total, "path {path}");
@@ -19531,6 +20770,11 @@ mod tests {
         assert_eq!(global.body["acknowledged"], Value::Bool(true));
         assert_eq!(global.body["shards_acknowledged"], Value::Bool(true));
 
+        let repeated = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_close"));
+        assert_eq!(repeated.status, 200);
+        assert_eq!(repeated.body["acknowledged"], Value::Bool(true));
+        assert_eq!(repeated.body["shards_acknowledged"], Value::Bool(true));
+
         let manifest = node
             .metadata_manifest_state
             .lock()
@@ -19550,13 +20794,17 @@ mod tests {
                 .with_json_body(serde_json::json!({})),
         );
         node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-forcemerge-000002")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/metrics-forcemerge-000001")
                 .with_json_body(serde_json::json!({})),
         );
 
         for path in ["/_forcemerge", "/logs-*/_forcemerge"] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
-            let expected_total = if path == "/_forcemerge" { 2 } else { 1 };
+            let expected_total = if path == "/_forcemerge" { 3 } else { 2 };
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(response.body["_shards"]["total"], expected_total, "path {path}");
             assert_eq!(response.body["_shards"]["successful"], expected_total, "path {path}");
@@ -19599,6 +20847,11 @@ mod tests {
         assert_eq!(global.status, 200);
         assert_eq!(global.body["acknowledged"], Value::Bool(true));
         assert_eq!(global.body["shards_acknowledged"], Value::Bool(true));
+
+        let repeated = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_open"));
+        assert_eq!(repeated.status, 200);
+        assert_eq!(repeated.body["acknowledged"], Value::Bool(true));
+        assert_eq!(repeated.body["shards_acknowledged"], Value::Bool(true));
 
         let manifest = node
             .metadata_manifest_state
@@ -19949,6 +21202,14 @@ mod tests {
         );
         assert_eq!(
             node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-refresh-000002")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/metrics-refresh-000001")
                     .with_json_body(serde_json::json!({})),
             )
@@ -19957,10 +21218,12 @@ mod tests {
         );
 
         for (method, path, expected_total) in [
-            (RestMethod::Get, "/_refresh", 2),
-            (RestMethod::Post, "/_refresh", 2),
-            (RestMethod::Get, "/logs-refresh-000001/_refresh", 2),
-            (RestMethod::Post, "/logs-refresh-000001/_refresh", 2),
+            (RestMethod::Get, "/_refresh", 3),
+            (RestMethod::Post, "/_refresh", 3),
+            (RestMethod::Get, "/logs-refresh-000001/_refresh", 1),
+            (RestMethod::Post, "/logs-refresh-000001/_refresh", 1),
+            (RestMethod::Get, "/logs-refresh-*/_refresh", 2),
+            (RestMethod::Post, "/logs-refresh-*/_refresh", 2),
         ] {
             let response = node.handle_rest_request(RestRequest::new(method, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -20146,6 +21409,63 @@ mod tests {
     }
 
     #[test]
+    fn bulk_routes_surface_partial_failure_duplicate_create_and_mixed_op_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-bulk-semantic-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+
+        let mixed_ndjson = concat!(
+            "{\"create\":{\"_index\":\"logs-bulk-semantic-000001\",\"_id\":\"doc-1\"}}\n",
+            "{\"message\":\"created-once\"}\n",
+            "{\"create\":{\"_index\":\"logs-bulk-semantic-000001\",\"_id\":\"doc-1\"}}\n",
+            "{\"message\":\"duplicate-create\"}\n",
+            "{\"delete\":{\"_index\":\"logs-bulk-semantic-000001\",\"_id\":\"missing-doc\"}}\n",
+            "{\"index\":{\"_index\":\"logs-bulk-semantic-000001\",\"_id\":\"doc-2\"}}\n",
+            "{\"message\":\"indexed-after-errors\"}\n"
+        );
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(mixed_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["errors"], Value::Bool(true));
+        assert_eq!(response.body["items"][0]["create"]["status"], 201);
+        assert_eq!(response.body["items"][1]["create"]["status"], 409);
+        assert_eq!(
+            response.body["items"][1]["create"]["error"]["type"],
+            "version_conflict_engine_exception"
+        );
+        assert_eq!(response.body["items"][2]["delete"]["status"], 404);
+        assert_eq!(response.body["items"][2]["delete"]["result"], "not_found");
+        assert_eq!(response.body["items"][3]["index"]["status"], 201);
+
+        let created = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-bulk-semantic-000001/_doc/doc-1",
+        ));
+        assert_eq!(created.status, 200);
+        assert_eq!(created.body["_source"]["message"], "created-once");
+
+        let indexed = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-bulk-semantic-000001/_doc/doc-2",
+        ));
+        assert_eq!(indexed.status, 200);
+        assert_eq!(indexed.body["_source"]["message"], "indexed-after-errors");
+    }
+
+    #[test]
     fn named_settings_routes_filter_global_and_targeted_setting_keys() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -20176,11 +21496,21 @@ mod tests {
 
         let global = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/_settings/index.number_of_shards",
+            "/_settings",
         ));
         assert_eq!(global.status, 200);
-        assert!(global.body["logs-settings-000001"]["settings"].is_object());
-        assert!(global.body["metrics-settings-000001"]["settings"].is_object());
+        assert_eq!(
+            global.body["logs-settings-000001"]["settings"]["index"]["number_of_replicas"],
+            Value::String("0".to_string())
+        );
+
+        let global_named = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings/index.number_of_shards",
+        ));
+        assert_eq!(global_named.status, 200);
+        assert!(global_named.body["logs-settings-000001"]["settings"].is_object());
+        assert!(global_named.body["metrics-settings-000001"]["settings"].is_object());
 
         let global_replicas = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -20193,6 +21523,16 @@ mod tests {
         );
         assert_eq!(
             global_replicas.body["metrics-settings-000001"]["settings"]["index.number_of_replicas"],
+            Value::String("0".to_string())
+        );
+
+        let global_flat = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings?flat_settings=true",
+        ));
+        assert_eq!(global_flat.status, 200);
+        assert_eq!(
+            global_flat.body["logs-settings-000001"]["settings"]["index.number_of_replicas"],
             Value::String("0".to_string())
         );
 
@@ -20218,6 +21558,26 @@ mod tests {
             Value::String("0".to_string())
         );
 
+        let targeted_nested = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_settings",
+        ));
+        assert_eq!(targeted_nested.status, 200);
+        assert_eq!(
+            targeted_nested.body["logs-settings-000001"]["settings"]["index"]["refresh_interval"],
+            Value::String("1s".to_string())
+        );
+
+        let targeted_flat = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_settings?flat_settings=true",
+        ));
+        assert_eq!(targeted_flat.status, 200);
+        assert_eq!(
+            targeted_flat.body["logs-settings-000001"]["settings"]["index.refresh_interval"],
+            Value::String("1s".to_string())
+        );
+
         let targeted_refresh = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-settings-000001/_settings/index.refresh_interval",
@@ -20236,6 +21596,17 @@ mod tests {
         assert!(
             metrics_refresh.body["metrics-settings-000001"]["settings"]
                 .get("index.refresh_interval")
+                .is_none()
+        );
+
+        let metrics_nested = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/metrics-settings-000001/_settings",
+        ));
+        assert_eq!(metrics_nested.status, 200);
+        assert!(
+            metrics_nested.body["metrics-settings-000001"]["settings"]["index"]
+                .get("refresh_interval")
                 .is_none()
         );
 

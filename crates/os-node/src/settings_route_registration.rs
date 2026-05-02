@@ -36,8 +36,9 @@ fn selector_matches(selector: &str, index: &str) -> bool {
 pub fn build_settings_readback_response(
     indices: &serde_json::Value,
     target: Option<&str>,
+    flat_settings: bool,
 ) -> serde_json::Value {
-    build_named_settings_readback_response(indices, target, None)
+    build_named_settings_readback_response(indices, target, None, flat_settings)
 }
 
 fn selector_matches_name(selector: &str, name: &str) -> bool {
@@ -69,6 +70,7 @@ pub fn build_named_settings_readback_response(
     indices: &serde_json::Value,
     target: Option<&str>,
     name_filter: Option<&str>,
+    flat_settings: bool,
 ) -> serde_json::Value {
     let selectors = target.map(parse_settings_selectors).unwrap_or_default();
     let name_selectors = name_filter.map(parse_settings_selectors).unwrap_or_default();
@@ -85,7 +87,13 @@ pub fn build_named_settings_readback_response(
         }
         if let Some(settings) = metadata.get("settings") {
             let filtered_settings = if name_selectors.is_empty() {
-                settings.clone()
+                if flat_settings {
+                    let mut flattened = serde_json::Map::new();
+                    flatten_settings_into(None, settings, &mut flattened);
+                    serde_json::Value::Object(flattened)
+                } else {
+                    settings.clone()
+                }
             } else {
                 let mut flattened = serde_json::Map::new();
                 flatten_settings_into(None, settings, &mut flattened);
@@ -215,9 +223,10 @@ mod tests {
             }
         });
 
-        let global = build_settings_readback_response(&indices, None);
-        let wildcard = build_settings_readback_response(&indices, Some("logs-*"));
-        let comma = build_settings_readback_response(&indices, Some("logs-000001,metrics-000001"));
+        let global = build_settings_readback_response(&indices, None, false);
+        let wildcard = build_settings_readback_response(&indices, Some("logs-*"), false);
+        let comma = build_settings_readback_response(&indices, Some("logs-000001,metrics-000001"), false);
+        let flat = build_settings_readback_response(&indices, Some("logs-000001"), true);
 
         assert!(global.get("logs-000001").is_some());
         assert!(global.get("metrics-000001").is_some());
@@ -227,6 +236,10 @@ mod tests {
         assert!(comma.get("logs-000001").is_some());
         assert!(comma.get("metrics-000001").is_some());
         assert!(comma.get("logs-000002").is_none());
+        assert_eq!(
+            flat["logs-000001"]["settings"]["index.number_of_shards"],
+            serde_json::json!(1)
+        );
     }
 
     #[test]
@@ -279,11 +292,13 @@ mod tests {
             &indices,
             None,
             Some("index.number_of_shards"),
+            false,
         );
         let targeted = build_named_settings_readback_response(
             &indices,
             Some("logs-*"),
             Some("index.number_of_replicas"),
+            false,
         );
 
         assert_eq!(

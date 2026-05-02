@@ -1965,7 +1965,6 @@
     - [x] unit test plan: index/template/alias/data-stream state mutation과 readback을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` fixture에 OpenSearch compare와 setup/teardown 추가
     - [x] runtime-backed summary: implemented-read=54, missing-route=0, requires-stateful-probe=64, unprobeable-expression=0
-    - [x] `/_data_stream/_stats` (GET) [implemented-read]
     - [x] `/_data_stream/{name}/_stats` (GET) [implemented-read]
     - [x] `/_mapping` (GET) [implemented-read]
     - [x] `/_mapping/field/{fields}` (GET) [implemented-read]
@@ -2012,7 +2011,7 @@
   - [x] search runtime route parity
     - [x] unit test plan: query/session/template/scroll/PIT/count/explain route dispatch와 validation을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope search` 및 `--scope search-execution` fixture에 OpenSearch compare 추가
-    - [x] runtime-backed summary: implemented-read=20, missing-route=0, requires-stateful-probe=26, unprobeable-expression=2
+    - [x] runtime-backed summary: implemented-read=22, missing-route=0, requires-stateful-probe=26, unprobeable-expression=0
     - [x] `/_msearch/template` (GET) [implemented-read]
     - [x] `/_render/template` (GET) [implemented-read]
     - [x] `/_search/template` (GET) [implemented-read]
@@ -2021,7 +2020,6 @@
     - [x] `/_count` (GET) [implemented-read]
     - [x] `/_search` (GET) [implemented-read]
     - [x] `/_search/pipeline` (GET) [implemented-read]
-    - [x] `/_search/scroll/{scroll_id}` (GET) [implemented-read]
     - [x] `/_validate/query` (GET) [implemented-read]
     - [x] `/{index}/_count` (GET) [implemented-read]
     - [x] `/{index}/_search` (GET) [implemented-read]
@@ -2042,7 +2040,7 @@
   - [x] vector/ML runtime route parity
     - [x] unit test plan: plugin route path normalization과 request validation을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope vector-ml` 또는 dedicated plugin compare runner로 OpenSearch surface compare 추가
-    - [x] runtime-backed summary: implemented-read=6, missing-route=0, requires-stateful-probe=5, unprobeable-expression=1
+    - [x] runtime-backed summary: implemented-read=7, missing-route=0, requires-stateful-probe=5, unprobeable-expression=0
     - [x] `/_plugins/_knn/stats` (GET) [implemented-read]
     - [x] `/_plugins/_knn/stats/{stat}` (GET) [implemented-read]
     - [x] `/_plugins/_knn/warmup` (GET) [implemented-read]
@@ -2051,7 +2049,7 @@
   - [x] misc runtime route parity
     - [x] unit test plan: misc route의 path normalization, method matrix, fail-closed behavior를 unit test로 고정
     - [x] integration/OpenSearch compare plan: family별 dedicated smoke/integration runner를 추가하고 가능한 surface는 OpenSearch compare, 불가능한 것은 explicit out-of-scope/defer로 분류
-    - [x] runtime-backed summary: implemented-read=9, missing-route=0, requires-stateful-probe=5, unprobeable-expression=0
+    - [x] runtime-backed summary: implemented-read=9, missing-route=0, requires-stateful-probe=4, unprobeable-expression=0
     - [x] `/_field_caps` (GET) [implemented-read]
     - [x] `/_list` (GET) [implemented-read]
     - [x] `/_list/indices` (GET) [implemented-read]

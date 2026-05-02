@@ -1,0 +1,213 @@
+{
+  "name": "search-semantic-compat",
+  "indices": [
+    {
+      "name": "logs-search-semantic-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "metrics-search-semantic-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "logs-search-semantic-000001",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "log doc",
+            "tenant": "tenant-a"
+          }
+        }
+      ]
+    },
+    {
+      "index": "metrics-search-semantic-000001",
+      "documents": [
+        {
+          "_id": "doc-2",
+          "_source": {
+            "message": "metric doc",
+            "tenant": "tenant-b"
+          }
+        }
+      ]
+    }
+  ],
+  "stored_scripts": [
+    {
+      "id": "probe-template",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": {
+            "query": {
+              "term": {
+                "tenant": "{{tenant}}"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "search_root_term_summary",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "search_target_missing_field_summary",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_search",
+      "body": {
+        "query": {
+          "term": {
+            "missing_field": "tenant-a"
+          }
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "count_root_term_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_count",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "extract": "count_query"
+    },
+    {
+      "name": "count_target_term_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_count",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "extract": "count_query"
+    },
+    {
+      "name": "validate_query_root_invalid_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {
+        "query": {
+          "range": {
+            "tenant": {
+              "gte": "tenant-a"
+            }
+          }
+        }
+      },
+      "extract": "validate_query_semantic"
+    },
+    {
+      "name": "validate_query_target_empty_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_validate/query",
+      "body": {
+        "query": {}
+      },
+      "extract": "validate_query_semantic"
+    },
+    {
+      "name": "render_template_named_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_render/template/probe-template",
+      "body": {
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "render_template_output"
+    },
+    {
+      "name": "search_template_named_root_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "search_template_named_target_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "search_summary"
+    },
+    {
+      "name": "search_template_missing_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "missing-template"
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 404,
+      "reason": "Steelsearch semantic hardening fixture for missing named search template."
+    }
+  ]
+}

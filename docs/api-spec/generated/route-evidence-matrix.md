@@ -157,7 +157,7 @@ status and the canonical comparison/profile owner when one exists.
 | index-and-metadata | implemented-stateful | POST | `/{index}/_close` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | PUT | `/_data_stream/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | PUT | `/{index}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
-| index-and-metadata | implemented-read | GET | `/_data_stream/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-stateful | GET | `/_data_stream/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-read | GET | `/_data_stream/{name}/_stats` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | DELETE | `/_component_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | DELETE | `/_index_template/{name}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
@@ -374,7 +374,7 @@ status and the canonical comparison/profile owner when one exists.
 | search | implemented-stateful | POST | `/{index}/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | GET | `/_search/scroll` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/_search/scroll` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-read | GET | `/_search/scroll/{scroll_id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented-stateful | GET | `/_search/scroll/{scroll_id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/_search/scroll/{scroll_id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | misc | implemented-stateful | POST | `/{index}/_tier/ + targetTier` | `deferred` | `no canonical runtime compare owner` |
 | misc | implemented-stateful | POST | `/_tier/_cancel/{index}` | `deferred` | `no canonical runtime compare owner` |

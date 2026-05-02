@@ -1,0 +1,297 @@
+{
+  "name": "admin-ops-semantic-compat",
+  "indices": [
+    {
+      "name": "logs-admin-ops-000001",
+      "body": {}
+    },
+    {
+      "name": "logs-admin-ops-000002",
+      "body": {}
+    },
+    {
+      "name": "metrics-admin-ops-000001",
+      "body": {}
+    }
+  ],
+  "bulk": [
+    {
+      "index": "logs-admin-ops-000001",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "log doc 1"
+          }
+        },
+        {
+          "_id": "doc-2",
+          "_source": {
+            "message": "log doc 2"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-admin-ops-000002",
+      "documents": [
+        {
+          "_id": "doc-3",
+          "_source": {
+            "message": "log doc 3"
+          }
+        }
+      ]
+    },
+    {
+      "index": "metrics-admin-ops-000001",
+      "documents": [
+        {
+          "_id": "doc-4",
+          "_source": {
+            "message": "metric doc 1"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "admin_ops_scroll_root_get_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "scroll_hits",
+      "steps": [
+        {
+          "name": "open-scroll",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_search?scroll=1m",
+          "body": {
+            "size": 1,
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "read-scroll",
+          "method": "GET",
+          "path": "/_search/scroll",
+          "body": {
+            "scroll_id": "${last._scroll_id}"
+          },
+          "expected_status": 200,
+          "extract": "scroll_hits"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_scroll_named_delete_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "scroll_clear",
+      "steps": [
+        {
+          "name": "open-scroll",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_search?scroll=1m",
+          "body": {
+            "size": 1,
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "clear-scroll",
+          "method": "DELETE",
+          "path": "/_search/scroll/${last._scroll_id}",
+          "expected_status": 200,
+          "extract": "scroll_clear"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_pit_list_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "pit_list",
+      "steps": [
+        {
+          "name": "open-pit-1",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_search/point_in_time?keep_alive=1m",
+          "expected_status": 200
+        },
+        {
+          "name": "open-pit-2",
+          "method": "POST",
+          "path": "/logs-admin-ops-000002/_search/point_in_time?keep_alive=1m",
+          "expected_status": 200
+        },
+        {
+          "name": "list-pits",
+          "method": "GET",
+          "path": "/_search/point_in_time/_all",
+          "expected_status": 200,
+          "extract": "pit_list"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_pit_delete_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "open-pit-1",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_search/point_in_time?keep_alive=1m",
+          "expected_status": 200
+        },
+        {
+          "name": "open-pit-2",
+          "method": "POST",
+          "path": "/logs-admin-ops-000002/_search/point_in_time?keep_alive=1m",
+          "expected_status": 200
+        },
+        {
+          "name": "delete-all-pits",
+          "method": "DELETE",
+          "path": "/_search/point_in_time/_all",
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_close_repeat_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "close-once",
+          "method": "POST",
+          "path": "/_close",
+          "expected_status": 200
+        },
+        {
+          "name": "close-again",
+          "method": "POST",
+          "path": "/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_open_repeat_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "acknowledged",
+      "steps": [
+        {
+          "name": "open-once",
+          "method": "POST",
+          "path": "/_open",
+          "expected_status": 200
+        },
+        {
+          "name": "open-again",
+          "method": "POST",
+          "path": "/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_tier_cancel_after_set_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "tier_preference",
+      "steps": [
+        {
+          "name": "set-tier",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_tier/warm",
+          "expected_status": 200
+        },
+        {
+          "name": "cancel-tier",
+          "method": "POST",
+          "path": "/_tier/_cancel/logs-admin-ops-000001",
+          "expected_status": 200
+        },
+        {
+          "name": "read-tier",
+          "method": "GET",
+          "path": "/logs-admin-ops-000001/_tier",
+          "expected_status": 200,
+          "extract": "tier_preference"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_flush_selector_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/logs-admin-ops-*/_flush",
+      "body": {},
+      "extract": "flush_shards"
+    },
+    {
+      "name": "admin_ops_refresh_selector_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/logs-admin-ops-*/_refresh",
+      "body": {},
+      "extract": "flush_shards"
+    },
+    {
+      "name": "admin_ops_cache_clear_selector_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/logs-admin-ops-*/_cache/clear",
+      "body": {},
+      "extract": "flush_shards"
+    },
+    {
+      "name": "admin_ops_forcemerge_selector_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/logs-admin-ops-*/_forcemerge",
+      "body": {},
+      "extract": "flush_shards"
+    },
+    {
+      "name": "admin_ops_tasks_cancel_non_cancellable_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/_tasks/node-a:11/_cancel",
+      "body": {},
+      "extract": "task_error"
+    },
+    {
+      "name": "admin_ops_tasks_cancel_unknown_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/_tasks/node-a:999/_cancel",
+      "body": {},
+      "extract": "task_error"
+    },
+    {
+      "name": "admin_ops_reindex_rethrottle_known_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/_reindex/node-a:11/_rethrottle",
+      "body": {},
+      "extract": "rethrottle_task"
+    },
+    {
+      "name": "admin_ops_reindex_rethrottle_unknown_semantic",
+      "area": "admin-ops-semantic",
+      "method": "POST",
+      "path": "/_reindex/node-a:999/_rethrottle",
+      "body": {},
+      "extract": "task_error"
+    }
+  ]
+}

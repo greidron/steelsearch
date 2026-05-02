@@ -11,12 +11,13 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from runtime_route_normalization import is_concrete_path, normalize_path
+
 ROOT = Path('/home/ubuntu/steelsearch')
 MATRIX = ROOT / 'docs/api-spec/generated/route-evidence-matrix.md'
 OUT_JSON = ROOT / 'docs/api-spec/generated/runtime-route-ledger.json'
 OUT_MD = ROOT / 'docs/api-spec/generated/runtime-route-ledger.md'
 SAFE_METHODS = {'GET', 'HEAD'}
-UNPROBEABLE_MARKERS = (' + ', 'String.format(', 'KNNPlugin.', 'ENDPOINT', 'URL_PATH', '(dynamic)')
 PLACEHOLDERS = {
     'index': 'logs-compat',
     'indices': 'logs-compat',
@@ -36,6 +37,7 @@ PLACEHOLDERS = {
     'task_id': '1',
     'taskId': '1',
     'scroll_id': 'scroll-1',
+    'model_id': 'model-1',
     'block': 'read_only',
     'new_index': 'logs-compat-next',
     'target': 'logs-compat-target',
@@ -49,30 +51,6 @@ PLACEHOLDERS = {
     'path': 'message',
     'index_uuid': 'uuid-1',
     'targetTier': 'hot',
-}
-
-PATH_NORMALIZATION = {
-    'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)': '/_plugins/_knn/clear_cache/{index}',
-    'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': '/_plugins/_knn/models/{model_id}',
-    'String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': '/_plugins/_knn/models/{model_id}/_train',
-    'String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)': '/_plugins/_knn/models/_train',
-    'String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)': '/_plugins/_knn/models/_search',
-    'KNNPlugin.KNN_BASE_URI + "/stats/"': '/_plugins/_knn/stats',
-    'KNNPlugin.KNN_BASE_URI + "/stats/{stat}"': '/_plugins/_knn/stats/{stat}',
-    'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"': '/_plugins/_knn/{nodeId}/stats',
-    'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"': '/_plugins/_knn/{nodeId}/stats/{stat}',
-    'KNNPlugin.KNN_BASE_URI + URL_PATH': '/_plugins/_knn/warmup',
-    '_wlm/workload_group/': '/_wlm/workload_group',
-    '_wlm/workload_group/{name}': '/_wlm/workload_group/{name}',
-    '_wlm/stats': '/_wlm/stats',
-    '_wlm/{nodeId}/stats': '/_wlm/{nodeId}/stats',
-    '_wlm/stats/{workloadGroupId}': '/_wlm/stats/{workloadGroupId}',
-    '_wlm/{nodeId}/stats/{workloadGroupId}': '/_wlm/{nodeId}/stats/{workloadGroupId}',
-    '_list/wlm_stats': '/_list/wlm_stats',
-    '_list/wlm_stats/{nodeId}/stats': '/_list/wlm_stats/{nodeId}/stats',
-    '_list/wlm_stats/stats/{workloadGroupId}': '/_list/wlm_stats/stats/{workloadGroupId}',
-    '_list/wlm_stats/{nodeId}/stats/{workloadGroupId}': '/_list/wlm_stats/{nodeId}/stats/{workloadGroupId}',
-    '/{index}/_tier/ + targetTier': '/{index}/_tier/{targetTier}',
 }
 
 
@@ -99,13 +77,10 @@ def parse_matrix() -> list[dict[str, str]]:
 
 
 def concrete_path(path: str) -> str | None:
-    path = PATH_NORMALIZATION.get(path, path)
-    if any(marker in path for marker in UNPROBEABLE_MARKERS):
+    path = normalize_path(path)
+    if not is_concrete_path(path):
         return None
     out = path
-    out = out.rstrip('/') or '/'
-    if not out.startswith('/'):
-        out = '/' + out
     for key, value in PLACEHOLDERS.items():
         out = out.replace('{' + key + '}', value)
     if '{' in out or '}' in out:

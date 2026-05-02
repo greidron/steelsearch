@@ -1,0 +1,210 @@
+{
+  "name": "index-metadata-semantic-compat",
+  "indices": [
+    {
+      "name": "logs-meta-000001",
+      "body": {
+        "settings": {
+          "index.number_of_shards": 1,
+          "index.number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [],
+  "requests": [
+    {
+      "method": "PUT",
+      "path": "/logs-meta-000001/_settings",
+      "body": {
+        "index": {
+          "refresh_interval": "1s"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/logs-meta-000001/_mapping",
+      "body": {
+        "properties": {
+          "region": {
+            "type": "keyword"
+          }
+        }
+      }
+    }
+  ],
+  "aliases": [
+    {
+      "index": "logs-meta-000001",
+      "alias": "logs-meta-read"
+    }
+  ],
+  "legacy_templates": [
+    {
+      "name": "meta-legacy-template",
+      "body": {
+        "index_patterns": [
+          "logs-legacy-*"
+        ],
+        "order": 11,
+        "version": 3,
+        "settings": {
+          "index.number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "component_templates": [
+    {
+      "name": "meta-component-template",
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          },
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "index_templates": [
+    {
+      "name": "meta-index-template",
+      "body": {
+        "index_patterns": [
+          "logs-meta-*"
+        ],
+        "priority": 11,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          },
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-meta-stream-template",
+      "body": {
+        "index_patterns": [
+          "logs-meta-*"
+        ],
+        "data_stream": {},
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          }
+        }
+      }
+    }
+  ],
+  "data_streams": [
+    {
+      "name": "logs-meta-stream"
+    },
+    {
+      "name": "logs-meta-delete"
+    }
+  ],
+  "cases": [
+    {
+      "name": "metadata_alias_named_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/_alias/logs-meta-read",
+      "extract": "alias_metadata"
+    },
+    {
+      "name": "metadata_settings_flat_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/logs-meta-000001/_settings/index.number_of_replicas,index.refresh_interval?flat_settings=true",
+      "extract": "settings_named"
+    },
+    {
+      "name": "metadata_mapping_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/logs-meta-000001",
+      "extract": "index_metadata"
+    },
+    {
+      "name": "metadata_component_template_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/_component_template/meta-component-template",
+      "extract": "template_metadata"
+    },
+    {
+      "name": "metadata_index_template_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/_index_template/meta-index-template",
+      "extract": "template_metadata"
+    },
+    {
+      "name": "metadata_legacy_template_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/_template/meta-legacy-template",
+      "extract": "template_metadata"
+    },
+    {
+      "name": "metadata_data_stream_named_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/_data_stream/logs-meta-stream",
+      "extract": "data_stream_metadata"
+    },
+    {
+      "name": "metadata_data_stream_stats_semantic",
+      "area": "index-metadata-semantic",
+      "method": "GET",
+      "path": "/_data_stream/_stats",
+      "extract": "data_stream_stats"
+    },
+    {
+      "name": "metadata_data_stream_delete_ack",
+      "area": "index-metadata-semantic",
+      "method": "DELETE",
+      "path": "/_data_stream/logs-meta-delete",
+      "extract": "acknowledged"
+    }
+  ]
+}

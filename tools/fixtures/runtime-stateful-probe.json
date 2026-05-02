@@ -132,6 +132,22 @@
           "index.number_of_replicas": 0
         }
       }
+    },
+    {
+      "method": "PUT",
+      "path": "/_scripts/probe-template",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": {
+            "query": {
+              "term": {
+                "tenant": "{{tenant}}"
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "cases": [
@@ -488,6 +504,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "flush_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush",
+      "method": "POST",
+      "path": "/logs-stateful-*/_flush",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "flush_synced_target_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_flush/synced",
@@ -522,11 +546,27 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "delete_by_query_rethrottle_known_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_delete_by_query/node-a:11/_rethrottle",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "reindex_rethrottle_post",
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
       "method": "POST",
       "path": "/_reindex/node-a:999/_rethrottle",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_rethrottle_known_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_reindex/node-a:11/_rethrottle",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -541,6 +581,51 @@
         },
         "dest": {
           "index": "logs-stateful-reindex"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_missing_dest_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-stateful-probe"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_wildcard_source_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-stateful-*"
+        },
+        "dest": {
+          "index": "logs-stateful-reindex-wildcard"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_overwrite_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-stateful-probe"
+        },
+        "dest": {
+          "index": "logs-stateful-probe"
         }
       },
       "expected_runtime_status": "stateful-route-present"
@@ -565,6 +650,18 @@
       "path": "/logs-stateful-probe/_create/create-post-doc",
       "body": {
         "message": "create post probe",
+        "tenant": "tenant-a"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "create_doc_refresh_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_create/create-refresh-doc?refresh=true",
+      "body": {
+        "message": "create refresh probe",
         "tenant": "tenant-a"
       },
       "expected_runtime_status": "stateful-route-present"
@@ -643,6 +740,49 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "single_doc_update_missing_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update/missing-doc",
+      "body": {
+        "doc": {
+          "processed": true
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_update_noop_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update/doc-1",
+      "body": {
+        "doc": {
+          "message": "stateful route probe",
+          "tenant": "tenant-a"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_update_script_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update/doc-1?refresh=true",
+      "body": {
+        "script": {
+          "source": "ctx._source.processed = params.processed",
+          "params": {
+            "processed": true
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_pipeline_put",
       "family": "search",
       "inventory_path": "/_search/pipeline/{id}",
@@ -715,6 +855,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_scroll_named_get",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "GET",
+      "path": "/_search/scroll/scroll-1",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "msearch_template_root_post",
       "family": "search",
       "inventory_path": "/_msearch/template",
@@ -752,11 +900,48 @@
       "method": "POST",
       "path": "/_render/template/probe-template",
       "body": {
-        "source": {
-          "query": {
-            "match_all": {}
-          }
+        "params": {
+          "tenant": "tenant-a"
         }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_template_named_post",
+      "family": "search",
+      "inventory_path": "/_search/template",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_template_target_named_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search/template",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_template_missing_post",
+      "family": "search",
+      "inventory_path": "/_search/template",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "missing-template"
       },
       "expected_runtime_status": "stateful-route-present"
     },
@@ -798,7 +983,37 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "count_root_term_post",
+      "family": "search",
+      "inventory_path": "/_count",
+      "method": "POST",
+      "path": "/_count",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "count_target_post",
+      "family": "search",
+      "inventory_path": "/{index}/_count",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_count",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "count_target_term_post",
       "family": "search",
       "inventory_path": "/{index}/_count",
       "method": "POST",
@@ -841,6 +1056,52 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "validate_query_root_invalid_post",
+      "family": "search",
+      "inventory_path": "/_validate/query",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {
+        "query": {
+          "range": {
+            "tenant": {
+              "gte": "tenant-a"
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "validate_query_target_invalid_post",
+      "family": "search",
+      "inventory_path": "/{index}/_validate/query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_validate/query",
+      "body": {
+        "query": {}
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "validate_query_root_empty_post",
+      "family": "search",
+      "inventory_path": "/_validate/query",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "validate_query_target_empty_post",
+      "family": "search",
+      "inventory_path": "/{index}/_validate/query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_validate/query",
+      "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_root_post",
       "family": "search",
       "inventory_path": "/_search",
@@ -854,6 +1115,21 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_root_term_post",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_point_in_time_root_delete",
       "family": "search",
       "inventory_path": "/_search/point_in_time",
@@ -861,6 +1137,20 @@
       "path": "/_search/point_in_time",
       "body": {
         "id": "pit-1"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_root_delete_array",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "id": [
+          "pit-1",
+          "pit-2"
+        ]
       },
       "expected_runtime_status": "stateful-route-present"
     },
@@ -895,11 +1185,42 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_scroll_root_get_query",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "GET",
+      "path": "/_search/scroll?scroll_id=scroll-4",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_root_delete_array",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "DELETE",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": [
+          "scroll-5"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "msearch_root_post",
       "family": "search",
       "inventory_path": "/_msearch",
       "method": "POST",
       "path": "/_msearch",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_root_multi_post",
+      "family": "search",
+      "inventory_path": "/_msearch",
+      "method": "POST",
+      "path": "/_msearch",
+      "raw_body": "{\"index\":\"logs-stateful-probe\"}\n{\"query\":{\"match_all\":{}}}\n{\"index\":\"logs-stateful-probe\"}\n{\"query\":{\"term\":{\"tenant\":\"tenant-a\"}}}\n",
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -918,6 +1239,34 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "explain_target_unmatched_post",
+      "family": "search",
+      "inventory_path": "/{index}/_explain/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_explain/doc-1",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "missing-tenant"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "explain_target_missing_post",
+      "family": "search",
+      "inventory_path": "/{index}/_explain/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_explain/doc-missing",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "msearch_target_post",
       "family": "search",
       "inventory_path": "/{index}/_msearch",
@@ -926,7 +1275,47 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "msearch_target_multi_post",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch",
+      "method": "POST",
+      "path": "/logs-stateful-*/_msearch",
+      "raw_body": "{}\n{\"query\":{\"match_all\":{}}}\n{}\n{\"query\":{\"term\":{\"tenant\":\"missing-tenant\"}}}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "delete_by_query_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_delete_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_delete_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "delete_by_query_unmatched_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_delete_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_delete_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "delete_by_query_repeated_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_delete_by_query",
       "method": "POST",
@@ -957,11 +1346,55 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "update_by_query_unmatched_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "update_by_query_noop_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "update_by_query_rethrottle_post",
       "family": "document-and-bulk",
       "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
       "method": "POST",
       "path": "/_update_by_query/node-a:999/_rethrottle",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "update_by_query_rethrottle_known_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_update_by_query/node-a:11/_rethrottle",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1035,6 +1468,26 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "bulk_root_semantic_mixed_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "POST",
+      "path": "/_bulk",
+      "raw_body": "{\"create\":{\"_index\":\"logs-stateful-bulk-semantic-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"created-once\"}\n{\"create\":{\"_index\":\"logs-stateful-bulk-semantic-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"duplicate-create\"}\n{\"delete\":{\"_index\":\"logs-stateful-bulk-semantic-root\",\"_id\":\"missing-doc\"}}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_target_semantic_mixed_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_bulk",
+      "raw_body": "{\"create\":{\"_id\":\"doc-bulk-semantic\"}}\n{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}\n{\"create\":{\"_id\":\"doc-bulk-semantic\"}}\n{\"message\":\"duplicate-create\",\"tenant\":\"tenant-a\"}\n{\"delete\":{\"_id\":\"missing-doc\"}}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_post",
       "family": "search",
       "inventory_path": "/{index}/_search",
@@ -1043,6 +1496,64 @@
       "body": {
         "query": {
           "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_target_term_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_target_missing_field_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search",
+      "body": {
+        "query": {
+          "term": {
+            "missing_field": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_target_wildcard_match_all_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search",
+      "method": "POST",
+      "path": "/logs-stateful-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_target_wildcard_term_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search",
+      "method": "POST",
+      "path": "/logs-stateful-*/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
         }
       },
       "expected_runtime_status": "stateful-route-present"
@@ -1186,6 +1697,14 @@
       "inventory_path": "/_tasks/{task_id}/_cancel",
       "method": "POST",
       "path": "/_tasks/node-a:999/_cancel",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tasks_cancel_by_id_non_cancellable_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/{task_id}/_cancel",
+      "method": "POST",
+      "path": "/_tasks/node-a:11/_cancel",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1461,6 +1980,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "settings_global_flat_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "GET",
+      "path": "/_settings?flat_settings=true",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "settings_target_get",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_settings",
@@ -1479,6 +2006,14 @@
           "refresh_interval": "1s"
         }
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_target_flat_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_settings?flat_settings=true",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1558,6 +2093,36 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "mapping_target_merge_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mapping",
+      "body": {
+        "properties": {
+          "probe_semantic_region": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mapping_target_redefine_type_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mapping",
+      "body": {
+        "properties": {
+          "message": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "alias_root_get",
       "family": "index-and-metadata",
       "inventory_path": "/_alias",
@@ -1614,6 +2179,17 @@
         "indices": [
           "logs-stateful-probe"
         ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "alias_named_wildcard_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "PUT",
+      "path": "/_alias/logs-stateful-wildcard-write",
+      "body": {
+        "index": "logs-stateful-*"
       },
       "expected_runtime_status": "stateful-route-present"
     },
@@ -1713,6 +2289,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_alias_collection_wildcard_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "PUT",
+      "path": "/logs-stateful-*/_alias",
+      "body": {
+        "alias": "logs-stateful-wildcard-collection"
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_alias_named_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_alias/{name}",
@@ -1743,6 +2330,17 @@
       "inventory_path": "/{index}/_alias/{name}",
       "method": "DELETE",
       "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_duplicate_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "body": {
+        "is_write_index": true
+      },
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1995,6 +2593,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "refresh_selector_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_refresh",
+      "method": "POST",
+      "path": "/logs-stateful-*/_refresh",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "termvectors_target_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_termvectors",
@@ -2031,7 +2637,23 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "cache_clear_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_cache/clear",
+      "method": "POST",
+      "path": "/logs-stateful-*/_cache/clear",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "close_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_close",
+      "method": "POST",
+      "path": "/_close",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "close_root_repeat_post",
       "family": "index-and-metadata",
       "inventory_path": "/_close",
       "method": "POST",
@@ -2060,6 +2682,14 @@
       "inventory_path": "/{index}/_forcemerge",
       "method": "POST",
       "path": "/logs-stateful-probe/_forcemerge",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "forcemerge_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_forcemerge",
+      "method": "POST",
+      "path": "/logs-stateful-*/_forcemerge",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2158,6 +2788,27 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_template_named_overwrite_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "POST",
+      "path": "/_index_template/probe-index-template",
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "priority": 11,
+        "template": {
+          "settings": {
+            "index": {
+              "refresh_interval": "15s"
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_template_named_delete",
       "family": "index-and-metadata",
       "inventory_path": "/_index_template/{name}",
@@ -2167,6 +2818,14 @@
     },
     {
       "name": "open_root_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_open",
+      "method": "POST",
+      "path": "/_open",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "open_root_repeat_post",
       "family": "index-and-metadata",
       "inventory_path": "/_open",
       "method": "POST",
@@ -2224,6 +2883,21 @@
         ],
         "order": 9,
         "version": 2
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "legacy_template_named_overwrite_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "POST",
+      "path": "/_template/probe-legacy-template",
+      "body": {
+        "index_patterns": [
+          "logs-legacy-*"
+        ],
+        "order": 11,
+        "version": 3
       },
       "expected_runtime_status": "stateful-route-present"
     },
@@ -2312,6 +2986,23 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "component_template_named_overwrite_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "POST",
+      "path": "/_component_template/probe-component-template",
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "refresh_interval": "20s"
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "component_template_named_delete",
       "family": "index-and-metadata",
       "inventory_path": "/_component_template/{name}",
@@ -2336,6 +3027,14 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "data_stream_stats_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/_stats",
+      "method": "GET",
+      "path": "/_data_stream/_stats",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "data_stream_named_delete",
       "family": "index-and-metadata",
       "inventory_path": "/_data_stream/{name}",
@@ -2345,6 +3044,14 @@
     },
     {
       "name": "tier_cancel_post",
+      "family": "misc",
+      "inventory_path": "/_tier/_cancel/{index}",
+      "method": "POST",
+      "path": "/_tier/_cancel/logs-stateful-probe",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tier_cancel_repeat_post",
       "family": "misc",
       "inventory_path": "/_tier/_cancel/{index}",
       "method": "POST",

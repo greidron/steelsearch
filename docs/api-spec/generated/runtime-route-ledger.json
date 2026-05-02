@@ -11,25 +11,23 @@
     },
     "misc": {
       "implemented-read": 9,
-      "requires-stateful-probe": 5
+      "requires-stateful-probe": 4
     },
     "root-cluster-node": {
       "implemented-read": 92,
       "requires-stateful-probe": 35
     },
     "search": {
-      "implemented-read": 20,
-      "requires-stateful-probe": 26,
-      "unprobeable-expression": 2
+      "implemented-read": 22,
+      "requires-stateful-probe": 26
     },
     "snapshot-migration-interop": {
       "implemented-read": 7,
       "requires-stateful-probe": 5
     },
     "vector-and-ml": {
-      "implemented-read": 6,
-      "requires-stateful-probe": 5,
-      "unprobeable-expression": 1
+      "implemented-read": 7,
+      "requires-stateful-probe": 5
     }
   },
   "generated_from": "/home/ubuntu/steelsearch/docs/api-spec/generated/route-evidence-matrix.md",
@@ -55,7 +53,7 @@
       "method": "GET",
       "path": "/_msearch/template",
       "probe": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":17,\"total\":17},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"log doc 1\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"log doc 2\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-admin-ops-000002\",\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"log doc 3\"}},{\"_id\":\"doc-4\",\"_index\":\"metrics-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"metric doc 1\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_seq_no\":9,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_seq_no\":10,\"_source\":{\"message\":\"bulk root put\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":17}},\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "profile": "`search`",
@@ -80,8 +78,8 @@
       "method": "GET",
       "path": "/{index}/_msearch/template",
       "probe": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}]}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"no such index [logs-compat]\",\"type\":\"index_not_found_exception\"},\"status\":404}",
+        "status": 404
       },
       "profile": "`search`",
       "runtime_status": "implemented-read",
@@ -130,8 +128,8 @@
       "method": "GET",
       "path": "/_render/template/{id}",
       "probe": {
-        "body": "{\"_id\":\"doc-1\",\"template_output\":{\"query\":{\"match_all\":{}}}}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"stored script [doc-1] not found\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
       },
       "profile": "`search`",
       "runtime_status": "implemented-read",
@@ -155,7 +153,7 @@
       "method": "GET",
       "path": "/_search/template",
       "probe": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":17,\"total\":17},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"log doc 1\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"log doc 2\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-admin-ops-000002\",\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"log doc 3\"}},{\"_id\":\"doc-4\",\"_index\":\"metrics-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"metric doc 1\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_seq_no\":9,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_seq_no\":10,\"_source\":{\"message\":\"bulk root put\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":17}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "profile": "`search`",
@@ -180,8 +178,8 @@
       "method": "GET",
       "path": "/{index}/_search/template",
       "probe": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"no such index [logs-compat]\",\"type\":\"index_not_found_exception\"},\"status\":404}",
+        "status": 404
       },
       "profile": "`search`",
       "runtime_status": "implemented-read",
@@ -238,25 +236,17 @@
       "source_status": "implemented-stateful"
     },
     {
-      "concrete_path": null,
-      "entrypoint": "`no canonical runtime compare owner`",
-      "family": "misc",
-      "method": "(dynamic)",
-      "path": "/_opensearch_dashboards + route.getPath(",
-      "probe": null,
-      "profile": "`deferred`",
-      "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
-    },
-    {
-      "concrete_path": null,
+      "concrete_path": "/_rank_eval",
       "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope search`",
       "family": "search",
       "method": "GET",
       "path": "/ + ENDPOINT",
-      "probe": null,
+      "probe": {
+        "body": "{\"details\":{\"evaluated_docs\":17,\"matched_docs\":17,\"target\":\"_all\"},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
       "profile": "`search`",
-      "runtime_status": "unprobeable-expression",
+      "runtime_status": "implemented-read",
       "source_status": "implemented-stateful"
     },
     {
@@ -271,14 +261,17 @@
       "source_status": "implemented-stateful"
     },
     {
-      "concrete_path": null,
+      "concrete_path": "/logs-compat/_rank_eval",
       "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope search`",
       "family": "search",
       "method": "GET",
       "path": "/{index}/ + ENDPOINT",
-      "probe": null,
+      "probe": {
+        "body": "{\"details\":{\"evaluated_docs\":0,\"matched_docs\":0,\"target\":\"logs-compat\"},\"failures\":{},\"metric_score\":0.0}",
+        "status": 200
+      },
       "profile": "`search`",
-      "runtime_status": "unprobeable-expression",
+      "runtime_status": "implemented-read",
       "source_status": "implemented-stateful"
     },
     {
@@ -365,12 +358,12 @@
       "method": "GET",
       "path": "/_field_caps",
       "probe": {
-        "body": "{\"fields\":{\"message\":{\"text\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"text\"}},\"tenant\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}}},\"indices\":[\"logs-stateful-probe\"]}",
+        "body": "{\"fields\":{\"@timestamp\":{\"date\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"date\"}},\"message\":{\"text\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"text\"}},\"probe_env\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}},\"probe_region\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}},\"probe_semantic_region\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}},\"probe_service\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}},\"probe_team\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}},\"tenant\":{\"keyword\":{\"aggregatable\":true,\"metadata_field\":false,\"searchable\":true,\"type\":\"keyword\"}}},\"indices\":[\"logs-admin-ops-000001\",\"logs-admin-ops-000002\",\"logs-stateful-bulk-root\",\"logs-stateful-bulk-semantic-root\",\"logs-stateful-bulk-stream-root\",\"logs-stateful-clone-post\",\"logs-stateful-clone-put\",\"logs-stateful-created\",\"logs-stateful-probe\",\"logs-stateful-reindex\",\"logs-stateful-reindex-wildcard\",\"logs-stateful-scale-post\",\"logs-stateful-shrink-post\",\"logs-stateful-shrink-put\",\"logs-stateful-split-post\",\"logs-stateful-split-put\",\"metrics-admin-ops-000001\"]}",
         "status": 200
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -381,7 +374,7 @@
       "probe": null,
       "profile": "`deferred`",
       "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": "/logs-compat/_field_caps",
@@ -395,7 +388,7 @@
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -406,7 +399,7 @@
       "probe": null,
       "profile": "`deferred`",
       "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": "/",
@@ -509,7 +502,7 @@
       "method": "GET",
       "path": "/_cluster/allocation/explain",
       "probe": {
-        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"current_state\":\"unassigned\",\"index\":\"logs-index-root-probe\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\",\"weight_ranking\":1}],\"primary\":false,\"shard\":0,\"unassigned_info\":{\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
+        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"current_state\":\"unassigned\",\"index\":\"logs-admin-ops-000001\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"127.0.0.1:19300\",\"weight_ranking\":1}],\"primary\":false,\"shard\":0,\"unassigned_info\":{\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -584,7 +577,7 @@
       "method": "GET",
       "path": "/_cluster/health",
       "probe": {
-        "body": "{\"active_primary_shards\":2,\"active_shards\":2,\"active_shards_percent_as_number\":50.0,\"cluster_name\":\"steelsearch-dev\",\"delayed_unassigned_shards\":0,\"initializing_shards\":0,\"number_of_data_nodes\":1,\"number_of_in_flight_fetch\":0,\"number_of_nodes\":1,\"number_of_pending_tasks\":2,\"relocating_shards\":0,\"status\":\"yellow\",\"task_max_waiting_in_queue_millis\":0,\"timed_out\":false,\"unassigned_shards\":2}",
+        "body": "{\"active_primary_shards\":17,\"active_shards\":17,\"active_shards_percent_as_number\":50.0,\"cluster_name\":\"steelsearch-dev\",\"delayed_unassigned_shards\":0,\"initializing_shards\":0,\"number_of_data_nodes\":1,\"number_of_in_flight_fetch\":0,\"number_of_nodes\":1,\"number_of_pending_tasks\":2,\"relocating_shards\":0,\"status\":\"yellow\",\"task_max_waiting_in_queue_millis\":0,\"timed_out\":false,\"unassigned_shards\":17}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -634,7 +627,7 @@
       "method": "GET",
       "path": "/_search_shards",
       "probe": {
-        "body": "{\"indices\":{\"logs-index-root-probe\":{},\"logs-stateful-probe\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-index-root-probe-0\"},\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "body": "{\"indices\":{\"logs-admin-ops-000001\":{},\"logs-admin-ops-000002\":{},\"logs-stateful-bulk-root\":{},\"logs-stateful-bulk-semantic-root\":{},\"logs-stateful-bulk-stream-root\":{},\"logs-stateful-clone-post\":{},\"logs-stateful-clone-put\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"logs-stateful-reindex\":{},\"logs-stateful-reindex-wildcard\":{},\"logs-stateful-scale-post\":{},\"logs-stateful-shrink-post\":{},\"logs-stateful-shrink-put\":{},\"logs-stateful-split-post\":{},\"logs-stateful-split-put\":{},\"metrics-admin-ops-000001\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"127.0.0.1:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-admin-ops-000001-0\"},\"index\":\"logs-admin-ops-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-admin-ops-000002-0\"},\"index\":\"logs-admin-ops-000002\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-root-0\"},\"index\":\"logs-stateful-bulk-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-semantic-root-0\"},\"index\":\"logs-stateful-bulk-semantic-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-stream-root-0\"},\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-clone-post-0\"},\"index\":\"logs-stateful-clone-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-clone-put-0\"},\"index\":\"logs-stateful-clone-put\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-0\"},\"index\":\"logs-stateful-reindex\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-wildcard-0\"},\"index\":\"logs-stateful-reindex-wildcard\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-scale-post-0\"},\"index\":\"logs-stateful-scale-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-shrink-post-0\"},\"index\":\"logs-stateful-shrink-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-shrink-put-0\"},\"index\":\"logs-stateful-shrink-put\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-split-post-0\"},\"index\":\"logs-stateful-split-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-split-put-0\"},\"index\":\"logs-stateful-split-put\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-metrics-admin-ops-000001-0\"},\"index\":\"metrics-admin-ops-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -659,7 +652,7 @@
       "method": "GET",
       "path": "/{index}/_search_shards",
       "probe": {
-        "body": "{\"indices\":{},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:19300\"}},\"shards\":[]}",
+        "body": "{\"indices\":{},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"127.0.0.1:19300\"}},\"shards\":[]}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -684,7 +677,7 @@
       "method": "GET",
       "path": "/_cluster/state",
       "probe": {
-        "body": "{\"blocks\":{},\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-index-root-probe\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"}}},\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"0.0.0.0:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-index-root-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}",
+        "body": "{\"blocks\":{},\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-admin-ops-000001\":{\"state\":\"open\"},\"logs-admin-ops-000002\":{\"state\":\"open\"},\"logs-stateful-bulk-root\":{\"state\":\"open\"},\"logs-stateful-bulk-semantic-root\":{\"state\":\"open\"},\"logs-stateful-bulk-stream-root\":{\"state\":\"open\"},\"logs-stateful-clone-post\":{\"state\":\"open\"},\"logs-stateful-clone-put\":{\"state\":\"open\"},\"logs-stateful-created\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"},\"logs-stateful-reindex\":{\"state\":\"open\"},\"logs-stateful-reindex-wildcard\":{\"state\":\"open\"},\"logs-stateful-scale-post\":{\"state\":\"open\"},\"logs-stateful-shrink-post\":{\"state\":\"open\"},\"logs-stateful-shrink-put\":{\"state\":\"open\"},\"logs-stateful-split-post\":{\"state\":\"open\"},\"logs-stateful-split-put\":{\"state\":\"open\"},\"metrics-admin-ops-000001\":{\"state\":\"open\"}}},\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"transport_address\":\"127.0.0.1:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"index\":\"logs-admin-ops-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-admin-ops-000002\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-bulk-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-bulk-semantic-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-clone-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-clone-put\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-reindex\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-reindex-wildcard\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-scale-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-shrink-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-shrink-put\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-split-post\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"logs-stateful-split-put\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"index\":\"metrics-admin-ops-000001\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-admin-ops-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-admin-ops-000002\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-bulk-root\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-bulk-semantic-root\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-bulk-stream-root\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-clone-post\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-clone-put\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-reindex\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-reindex-wildcard\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-scale-post\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-shrink-post\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-shrink-put\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-split-post\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"logs-stateful-split-put\":{\"shards\":{\"0\":[{\"primary\":true}]}},\"metrics-admin-ops-000001\":{\"shards\":{\"0\":[{\"primary\":true}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -698,7 +691,7 @@
       "method": "GET",
       "path": "/_cluster/state/{metric}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-index-root-probe\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"}}}}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"metadata\":{\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"indices\":{\"logs-admin-ops-000001\":{\"state\":\"open\"},\"logs-admin-ops-000002\":{\"state\":\"open\"},\"logs-stateful-bulk-root\":{\"state\":\"open\"},\"logs-stateful-bulk-semantic-root\":{\"state\":\"open\"},\"logs-stateful-bulk-stream-root\":{\"state\":\"open\"},\"logs-stateful-clone-post\":{\"state\":\"open\"},\"logs-stateful-clone-put\":{\"state\":\"open\"},\"logs-stateful-created\":{\"state\":\"open\"},\"logs-stateful-probe\":{\"state\":\"open\"},\"logs-stateful-reindex\":{\"state\":\"open\"},\"logs-stateful-reindex-wildcard\":{\"state\":\"open\"},\"logs-stateful-scale-post\":{\"state\":\"open\"},\"logs-stateful-shrink-post\":{\"state\":\"open\"},\"logs-stateful-shrink-put\":{\"state\":\"open\"},\"logs-stateful-split-post\":{\"state\":\"open\"},\"logs-stateful-split-put\":{\"state\":\"open\"},\"metrics-admin-ops-000001\":{\"state\":\"open\"}}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -726,7 +719,7 @@
       "method": "GET",
       "path": "/_cluster/stats",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":2,\"docs\":{\"count\":0},\"shards\":{\"total\":2}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":17,\"docs\":{\"count\":0},\"shards\":{\"total\":17}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -740,7 +733,7 @@
       "method": "GET",
       "path": "/_cluster/stats/nodes/{nodeId}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":2,\"docs\":{\"count\":0},\"shards\":{\"total\":2}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":17,\"docs\":{\"count\":0},\"shards\":{\"total\":17}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -754,7 +747,7 @@
       "method": "GET",
       "path": "/_cluster/stats/{metric}/nodes/{nodeId}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":2,\"docs\":{\"count\":0},\"shards\":{\"total\":2}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":17,\"docs\":{\"count\":0},\"shards\":{\"total\":17}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -768,7 +761,7 @@
       "method": "GET",
       "path": "/_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}",
       "probe": {
-        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":2,\"docs\":{\"count\":0},\"shards\":{\"total\":2}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
+        "body": "{\"cluster_name\":\"steelsearch-dev\",\"fs\":{\"total_in_bytes\":0},\"indices\":{\"count\":17,\"docs\":{\"count\":0},\"shards\":{\"total\":17}},\"nodes\":{\"count\":{\"data\":1,\"total\":1}},\"status\":\"yellow\"}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -884,7 +877,7 @@
       "method": "GET",
       "path": "/_snapshot",
       "probe": {
-        "body": "{}",
+        "body": "{\"repo-stateful-probe\":{\"settings\":{\"location\":\"/tmp/steelsearch-stateful-probe-repo\"},\"type\":\"fs\"}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -982,7 +975,7 @@
       "method": "GET",
       "path": "/_tasks",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:1\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":1,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:3\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":3,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"ip\":\"127.0.0.1:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"tasks\":{\"steelsearch-dev-node:11\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":11,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"},\"steelsearch-dev-node:9\":{\"action\":\"cluster:admin/publication\",\"cancellable\":false,\"cancelled\":false,\"headers\":{},\"id\":9,\"node\":\"steelsearch-dev-node\",\"running_time_in_nanos\":1,\"start_time_in_millis\":1,\"type\":\"transport\"}},\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1024,7 +1017,7 @@
       "method": "GET",
       "path": "/_nodes",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"127.0.0.1:19200\"],\"publish_address\":\"127.0.0.1:19200\"},\"ip\":\"127.0.0.1:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1038,7 +1031,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"127.0.0.1:19200\"],\"publish_address\":\"127.0.0.1:19200\"},\"ip\":\"127.0.0.1:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1052,7 +1045,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/{metrics}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"127.0.0.1:19200\"],\"publish_address\":\"127.0.0.1:19200\"},\"ip\":\"127.0.0.1:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1066,7 +1059,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/info/{metrics}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"0.0.0.0:19200\"],\"publish_address\":\"0.0.0.0:19200\"},\"ip\":\"0.0.0.0:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"bound_address\":[\"127.0.0.1:19200\"],\"publish_address\":\"127.0.0.1:19200\"},\"ip\":\"127.0.0.1:19300\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"settings\":{\"cluster\":{\"name\":\"steelsearch-dev\"}},\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1080,7 +1073,7 @@
       "method": "GET",
       "path": "/_nodes/stats",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"127.0.0.1:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"127.0.0.1:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1094,7 +1087,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/stats",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"127.0.0.1:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"127.0.0.1:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1108,7 +1101,7 @@
       "method": "GET",
       "path": "/_nodes/stats/{metric}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"127.0.0.1:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"127.0.0.1:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1122,7 +1115,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/stats/{metric}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"127.0.0.1:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"127.0.0.1:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1136,7 +1129,7 @@
       "method": "GET",
       "path": "/_nodes/stats/{metric}/{index_metric}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"127.0.0.1:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"127.0.0.1:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1150,7 +1143,7 @@
       "method": "GET",
       "path": "/_nodes/{nodeId}/stats/{metric}/{index_metric}",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"0.0.0.0:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"0.0.0.0:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"0.0.0.0:19300\"}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"host\":\"127.0.0.1\",\"http\":{\"publish_address\":\"127.0.0.1:19200\"},\"indices\":{\"docs\":{\"count\":0}},\"ip\":\"127.0.0.1:19300\",\"jvm\":{\"mem\":{\"heap_used_in_bytes\":0}},\"name\":\"steelsearch-dev-node\",\"process\":{\"open_file_descriptors\":0},\"roles\":[\"cluster_manager\",\"data\",\"ingest\"],\"timestamp\":1,\"transport_address\":\"127.0.0.1:19300\"}}}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1220,7 +1213,7 @@
       "method": "GET",
       "path": "/_cluster/pending_tasks",
       "probe": {
-        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 1\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 2\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
+        "body": "{\"tasks\":[{\"executing\":true,\"insert_order\":0,\"priority\":\"HIGH\",\"source\":\"publication round 9\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0},{\"executing\":true,\"insert_order\":1,\"priority\":\"HIGH\",\"source\":\"publication round 10\",\"time_in_queue\":\"0ms\",\"time_in_queue_millis\":0}]}",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -1772,7 +1765,7 @@
       },
       "profile": "`index-metadata`",
       "runtime_status": "implemented-read",
-      "source_status": "implemented-read"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": "/_data_stream/logs-read/_stats",
@@ -1850,7 +1843,7 @@
       "method": "GET",
       "path": "/_flush",
       "probe": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":4,\"total\":4}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -1922,7 +1915,7 @@
       "method": "GET",
       "path": "/_alias",
       "probe": {
-        "body": "{}",
+        "body": "{\"logs-stateful-bulk-root\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-bulk-semantic-root\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-bulk-stream-root\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-clone-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-clone-put\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-created\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-reindex\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-reindex-wildcard\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-scale-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-shrink-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-shrink-put\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-split-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-split-put\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -1936,7 +1929,7 @@
       "method": "GET",
       "path": "/_aliases",
       "probe": {
-        "body": "{}",
+        "body": "{\"logs-stateful-bulk-root\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-bulk-semantic-root\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-bulk-stream-root\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-clone-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-clone-put\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-created\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-reindex\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-reindex-wildcard\":{\"aliases\":{\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-scale-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-shrink-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-shrink-put\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-split-post\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}},\"logs-stateful-split-put\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-bulk\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-index-named-put\":{\"is_write_index\":true},\"logs-stateful-index-plural-put\":{},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-collection\":{},\"logs-stateful-wildcard-write\":{}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2076,7 +2069,7 @@
       "method": "GET",
       "path": "/_index_template",
       "probe": {
-        "body": "{\"index_templates\":[{\"index_template\":{\"data_stream\":{},\"index_patterns\":[\"logs-ds-*\"],\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-data-stream-template\"},{\"index_template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-index-template\"}]}",
+        "body": "{\"index_templates\":[{\"index_template\":{\"data_stream\":{},\"index_patterns\":[\"logs-ds-*\"],\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-data-stream-template\"}]}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2146,7 +2139,7 @@
       "method": "GET",
       "path": "/_mapping/field/{fields}",
       "probe": {
-        "body": "{\"logs-stateful-probe\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}}}",
+        "body": "{\"logs-stateful-clone-post\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-clone-put\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-probe\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-scale-post\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-shrink-post\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-shrink-put\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-split-post\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}},\"logs-stateful-split-put\":{\"mappings\":{\"message\":{\"full_name\":\"message\",\"mapping\":{\"message\":{\"type\":\"text\"}}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2258,7 +2251,7 @@
       "method": "GET",
       "path": "/_mapping",
       "probe": {
-        "body": "{\"logs-stateful-bulk-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-bulk-stream-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-probe\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-reindex\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}}}",
+        "body": "{\"logs-stateful-bulk-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-bulk-semantic-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-bulk-stream-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-clone-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-clone-put\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-probe\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-reindex\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-reindex-wildcard\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-scale-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-shrink-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-shrink-put\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-split-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-split-put\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2272,7 +2265,7 @@
       "method": "GET",
       "path": "/_mappings",
       "probe": {
-        "body": "{\"logs-stateful-bulk-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-bulk-stream-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-probe\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-reindex\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}}}",
+        "body": "{\"logs-stateful-bulk-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-bulk-semantic-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-bulk-stream-root\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-clone-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-clone-put\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-probe\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-reindex\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-reindex-wildcard\":{\"mappings\":{\"properties\":{\"@timestamp\":{\"type\":\"date\"}}}},\"logs-stateful-scale-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-shrink-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-shrink-put\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-split-post\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}},\"logs-stateful-split-put\":{\"mappings\":{\"properties\":{\"message\":{\"type\":\"text\"},\"probe_env\":{\"type\":\"keyword\"},\"probe_region\":{\"type\":\"keyword\"},\"probe_semantic_region\":{\"type\":\"keyword\"},\"probe_service\":{\"type\":\"keyword\"},\"probe_team\":{\"type\":\"keyword\"},\"tenant\":{\"type\":\"keyword\"}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2314,7 +2307,7 @@
       "method": "GET",
       "path": "/_settings",
       "probe": {
-        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index.number_of_replicas\":\"0\"}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\"}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\"}}},\"logs-stateful-created\":{\"settings\":{\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-probe\":{\"settings\":{\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\"}}}}",
+        "body": "{\"logs-admin-ops-000001\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}},\"logs-admin-ops-000002\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\"}}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\"}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\"}}},\"logs-stateful-clone-post\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-clone-put\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-created\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-probe\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\"}}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\"}}},\"logs-stateful-scale-post\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-shrink-post\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-shrink-put\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-split-post\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"logs-stateful-split-put\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\",\"refresh_interval\":\"1s\"},\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\"}},\"metrics-admin-ops-000001\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2328,7 +2321,7 @@
       "method": "GET",
       "path": "/_settings/{name}",
       "probe": {
-        "body": "{\"logs-index-root-probe\":{\"settings\":{}},\"logs-stateful-bulk-root\":{\"settings\":{}},\"logs-stateful-bulk-stream-root\":{\"settings\":{}},\"logs-stateful-created\":{\"settings\":{}},\"logs-stateful-probe\":{\"settings\":{}},\"logs-stateful-reindex\":{\"settings\":{}}}",
+        "body": "{\"logs-admin-ops-000001\":{\"settings\":{}},\"logs-admin-ops-000002\":{\"settings\":{}},\"logs-stateful-bulk-root\":{\"settings\":{}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{}},\"logs-stateful-bulk-stream-root\":{\"settings\":{}},\"logs-stateful-clone-post\":{\"settings\":{}},\"logs-stateful-clone-put\":{\"settings\":{}},\"logs-stateful-created\":{\"settings\":{}},\"logs-stateful-probe\":{\"settings\":{}},\"logs-stateful-reindex\":{\"settings\":{}},\"logs-stateful-reindex-wildcard\":{\"settings\":{}},\"logs-stateful-scale-post\":{\"settings\":{}},\"logs-stateful-shrink-post\":{\"settings\":{}},\"logs-stateful-shrink-put\":{\"settings\":{}},\"logs-stateful-split-post\":{\"settings\":{}},\"logs-stateful-split-put\":{\"settings\":{}},\"metrics-admin-ops-000001\":{\"settings\":{}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2538,7 +2531,7 @@
       "method": "GET",
       "path": "/_segments",
       "probe": {
-        "body": "{\"logs-index-root-probe\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-bulk-root\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-bulk-stream-root\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":3,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-reindex\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}}}",
+        "body": "{\"logs-admin-ops-000001\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-admin-ops-000002\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":1,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-bulk-root\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-bulk-semantic-root\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":1,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-bulk-stream-root\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-clone-post\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-clone-put\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-created\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":4,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-reindex\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-reindex-wildcard\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":2,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-scale-post\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-shrink-post\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-shrink-put\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-split-post\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"logs-stateful-split-put\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":0,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}},\"metrics-admin-ops-000001\":{\"shards\":{\"0\":[{\"committed\":true,\"compound\":false,\"deleted_docs\":0,\"generation\":1,\"memory_in_bytes\":0,\"num_docs\":1,\"search\":true,\"segment\":\"_0\",\"size_in_bytes\":0,\"version\":\"9.0\"}]}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2566,7 +2559,7 @@
       "method": "GET",
       "path": "/_shard_stores",
       "probe": {
-        "body": "{\"indices\":{\"logs-index-root-probe\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-index-root-probe-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-bulk-root\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-bulk-root-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-bulk-stream-root\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-bulk-stream-root-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-created\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-created-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-probe\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-probe-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-reindex\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-reindex-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}}}}",
+        "body": "{\"indices\":{\"logs-admin-ops-000001\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-admin-ops-000001-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-admin-ops-000002\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-admin-ops-000002-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-bulk-root\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-bulk-root-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-bulk-semantic-root\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-bulk-semantic-root-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-bulk-stream-root\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-bulk-stream-root-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-clone-post\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-clone-post-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-clone-put\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-clone-put-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-created\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-created-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-probe\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-probe-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-reindex\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-reindex-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-reindex-wildcard\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-reindex-wildcard-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-scale-post\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-scale-post-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-shrink-post\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-shrink-post-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-shrink-put\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-shrink-put-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-split-post\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-split-post-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"logs-stateful-split-put\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"logs-stateful-split-put-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}},\"metrics-admin-ops-000001\":{\"shards\":{\"0\":{\"stores\":[{\"allocation\":\"primary\",\"allocation_id\":\"metrics-admin-ops-000001-primary-0\",\"name\":\"steelsearch-dev-node\",\"store_exception\":null,\"transport_address\":\"0.0.0.0:9300\"}]}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2594,7 +2587,7 @@
       "method": "GET",
       "path": "/_stats",
       "probe": {
-        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":6,\"total\":6},\"indices\":{\"logs-index-root-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-stream-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-created\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-reindex\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
+        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17},\"indices\":{\"logs-admin-ops-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-admin-ops-000002\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-semantic-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-stream-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-clone-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-clone-put\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-created\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-reindex\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-reindex-wildcard\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-scale-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-shrink-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-shrink-put\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-split-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-split-put\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-admin-ops-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2608,7 +2601,7 @@
       "method": "GET",
       "path": "/_stats/{metric}",
       "probe": {
-        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":6,\"total\":6},\"indices\":{\"logs-index-root-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-stream-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-created\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-reindex\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
+        "body": "{\"_all\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17},\"indices\":{\"logs-admin-ops-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-admin-ops-000002\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-semantic-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-bulk-stream-root\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-clone-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-clone-put\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-created\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-probe\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-reindex\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-reindex-wildcard\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-scale-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-shrink-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-shrink-put\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-split-post\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"logs-stateful-split-put\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}},\"metrics-admin-ops-000001\":{\"primaries\":{\"docs\":{\"count\":0}},\"total\":{\"docs\":{\"count\":0}}}}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2793,7 +2786,7 @@
       "method": "GET",
       "path": "/_recovery",
       "probe": {
-        "body": "{\"logs-index-root-probe\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-bulk-root\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-bulk-stream-root\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-created\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-probe\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-reindex\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]}}",
+        "body": "{\"logs-admin-ops-000001\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-admin-ops-000002\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-bulk-root\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-bulk-semantic-root\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-bulk-stream-root\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-clone-post\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-clone-put\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-created\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-probe\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-reindex\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-reindex-wildcard\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-scale-post\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-shrink-post\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-shrink-put\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-split-post\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"logs-stateful-split-put\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]},\"metrics-admin-ops-000001\":{\"shards\":[{\"id\":0,\"index\":{\"files\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"size\":{\"percent\":\"100.0%\",\"recovered_in_bytes\":0,\"total_in_bytes\":0}},\"primary\":true,\"source\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"stage\":\"DONE\",\"start_time_in_millis\":0,\"stop_time_in_millis\":0,\"target\":{\"host\":\"0.0.0.0\",\"id\":\"steelsearch-dev-node\",\"ip\":\"0.0.0.0\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"0.0.0.0:9300\"},\"total_time_in_millis\":0,\"translog\":{\"percent\":\"100.0%\",\"recovered\":0,\"total\":0},\"type\":\"PEER\"}]}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -2821,7 +2814,7 @@
       "method": "GET",
       "path": "/_refresh",
       "probe": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":6,\"total\":6}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "profile": "`document-write-path`",
@@ -2846,7 +2839,7 @@
       "method": "GET",
       "path": "/{index}/_refresh",
       "probe": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":2}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":0,\"total\":0}}",
         "status": 200
       },
       "profile": "`document-write-path`",
@@ -3028,7 +3021,7 @@
       "method": "GET",
       "path": "/_flush/synced",
       "probe": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":6,\"total\":6}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -3122,7 +3115,7 @@
       "method": "GET",
       "path": "/_upgrade",
       "probe": {
-        "body": "{\"indices\":{\"logs-index-root-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-bulk-root\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-bulk-stream-root\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-created\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-reindex\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
+        "body": "{\"indices\":{\"logs-admin-ops-000001\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-admin-ops-000002\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-bulk-root\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-bulk-semantic-root\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-bulk-stream-root\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-clone-post\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-clone-put\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-created\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-reindex\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-reindex-wildcard\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-scale-post\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-shrink-post\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-shrink-put\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-split-post\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-split-put\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"metrics-admin-ops-000001\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
         "status": 200
       },
       "profile": "`index-metadata`",
@@ -3200,7 +3193,7 @@
       "method": "GET",
       "path": "/_cat/aliases",
       "probe": {
-        "body": "\n",
+        "body": "logs-stateful-bulk-read logs-stateful-clone-post - - - -\nlogs-stateful-bulk-read logs-stateful-clone-put - - - -\nlogs-stateful-bulk-read logs-stateful-probe - - - -\nlogs-stateful-bulk-read logs-stateful-scale-post - - - -\nlogs-stateful-bulk-read logs-stateful-shrink-post - - - -\nlogs-stateful-bulk-read logs-stateful-shrink-put - - - -\nlogs-stateful-bulk-read logs-stateful-split-post - - - -\nlogs-stateful-bulk-read logs-stateful-split-put - - - -\nlogs-stateful-index-bulk logs-stateful-clone-post - - - -\nlogs-stateful-index-bulk logs-stateful-clone-put - - - -\nlogs-stateful-index-bulk logs-stateful-probe - - - -\nlogs-stateful-index-bulk logs-stateful-scale-post - - - -\nlogs-stateful-index-bulk logs-stateful-shrink-post - - - -\nlogs-stateful-index-bulk logs-stateful-shrink-put - - - -\nlogs-stateful-index-bulk logs-stateful-split-post - - - -\nlogs-stateful-index-bulk logs-stateful-split-put - - - -\nlogs-stateful-index-collection logs-stateful-clone-post - - - true\nlogs-stateful-index-collection logs-stateful-clone-put - - - true\nlogs-stateful-index-collection logs-stateful-probe - - - true\nlogs-stateful-index-collection logs-stateful-scale-post - - - true\nlogs-stateful-index-collection logs-stateful-shrink-post - - - true\nlogs-stateful-index-collection logs-stateful-shrink-put - - - true\nlogs-stateful-index-collection logs-stateful-split-post - - - true\nlogs-stateful-index-collection logs-stateful-split-put - - - true\nlogs-stateful-index-named-put logs-stateful-clone-post - - - true\nlogs-stateful-index-named-put logs-stateful-clone-put - - - true\nlogs-stateful-index-named-put logs-stateful-probe - - - true\nlogs-stateful-index-named-put logs-stateful-scale-post - - - true\nlogs-stateful-index-named-put logs-stateful-shrink-post - - - true\nlogs-stateful-index-named-put logs-stateful-shrink-put - - - true\nlogs-stateful-index-named-put logs-stateful-split-post - - - true\nlogs-stateful-index-named-put logs-stateful-split-put - - - true\nlogs-stateful-index-plural-put logs-stateful-clone-post - - - -\nlogs-stateful-index-plural-put logs-stateful-clone-put - - - -\nlogs-stateful-index-plural-put logs-stateful-probe - - - -\nlogs-stateful-index-plural-put logs-stateful-scale-post - - - -\nlogs-stateful-index-plural-put logs-stateful-shrink-post - - - -\nlogs-stateful-index-plural-put logs-stateful-shrink-put - - - -\nlogs-stateful-index-plural-put logs-stateful-split-post - - - -\nlogs-stateful-index-plural-put logs-stateful-split-put - - - -\nlogs-stateful-named-post logs-stateful-clone-post - - - -\nlogs-stateful-named-post logs-stateful-clone-put - - - -\nlogs-stateful-named-post logs-stateful-probe - - - -\nlogs-stateful-named-post logs-stateful-scale-post - - - -\nlogs-stateful-named-post logs-stateful-shrink-post - - - -\nlogs-stateful-named-post logs-stateful-shrink-put - - - -\nlogs-stateful-named-post logs-stateful-split-post - - - -\nlogs-stateful-named-post logs-stateful-split-put - - - -\nlogs-stateful-named-write logs-stateful-clone-post - - - true\nlogs-stateful-named-write logs-stateful-clone-put - - - true\nlogs-stateful-named-write logs-stateful-probe - - - true\nlogs-stateful-named-write logs-stateful-scale-post - - - true\nlogs-stateful-named-write logs-stateful-shrink-post - - - true\nlogs-stateful-named-write logs-stateful-shrink-put - - - true\nlogs-stateful-named-write logs-stateful-split-post - - - true\nlogs-stateful-named-write logs-stateful-split-put - - - true\nlogs-stateful-plural-post logs-stateful-clone-post - - - -\nlogs-stateful-plural-post logs-stateful-clone-put - - - -\nlogs-stateful-plural-post logs-stateful-probe - - - -\nlogs-stateful-plural-post logs-stateful-scale-post - - - -\nlogs-stateful-plural-post logs-stateful-shrink-post - - - -\nlogs-stateful-plural-post logs-stateful-shrink-put - - - -\nlogs-stateful-plural-post logs-stateful-split-post - - - -\nlogs-stateful-plural-post logs-stateful-split-put - - - -\nlogs-stateful-plural-put logs-stateful-clone-post - - - -\nlogs-stateful-plural-put logs-stateful-clone-put - - - -\nlogs-stateful-plural-put logs-stateful-probe - - - -\nlogs-stateful-plural-put logs-stateful-scale-post - - - -\nlogs-stateful-plural-put logs-stateful-shrink-post - - - -\nlogs-stateful-plural-put logs-stateful-shrink-put - - - -\nlogs-stateful-plural-put logs-stateful-split-post - - - -\nlogs-stateful-plural-put logs-stateful-split-put - - - -\nlogs-stateful-root-read logs-stateful-clone-post - - - true\nlogs-stateful-root-read logs-stateful-clone-put - - - true\nlogs-stateful-root-read logs-stateful-probe - - - true\nlogs-stateful-root-read logs-stateful-scale-post - - - true\nlogs-stateful-root-read logs-stateful-shrink-post - - - true\nlogs-stateful-root-read logs-stateful-shrink-put - - - true\nlogs-stateful-root-read logs-stateful-split-post - - - true\nlogs-stateful-root-read logs-stateful-split-put - - - true\nlogs-stateful-wildcard-collection logs-stateful-bulk-root - - - -\nlogs-stateful-wildcard-collection logs-stateful-bulk-semantic-root - - - -\nlogs-stateful-wildcard-collection logs-stateful-bulk-stream-root - - - -\nlogs-stateful-wildcard-collection logs-stateful-clone-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-clone-put - - - -\nlogs-stateful-wildcard-collection logs-stateful-created - - - -\nlogs-stateful-wildcard-collection logs-stateful-probe - - - -\nlogs-stateful-wildcard-collection logs-stateful-reindex - - - -\nlogs-stateful-wildcard-collection logs-stateful-reindex-wildcard - - - -\nlogs-stateful-wildcard-collection logs-stateful-scale-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-shrink-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-shrink-put - - - -\nlogs-stateful-wildcard-collection logs-stateful-split-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-split-put - - - -\nlogs-stateful-wildcard-write logs-stateful-bulk-root - - - -\nlogs-stateful-wildcard-write logs-stateful-bulk-semantic-root - - - -\nlogs-stateful-wildcard-write logs-stateful-bulk-stream-root - - - -\nlogs-stateful-wildcard-write logs-stateful-clone-post - - - -\nlogs-stateful-wildcard-write logs-stateful-clone-put - - - -\nlogs-stateful-wildcard-write logs-stateful-created - - - -\nlogs-stateful-wildcard-write logs-stateful-probe - - - -\nlogs-stateful-wildcard-write logs-stateful-reindex - - - -\nlogs-stateful-wildcard-write logs-stateful-reindex-wildcard - - - -\nlogs-stateful-wildcard-write logs-stateful-scale-post - - - -\nlogs-stateful-wildcard-write logs-stateful-shrink-post - - - -\nlogs-stateful-wildcard-write logs-stateful-shrink-put - - - -\nlogs-stateful-wildcard-write logs-stateful-split-post - - - -\nlogs-stateful-wildcard-write logs-stateful-split-put - - - -\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3214,7 +3207,7 @@
       "method": "GET",
       "path": "/_cat/aliases/{alias}",
       "probe": {
-        "body": "\n",
+        "body": "logs-stateful-bulk-read logs-stateful-clone-post - - - -\nlogs-stateful-bulk-read logs-stateful-clone-put - - - -\nlogs-stateful-bulk-read logs-stateful-probe - - - -\nlogs-stateful-bulk-read logs-stateful-scale-post - - - -\nlogs-stateful-bulk-read logs-stateful-shrink-post - - - -\nlogs-stateful-bulk-read logs-stateful-shrink-put - - - -\nlogs-stateful-bulk-read logs-stateful-split-post - - - -\nlogs-stateful-bulk-read logs-stateful-split-put - - - -\nlogs-stateful-index-bulk logs-stateful-clone-post - - - -\nlogs-stateful-index-bulk logs-stateful-clone-put - - - -\nlogs-stateful-index-bulk logs-stateful-probe - - - -\nlogs-stateful-index-bulk logs-stateful-scale-post - - - -\nlogs-stateful-index-bulk logs-stateful-shrink-post - - - -\nlogs-stateful-index-bulk logs-stateful-shrink-put - - - -\nlogs-stateful-index-bulk logs-stateful-split-post - - - -\nlogs-stateful-index-bulk logs-stateful-split-put - - - -\nlogs-stateful-index-collection logs-stateful-clone-post - - - true\nlogs-stateful-index-collection logs-stateful-clone-put - - - true\nlogs-stateful-index-collection logs-stateful-probe - - - true\nlogs-stateful-index-collection logs-stateful-scale-post - - - true\nlogs-stateful-index-collection logs-stateful-shrink-post - - - true\nlogs-stateful-index-collection logs-stateful-shrink-put - - - true\nlogs-stateful-index-collection logs-stateful-split-post - - - true\nlogs-stateful-index-collection logs-stateful-split-put - - - true\nlogs-stateful-index-named-put logs-stateful-clone-post - - - true\nlogs-stateful-index-named-put logs-stateful-clone-put - - - true\nlogs-stateful-index-named-put logs-stateful-probe - - - true\nlogs-stateful-index-named-put logs-stateful-scale-post - - - true\nlogs-stateful-index-named-put logs-stateful-shrink-post - - - true\nlogs-stateful-index-named-put logs-stateful-shrink-put - - - true\nlogs-stateful-index-named-put logs-stateful-split-post - - - true\nlogs-stateful-index-named-put logs-stateful-split-put - - - true\nlogs-stateful-index-plural-put logs-stateful-clone-post - - - -\nlogs-stateful-index-plural-put logs-stateful-clone-put - - - -\nlogs-stateful-index-plural-put logs-stateful-probe - - - -\nlogs-stateful-index-plural-put logs-stateful-scale-post - - - -\nlogs-stateful-index-plural-put logs-stateful-shrink-post - - - -\nlogs-stateful-index-plural-put logs-stateful-shrink-put - - - -\nlogs-stateful-index-plural-put logs-stateful-split-post - - - -\nlogs-stateful-index-plural-put logs-stateful-split-put - - - -\nlogs-stateful-named-post logs-stateful-clone-post - - - -\nlogs-stateful-named-post logs-stateful-clone-put - - - -\nlogs-stateful-named-post logs-stateful-probe - - - -\nlogs-stateful-named-post logs-stateful-scale-post - - - -\nlogs-stateful-named-post logs-stateful-shrink-post - - - -\nlogs-stateful-named-post logs-stateful-shrink-put - - - -\nlogs-stateful-named-post logs-stateful-split-post - - - -\nlogs-stateful-named-post logs-stateful-split-put - - - -\nlogs-stateful-named-write logs-stateful-clone-post - - - true\nlogs-stateful-named-write logs-stateful-clone-put - - - true\nlogs-stateful-named-write logs-stateful-probe - - - true\nlogs-stateful-named-write logs-stateful-scale-post - - - true\nlogs-stateful-named-write logs-stateful-shrink-post - - - true\nlogs-stateful-named-write logs-stateful-shrink-put - - - true\nlogs-stateful-named-write logs-stateful-split-post - - - true\nlogs-stateful-named-write logs-stateful-split-put - - - true\nlogs-stateful-plural-post logs-stateful-clone-post - - - -\nlogs-stateful-plural-post logs-stateful-clone-put - - - -\nlogs-stateful-plural-post logs-stateful-probe - - - -\nlogs-stateful-plural-post logs-stateful-scale-post - - - -\nlogs-stateful-plural-post logs-stateful-shrink-post - - - -\nlogs-stateful-plural-post logs-stateful-shrink-put - - - -\nlogs-stateful-plural-post logs-stateful-split-post - - - -\nlogs-stateful-plural-post logs-stateful-split-put - - - -\nlogs-stateful-plural-put logs-stateful-clone-post - - - -\nlogs-stateful-plural-put logs-stateful-clone-put - - - -\nlogs-stateful-plural-put logs-stateful-probe - - - -\nlogs-stateful-plural-put logs-stateful-scale-post - - - -\nlogs-stateful-plural-put logs-stateful-shrink-post - - - -\nlogs-stateful-plural-put logs-stateful-shrink-put - - - -\nlogs-stateful-plural-put logs-stateful-split-post - - - -\nlogs-stateful-plural-put logs-stateful-split-put - - - -\nlogs-stateful-root-read logs-stateful-clone-post - - - true\nlogs-stateful-root-read logs-stateful-clone-put - - - true\nlogs-stateful-root-read logs-stateful-probe - - - true\nlogs-stateful-root-read logs-stateful-scale-post - - - true\nlogs-stateful-root-read logs-stateful-shrink-post - - - true\nlogs-stateful-root-read logs-stateful-shrink-put - - - true\nlogs-stateful-root-read logs-stateful-split-post - - - true\nlogs-stateful-root-read logs-stateful-split-put - - - true\nlogs-stateful-wildcard-collection logs-stateful-bulk-root - - - -\nlogs-stateful-wildcard-collection logs-stateful-bulk-semantic-root - - - -\nlogs-stateful-wildcard-collection logs-stateful-bulk-stream-root - - - -\nlogs-stateful-wildcard-collection logs-stateful-clone-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-clone-put - - - -\nlogs-stateful-wildcard-collection logs-stateful-created - - - -\nlogs-stateful-wildcard-collection logs-stateful-probe - - - -\nlogs-stateful-wildcard-collection logs-stateful-reindex - - - -\nlogs-stateful-wildcard-collection logs-stateful-reindex-wildcard - - - -\nlogs-stateful-wildcard-collection logs-stateful-scale-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-shrink-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-shrink-put - - - -\nlogs-stateful-wildcard-collection logs-stateful-split-post - - - -\nlogs-stateful-wildcard-collection logs-stateful-split-put - - - -\nlogs-stateful-wildcard-write logs-stateful-bulk-root - - - -\nlogs-stateful-wildcard-write logs-stateful-bulk-semantic-root - - - -\nlogs-stateful-wildcard-write logs-stateful-bulk-stream-root - - - -\nlogs-stateful-wildcard-write logs-stateful-clone-post - - - -\nlogs-stateful-wildcard-write logs-stateful-clone-put - - - -\nlogs-stateful-wildcard-write logs-stateful-created - - - -\nlogs-stateful-wildcard-write logs-stateful-probe - - - -\nlogs-stateful-wildcard-write logs-stateful-reindex - - - -\nlogs-stateful-wildcard-write logs-stateful-reindex-wildcard - - - -\nlogs-stateful-wildcard-write logs-stateful-scale-post - - - -\nlogs-stateful-wildcard-write logs-stateful-shrink-post - - - -\nlogs-stateful-wildcard-write logs-stateful-shrink-put - - - -\nlogs-stateful-wildcard-write logs-stateful-split-post - - - -\nlogs-stateful-wildcard-write logs-stateful-split-put - - - -\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3228,7 +3221,7 @@
       "method": "GET",
       "path": "/_cat/allocation",
       "probe": {
-        "body": "6 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
+        "body": "17 0b 0b 0b 0b 0 127.0.0.1 127.0.0.1 steelsearch-dev-node\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3242,7 +3235,7 @@
       "method": "GET",
       "path": "/_cat/allocation/{nodes}",
       "probe": {
-        "body": "6 0b 0b 0b 0b 0 0.0.0.0 0.0.0.0 steelsearch-dev-node\n",
+        "body": "17 0b 0b 0b 0b 0 127.0.0.1 127.0.0.1 steelsearch-dev-node\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3270,7 +3263,7 @@
       "method": "GET",
       "path": "/_cat/recovery",
       "probe": {
-        "body": "logs-index-root-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-bulk-root 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-bulk-stream-root 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-created 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-reindex 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
+        "body": "logs-admin-ops-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-admin-ops-000002 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-bulk-root 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-bulk-semantic-root 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-bulk-stream-root 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-clone-post 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-clone-put 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-created 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-probe 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-reindex 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-reindex-wildcard 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-scale-post 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-shrink-post 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-shrink-put 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-split-post 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nlogs-stateful-split-put 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\nmetrics-admin-ops-000001 0 0s peer done 127.0.0.1 steelsearch-dev-node 127.0.0.1 steelsearch-dev-node n/a n/a 0 0 100.0% 0 0b 0b 100.0% 0b 0 0 100.0%\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3298,7 +3291,7 @@
       "method": "GET",
       "path": "/_cat/count",
       "probe": {
-        "body": "0 00:00:00 9\n",
+        "body": "0 00:00:00 17\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3354,7 +3347,7 @@
       "method": "GET",
       "path": "/_cat/health",
       "probe": {
-        "body": "0 00:00:00 steelsearch-dev yellow 1 1 6 6 0 0 6 2 0s 50.0%\n",
+        "body": "0 00:00:00 steelsearch-dev yellow 1 1 17 17 0 0 17 2 0s 50.0%\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3368,7 +3361,7 @@
       "method": "GET",
       "path": "/_cat/indices",
       "probe": {
-        "body": "yellow open logs-index-root-probe 1 0 0 0b\nyellow open logs-stateful-bulk-root 1 0 2 0b\nyellow open logs-stateful-bulk-stream-root 1 0 2 0b\nyellow open logs-stateful-created 1 0 0 0b\nyellow open logs-stateful-probe 1 0 3 0b\nyellow open logs-stateful-reindex 1 0 2 0b\n",
+        "body": "yellow open logs-admin-ops-000001 1 0 2 0b\nyellow open logs-admin-ops-000002 1 0 1 0b\nyellow open logs-stateful-bulk-root 1 0 2 0b\nyellow open logs-stateful-bulk-semantic-root 1 0 1 0b\nyellow open logs-stateful-bulk-stream-root 1 0 2 0b\nyellow open logs-stateful-clone-post 1 0 0 0b\nyellow open logs-stateful-clone-put 1 0 0 0b\nyellow open logs-stateful-created 1 0 0 0b\nyellow open logs-stateful-probe 1 0 4 0b\nyellow open logs-stateful-reindex 1 0 2 0b\nyellow open logs-stateful-reindex-wildcard 1 0 2 0b\nyellow open logs-stateful-scale-post 1 0 0 0b\nyellow open logs-stateful-shrink-post 1 0 0 0b\nyellow open logs-stateful-shrink-put 1 0 0 0b\nyellow open logs-stateful-split-post 1 0 0 0b\nyellow open logs-stateful-split-put 1 0 0 0b\nyellow open metrics-admin-ops-000001 1 0 1 0b\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3396,7 +3389,7 @@
       "method": "GET",
       "path": "/_cat/nodeattrs",
       "probe": {
-        "body": "steelsearch-dev-node 0.0.0.0 0.0.0.0 roles cluster_manager,data,ingest\n",
+        "body": "steelsearch-dev-node 127.0.0.1 127.0.0.1 roles cluster_manager,data,ingest\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3410,7 +3403,7 @@
       "method": "GET",
       "path": "/_cat/nodes",
       "probe": {
-        "body": "steelsearch-dev-node 1 0.0.0.0 19300 0.0.0.0:19200 137287827 0b 0b 0b 0b dim * steelsearch-dev-node\n",
+        "body": "steelsearch-dev-node 1 127.0.0.1 19300 127.0.0.1:19200 137287827 0b 0b 0b 0b dim * steelsearch-dev-node\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3424,7 +3417,7 @@
       "method": "GET",
       "path": "/_cat/pending_tasks",
       "probe": {
-        "body": "0 0ms HIGH publication round 1 true\n1 0ms HIGH publication round 2 true\n",
+        "body": "0 0ms HIGH publication round 9 true\n1 0ms HIGH publication round 10 true\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3494,7 +3487,7 @@
       "method": "GET",
       "path": "/_cat/segments",
       "probe": {
-        "body": "logs-index-root-probe 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-bulk-root 0 p 0.0.0.0 _0 0 2 0b\nlogs-stateful-bulk-stream-root 0 p 0.0.0.0 _0 0 2 0b\nlogs-stateful-created 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-probe 0 p 0.0.0.0 _0 0 3 0b\nlogs-stateful-reindex 0 p 0.0.0.0 _0 0 2 0b\n",
+        "body": "logs-admin-ops-000001 0 p 0.0.0.0 _0 0 2 0b\nlogs-admin-ops-000002 0 p 0.0.0.0 _0 0 1 0b\nlogs-stateful-bulk-root 0 p 0.0.0.0 _0 0 2 0b\nlogs-stateful-bulk-semantic-root 0 p 0.0.0.0 _0 0 1 0b\nlogs-stateful-bulk-stream-root 0 p 0.0.0.0 _0 0 2 0b\nlogs-stateful-clone-post 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-clone-put 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-created 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-probe 0 p 0.0.0.0 _0 0 4 0b\nlogs-stateful-reindex 0 p 0.0.0.0 _0 0 2 0b\nlogs-stateful-reindex-wildcard 0 p 0.0.0.0 _0 0 2 0b\nlogs-stateful-scale-post 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-shrink-post 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-shrink-put 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-split-post 0 p 0.0.0.0 _0 0 0 0b\nlogs-stateful-split-put 0 p 0.0.0.0 _0 0 0 0b\nmetrics-admin-ops-000001 0 p 0.0.0.0 _0 0 1 0b\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3522,7 +3515,7 @@
       "method": "GET",
       "path": "/_cat/shards",
       "probe": {
-        "body": "logs-index-root-probe 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-index-root-probe 0 r UNASSIGNED 0 0b  \nlogs-stateful-bulk-root 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-bulk-root 0 r UNASSIGNED 0 0b  \nlogs-stateful-bulk-stream-root 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-bulk-stream-root 0 r UNASSIGNED 0 0b  \nlogs-stateful-created 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-created 0 r UNASSIGNED 0 0b  \nlogs-stateful-probe 0 p STARTED 3 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-probe 0 r UNASSIGNED 0 0b  \nlogs-stateful-reindex 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-reindex 0 r UNASSIGNED 0 0b  \n",
+        "body": "logs-admin-ops-000001 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-admin-ops-000001 0 r UNASSIGNED 0 0b  \nlogs-admin-ops-000002 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-admin-ops-000002 0 r UNASSIGNED 0 0b  \nlogs-stateful-bulk-root 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-bulk-root 0 r UNASSIGNED 0 0b  \nlogs-stateful-bulk-semantic-root 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-bulk-semantic-root 0 r UNASSIGNED 0 0b  \nlogs-stateful-bulk-stream-root 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-bulk-stream-root 0 r UNASSIGNED 0 0b  \nlogs-stateful-clone-post 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-clone-post 0 r UNASSIGNED 0 0b  \nlogs-stateful-clone-put 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-clone-put 0 r UNASSIGNED 0 0b  \nlogs-stateful-created 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-created 0 r UNASSIGNED 0 0b  \nlogs-stateful-probe 0 p STARTED 4 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-probe 0 r UNASSIGNED 0 0b  \nlogs-stateful-reindex 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-reindex 0 r UNASSIGNED 0 0b  \nlogs-stateful-reindex-wildcard 0 p STARTED 2 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-reindex-wildcard 0 r UNASSIGNED 0 0b  \nlogs-stateful-scale-post 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-scale-post 0 r UNASSIGNED 0 0b  \nlogs-stateful-shrink-post 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-shrink-post 0 r UNASSIGNED 0 0b  \nlogs-stateful-shrink-put 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-shrink-put 0 r UNASSIGNED 0 0b  \nlogs-stateful-split-post 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-split-post 0 r UNASSIGNED 0 0b  \nlogs-stateful-split-put 0 p STARTED 0 0b 0.0.0.0 steelsearch-dev-node\nlogs-stateful-split-put 0 r UNASSIGNED 0 0b  \nmetrics-admin-ops-000001 0 p STARTED 1 0b 0.0.0.0 steelsearch-dev-node\nmetrics-admin-ops-000001 0 r UNASSIGNED 0 0b  \n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3578,7 +3571,7 @@
       "method": "GET",
       "path": "/_cat/tasks",
       "probe": {
-        "body": "cluster:admin/publication steelsearch-dev-node:1 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\ncluster:admin/publication steelsearch-dev-node:3 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\n",
+        "body": "cluster:admin/publication steelsearch-dev-node:11 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\ncluster:admin/publication steelsearch-dev-node:9 - transport 1 00:00:00 0s 127.0.0.1 steelsearch-dev-node\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -3592,7 +3585,7 @@
       "method": "GET",
       "path": "/_cat/templates",
       "probe": {
-        "body": "probe-data-stream-template [logs-ds-*] 0  []\nprobe-index-template [logs-sim-*] 7  []\n",
+        "body": "probe-data-stream-template [logs-ds-*] 0  []\n",
         "status": 200
       },
       "profile": "`root-cluster-node`",
@@ -4119,12 +4112,12 @@
       "method": "GET",
       "path": "/_list/indices",
       "probe": {
-        "body": "{\"indices\":[{\"index\":\"logs-index-root-probe\",\"state\":\"open\"},{\"index\":\"logs-stateful-bulk-root\",\"state\":\"open\"},{\"index\":\"logs-stateful-bulk-stream-root\",\"state\":\"open\"},{\"index\":\"logs-stateful-clone-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-clone-put\",\"state\":\"open\"},{\"index\":\"logs-stateful-created\",\"state\":\"open\"},{\"index\":\"logs-stateful-probe\",\"state\":\"open\"},{\"index\":\"logs-stateful-reindex\",\"state\":\"open\"},{\"index\":\"logs-stateful-scale-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-shrink-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-shrink-put\",\"state\":\"open\"},{\"index\":\"logs-stateful-split-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-split-put\",\"state\":\"open\"}]}",
+        "body": "{\"indices\":[{\"index\":\"logs-admin-ops-000001\",\"state\":\"open\"},{\"index\":\"logs-admin-ops-000002\",\"state\":\"open\"},{\"index\":\"logs-stateful-bulk-root\",\"state\":\"open\"},{\"index\":\"logs-stateful-bulk-semantic-root\",\"state\":\"open\"},{\"index\":\"logs-stateful-bulk-stream-root\",\"state\":\"open\"},{\"index\":\"logs-stateful-clone-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-clone-put\",\"state\":\"open\"},{\"index\":\"logs-stateful-created\",\"state\":\"open\"},{\"index\":\"logs-stateful-probe\",\"state\":\"open\"},{\"index\":\"logs-stateful-reindex\",\"state\":\"open\"},{\"index\":\"logs-stateful-reindex-wildcard\",\"state\":\"open\"},{\"index\":\"logs-stateful-scale-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-shrink-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-shrink-put\",\"state\":\"open\"},{\"index\":\"logs-stateful-split-post\",\"state\":\"open\"},{\"index\":\"logs-stateful-split-put\",\"state\":\"open\"},{\"index\":\"metrics-admin-ops-000001\",\"state\":\"open\"}]}",
         "status": 200
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_list/indices/logs-compat",
@@ -4138,7 +4131,7 @@
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_list",
@@ -4147,12 +4140,12 @@
       "method": "GET",
       "path": "/_list",
       "probe": {
-        "body": "{\"indices\":[\"logs-index-root-probe\",\"logs-stateful-bulk-root\",\"logs-stateful-bulk-stream-root\",\"logs-stateful-clone-post\",\"logs-stateful-clone-put\",\"logs-stateful-created\",\"logs-stateful-probe\",\"logs-stateful-reindex\",\"logs-stateful-scale-post\",\"logs-stateful-shrink-post\",\"logs-stateful-shrink-put\",\"logs-stateful-split-post\",\"logs-stateful-split-put\"],\"shards\":13}",
+        "body": "{\"indices\":[\"logs-admin-ops-000001\",\"logs-admin-ops-000002\",\"logs-stateful-bulk-root\",\"logs-stateful-bulk-semantic-root\",\"logs-stateful-bulk-stream-root\",\"logs-stateful-clone-post\",\"logs-stateful-clone-put\",\"logs-stateful-created\",\"logs-stateful-probe\",\"logs-stateful-reindex\",\"logs-stateful-reindex-wildcard\",\"logs-stateful-scale-post\",\"logs-stateful-shrink-post\",\"logs-stateful-shrink-put\",\"logs-stateful-split-post\",\"logs-stateful-split-put\",\"metrics-admin-ops-000001\"],\"shards\":17}",
         "status": 200
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_list/shards",
@@ -4161,12 +4154,12 @@
       "method": "GET",
       "path": "/_list/shards",
       "probe": {
-        "body": "{\"shards\":[{\"index\":\"logs-index-root-probe\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-bulk-root\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-clone-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-clone-put\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-created\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-probe\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-reindex\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-scale-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-shrink-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-shrink-put\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-split-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-split-put\",\"node\":\"local\",\"primary\":true,\"shard\":0}]}",
+        "body": "{\"shards\":[{\"index\":\"logs-admin-ops-000001\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-admin-ops-000002\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-bulk-root\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-bulk-semantic-root\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-clone-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-clone-put\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-created\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-probe\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-reindex\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-reindex-wildcard\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-scale-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-shrink-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-shrink-put\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-split-post\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"logs-stateful-split-put\",\"node\":\"local\",\"primary\":true,\"shard\":0},{\"index\":\"metrics-admin-ops-000001\",\"node\":\"local\",\"primary\":true,\"shard\":0}]}",
         "status": 200
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_list/shards/logs-compat",
@@ -4180,7 +4173,7 @@
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -4330,7 +4323,7 @@
       "method": "GET",
       "path": "/_search/point_in_time/_all",
       "probe": {
-        "body": "{\"pits\":[{\"id\":\"pit-3\"}]}",
+        "body": "{\"pits\":[]}",
         "status": 200
       },
       "profile": "`search`",
@@ -4372,7 +4365,7 @@
       "method": "GET",
       "path": "/_msearch",
       "probe": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root put\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root put\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":9}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":17,\"total\":17},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"log doc 1\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"log doc 2\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-admin-ops-000002\",\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"log doc 3\"}},{\"_id\":\"doc-4\",\"_index\":\"metrics-admin-ops-000001\",\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"metric doc 1\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_seq_no\":9,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_seq_no\":10,\"_source\":{\"message\":\"bulk root put\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":17}},\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "profile": "`search`",
@@ -4397,7 +4390,7 @@
       "method": "GET",
       "path": "/{index}/_msearch",
       "probe": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"error\":{\"reason\":\"no such index [logs-compat]\",\"type\":\"index_not_found_exception\"},\"status\":404}]}",
         "status": 200
       },
       "profile": "`search`",
@@ -4508,12 +4501,12 @@
       "method": "GET",
       "path": "/_search/scroll/{scroll_id}",
       "probe": {
-        "body": "{\"_scroll_id\":\"scroll-1\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"timed_out\":false,\"took\":1}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"No search context found for id [scroll-1]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
+        "status": 404
       },
       "profile": "`search`",
       "runtime_status": "implemented-read",
-      "source_status": "implemented-read"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": null,
@@ -4535,7 +4528,7 @@
       "probe": null,
       "profile": "`deferred`",
       "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": null,
@@ -4546,7 +4539,7 @@
       "probe": null,
       "profile": "`deferred`",
       "runtime_status": "requires-stateful-probe",
-      "source_status": "planned"
+      "source_status": "implemented-stateful"
     },
     {
       "concrete_path": "/logs-compat/_tier",
@@ -4560,7 +4553,7 @@
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_tier/all",
@@ -4574,7 +4567,7 @@
       },
       "profile": "`deferred`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": null,
@@ -4599,75 +4592,78 @@
       "source_status": "implemented-stateful"
     },
     {
-      "concrete_path": null,
+      "concrete_path": "/_plugins/_knn/models/model-1",
       "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope vector-ml`",
       "family": "vector-and-ml",
       "method": "GET",
       "path": "String.format(Locale.ROOT, \"%s/%s/{%s}\", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)",
-      "probe": null,
+      "probe": {
+        "body": "{\"error\":{\"reason\":\"k-NN model [model-1] missing\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
       "profile": "`vector-ml`",
-      "runtime_status": "unprobeable-expression",
+      "runtime_status": "implemented-read",
       "source_status": "implemented-stateful"
     },
     {
       "concrete_path": "/_plugins/_knn/steelsearch-dev-node/stats",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope vector-ml`",
       "family": "vector-and-ml",
       "method": "GET",
       "path": "KNNPlugin.KNN_BASE_URI + \"/{nodeId}/stats/\"",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"cache_entry_count\":0,\"clear_cache_requests\":1,\"graph_count\":0,\"model_cache_used_bytes\":0,\"model_count\":1,\"native_memory_used_bytes\":0,\"operational_controls\":{},\"quantization_cache_used_bytes\":0,\"training_requests\":2,\"warmed_index_count\":0}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"cache_entry_count\":1,\"clear_cache_requests\":0,\"graph_count\":1,\"model_cache_used_bytes\":0,\"model_count\":0,\"native_memory_used_bytes\":0,\"operational_controls\":{},\"quantization_cache_used_bytes\":0,\"training_requests\":0,\"warmed_index_count\":1}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`vector-ml`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_plugins/_knn/steelsearch-dev-node/stats/model_count",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope vector-ml`",
       "family": "vector-and-ml",
       "method": "GET",
       "path": "KNNPlugin.KNN_BASE_URI + \"/{nodeId}/stats/{stat}\"",
       "probe": {
-        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"model_count\":1}}}",
+        "body": "{\"nodes\":{\"steelsearch-dev-node\":{\"model_count\":0}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`vector-ml`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_plugins/_knn/stats",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope vector-ml`",
       "family": "vector-and-ml",
       "method": "GET",
       "path": "KNNPlugin.KNN_BASE_URI + \"/stats/\"",
       "probe": {
-        "body": "{\"nodes\":{\"local\":{\"cache_entry_count\":0,\"clear_cache_requests\":1,\"graph_count\":0,\"model_cache_used_bytes\":0,\"model_count\":1,\"native_memory_used_bytes\":0,\"operational_controls\":{},\"quantization_cache_used_bytes\":0,\"training_requests\":2,\"warmed_index_count\":0}}}",
+        "body": "{\"nodes\":{\"local\":{\"cache_entry_count\":1,\"clear_cache_requests\":0,\"graph_count\":1,\"model_cache_used_bytes\":0,\"model_count\":0,\"native_memory_used_bytes\":0,\"operational_controls\":{},\"quantization_cache_used_bytes\":0,\"training_requests\":0,\"warmed_index_count\":1}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`vector-ml`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_plugins/_knn/stats/model_count",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope vector-ml`",
       "family": "vector-and-ml",
       "method": "GET",
       "path": "KNNPlugin.KNN_BASE_URI + \"/stats/{stat}\"",
       "probe": {
-        "body": "{\"nodes\":{\"local\":{\"model_count\":1}}}",
+        "body": "{\"nodes\":{\"local\":{\"model_count\":0}}}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`vector-ml`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_plugins/_knn/warmup",
-      "entrypoint": "`no canonical runtime compare owner`",
+      "entrypoint": "`tools/run-phase-a-acceptance-harness.sh --scope vector-ml`",
       "family": "vector-and-ml",
       "method": "GET",
       "path": "KNNPlugin.KNN_BASE_URI + URL_PATH",
@@ -4675,9 +4671,9 @@
         "body": "{\"index\":\"_all\",\"model_cache_bytes\":0,\"native_memory_bytes\":0,\"quantization_cache_bytes\":0,\"vector_segment_count\":1,\"warmed\":true}",
         "status": 200
       },
-      "profile": "`deferred`",
+      "profile": "`vector-ml`",
       "runtime_status": "implemented-read",
-      "source_status": "planned"
+      "source_status": "implemented-read"
     },
     {
       "concrete_path": "/_plugins/_knn/models/_search",
@@ -4686,7 +4682,7 @@
       "method": "GET",
       "path": "String.format(Locale.ROOT, \"%s/%s/%s\", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)",
       "probe": {
-        "body": "{\"hits\":{\"hits\":[{\"_id\":\"probe-model\",\"_source\":{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"state\":\"created\",\"training_index\":\"logs-stateful-probe\"}}],\"total\":{\"relation\":\"eq\",\"value\":1}}}",
+        "body": "{\"hits\":{\"hits\":[],\"total\":{\"relation\":\"eq\",\"value\":0}}}",
         "status": 200
       },
       "profile": "`vector-ml`",
@@ -4728,8 +4724,7 @@
     }
   ],
   "summary": {
-    "implemented-read": 200,
-    "requires-stateful-probe": 169,
-    "unprobeable-expression": 3
+    "implemented-read": 203,
+    "requires-stateful-probe": 168
   }
 }

@@ -375,6 +375,27 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 put_alias,
             )
         )
+    for request in fixture.get("requests", []):
+        request_method = request["method"]
+        request_path = resolve_fixture_placeholders(request["path"])
+        request_body = resolve_fixture_placeholders(request.get("body", {}))
+        request_raw = bool(request.get("raw", False))
+        result = http_json(
+            base_url,
+            request_method,
+            request_path,
+            request_body,
+            timeout,
+            raw=request_raw,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"request:{request_method}:{request_path}",
+                status_for(result),
+                result,
+            )
+        )
     for repository in fixture.get("repositories", []):
         body = resolve_fixture_placeholders(repository.get("body", {}))
         put_repository = http_json(
@@ -422,6 +443,54 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 f"index_template:{template['name']}",
                 status_for(put_template),
                 put_template,
+            )
+        )
+    for template in fixture.get("component_templates", []):
+        put_template = http_json(
+            base_url,
+            "PUT",
+            f"/_component_template/{template['name']}",
+            resolve_fixture_placeholders(template.get("body", {})),
+            timeout,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"component_template:{template['name']}",
+                status_for(put_template),
+                put_template,
+            )
+        )
+    for script in fixture.get("stored_scripts", []):
+        put_script = http_json(
+            base_url,
+            "PUT",
+            f"/_scripts/{script['id']}",
+            resolve_fixture_placeholders(script.get("body", {})),
+            timeout,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"stored_script:{script['id']}",
+                status_for(put_script),
+                put_script,
+            )
+        )
+    for data_stream in fixture.get("data_streams", []):
+        put_data_stream = http_json(
+            base_url,
+            "PUT",
+            f"/_data_stream/{data_stream['name']}",
+            resolve_fixture_placeholders(data_stream.get("body", {})),
+            timeout,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"data_stream:{data_stream['name']}",
+                status_for(put_data_stream),
+                put_data_stream,
             )
         )
     return steps
@@ -777,12 +846,146 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "aliases": alias_pairs,
         }
+    if kind == "template_metadata":
+        if isinstance(body, dict) and "component_templates" in body:
+            entries = body.get("component_templates") or []
+            first = entries[0] if isinstance(entries, list) and entries else {}
+            payload = first.get("component_template") if isinstance(first, dict) else {}
+            template = payload.get("template") if isinstance(payload, dict) else {}
+            settings = ((template.get("settings") or {}).get("index") or {}) if isinstance(template, dict) else {}
+            mappings = ((template.get("mappings") or {}).get("properties") or {}) if isinstance(template, dict) else {}
+            return {
+                "status": response["status"],
+                "name": first.get("name") if isinstance(first, dict) else None,
+                "fields": sorted(mappings.keys()) if isinstance(mappings, dict) else [],
+                "setting_keys": sorted(flatten_json_paths(template.get("settings") or {})) if isinstance(template, dict) else [],
+                "number_of_replicas": str(settings.get("number_of_replicas")) if isinstance(settings, dict) and settings.get("number_of_replicas") is not None else None,
+            }
+        if isinstance(body, dict) and "index_templates" in body:
+            entries = body.get("index_templates") or []
+            first = entries[0] if isinstance(entries, list) and entries else {}
+            payload = first.get("index_template") if isinstance(first, dict) else {}
+            template = payload.get("template") if isinstance(payload, dict) else {}
+            settings = ((template.get("settings") or {}).get("index") or {}) if isinstance(template, dict) else {}
+            mappings = ((template.get("mappings") or {}).get("properties") or {}) if isinstance(template, dict) else {}
+            return {
+                "status": response["status"],
+                "name": first.get("name") if isinstance(first, dict) else None,
+                "index_patterns": payload.get("index_patterns") if isinstance(payload, dict) else None,
+                "fields": sorted(mappings.keys()) if isinstance(mappings, dict) else [],
+                "setting_keys": sorted(flatten_json_paths(template.get("settings") or {})) if isinstance(template, dict) else [],
+                "priority": payload.get("priority") if isinstance(payload, dict) else None,
+                "number_of_replicas": str(settings.get("number_of_replicas")) if isinstance(settings, dict) and settings.get("number_of_replicas") is not None else None,
+            }
+        if isinstance(body, dict) and body:
+            name = sorted(body.keys())[0]
+            payload = body.get(name) or {}
+            settings = payload.get("settings") or {}
+            mappings = ((payload.get("mappings") or {}).get("properties") or {}) if isinstance(payload, dict) else {}
+            return {
+                "status": response["status"],
+                "name": name,
+                "index_patterns": payload.get("index_patterns") if isinstance(payload, dict) else None,
+                "fields": sorted(mappings.keys()) if isinstance(mappings, dict) else [],
+                "order": payload.get("order") if isinstance(payload, dict) else None,
+                "version": payload.get("version") if isinstance(payload, dict) else None,
+                "setting_keys": sorted(flatten_json_paths(settings)) if isinstance(settings, dict) else [],
+            }
+    if kind == "data_stream_metadata":
+        entries = body.get("data_streams") or []
+        first = entries[0] if isinstance(entries, list) and entries else {}
+        indices = first.get("indices") if isinstance(first, dict) else []
+        return {
+            "status": response["status"],
+            "name": first.get("name") if isinstance(first, dict) else None,
+            "template": first.get("template") if isinstance(first, dict) else None,
+            "generation": first.get("generation") if isinstance(first, dict) else None,
+            "backing_indices": sorted(
+                entry.get("index_name")
+                for entry in indices
+                if isinstance(entry, dict) and entry.get("index_name") is not None
+            ) if isinstance(indices, list) else [],
+        }
+    if kind == "data_stream_stats":
+        return {
+            "status": response["status"],
+            "data_stream_count": body.get("data_stream_count") if isinstance(body, dict) else None,
+            "backing_indices": body.get("backing_indices") if isinstance(body, dict) else None,
+            "total_store_size_bytes": body.get("total_store_size_bytes") if isinstance(body, dict) else None,
+        }
+    if kind == "acknowledged":
+        return {
+            "status": response["status"],
+            "acknowledged": body.get("acknowledged") if isinstance(body, dict) else None,
+        }
     if kind == "get_document":
         return {
             "status": response["status"],
             "found": body.get("found"),
             "_id": body.get("_id"),
             "_source": body.get("_source"),
+        }
+    if kind == "reindex_summary":
+        failures = body.get("failures")
+        return {
+            "status": response["status"],
+            "total": body.get("total"),
+            "created": body.get("created"),
+            "updated": body.get("updated"),
+            "deleted": body.get("deleted"),
+            "batches": body.get("batches"),
+            "version_conflicts": body.get("version_conflicts"),
+            "noops": body.get("noops"),
+            "failures_count": len(failures) if isinstance(failures, list) else None,
+        }
+    if kind == "document_write_error":
+        error = body.get("error") or {}
+        if isinstance(error, dict):
+            reason = error.get("reason")
+            error_type = error.get("type")
+        else:
+            reason = error
+            error_type = None
+        return {
+            "status": response["status"],
+            "error_type": error_type,
+            "reason": reason,
+        }
+    if kind == "count_query":
+        shards = body.get("_shards") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "count": body.get("count") if isinstance(body, dict) else None,
+            "shards_total": shards.get("total") if isinstance(shards, dict) else None,
+        }
+    if kind == "validate_query_semantic":
+        explanations = body.get("explanations") if isinstance(body, dict) else None
+        first = explanations[0] if isinstance(explanations, list) and explanations else {}
+        return {
+            "status": response["status"],
+            "valid": body.get("valid") if isinstance(body, dict) else None,
+            "has_explanations": isinstance(explanations, list) and bool(explanations),
+            "explanation_valid": first.get("valid") if isinstance(first, dict) else None,
+            "explanation": first.get("explanation") if isinstance(first, dict) else None,
+        }
+    if kind == "render_template_output":
+        return {
+            "status": response["status"],
+            "_id": body.get("_id") if isinstance(body, dict) else None,
+            "template_output": body.get("template_output") if isinstance(body, dict) else None,
+        }
+    if kind == "search_error":
+        error = body.get("error") or {}
+        if isinstance(error, dict):
+            reason = error.get("reason")
+            error_type = error.get("type")
+        else:
+            reason = error
+            error_type = None
+        return {
+            "status": response["status"],
+            "error_type": error_type,
+            "reason": reason,
         }
     if kind == "search_hits":
         hits = ((body.get("hits") or {}).get("hits") or [])
@@ -937,6 +1140,43 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "freed_count": freed_count,
+        }
+    if kind == "pit_list":
+        return {
+            "status": response["status"],
+            "ids": sorted(
+                pit.get("id")
+                for pit in (body.get("pits") or [])
+                if isinstance(pit, dict) and pit.get("id") is not None
+            ),
+        }
+    if kind == "tier_preference":
+        tiers = body.get("tiers") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "index": body.get("index") if isinstance(body, dict) else None,
+            "tiers": tiers if isinstance(tiers, list) else [],
+        }
+    if kind == "task_error":
+        error = body.get("error") or {}
+        if isinstance(error, dict):
+            reason = error.get("reason")
+            error_type = error.get("type")
+        else:
+            reason = error
+            error_type = None
+        return {
+            "status": response["status"],
+            "error_type": error_type,
+            "reason": reason,
+        }
+    if kind == "rethrottle_task":
+        task = body.get("task") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "task_id": task.get("id") if isinstance(task, dict) else None,
+            "task_node": task.get("node") if isinstance(task, dict) else None,
+            "action": task.get("action") if isinstance(task, dict) else None,
         }
     if kind == "terms_aggregation":
         aggs = body.get("aggregations") or {}

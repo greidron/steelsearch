@@ -1,0 +1,106 @@
+{
+  "name": "document-write-semantic-compat",
+  "indices": [
+    {
+      "name": "logs-write-source-a",
+      "body": {}
+    },
+    {
+      "name": "logs-write-source-b",
+      "body": {}
+    },
+    {
+      "name": "logs-write-dest",
+      "body": {}
+    },
+    {
+      "name": "logs-write-overwrite",
+      "body": {}
+    }
+  ],
+  "bulk": [
+    {
+      "index": "logs-write-source-a",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "from source a",
+            "tenant": "tenant-a"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-write-source-b",
+      "documents": [
+        {
+          "_id": "doc-2",
+          "_source": {
+            "message": "from source b",
+            "tenant": "tenant-b"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-write-overwrite",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "stale dest copy",
+            "tenant": "tenant-old"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "reindex_missing_dest_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-write-source-*"
+        }
+      },
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for missing dest validation."
+    },
+    {
+      "name": "reindex_wildcard_source_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-write-source-*"
+        },
+        "dest": {
+          "index": "logs-write-dest"
+        }
+      },
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "reindex_overwrite_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-write-source-*"
+        },
+        "dest": {
+          "index": "logs-write-overwrite"
+        }
+      },
+      "extract": "reindex_summary"
+    }
+  ]
+}

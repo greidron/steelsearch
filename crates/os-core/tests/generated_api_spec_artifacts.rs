@@ -171,7 +171,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(runtime_ledger_path).expect("runtime route ledger should exist");
     let runtime_ledger: Value =
         serde_json::from_str(&runtime_ledger_text).expect("runtime route ledger should parse");
-    assert_eq!(runtime_ledger["summary"]["implemented-read"], 200);
+    assert_eq!(runtime_ledger["summary"]["implemented-read"], 203);
     assert!(runtime_ledger["routes"]
         .as_array()
         .expect("runtime ledger routes should be array")
@@ -182,7 +182,34 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(stateful_probe_report_path).expect("stateful route probe report should exist");
     let stateful_probe: Value =
         serde_json::from_str(&stateful_probe_text).expect("stateful route probe report should parse");
-    assert_eq!(stateful_probe["summary"]["passed"], 209);
+    assert_eq!(stateful_probe["summary"]["passed"], 266);
+    assert_eq!(
+        stateful_probe["semantic_coverage_required"],
+        serde_json::json!(["happy-path", "error-path", "idempotency-or-selector"])
+    );
+    assert!(stateful_probe["semantic_coverage_summary"]["complete"].as_u64().unwrap_or(0) > 0);
+    assert!(stateful_probe["semantic_coverage_summary"]["incomplete"].as_u64().unwrap_or(0) > 0);
+    assert!(stateful_probe["semantic_coverage_routes"]
+        .as_array()
+        .expect("semantic coverage routes should be array")
+        .iter()
+        .any(|route| {
+            route["inventory_path"] == "/{index}/_delete_by_query"
+                && route["complete"] == true
+        }));
+    assert!(stateful_probe["semantic_coverage_routes"]
+        .as_array()
+        .expect("semantic coverage routes should be array")
+        .iter()
+        .any(|route| {
+            route["inventory_path"] == "/{index}/_search"
+                && route["complete"] == true
+        }));
+    assert!(stateful_probe["semantic_coverage_missing"]
+        .as_array()
+        .expect("semantic coverage missing should be array")
+        .iter()
+        .any(|route| route["inventory_path"] == "/_tasks/_cancel"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -342,7 +369,57 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "count_root_term_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/{index}/_count" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "count_target_term_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "validate_query_root_invalid_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "validate_query_target_invalid_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "validate_query_root_empty_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "validate_query_target_empty_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_template_named_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_template_target_named_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_template_missing_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "render_template_named_post" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -362,6 +439,11 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "search_root_term_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/_search/point_in_time" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
@@ -377,7 +459,47 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "msearch_root_multi_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/{index}/_explain/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "explain_target_unmatched_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "explain_target_missing_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "msearch_target_multi_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_target_term_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_target_missing_field_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_target_wildcard_match_all_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_target_wildcard_term_post" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -423,6 +545,31 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .expect("stateful probe cases should be array")
         .iter()
         .any(|case| case["inventory_path"] == "/{index}/_aliases/{name}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "alias_named_wildcard_put" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "index_alias_collection_wildcard_put" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "index_alias_named_duplicate_put" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "settings_global_flat_get" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "settings_target_flat_get" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -562,12 +709,22 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "bulk_root_semantic_mixed_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/_bulk/stream" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
         .any(|case| case["inventory_path"] == "/{index}/_bulk" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "bulk_target_semantic_mixed_put" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -582,7 +739,17 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "delete_by_query_rethrottle_known_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/_reindex/{taskId}/_rethrottle" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "reindex_rethrottle_known_post" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -592,7 +759,27 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "reindex_missing_dest_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "reindex_wildcard_source_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "reindex_overwrite_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/{index}/_create/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "create_doc_refresh_put" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -612,7 +799,32 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "delete_by_query_unmatched_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "delete_by_query_repeated_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/{index}/_update/{id}" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "single_doc_update_missing_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "single_doc_update_noop_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "single_doc_update_script_post" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -622,7 +834,22 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "update_by_query_rethrottle_known_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/{index}/_update_by_query" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "update_by_query_unmatched_post" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "update_by_query_noop_post" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
@@ -692,6 +919,16 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "mapping_target_merge_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "mapping_target_redefine_type_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/_alias" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
@@ -737,12 +974,92 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "component_template_named_overwrite_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "index_template_named_overwrite_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "legacy_template_named_overwrite_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/_data_stream/{name}" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
         .iter()
+        .any(|case| case["name"] == "data_stream_stats_get"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_scroll_named_get"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_scroll_root_get_query"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_scroll_root_delete_array"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "search_point_in_time_root_delete_array"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "close_root_repeat_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "open_root_repeat_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "tier_cancel_repeat_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "flush_selector_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "refresh_selector_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "cache_clear_selector_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "forcemerge_selector_post"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
         .any(|case| case["inventory_path"] == "/_tasks/{task_id}/_cancel" && case["runtime_status"] == "stateful-route-present"));
+    assert!(stateful_probe["cases"]
+        .as_array()
+        .expect("stateful probe cases should be array")
+        .iter()
+        .any(|case| case["name"] == "tasks_cancel_by_id_non_cancellable_post" && case["runtime_status"] == "stateful-route-present"));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")

@@ -8,9 +8,8 @@ Base URL: `http://127.0.0.1:19200`
 
 | runtime_status | count |
 | --- | ---: |
-| implemented-read | 200 |
-| requires-stateful-probe | 169 |
-| unprobeable-expression | 3 |
+| implemented-read | 203 |
+| requires-stateful-probe | 168 |
 
 ## By family
 
@@ -18,11 +17,11 @@ Base URL: `http://127.0.0.1:19200`
 | --- | ---: | ---: | ---: | ---: |
 | document-and-bulk | 12 | 0 | 29 | 0 |
 | index-and-metadata | 54 | 0 | 64 | 0 |
-| misc | 9 | 0 | 5 | 0 |
+| misc | 9 | 0 | 4 | 0 |
 | root-cluster-node | 92 | 0 | 35 | 0 |
-| search | 20 | 0 | 26 | 2 |
+| search | 22 | 0 | 26 | 0 |
 | snapshot-migration-interop | 7 | 0 | 5 | 0 |
-| vector-and-ml | 6 | 0 | 5 | 1 |
+| vector-and-ml | 7 | 0 | 5 | 0 |
 
 ## Missing safe read/head routes
 
