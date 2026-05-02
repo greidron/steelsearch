@@ -3,6 +3,17 @@
 This document narrows the remaining gap inside the backlog item
 `Implement pre-vote, election, and persisted voting configuration so cluster-manager selection is restart-safe and quorum-based.`
 
+Replacement profile scope:
+
+- `standalone`
+- `secure standalone`
+- `external interop`
+- `same-cluster peer-node`
+
+This document is primarily about `external interop` and `same-cluster
+peer-node`, but stronger election semantics also underpin secure standalone
+replacement claims.
+
 Source anchors:
 
 - Current Steelsearch coordination runtime:
@@ -14,84 +25,51 @@ Source anchors:
   - `/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/cluster/coordination/ElectionSchedulerFactory.java`
   - `/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/cluster/coordination/Reconfigurator.java`
 
-## Current Steelsearch Election Shape
+## Current Evidence
 
 Steelsearch already has small in-process coordination primitives:
 
-- `PreVoteRequest` and `PreVoteDecision`
-- `elect_cluster_manager(...)`
-- quorum checks derived from `voting_configuration`
-- publication acknowledgement validation against term, version, and state UUID
-- persisted accepted publication state via `PersistedPublicationState`
+- `PreVoteRequest` and `PreVoteDecision`;
+- `elect_cluster_manager(...)`;
+- quorum checks derived from `voting_configuration`;
+- publication acknowledgement validation against term, version, and state UUID;
+- persisted accepted publication state via `PersistedPublicationState`.
 
-Focused tests already cover these primitives:
+Focused tests already cover these primitives. The repository is therefore no
+longer missing election-shaped code entirely. The remaining gap is that these
+primitives are still development-local and much smaller than OpenSearch
+coordination.
 
-- `pre_vote_and_election_require_voting_quorum`
-- `publication_commit_and_acknowledgement_require_voting_quorum_and_matching_state`
-- `persisted_publication_state_replays_term_and_rejects_old_acknowledgements`
-- `publication_state_manifest_persists_and_restores_accepted_publication`
+## Replacement Blockers
 
-This means Steelsearch is no longer missing election-shaped code entirely. The
-remaining gap is that these primitives are still development-local and much
-smaller than OpenSearch coordination.
+The main blockers are:
 
-## What Still Differs From OpenSearch
+- no transport-backed pre-vote and election lifecycle across live peers;
+- no election scheduling, randomized backoff, or cancellation semantics;
+- no authoritative accepted-vs-committed voting configuration model;
+- no liveness-driven re-election and fencing.
 
-## Gap Class 1: Pre-Vote And Election Transport Lifecycle
+## Required Tests
 
-OpenSearch runs pre-vote and election attempts across live peers. Steelsearch
-does not yet exchange pre-vote or election messages over the transport layer.
+- transport-backed pre-vote accept/reject harnesses;
+- stale-term, timeout, concurrent-leader, and quorum-loss reject transcripts;
+- accepted vs committed voting-configuration replay tests;
+- liveness-triggered re-election and isolated-leader fencing coverage.
 
-Missing behavior:
+## Required Implementation
 
-- transport-backed pre-vote request/response exchange;
-- live vote collection from joined peers;
-- election result derived from observed peer responses instead of local
-  iteration over `joined_nodes`;
-- rejection handling for peer timeouts, stale terms, and concurrent leaders.
+The remaining work should move in these leaves:
 
-## Gap Class 2: Election Scheduling And Backoff
+1. transport-backed pre-vote and election request exchange;
+2. scheduler/backoff model for repeated election attempts;
+3. distinct accepted/committed voting configuration state plus exclusions and
+   reconfiguration;
+4. liveness-driven re-election and safe fencing of isolated leaders and stale
+   followers.
 
-OpenSearch has an election scheduler with retries, randomized delay, and
-bounded backoff. Steelsearch currently increments term and elects immediately.
+## Required Implementation Order
 
-Missing behavior:
-
-- repeated election attempts;
-- randomized initial delay and bounded backoff;
-- election duration windows;
-- cancellation when leadership or quorum changes mid-attempt.
-
-## Gap Class 3: Voting Configuration Semantics
-
-Steelsearch currently keeps a single `voting_configuration` set and persists it
-inside `PersistedPublicationState`.
-
-Missing behavior:
-
-- distinct last-accepted vs last-committed voting configurations;
-- reconfiguration rules as cluster-manager nodes join or leave;
-- voting-config exclusion handling;
-- restart-safe replay of authoritative voting membership instead of one merged
-  set.
-
-## Gap Class 4: Leader And Follower Liveness
-
-OpenSearch couples election safety to fault detection. Steelsearch still lacks
-that runtime.
-
-Missing behavior:
-
-- follower checks;
-- leader checks;
-- term bump and re-election triggers on failed liveness checks;
-- quorum-loss transitions that fence an isolated old manager.
-
-## Recommended Execution Order
-
-1. keep the existing local pre-vote/election/persisted-state primitives pinned
-   by focused tests and explicit backlog items;
-2. add distinct accepted/committed voting configuration state;
-3. add election scheduling and backoff;
-4. add transport-backed pre-vote/election vote collection;
-5. add leader/follower liveness and quorum-loss triggers.
+1. transport-backed pre-vote/election lifecycle;
+2. scheduler/backoff and retry model;
+3. authoritative accepted/committed voting configuration;
+4. liveness-triggered re-election and fencing.

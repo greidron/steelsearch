@@ -44,27 +44,80 @@ Versioning rules for this matrix:
 | Out of scope | Excluded from the current standalone Steelsearch milestone. |
 | N/A | The layer does not apply to that source area. |
 
+## Replacement Profiles
+
+This matrix is now read through four replacement profiles rather than phase
+labels:
+
+| Profile | Meaning |
+| --- | --- |
+| `standalone` | Steelsearch-only deployment without production security guarantees. |
+| `secure standalone` | Standalone deployment with authn/authz, TLS, and restricted-index controls required for production use. |
+| `external interop` | Steelsearch stays outside Java OpenSearch membership and acts as an external client/coordinator/observer. |
+| `same-cluster peer-node` | Steelsearch joins or participates as a real mixed-cluster node alongside Java OpenSearch. |
+
+Interpretation rules:
+
+- `Production readiness = No` means the row is not replacement-ready for at
+  least `standalone`, and usually for every stronger profile as well.
+- A row can be sufficient for `standalone` while still blocking
+  `secure standalone`, `external interop`, or `same-cluster peer-node`.
+- Search, write, snapshot, and vector rows need separate semantic evidence
+  beyond route presence before they can be promoted from development parity to
+  replacement parity.
+
+## Current Evidence And Replacement Blockers
+
+The matrix is intentionally a summary view. Read each row with these fields in
+mind:
+
+- `current evidence`: what the repository already proves today through code,
+  fixtures, semantic probes, or compare harnesses;
+- `replacement blocker`: what still prevents a safe replacement claim for one
+  or more profiles;
+- `required tests`: the missing probes, fixtures, or harnesses needed to
+  promote a row;
+- `required implementation`: the missing runtime behavior, persistence,
+  security, or distributed semantics needed to promote a row.
+
+The detailed expansion of those fields lives in the profile-specific gap
+inventories such as:
+
+- [node-runtime-gap-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/node-runtime-gap-inventory.md)
+- [production-security-baseline.md](/home/ubuntu/steelsearch/docs/rust-port/production-security-baseline.md)
+- [phase-b-safe-interop.md](/home/ubuntu/steelsearch/docs/rust-port/phase-b-safe-interop.md)
+- [phase-c-peer-node-compat.md](/home/ubuntu/steelsearch/docs/rust-port/phase-c-peer-node-compat.md)
+- [replacement-claim-exit-criteria.md](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md)
+
 ## Current Compatibility By Area
 
-| Source area | Internal library support | Daemon HTTP support | OpenSearch API compatibility | Production readiness | Remaining gaps |
-| --- | --- | --- | --- | --- | --- |
-| Root and basic node identity | Implemented | Implemented | Partial | No | `GET /` and `HEAD /` return OpenSearch-shaped identity, but build metadata and node feature detail are development-level. |
-| Cluster health, state, allocation, and node stats | Implemented | Partial | Partial | No | Health/state/stats/allocation endpoints exist for the daemon and development cluster, but wait parameters, index-scoped health, cat APIs, full routing metadata, and production allocation decisions are incomplete. |
-| Index create/get/delete and mappings/settings | Implemented | Partial | Partial | No | Tantivy-backed index creation and mapping persistence exist, including `knn_vector` mapping parsing. Full OpenSearch templates, aliases, analyzers, dynamic mappings, index settings, wildcard safety, and data streams are not complete. |
-| Document write/read and refresh | Implemented | Partial | Partial | No | Internal index/get/delete/update and refresh visibility paths exist. Daemon exposes single-document index/get plus bulk delete/update; single-document HTTP delete/update routes, OpenSearch routing, realtime flags, source filtering, ingest pipelines, and complete conflict behavior remain incomplete. |
-| REST `_bulk` | Implemented | Implemented | Partial | No | Global and index-scoped NDJSON `_bulk` execute index/create/update/delete and refresh policies. Full OpenSearch bulk metadata, pipeline, routing, retry, shard failure, external versioning, and security behavior remain incomplete. |
-| REST `_search` | Implemented | Implemented | Partial | No | Query execution, OpenSearch-shaped hits, sorting, pagination, selected aggregations, shard merge, error shape, and real daemon tests exist. Full Query DSL, highlighting, rescore, collapse, search-after, PIT/scroll, suggesters, profiles parity, and all aggregation families are incomplete. |
-| k-NN vector indexing and query search | Implemented | Implemented | Partial | No | `knn_vector` mapping, vector persistence, `knn` query execution, filters, selected method parameters, hybrid BM25/vector search, and daemon fixtures exist. Native HNSW/FAISS/NMSLIB parity, byte/binary vectors, all score spaces, nested semantics, painless scripts, cache memory enforcement, and exact OpenSearch k-NN ranking parity remain incomplete. |
-| k-NN plugin REST and model APIs | Implemented | Partial | Partial | No | `_plugins/_knn/stats`, warmup, clear cache, train/get/delete/search model routes are represented. OpenSearch k-NN transport actions, training internals, remote index build, circuit breaker enforcement, and full plugin setting semantics are incomplete. |
-| ML Commons, neural search, and model serving | Implemented | Partial | Partial | No | Model groups, model registration, deploy/undeploy, predict, model search, rerank, and embedding-to-k-NN development flow exist. OpenSearch ML Commons task lifecycle, connectors, authz, persistent deployment, neural query processors, sparse encoders, and production model runtime isolation are incomplete. |
-| Snapshot and restore | Implemented | Partial | Partial | No | Repository registration/verify plus snapshot create/status/restore/delete/cleanup strict compare now exist on the standalone profile. Incremental segment snapshots, remote store, searchable snapshots, and direct OpenSearch snapshot import are incomplete. |
-| Migration and replacement tooling | Implemented | N/A | Partial | No | Migration crates and local rehearsal scripts cover export/import style replacement workflows using supported REST surfaces. Full OpenSearch mapping/template/alias translation, scroll/PIT export coverage, vector migration validation, resumability, and production runbooks remain incomplete. |
-| Steelsearch multi-node runtime | Implemented | Implemented | Partial | No | Development daemons support node names, seed hosts, isolated data paths, primary/replica assignment, remote shard routing, replication, peer recovery, relocation, restart, and fault-injection tests. Discovery, membership, quorum, split-brain protection, rolling upgrades, production durability, and Java data-node mixed membership are not production-ready. |
-| Native transport frame and OpenSearch probe compatibility | Partial | N/A | Partial | No | Frame encode/decode, ping, handshake, transport error decoding, and cluster-state decode scaffolding exist. Full transport action execution, named writeable registry coverage, cluster-state diffs, search/write transport parity, and Java data-node binary compatibility are incomplete. |
-| Security and access control | Stubbed | Stubbed | Planned | No | Some fail-closed development gates and model registry access metadata exist. TLS, authn/authz, tenants, roles, index permissions, audit logs, secret handling, OpenSearch Security plugin API parity, and secure multi-node operation are missing. |
-| OpenSearch comparison harness | Implemented | N/A | Partial | No | Common-baseline plus feature-specific profile runners now clean-pass for search-execution, snapshot-migration, vector-ml, and transport-admin. Coverage is still not exhaustive enough for production or mixed-cluster replacement claims. |
-| Java OpenSearch data-node compatibility | Out of scope | N/A | Out of scope | No | Mixed Java data-node membership, Lucene segment binary sharing, Java plugin ABI, Java transport hot paths, and JVM recovery participation remain disabled unless a separate compatibility track is opened. |
-| Java plugin ABI compatibility | Out of scope | N/A | Out of scope | No | Steelsearch has Rust-native k-NN and ML-shaped modules, not Java plugin loading or Java plugin extension points. |
+| Source area | Internal library support | Daemon HTTP support | OpenSearch API compatibility | Production readiness | Replacement blocker | Exit criteria anchor |
+| --- | --- | --- | --- | --- | --- | --- |
+| Root and basic node identity | Implemented | Implemented | Partial | No | Identity routes exist, but replacement claims still lack full semantic and readiness evidence beyond the development envelope. | [root-and-basic-node-identity](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-root-and-basic-node-identity) |
+| Cluster health, state, allocation, and node stats | Implemented | Partial | Partial | No | Operational routes exist, but allocation, wait semantics, and production cluster-state behavior still lack bounded distributed evidence. | [cluster-health-state-allocation-and-node-stats](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-cluster-health-state-allocation-and-node-stats) |
+| Index create/get/delete and mappings/settings | Implemented | Partial | Partial | No | Core index shell exists, but templates, aliases, dynamic mappings, wildcard safety, and production settings semantics remain incomplete. | [index-create-get-delete-and-mappings-settings](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-index-create-get-delete-and-mappings-settings) |
+| Document write/read and refresh | Implemented | Partial | Partial | No | Core write/read paths exist, but routing, realtime/source options, full conflict behavior, and durable replacement semantics remain incomplete. | [document-write-read-and-refresh](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-document-write-read-and-refresh) |
+| REST `_bulk` | Implemented | Implemented | Partial | No | Standalone bulk works, but bulk metadata, retry/shard-failure semantics, external versioning, and secure write behavior remain incomplete. | [rest-bulk](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-rest-bulk) |
+| REST `_search` | Implemented | Implemented | Partial | No | Search routes work, but full DSL, pagination variants, session features, aggregation breadth, and secure/distributed readiness remain incomplete. | [rest-search](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-rest-search) |
+| k-NN vector indexing and query search | Implemented | Implemented | Partial | No | Canonical vector flows exist, but native engine parity, score-space breadth, nested/script semantics, and exact ranking parity remain incomplete. | [knn-vector-indexing-and-query-search](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-knn-vector-indexing-and-query-search) |
+| k-NN plugin REST and model APIs | Implemented | Partial | Partial | No | Plugin-shaped REST surfaces exist, but transport actions, training internals, circuit-breaker semantics, and secure clustered lifecycle behavior remain incomplete. | [knn-plugin-rest-and-model-apis](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-knn-plugin-rest-and-model-apis) |
+| ML Commons, neural search, and model serving | Implemented | Partial | Partial | No | Development model flows exist, but task lifecycle, connectors, authz, persistent deployment, and runtime isolation remain incomplete. | [ml-commons-neural-search-and-model-serving](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-ml-commons-neural-search-and-model-serving) |
+| Snapshot and restore | Implemented | Partial | Partial | No | Standalone snapshot/restore routes exist, but incremental, remote-store, searchable-snapshot, and restore-safety completeness remain incomplete. | [snapshot-and-restore](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-snapshot-and-restore) |
+| Migration and replacement tooling | Implemented | N/A | Partial | No | Rehearsal tooling exists, but translation breadth, resumability, unsupported-feature gating, and production cutover evidence remain incomplete. | [migration-and-replacement-tooling](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-migration-and-replacement-tooling) |
+| Steelsearch multi-node runtime | Implemented | Implemented | Partial | No | Development multi-node works, but quorum, discovery, upgrade, durability, and mixed-membership behavior are not production-ready. | [steelsearch-multi-node-runtime](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-steelsearch-multi-node-runtime) |
+| Native transport frame and OpenSearch probe compatibility | Partial | N/A | Partial | No | Decode scaffolding exists, but action execution, named-writeable coverage, cluster-state diffs, and binary compatibility remain incomplete. | [native-transport-frame-and-opensearch-probe-compatibility](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-native-transport-frame-and-opensearch-probe-compatibility) |
+| Security and access control | Stubbed | Stubbed | Planned | No | Secure replacement is blocked until TLS, authn/authz, restricted-index policy, audit, and secret-handling evidence are complete. | [security-and-access-control](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-security-and-access-control) |
+| OpenSearch comparison harness | Implemented | N/A | Partial | No | Harness coverage is useful, but not yet broad enough to justify standalone, secure, interop, or peer-node replacement claims by itself. | [opensearch-comparison-harness](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-opensearch-comparison-harness) |
+| Java OpenSearch data-node compatibility | Out of scope | N/A | Out of scope | No | Mixed Java data-node membership and JVM recovery participation remain blocked by missing distributed compatibility work. | [java-opensearch-data-node-compatibility](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-java-opensearch-data-node-compatibility) |
+| Java plugin ABI compatibility | Out of scope | N/A | Out of scope | No | Java plugin loading and ABI compatibility are not opened as an in-scope replacement track. | [java-plugin-abi-compatibility](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md#area-java-plugin-abi-compatibility) |
+
+Interpretation note for the table above:
+
+- `Replacement blocker` is the one-line reason the row still blocks a stronger
+  replacement claim.
+- `Exit criteria anchor` points to the profile-aware closing criteria for that
+  source area in
+  [replacement-claim-exit-criteria.md](/home/ubuntu/steelsearch/docs/rust-port/replacement-claim-exit-criteria.md).
 
 ## REST Route Summary
 

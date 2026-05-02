@@ -1,0 +1,29 @@
+{
+  "name": "phase-b-gap-harness-profiles",
+  "profiles": {
+    "disconnect-during-read-coordination": {
+      "failure_class": "remote-disconnect",
+      "expected_markers": [
+        "remote disconnect",
+        "read coordination rejected",
+        "fail-closed"
+      ]
+    },
+    "stale-publication-observation": {
+      "failure_class": "stale-publication",
+      "expected_markers": [
+        "publication lag",
+        "stale decoded cluster-state",
+        "forwarding rejected"
+      ]
+    },
+    "incompatible-metadata-decode": {
+      "failure_class": "incompatible-metadata",
+      "expected_markers": [
+        "incompatible metadata",
+        "decode failed",
+        "interop refused"
+      ]
+    }
+  }
+}

@@ -4426,7 +4426,10 @@ impl SteelNode {
         )
     }
 
-    fn handle_snapshot_cleanup_route(&self, _repository: &str) -> RestResponse {
+    fn handle_snapshot_cleanup_route(&self, repository: &str) -> RestResponse {
+        if !self.snapshot_repository_exists(repository) {
+            return build_missing_snapshot_repository_response(repository);
+        }
         RestResponse::json(
             200,
             snapshot_cleanup_route_registration::build_snapshot_cleanup_response(
@@ -4714,18 +4717,22 @@ impl SteelNode {
     }
 
     fn handle_msearch_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
-        if let Some(requests) = self.parse_msearch_requests(request) {
-            let responses = requests
-                .into_iter()
-                .map(|(header_target, body)| {
-                    let effective_target = header_target.as_deref().or(target).unwrap_or("_all");
-                    let request =
-                        RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
-                            .with_json_body(body);
-                    self.handle_index_search_route(effective_target, &request).body
-                })
-                .collect::<Vec<_>>();
-            return RestResponse::json(200, serde_json::json!({ "responses": responses }));
+        match self.parse_msearch_requests(request) {
+            Ok(Some(requests)) => {
+                let responses = requests
+                    .into_iter()
+                    .map(|(header_target, body)| {
+                        let effective_target = header_target.as_deref().or(target).unwrap_or("_all");
+                        let request =
+                            RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
+                                .with_json_body(body);
+                        self.handle_index_search_route(effective_target, &request).body
+                    })
+                    .collect::<Vec<_>>();
+                return RestResponse::json(200, serde_json::json!({ "responses": responses }));
+            }
+            Ok(None) => {}
+            Err(response) => return response,
         }
         RestResponse::json(
             200,
@@ -4779,30 +4786,43 @@ impl SteelNode {
         RestResponse::json(200, body)
     }
 
-    fn parse_msearch_requests(&self, request: &RestRequest) -> Option<Vec<(Option<String>, Value)>> {
+    fn parse_msearch_requests(
+        &self,
+        request: &RestRequest,
+    ) -> Result<Option<Vec<(Option<String>, Value)>>, RestResponse> {
         if request.body.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let raw = std::str::from_utf8(&request.body).ok()?;
+        let raw = std::str::from_utf8(&request.body).map_err(|_| {
+            build_x_content_parse_search_response("failed to parse msearch ndjson payload")
+        })?;
         let lines = raw
             .lines()
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>();
         if lines.is_empty() {
-            return None;
+            return Ok(None);
+        }
+        if lines.len() % 2 != 0 {
+            return Err(build_x_content_parse_search_response(
+                "malformed msearch ndjson payload",
+            ));
         }
 
         let mut requests = Vec::new();
         let mut index = 0;
         while index < lines.len() {
-            let header = serde_json::from_str::<Value>(lines[index]).ok()?;
-            let body = if index + 1 < lines.len() {
-                serde_json::from_str::<Value>(lines[index + 1]).ok()?
-            } else {
-                Value::Object(serde_json::Map::new())
+            let header = serde_json::from_str::<Value>(lines[index]).map_err(|_| {
+                build_x_content_parse_search_response("failed to parse msearch ndjson payload")
+            })?;
+            let Some(header_object) = header.as_object() else {
+                return Err(build_parsing_search_response("malformed msearch header"));
             };
-            let target = header
+            let body = serde_json::from_str::<Value>(lines[index + 1]).map_err(|_| {
+                build_x_content_parse_search_response("failed to parse msearch ndjson payload")
+            })?;
+            let target = header_object
                 .get("index")
                 .and_then(|value| match value {
                     Value::String(single) => Some(single.clone()),
@@ -4816,10 +4836,13 @@ impl SteelNode {
                     _ => None,
                 })
                 .filter(|target| !target.is_empty());
+            if header_object.contains_key("index") && target.is_none() {
+                return Err(build_parsing_search_response("malformed msearch header"));
+            }
             requests.push((target, body));
             index += 2;
         }
-        Some(requests)
+        Ok(Some(requests))
     }
 
     fn handle_search_pipeline_collection_get_route(&self) -> RestResponse {
@@ -5308,6 +5331,7 @@ impl SteelNode {
         } else {
             serde_json::json!({ "query": { "match_all": {} } })
         };
+        validate_template_source(&source)?;
         Ok(substitute_template_params(
             &source,
             payload.get("params").and_then(Value::as_object),
@@ -5327,6 +5351,11 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        if request.query_params.contains_key("q") {
+            return build_unsupported_search_response(
+                "unsupported count option [q]; use request body [query] instead",
+            );
+        }
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -5347,6 +5376,12 @@ impl SteelNode {
             }
         };
         let query = payload.get("query").unwrap_or(&Value::Null);
+        let (valid, explanation) = validate_query_payload(payload.get("query"));
+        if !valid {
+            return build_unsupported_search_response(&format!(
+                "unsupported count query: {explanation}"
+            ));
+        }
         let requested_target = target.unwrap_or("_all");
         let docs = self.documents_state.lock().expect("documents state lock poisoned");
         let count = docs
@@ -5450,6 +5485,11 @@ impl SteelNode {
         target: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
+        if request.query_params.contains_key("rewrite") {
+            return build_unsupported_search_response(
+                "unsupported validate query option [rewrite]",
+            );
+        }
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -5513,14 +5553,60 @@ impl SteelNode {
                 }
             }
         };
-        let resolved_index = self.resolve_index_or_alias(index);
+        let resolved_indices = if index.contains('*') {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            let matched = manifest["indices"]
+                .as_object()
+                .map(|indices| {
+                    indices
+                        .keys()
+                        .filter(|candidate| matches_index_selector(index, candidate))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if matched.is_empty() {
+                return RestResponse::json(
+                    404,
+                    serde_json::json!({
+                        "error": {
+                            "type": "index_not_found_exception",
+                            "reason": format!("no such index [{index}]")
+                        },
+                        "status": 404
+                    }),
+                );
+            }
+            matched
+        } else if self.index_or_alias_exists(index) {
+            vec![self.resolve_index_or_alias(index)]
+        } else {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "index_not_found_exception",
+                        "reason": format!("no such index [{index}]")
+                    },
+                    "status": 404
+                }),
+            );
+        };
         let docs = self.documents_state.lock().expect("documents state lock poisoned");
-        let key_prefix = format!("{resolved_index}:{id}:");
-        let Some((_, record)) = docs.iter().find(|(key, _)| key.starts_with(&key_prefix)) else {
+        let found = resolved_indices.iter().find_map(|resolved_index| {
+            let key_prefix = format!("{resolved_index}:{id}:");
+            docs.iter()
+                .find(|(key, _)| key.starts_with(&key_prefix))
+                .map(|(_, record)| (resolved_index.clone(), record))
+        });
+        let Some((resolved_index, record)) = found else {
             return RestResponse::json(
                 200,
                 serde_json::json!({
-                    "_index": resolved_index,
+                    "_index": if resolved_indices.len() == 1 { resolved_indices[0].clone() } else { index.to_string() },
                     "_id": id,
                     "matched": false,
                     "explanation": {
@@ -5535,6 +5621,12 @@ impl SteelNode {
         };
         let default_query = serde_json::json!({ "match_all": {} });
         let query = payload.get("query").unwrap_or(&default_query);
+        let (valid, explanation) = validate_query_payload(payload.get("query").or(Some(&default_query)));
+        if !valid {
+            return build_unsupported_search_response(&format!(
+                "unsupported explain query: {explanation}"
+            ));
+        }
         let matched = matches_query_body(&record.source, Some(query));
         RestResponse::json(
             200,
@@ -11954,6 +12046,19 @@ impl SteelNode {
         target.to_string()
     }
 
+    fn index_or_alias_exists(&self, target: &str) -> bool {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        if manifest["indices"].get(target).is_some() {
+            return true;
+        }
+        manifest["indices"]
+            .as_object()
+            .is_some_and(|indices| indices.values().any(|body| body["aliases"].get(target).is_some()))
+    }
+
     fn resolve_write_index_or_alias(&self, target: &str) -> String {
         let manifest = self
             .metadata_manifest_state
@@ -12222,6 +12327,14 @@ impl SteelNode {
             ));
         }
         None
+    }
+}
+
+fn validate_template_source(source: &Value) -> Result<(), RestResponse> {
+    if source.is_object() {
+        Ok(())
+    } else {
+        Err(build_parsing_search_response("malformed search template source"))
     }
 }
 
@@ -18427,6 +18540,75 @@ mod tests {
     }
 
     #[test]
+    fn single_doc_routes_surface_conflict_and_routing_negative_cases() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-write-negatives"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-write-negatives/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "message": "baseline",
+                        "tenant": "tenant-a"
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let create_conflict = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-write-negatives/_create/doc-1")
+                .with_json_body(serde_json::json!({
+                    "message": "duplicate create"
+                })),
+        );
+        assert_eq!(create_conflict.status, 409);
+        assert_eq!(
+            create_conflict.body["error"]["type"],
+            "version_conflict_engine_exception"
+        );
+
+        let stale_seq_term = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-write-negatives/_doc/doc-1?if_seq_no=7&if_primary_term=1",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "stale write"
+            })),
+        );
+        assert_eq!(stale_seq_term.status, 409);
+        assert_eq!(
+            stale_seq_term.body["error"]["type"],
+            "version_conflict_engine_exception"
+        );
+
+        let wrong_routing = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-write-negatives/_update/doc-1?routing=tenant-route",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "processed": true
+                }
+            })),
+        );
+        assert_eq!(wrong_routing.status, 404);
+        assert_eq!(
+            wrong_routing.body["error"]["type"],
+            "document_missing_exception"
+        );
+    }
+
+    #[test]
     fn single_doc_post_route_indexes_explicit_id_documents() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -18613,6 +18795,145 @@ mod tests {
         assert_eq!(named_search_template.status, 200);
         assert_eq!(named_search_template.body["hits"]["total"]["value"], 1);
 
+        let missing_params_search_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
+                serde_json::json!({
+                    "id": "probe-template"
+                }),
+            ),
+        );
+        assert_eq!(missing_params_search_template.status, 200);
+        assert_eq!(missing_params_search_template.body["hits"]["total"]["value"], 0);
+
+        let extra_params_render_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_render/template/probe-template").with_json_body(
+                serde_json::json!({
+                    "params": {
+                        "tenant": "tenant-a",
+                        "unused": "noop"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(extra_params_render_template.status, 200);
+        assert_eq!(
+            extra_params_render_template.body["template_output"]["query"]["term"]["tenant"],
+            "tenant-a"
+        );
+
+        let extra_params_search_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
+                serde_json::json!({
+                    "id": "probe-template",
+                    "params": {
+                        "tenant": "tenant-a",
+                        "unused": "noop"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(extra_params_search_template.status, 200);
+        assert_eq!(extra_params_search_template.body["hits"]["total"]["value"], 1);
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_scripts/probe-template").with_json_body(
+                    serde_json::json!({
+                        "script": {
+                            "lang": "mustache",
+                            "source": {
+                                "query": {
+                                    "term": {
+                                        "tenant": "{{tenant_override}}"
+                                    }
+                                }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+
+        let overwritten_render_with_params = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_render/template/probe-template").with_json_body(
+                serde_json::json!({
+                    "params": {
+                        "tenant_override": "tenant-b"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(overwritten_render_with_params.status, 200);
+        assert_eq!(
+            overwritten_render_with_params.body["template_output"]["query"]["term"]["tenant"],
+            "tenant-b"
+        );
+
+        let overwritten_named_search_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
+                serde_json::json!({
+                    "id": "probe-template",
+                    "params": {
+                        "tenant_override": "tenant-b"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(overwritten_named_search_template.status, 200);
+        assert_eq!(overwritten_named_search_template.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            overwritten_named_search_template.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let malformed_inline_render = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_render/template").with_json_body(
+                serde_json::json!({
+                    "source": "not-an-object"
+                }),
+            ),
+        );
+        assert_eq!(malformed_inline_render.status, 400);
+        assert_eq!(malformed_inline_render.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            malformed_inline_render.body["error"]["reason"],
+            "malformed search template source"
+        );
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_scripts/bad-template").with_json_body(
+                    serde_json::json!({
+                        "script": {
+                            "lang": "mustache",
+                            "source": "not-an-object"
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+
+        let malformed_named_search_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
+                serde_json::json!({
+                    "id": "bad-template"
+                }),
+            ),
+        );
+        assert_eq!(malformed_named_search_template.status, 400);
+        assert_eq!(
+            malformed_named_search_template.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            malformed_named_search_template.body["error"]["reason"],
+            "malformed search template source"
+        );
+
         let missing_named_search_template = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search/template").with_json_body(
                 serde_json::json!({
@@ -18687,6 +19008,84 @@ mod tests {
         assert_eq!(targeted_count.status, 200);
         assert_eq!(targeted_count.body["count"], 1);
 
+        let q_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_count?q=tenant:tenanta").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenantb" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(q_count.status, 400);
+        assert_eq!(q_count.body["status"], 400);
+        assert_eq!(
+            q_count.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            q_count.body["error"]["reason"],
+            "unsupported count option [q]; use request body [query] instead"
+        );
+
+        let empty_wildcard_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/missing-count-*/_count").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} }
+                }),
+            ),
+        );
+        assert_eq!(empty_wildcard_count.status, 200);
+        assert_eq!(empty_wildcard_count.body["count"], 0);
+
+        let allow_no_indices_count = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/missing-count-*/_count?allow_no_indices=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(allow_no_indices_count.status, 200);
+        assert_eq!(allow_no_indices_count.body["count"], 0);
+
+        let missing_exact_index_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/missing-count-000001/_count").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} }
+                }),
+            ),
+        );
+        assert_eq!(missing_exact_index_count.status, 200);
+        assert_eq!(missing_exact_index_count.body["count"], 0);
+
+        let unsupported_query_type_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_count").with_json_body(serde_json::json!({
+                "query": {
+                    "range": { "tenant": { "gte": "a" } }
+                }
+            })),
+        );
+        assert_eq!(unsupported_query_type_count.status, 400);
+        assert_eq!(unsupported_query_type_count.body["status"], 400);
+        assert_eq!(
+            unsupported_query_type_count.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            unsupported_query_type_count.body["error"]["reason"],
+            "unsupported count query: unsupported query type"
+        );
+
+        let malformed_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_count")
+                .with_body(b"{\"query\":".to_vec()),
+        );
+        assert_eq!(malformed_count.status, 400);
+        assert_eq!(malformed_count.body["status"], 400);
+        assert_eq!(malformed_count.body["error"]["type"], "parse_exception");
+
         let root_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_validate/query").with_json_body(
                 serde_json::json!({
@@ -18756,6 +19155,36 @@ mod tests {
         assert_eq!(targeted_empty_validate.body["valid"], true);
         assert_eq!(targeted_empty_validate.body["_indices"][0], "logs-count-*");
         assert!(targeted_empty_validate.body.get("explanations").is_none());
+
+        let malformed_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_validate/query")
+                .with_body(b"{\"query\":".to_vec()),
+        );
+        assert_eq!(malformed_validate.status, 400);
+        assert_eq!(malformed_validate.body["status"], 400);
+        assert_eq!(malformed_validate.body["error"]["type"], "parse_exception");
+
+        let targeted_rewrite_validate = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-count-*/_validate/query?rewrite=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenanta" }
+                }
+            })),
+        );
+        assert_eq!(targeted_rewrite_validate.status, 400);
+        assert_eq!(targeted_rewrite_validate.body["status"], 400);
+        assert_eq!(
+            targeted_rewrite_validate.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            targeted_rewrite_validate.body["error"]["reason"],
+            "unsupported validate query option [rewrite]"
+        );
     }
 
     #[test]
@@ -19436,6 +19865,125 @@ mod tests {
     }
 
     #[test]
+    fn msearch_routes_fail_closed_on_malformed_ndjson_variants() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let malformed_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(b"{}\n{\"query\":{\"match_all\":{}}\n".to_vec()),
+        );
+        assert_eq!(malformed_body.status, 400);
+        assert_eq!(malformed_body.body["status"], 400);
+        assert_eq!(
+            malformed_body.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            malformed_body.body["error"]["reason"],
+            "failed to parse msearch ndjson payload"
+        );
+
+        let odd_line_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(b"{}\n{\"query\":{\"match_all\":{}}}\n{}\n".to_vec()),
+        );
+        assert_eq!(odd_line_count.status, 400);
+        assert_eq!(odd_line_count.body["status"], 400);
+        assert_eq!(
+            odd_line_count.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            odd_line_count.body["error"]["reason"],
+            "malformed msearch ndjson payload"
+        );
+
+        let malformed_header = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(b"[]\n{\"query\":{\"match_all\":{}}}\n".to_vec()),
+        );
+        assert_eq!(malformed_header.status, 400);
+        assert_eq!(malformed_header.body["status"], 400);
+        assert_eq!(malformed_header.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            malformed_header.body["error"]["reason"],
+            "malformed msearch header"
+        );
+    }
+
+    #[test]
+    fn msearch_routes_honor_header_override_and_path_target_precedence() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-msearch-precedence"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/metrics-msearch-precedence"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-msearch-precedence/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-msearch-precedence/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+            )
+            .status,
+            201
+        );
+
+        let root_header_override = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"index\":\"metrics-msearch-precedence\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(root_header_override.status, 200);
+        assert_eq!(root_header_override.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(root_header_override.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-2");
+
+        let targeted_path_fallback = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-msearch-*/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(b"{}\n{\"query\":{\"match_all\":{}}}\n".to_vec()),
+        );
+        assert_eq!(targeted_path_fallback.status, 200);
+        assert_eq!(targeted_path_fallback.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(targeted_path_fallback.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-1");
+
+        let targeted_header_override = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-msearch-*/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"index\":\"metrics-msearch-precedence\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(targeted_header_override.status, 200);
+        assert_eq!(targeted_header_override.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(targeted_header_override.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-2");
+    }
+
+    #[test]
     fn explain_route_surfaces_matched_unmatched_and_missing_doc_semantics() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -19496,6 +20044,57 @@ mod tests {
         assert_eq!(missing.body["matched"], false);
         assert_eq!(missing.body["get"]["found"], false);
         assert_eq!(missing.body["explanation"]["description"], "document missing");
+
+        let wildcard = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-explain-*/_explain/doc-1")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenanta" }
+                    }
+                })),
+        );
+        assert_eq!(wildcard.status, 200);
+        assert_eq!(wildcard.body["_index"], "logs-explain-semantic");
+        assert_eq!(wildcard.body["matched"], true);
+        assert_eq!(wildcard.body["get"]["found"], true);
+
+        let missing_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/missing-explain-semantic/_explain/doc-1")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "match_all": {}
+                    }
+                })),
+        );
+        assert_eq!(missing_index.status, 404);
+        assert_eq!(missing_index.body["status"], 404);
+        assert_eq!(
+            missing_index.body["error"]["type"],
+            "index_not_found_exception"
+        );
+        assert_eq!(
+            missing_index.body["error"]["reason"],
+            "no such index [missing-explain-semantic]"
+        );
+
+        let unsupported_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-explain-semantic/_explain/doc-1")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "range": { "tenant": { "gte": "a" } }
+                    }
+                })),
+        );
+        assert_eq!(unsupported_query.status, 400);
+        assert_eq!(unsupported_query.body["status"], 400);
+        assert_eq!(
+            unsupported_query.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            unsupported_query.body["error"]["reason"],
+            "unsupported explain query: unsupported query type"
+        );
     }
 
     #[test]
@@ -19589,6 +20188,199 @@ mod tests {
         );
         assert_eq!(targeted_wildcard_term.status, 200);
         assert_eq!(targeted_wildcard_term.body["hits"]["total"]["value"], 2);
+    }
+
+    #[test]
+    fn search_routes_surface_pagination_track_total_hits_and_target_expansion_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-params-a"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-params-b"))
+                .status,
+            200
+        );
+        for (path, body) in [
+            (
+                "/logs-search-params-a/_doc/doc-1",
+                serde_json::json!({ "tenant": "tenant-a", "message": "alpha" }),
+            ),
+            (
+                "/logs-search-params-a/_doc/doc-2",
+                serde_json::json!({ "tenant": "tenant-b", "message": "beta" }),
+            ),
+            (
+                "/logs-search-params-b/_doc/doc-3",
+                serde_json::json!({ "tenant": "tenant-c", "message": "gamma" }),
+            ),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, path).with_json_body(body),
+                )
+                .status,
+                201
+            );
+        }
+
+        let sorted_window = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "from": 1,
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(sorted_window.status, 200);
+        assert_eq!(sorted_window.body["hits"]["total"]["value"], 3);
+        assert_eq!(sorted_window.body["hits"]["hits"].as_array().map(Vec::len), Some(1));
+        assert_eq!(sorted_window.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let total_hits_threshold = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "size": 1,
+                "track_total_hits": 1
+            })),
+        );
+        assert_eq!(total_hits_threshold.status, 200);
+        assert_eq!(total_hits_threshold.body["hits"]["total"]["value"], 1);
+        assert_eq!(total_hits_threshold.body["hits"]["total"]["relation"], "gte");
+
+        let allow_no_indices = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/missing-search-params-*/_search?allow_no_indices=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(allow_no_indices.status, 200);
+        assert_eq!(allow_no_indices.body["hits"]["total"]["value"], 0);
+
+        let ignore_unavailable = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a,missing-search-params/_search?ignore_unavailable=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(ignore_unavailable.status, 200);
+        assert_eq!(ignore_unavailable.body["hits"]["total"]["value"], 2);
+    }
+
+    #[test]
+    fn search_fail_closed_options_surface_opensearch_error_shapes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let knn_invalid = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": [0.1, 0.2, 0.3],
+                            "k": 1,
+                            "expand_nested": "yes"
+                        }
+                    }
+                }
+            })),
+        );
+        assert_eq!(knn_invalid.status, 400);
+        assert_eq!(knn_invalid.body["status"], 400);
+        assert_eq!(
+            knn_invalid.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            knn_invalid.body["error"]["reason"],
+            "unsupported knn parameter [expand_nested]"
+        );
+
+        let rescore_invalid = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "rescore": {
+                    "window_size": 10,
+                    "query": {
+                        "rescore_query": { "match_all": {} },
+                        "score_mode": "avg"
+                    }
+                }
+            })),
+        );
+        assert_eq!(rescore_invalid.status, 400);
+        assert_eq!(rescore_invalid.body["status"], 400);
+        assert_eq!(
+            rescore_invalid.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            rescore_invalid.body["error"]["reason"],
+            "unsupported search option [rescore]"
+        );
+
+        let highlight_invalid = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "highlight": {
+                    "fields": {
+                        "message": {}
+                    },
+                    "encoder": "html"
+                }
+            })),
+        );
+        assert_eq!(highlight_invalid.status, 400);
+        assert_eq!(highlight_invalid.body["status"], 400);
+        assert_eq!(
+            highlight_invalid.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            highlight_invalid.body["error"]["reason"],
+            "unsupported highlight parameter [encoder]"
+        );
+
+        let suggest_invalid = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "suggest": {
+                    "tenant_hint": {
+                        "text": "tenant",
+                        "term": {
+                            "field": "tenant",
+                            "size": 2
+                        }
+                    }
+                }
+            })),
+        );
+        assert_eq!(suggest_invalid.status, 400);
+        assert_eq!(suggest_invalid.body["status"], 400);
+        assert_eq!(
+            suggest_invalid.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            suggest_invalid.body["error"]["reason"],
+            "unsupported term suggest parameter"
+        );
     }
 
     #[test]
@@ -20357,6 +21149,20 @@ mod tests {
         assert_eq!(cleanup.status, 200);
         assert_eq!(cleanup.body["results"]["deleted_bytes"], Value::from(0));
         assert_eq!(cleanup.body["results"]["deleted_blobs"], Value::from(0));
+
+        let missing_cleanup = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-cleanup-missing/_cleanup",
+        ));
+        assert_eq!(missing_cleanup.status, 404);
+        assert_eq!(
+            missing_cleanup.body["error"]["type"],
+            Value::String("repository_missing_exception".to_string())
+        );
+        assert_eq!(
+            missing_cleanup.body["error"]["reason"],
+            Value::String("[repo-cleanup-missing] missing".to_string())
+        );
     }
 
     #[test]

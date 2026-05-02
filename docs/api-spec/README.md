@@ -220,10 +220,130 @@ Canonical artifact names under `compare/`:
   `http-load-comparison.json` when HTTP load comparison is enabled
   `alias-template-persistence-report.json` when alias/template live comparison
   is enabled
+  `security-authz-compat-report.json` when the secure standalone authn/authz
+  harness is enabled
 
 Under `rehearsal/`, keep daemon/fixture work files stable enough for reuse, but
 do not treat ad hoc internal filenames there as reviewer-facing canonical
 report names.
+
+## Security Compatibility Harness
+
+Local and CI use the same entrypoint:
+
+- `tools/run-security-compat-harness.sh`
+
+Current command shape:
+
+```bash
+tools/run-security-compat-harness.sh \
+  --profile single-node-secure \
+  --steelsearch-url https://127.0.0.1:19200
+```
+
+or:
+
+```bash
+tools/run-security-compat-harness.sh \
+  --profile multi-node-secure \
+  --steelsearch-url https://127.0.0.1:19200
+```
+
+Shared prerequisites:
+
+- repo-local bootstrap policy:
+  - `tools/fixtures/security-bootstrap-policy.json`
+- repo-local PKI layout:
+  - `tools/fixtures/security-pki/`
+- profile-scoped default report roots:
+  - `target/security-compat/single-node-secure/`
+  - `target/security-compat/multi-node-secure/`
+
+Shared environment contract:
+
+- endpoint selection:
+  - `SECURITY_SINGLE_NODE_STEELSEARCH_URL`
+  - `SECURITY_SINGLE_NODE_OPENSEARCH_URL`
+  - `SECURITY_MULTI_NODE_STEELSEARCH_URL`
+  - `SECURITY_MULTI_NODE_OPENSEARCH_URL`
+  - `SECURITY_MULTI_NODE_SEEDS`
+- credential names are fixed by policy and printed by the harness:
+  - `SECURITY_ADMIN_USERNAME` / `SECURITY_ADMIN_PASSWORD`
+  - `SECURITY_READER_USERNAME` / `SECURITY_READER_PASSWORD`
+  - `SECURITY_WRITER_USERNAME` / `SECURITY_WRITER_PASSWORD`
+- TLS/bootstrap env defaults are fixed by the harness:
+  - `STEELSEARCH_SECURITY_ENABLED`
+  - `STEELSEARCH_HTTP_TLS_ENABLED`
+  - `STEELSEARCH_TRANSPORT_TLS_ENABLED`
+  - `STEELSEARCH_SECURITY_BOOTSTRAP_MODE`
+  - `STEELSEARCH_TEST_CA_CERT`
+  - `STEELSEARCH_TEST_HTTP_CERT`
+  - `STEELSEARCH_TEST_TRANSPORT_CERT`
+
+Execution rule:
+
+- CI and local should both invoke the harness directly rather than re-encoding
+  profile-specific env/file paths in separate scripts.
+- If the authz fixture does not exist yet, the harness must fail fast instead
+  of silently downgrading to an unsecured run.
+- The canonical report path is:
+  - `target/security-compat/<profile>/security-authz-compat-report.json`
+- Role-to-route expectations for authz probes are documented in:
+  - [security-role-route-matrix.md](/home/ubuntu/steelsearch/docs/api-spec/security-role-route-matrix.md)
+- Restricted/system index prefix planning is documented in:
+  - [restricted-index-prefix-inventory.md](/home/ubuntu/steelsearch/docs/api-spec/restricted-index-prefix-inventory.md)
+- Redaction and secret-handling expectations are documented in:
+  - [security-redaction-baseline.md](/home/ubuntu/steelsearch/docs/api-spec/security-redaction-baseline.md)
+
+## Search Compatibility Fixture Roles
+
+Search compatibility evidence is intentionally split across three fixture
+families. They are not interchangeable.
+
+- `tools/fixtures/search-compat.json`
+  - broad compatibility suite;
+  - mixes root/cluster/index/document/search/admin/read surfaces that still
+    matter to search-facing replacement behavior;
+  - now carries `family` and `description` metadata so cases can be grouped
+    into lexical, ranking, aggregation, suggest/highlight, vector/k-NN,
+    failure-path, and admin-oriented buckets.
+- `tools/fixtures/search-strict-compat.json`
+  - strict source parity suite;
+  - used where Steelsearch and OpenSearch are expected to match on a tighter
+    canonicalized output surface;
+  - each case now records whether `strict_source_parity_required` is true, and
+    may carry a reason when a case is still tolerated as a known open gap.
+- `tools/fixtures/search-semantic-compat.json`
+  - light semantic smoke suite;
+  - intentionally small and targeted;
+  - used to pin representative semantic behavior for `_search`, `_count`,
+    `_validate/query`, and template-search surfaces without pretending to be a
+    full strict parity matrix;
+  - negative cases belong here when the goal is to pin Steelsearch's explicit
+    fail-closed policy with `steelsearch_only` comparison rather than assert
+    strict source parity.
+
+When these fixtures appear to overlap, read them this way:
+
+1. `search-strict-compat.json` answers whether a supported narrow surface is
+   already strict-compare ready.
+2. `search-semantic-compat.json` answers whether key search semantics are
+   pinned even when the full strict matrix is not complete yet.
+3. `search-compat.json` remains the broader operational comparison surface and
+   is the source fixture that should be reorganized first when new search
+   families are introduced.
+
+Negative fixture placement rules:
+
+1. Put a case in `search-semantic-compat.json` when the intent is to pin a
+   Rust-native unsupported-policy contract such as `400` fail-closed behavior
+   for an option that Steelsearch deliberately rejects today.
+2. Put a case in `search-strict-compat.json` when the negative behavior itself
+   is expected to remain source-parity-relevant and should participate in the
+   `strict_source_parity_required` gate.
+3. Keep broad operational regressions and mixed family coverage in
+   `search-compat.json`; do not expand the semantic smoke fixture into a second
+   broad suite.
 
 ### Local OpenSearch / Fixture Environment
 

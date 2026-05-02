@@ -257,6 +257,8 @@ migration coverage:
 - deeper vector-specific migration validation beyond opaque payload replay;
 - resumability and checkpointing;
 - production rollback runbooks and evidence archives.
+- standalone bounded cutover procedure:
+  [standalone-cutover-runbook.md](/home/ubuntu/steelsearch/docs/rust-port/standalone-cutover-runbook.md)
 
 ### Phase A migration/cutover rehearsal procedure
 
@@ -294,7 +296,14 @@ Current integration evidence:
 - a dedicated cutover integration runner now seeds an OpenSearch source with
   bounded component/index templates, aliases, a data stream, and vector-bearing
   document payloads, replays the same bounded resources into Steelsearch, and
-  compares bounded readback/search summaries across source and target.
+  compares bounded readback/search summaries across source and target;
+- the same fixture now also emits extractor-backed metadata summaries for:
+  - concrete index metadata
+  - component template metadata
+  - index template metadata
+  - alias metadata
+  - data stream metadata
+  so migration-helper preservation claims are not limited to raw path checks.
 
 ## Transport Interop
 

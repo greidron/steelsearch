@@ -9,6 +9,7 @@ selected stable fields rather than volatile transport metadata.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -251,7 +252,7 @@ def main() -> int:
         "targets": targets,
         "setup": [],
         "cases": [],
-        "summary": {"passed": 0, "failed": 0, "skipped": 0, "by_area": {}, "skips": []},
+        "summary": {"passed": 0, "failed": 0, "skipped": 0, "by_area": {}, "by_family": {}, "family_summary": {}, "skips": []},
     }
 
     if args.wait:
@@ -262,7 +263,7 @@ def main() -> int:
         report["setup"].extend(setup_target(target_name, target_url, fixture, args.timeout))
 
     for case in fixture["cases"]:
-        result = run_case(case, targets, args.timeout)
+        result = run_case(case, fixture, targets, args.timeout)
         report["cases"].append(result)
         update_summary(report["summary"], result)
 
@@ -283,6 +284,13 @@ def main() -> int:
             f"{area_summary['failed']} failed, "
             f"{area_summary['skipped']} skipped"
         )
+    for family, family_summary in sorted(report["summary"]["family_summary"].items()):
+        print(
+            f"  family {family}: "
+            f"{family_summary['passed']} passed, "
+            f"{family_summary['failed']} failed, "
+            f"{family_summary['skipped']} skipped"
+        )
     for skipped in report["summary"]["skips"]:
         print(f"  skipped {skipped['name']}: {skipped['reason']}")
     print(f"report: {report_path}")
@@ -292,14 +300,19 @@ def main() -> int:
 def update_summary(summary: dict[str, Any], result: dict[str, Any]) -> None:
     status = result["status"]
     area = result["area"]
+    family = result.get("family", "unclassified")
     summary[status] += 1
     by_area = summary["by_area"].setdefault(area, {"passed": 0, "failed": 0, "skipped": 0})
     by_area[status] += 1
+    by_family = summary["by_family"].setdefault(family, {"passed": 0, "failed": 0, "skipped": 0})
+    by_family[status] += 1
+    summary["family_summary"] = summary["by_family"]
     if status == "skipped":
         summary["skips"].append(
             {
                 "name": result["name"],
                 "area": area,
+                "family": family,
                 "scope": result.get("skip_scope"),
                 "reason": result.get("reason"),
             }
@@ -322,14 +335,32 @@ def wait_for_endpoint(name: str, base_url: str, timeout: float) -> None:
 
 def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeout: float) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = []
+    setup_headers = resolve_request_headers(
+        fixture,
+        {"credential_set": fixture.get("setup_credential_set")},
+    )
     for index in fixture["indices"]:
-        delete = http_json(base_url, "DELETE", f"/{index['name']}", None, timeout)
+        delete = http_json(
+            base_url,
+            "DELETE",
+            f"/{index['name']}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
         if delete["status"] not in (200, 202, 404):
             steps.append(step_result(target_name, f"delete:{index['name']}", "failed", delete))
             continue
         steps.append(step_result(target_name, f"delete:{index['name']}", "passed", delete))
 
-        create = http_json(base_url, "PUT", f"/{index['name']}", index["body"], timeout)
+        create = http_json(
+            base_url,
+            "PUT",
+            f"/{index['name']}",
+            index["body"],
+            timeout,
+            request_headers=setup_headers,
+        )
         create_status = status_for(create)
         if target_name == "opensearch" and missing_knn_plugin_response(create):
             create_status = "skipped"
@@ -351,11 +382,19 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
 
     for batch in fixture["bulk"]:
         body = bulk_body(batch["index"], batch["documents"])
-        bulk = http_json(base_url, "POST", f"/{batch['index']}/_bulk", body, timeout, raw=True)
+        bulk = http_json(
+            base_url,
+            "POST",
+            f"/{batch['index']}/_bulk",
+            body,
+            timeout,
+            raw=True,
+            request_headers=setup_headers,
+        )
         passed = 200 <= bulk["status"] < 300 and not bulk.get("body", {}).get("errors", True)
         steps.append(step_result(target_name, f"bulk:{batch['index']}", "passed" if passed else "failed", bulk))
 
-    refresh = http_json(base_url, "POST", "/_refresh", {}, timeout)
+    refresh = http_json(base_url, "POST", "/_refresh", {}, timeout, request_headers=setup_headers)
     steps.append(step_result(target_name, "refresh:all", status_for(refresh), refresh))
 
     for alias in fixture.get("aliases", []):
@@ -366,6 +405,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/{alias['index']}/_alias/{alias['alias']}",
             body,
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -387,6 +427,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             request_body,
             timeout,
             raw=request_raw,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -404,6 +445,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/_snapshot/{repository['name']}",
             body,
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -420,6 +462,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/_template/{template['name']}",
             resolve_fixture_placeholders(template.get("body", {})),
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -436,6 +479,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/_index_template/{template['name']}",
             resolve_fixture_placeholders(template.get("body", {})),
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -452,6 +496,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/_component_template/{template['name']}",
             resolve_fixture_placeholders(template.get("body", {})),
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -468,6 +513,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/_scripts/{script['id']}",
             resolve_fixture_placeholders(script.get("body", {})),
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -484,6 +530,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             f"/_data_stream/{data_stream['name']}",
             resolve_fixture_placeholders(data_stream.get("body", {})),
             timeout,
+            request_headers=setup_headers,
         )
         steps.append(
             step_result(
@@ -506,7 +553,12 @@ def resolve_fixture_placeholders(value: Any) -> Any:
     return value
 
 
-def run_case(case: dict[str, Any], targets: dict[str, str], timeout: float) -> dict[str, Any]:
+def run_case(
+    case: dict[str, Any],
+    fixture: dict[str, Any],
+    targets: dict[str, str],
+    timeout: float,
+) -> dict[str, Any]:
     target_results: dict[str, Any] = {}
     comparison_mode = case.get("comparison", "compare")
     selected_targets = targets
@@ -514,7 +566,7 @@ def run_case(case: dict[str, Any], targets: dict[str, str], timeout: float) -> d
         selected_targets = {"steelsearch": targets["steelsearch"]}
 
     for name, url in selected_targets.items():
-        response, steps = run_case_request(url, case, timeout)
+        response, steps = run_case_request(url, fixture, case, timeout)
         target_results[name] = {
             "status": response["status"],
             "extract": extract(case["extract"], response),
@@ -597,10 +649,12 @@ def run_case(case: dict[str, Any], targets: dict[str, str], timeout: float) -> d
 
 def run_case_request(
     base_url: str,
+    fixture: dict[str, Any],
     case: dict[str, Any],
     timeout: float,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     steps = case.get("steps")
+    case_headers = resolve_request_headers(fixture, case)
     if not steps:
         response = http_json(
             base_url,
@@ -608,7 +662,9 @@ def run_case_request(
             case["path"],
             case.get("body"),
             timeout,
+            raw_json=case.get("raw_json", False),
             accept=case.get("accept"),
+            request_headers=case_headers,
         )
         return response, []
 
@@ -616,6 +672,7 @@ def run_case_request(
     response: dict[str, Any] = {"status": 0, "body": {}, "error": "case has no steps"}
     for index, step in enumerate(steps):
         resolved_step = resolve_step_placeholders(step, response)
+        step_headers = resolve_request_headers(fixture, resolved_step, case_headers)
         response = http_json(
             base_url,
             resolved_step["method"],
@@ -623,7 +680,9 @@ def run_case_request(
             resolved_step.get("body"),
             timeout,
             raw=resolved_step.get("raw", False),
+            raw_json=resolved_step.get("raw_json", False),
             accept=resolved_step.get("accept"),
+            request_headers=step_headers,
         )
         expected_status = resolved_step.get("expected_status")
         step_results.append(
@@ -640,6 +699,45 @@ def run_case_request(
 
 def resolve_step_placeholders(step: dict[str, Any], previous_response: dict[str, Any]) -> dict[str, Any]:
     return resolve_placeholders(step, previous_response)
+
+
+def resolve_request_headers(
+    fixture: dict[str, Any],
+    request: dict[str, Any],
+    base_headers: dict[str, str] | None = None,
+) -> dict[str, str]:
+    headers = dict(base_headers or {})
+    credential_set = request.get("credential_set")
+    if credential_set:
+        headers.update(resolve_credential_headers(fixture, credential_set))
+    for key, value in (request.get("headers") or {}).items():
+        headers[str(key)] = str(value)
+    return headers
+
+
+def resolve_credential_headers(fixture: dict[str, Any], credential_set_name: str) -> dict[str, str]:
+    credential_sets = fixture.get("credential_sets") or {}
+    credential = credential_sets.get(credential_set_name)
+    if credential is None:
+        raise RuntimeError(f"unknown credential_set [{credential_set_name}]")
+
+    mode = credential.get("mode")
+    if mode == "no-auth-header":
+        return {}
+    if mode != "basic-auth":
+        raise RuntimeError(f"unsupported credential mode [{mode}]")
+
+    username_env = credential.get("username_env")
+    password_env = credential.get("password_env")
+    username = os.environ.get(username_env or "")
+    password = os.environ.get(password_env or "")
+    if not username_env or not password_env or username == "" or password == "":
+        raise RuntimeError(
+            f"credential_set [{credential_set_name}] requires env [{username_env}] and [{password_env}]"
+        )
+
+    token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return {"Authorization": f"Basic {token}"}
 
 
 def resolve_placeholders(value: Any, previous_response: dict[str, Any]) -> Any:
@@ -672,37 +770,56 @@ def http_json(
     body: Any,
     timeout: float,
     raw: bool = False,
+    raw_json: bool = False,
     accept: str | None = None,
+    request_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     data: bytes | None
     headers = {"Accept": accept or "application/json"}
     if raw:
         data = body.encode("utf-8")
         headers["Content-Type"] = "application/x-ndjson"
+    elif raw_json:
+        data = body.encode("utf-8")
+        headers["Content-Type"] = "application/json"
     elif body is None:
         data = None
     else:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
+    if request_headers:
+        headers.update(request_headers)
 
     request = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return decode_response(response.status, response.read())
+            return decode_response(response.status, response.read(), response.headers)
     except urllib.error.HTTPError as error:
-        return decode_response(error.code, error.read())
+        return decode_response(error.code, error.read(), error.headers)
     except urllib.error.URLError as error:
-        return {"status": 0, "body": {}, "error": str(error)}
+        return {"status": 0, "body": {}, "headers": {}, "error": str(error)}
 
 
-def decode_response(status: int, payload: bytes) -> dict[str, Any]:
+def decode_response(status: int, payload: bytes, response_headers: Any | None = None) -> dict[str, Any]:
     if not payload:
-        return {"status": status, "body": {}}
+        return {"status": status, "body": {}, "headers": normalize_response_headers(response_headers)}
     try:
         body = json.loads(payload.decode("utf-8"))
     except json.JSONDecodeError:
         body = {"_raw": payload.decode("utf-8", errors="replace")}
-    return {"status": status, "body": body}
+    return {"status": status, "body": body, "headers": normalize_response_headers(response_headers)}
+
+
+def normalize_response_headers(response_headers: Any | None) -> dict[str, str]:
+    if response_headers is None:
+        return {}
+    normalized: dict[str, str] = {}
+    for key in response_headers.keys():
+        if not key:
+            continue
+        values = response_headers.get_all(key)
+        normalized[key.lower()] = ", ".join(values) if values else response_headers.get(key, "")
+    return normalized
 
 
 def bulk_body(index: str, documents: list[dict[str, Any]]) -> str:
@@ -1024,6 +1141,27 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 "failed": shards.get("failed"),
             },
         }
+    if kind == "msearch_summary":
+        responses = body.get("responses") or []
+        normalized = []
+        for entry in responses if isinstance(responses, list) else []:
+            hits = ((entry.get("hits") or {}).get("hits") or []) if isinstance(entry, dict) else []
+            total = ((entry.get("hits") or {}).get("total")) if isinstance(entry, dict) else None
+            if isinstance(total, dict):
+                total_value = total.get("value")
+            else:
+                total_value = total
+            normalized.append(
+                {
+                    "status": entry.get("status") if isinstance(entry, dict) else None,
+                    "total": total_value,
+                    "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+                }
+            )
+        return {
+            "status": response["status"],
+            "responses": normalized,
+        }
     if kind == "search_explain":
         hits = ((body.get("hits") or {}).get("hits") or [])
         return {
@@ -1033,6 +1171,16 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 isinstance(hit, dict) and isinstance(hit.get("_explanation"), dict)
                 for hit in hits
             ),
+        }
+    if kind == "explain_doc":
+        explanation = body.get("explanation") if isinstance(body, dict) else None
+        get = body.get("get") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "_index": body.get("_index") if isinstance(body, dict) else None,
+            "matched": body.get("matched") if isinstance(body, dict) else None,
+            "found": get.get("found") if isinstance(get, dict) else None,
+            "description": explanation.get("description") if isinstance(explanation, dict) else None,
         }
     if kind == "search_profile":
         profile = body.get("profile") or {}
@@ -1203,6 +1351,20 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "error_type": error_type,
             "reason_present": bool(reason),
+        }
+    if kind == "security_error":
+        error = body.get("error") or {}
+        if isinstance(error, dict):
+            error_type = error.get("type")
+            reason = error.get("reason")
+        else:
+            error_type = None
+            reason = error
+        return {
+            "status": response["status"],
+            "www_authenticate": (response.get("headers") or {}).get("www-authenticate"),
+            "error_type": error_type,
+            "reason": reason,
         }
     if kind == "knn_warmup":
         return {
@@ -2103,6 +2265,7 @@ def step_result(
 def raw_response(response: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": response["status"],
+        "headers": response.get("headers") or {},
         "body": response.get("body") or {},
         "error": response.get("error"),
     }
@@ -2111,6 +2274,7 @@ def raw_response(response: dict[str, Any]) -> dict[str, Any]:
 def normalized_response(response: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": response["status"],
+        "headers": normalize_value(response.get("headers") or {}),
         "body": normalize_value(response.get("body") or {}),
         "error": normalize_value(response.get("error")),
     }

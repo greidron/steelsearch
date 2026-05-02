@@ -1,258 +1,130 @@
-# Phase C: Same-Cluster Peer-Node Compatibility
+# Same-Cluster Peer-Node Gap Inventory
 
-## Goal
+## Scope
 
-`Phase C` is the first stage where Steelsearch is allowed to behave like a real
-Java OpenSearch cluster member rather than an external interop client.
+This document replaces the earlier `Phase C` milestone narrative with a direct
+inventory of what still blocks Steelsearch from behaving as a real Java
+OpenSearch peer node inside the same cluster.
 
-`Phase A` and `Phase A-1` prove standalone replacement.
-`Phase B` proves safe external interop.
-`Phase C` begins only when Steelsearch must join the same cluster as Java
-OpenSearch nodes and participate in coordination, shard lifecycle, write
-replication, and recovery without violating Java OpenSearch invariants.
+The question is not whether a peer-node harness exists. The question is whether
+mixed Java/Rust cluster membership is replacement-safe across coordination,
+allocation, recovery, replication, and failure semantics.
 
-The target is not "more forwarding." The target is peer-node correctness.
+## Already-Evidenced Ground
 
-## Boundary Against Phase B
+The repository already contains mixed-cluster harnesses, compare reports, and
+accepted evidence families for join, publication, allocation, recovery,
+write-replication, and failure scenarios.
 
-Keep work in `Phase C` only when at least one of the following is true:
+That is necessary groundwork. It is not the same thing as saying all peer-node
+contracts are production-complete.
 
-- Steelsearch must appear as a `DiscoveryNode` to Java OpenSearch.
-- Steelsearch must pass join validation and become part of cluster membership.
-- Steelsearch must receive and apply cluster-state publications as a peer node.
-- Steelsearch must own primaries or replicas in a mixed Java/Rust cluster.
-- Steelsearch must participate in peer recovery, relocation, or retention-lease
-  exchange.
-- Steelsearch must replicate writes across mixed Java/Rust shard copies.
+## Remaining Gap Areas
 
-Do not keep work in `Phase B` once it depends on membership, shard ownership,
-recovery, or publication acknowledgement semantics.
+### Discovery And Join Validation
 
-## Canonical Phase C Operating Model
+Remaining work:
 
-The canonical `Phase C` operating model is mixed-cluster peer participation:
+- strict node identity and role compatibility checks;
+- version-skew handling;
+- join rejection reason parity;
+- persistent membership-state correctness across restart;
+- operator-visible diagnosis when join is intentionally rejected.
 
-- at least one Java OpenSearch node and one Steelsearch node in the same
-  cluster;
-- Java remains the initial compatibility source of truth;
-- Steelsearch may be admitted only after handshake, join, publication,
-  allocation, recovery, and write-path safety gates pass;
-- unsupported membership or shard-lifecycle situations must fail closed before
-  data movement or acknowledgement.
+### Publication Receive / Apply / Acknowledge
 
-The first acceptable `Phase C` rollout shape is conservative:
+Remaining work:
 
-- Java cluster-manager ownership remains fixed at first;
-- Steelsearch joins first as a non-cluster-manager data-capable peer;
-- shard allocation is admitted only for explicitly validated index families;
-- mixed primaries may remain out of scope until replica and recovery semantics
-  are proven.
+- publication term/version monotonicity guarantees;
+- delta-vs-full publication correctness;
+- apply ordering under repeated updates;
+- acknowledgement semantics under slow apply or reject paths;
+- fail-closed behavior on unsupported cluster-state contents.
 
-## Validation Profiles
+### Allocation And Routing Convergence
 
-`Phase C` claims must be profile-driven and topology-driven.
+Remaining work:
 
-Canonical initial profile families:
+- shard-routing-table parity across mixed nodes;
+- allocation-decider parity for supported profiles;
+- relocation start/finalize correctness;
+- retention-lease state coherence;
+- fail-closed handling for unsupported shard states.
 
-- `mixed-cluster-join`
-  - one Java cluster-manager/data node
-  - one Steelsearch joining node
-  - proves handshake, join validation, membership visibility, and clean reject
-    behavior
-- `mixed-cluster-publication`
-  - same topology, but with repeated cluster-state updates
-  - proves publication receive/apply/ack behavior and fail-closed publication
-    rejection
-- `mixed-cluster-allocation`
-  - one Java node plus one Steelsearch node
-  - proves shard allocation admission, routing-table convergence, and fail-closed
-    allocation reject cases
-- `mixed-cluster-recovery`
-  - at least one relocating or recovering shard between Java and Steelsearch
-  - proves file/chunk/translog/finalize flow plus retention leases
-- `mixed-cluster-write-replication`
-  - mixed primary/replica topology for a bounded write family
-  - proves seq_no/primary_term/global-checkpoint/refresh visibility behavior
-- `mixed-cluster-failure`
-  - node loss, publication mismatch, relocation interruption, stale replica,
-    and restart scenarios
+### Peer Recovery
 
-Every Phase C claim needs:
+Remaining work:
 
-- a canonical profile family;
-- a reusable runner or integration harness;
-- machine-readable reports;
-- explicit fail-closed cases for unsupported or unsafe topology states.
+- file/chunk/translog/finalize ordering parity;
+- restart-safe recovery resume behavior;
+- recovery abort semantics;
+- lease and checkpoint correctness during interrupted recovery;
+- mixed Java/Rust source-target matrix coverage.
 
-## Capability Areas
+### Write Replication
 
-### 1. Discovery And Join Admission
+Remaining work:
 
-Steelsearch must:
+- primary/replica sequencing under mixed topologies;
+- `_seq_no`, `_primary_term`, local/global checkpoint correctness;
+- refresh visibility across mixed shard copies;
+- replica failure semantics;
+- retry/replay behavior under interruption.
 
-- encode a Java-compatible discovery identity;
-- advertise only validated node roles;
-- pass compatibility checks for cluster name, cluster UUID, version gates, and
-  node attributes;
-- reject unsupported join attempts before they mutate cluster membership.
+### Failure, Restart, And Rejection Semantics
 
-Required evidence:
+Remaining work:
 
-- source-derived join contract fixture:
-  `tools/fixtures/mixed-cluster-join-admission.json`
-- canonical reject fixture:
-  `tools/fixtures/mixed-cluster-join-reject.json`
-- live prerequisite probe runner:
-  `tools/probe_mixed_cluster_join_profile.sh`
-- canonical aggregate report runner:
-  `tools/run_mixed_cluster_join_profile.sh`
-- live mixed-cluster join probe;
-- reject cases for incompatible cluster UUID, wire-version mismatch, and
-  unsupported role advertisement;
-- report showing Java cluster membership after join.
+- node crash during publication;
+- node crash during relocation or recovery;
+- stale replica detection;
+- restart with partial on-disk state;
+- explicit reject ledgers for unsupported mixed-cluster situations.
 
-### 2. Cluster-State Publication, Apply, And Acknowledgement
+## Replacement Significance
 
-Steelsearch must:
+Same-cluster peer participation is not optional if Steelsearch is expected to
+replace OpenSearch in environments that rely on gradual node-by-node migration.
 
-- receive cluster-state publications from Java;
-- apply full states and supported diffs in order;
-- reject stale diff bases, unknown named writeables, or unsupported customs
-  without corrupting local state;
-- acknowledge publications only after successful apply.
+Without these contracts, operators may still use Steelsearch in standalone or
+externally coordinated modes, but they do not yet have a safe basis for mixed
+membership cutover.
 
-Required evidence:
+## Exit Criteria For This Category
 
-- publication stream integration harness;
-- fail-closed publication reject cases;
-- canonical aggregate report runner:
-  `tools/run_mixed_cluster_publication_profile.sh`
-- membership-visible ack report.
+This gap category is only closed when the declared mixed-cluster profile has:
 
-### 3. Allocation Admission And Routing Convergence
+- accepted join and reject evidence;
+- accepted publication/apply/ack evidence;
 
-Steelsearch must:
+Current repo-local publication ordering baseline:
 
-- accept shard allocation only for validated index families;
-- expose routing-table state consistent with Java cluster-manager decisions;
-- reject unsupported allocation commands, shard states, or store contracts
-  before shard ownership starts.
+- [publication-ordering-probe-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/publication-ordering-probe-matrix.md)
+- [publication-ordering-report-schema.json](/home/ubuntu/steelsearch/tools/fixtures/publication-ordering-report-schema.json)
+- accepted allocation and routing convergence evidence;
 
-Required evidence:
+Current repo-local allocation/relocation baseline:
 
-- source-derived allocation admission fixture:
-  `tools/fixtures/mixed-cluster-allocation-admission.json`
-- live routing convergence probe runner:
-  `tools/probe_mixed_cluster_allocation_profile.sh`
-- canonical reject fixture:
-  `tools/fixtures/mixed-cluster-allocation-fail-closed.json`
-- canonical aggregate report runner:
-  `tools/run_mixed_cluster_allocation_profile.sh`
-- mixed-cluster allocation profile with routing convergence checks;
-- reject cases for unsupported store type, missing allocation id, or invalid
-  shard state transitions.
+- [allocation-relocation-retention-lease-probe-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/allocation-relocation-retention-lease-probe-matrix.md)
+- [allocation-convergence-report-schema.json](/home/ubuntu/steelsearch/tools/fixtures/allocation-convergence-report-schema.json)
+- accepted peer recovery evidence;
 
-### 4. Peer Recovery And Relocation
+Current repo-local peer recovery baseline:
 
-Steelsearch must:
+- [peer-recovery-probe-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/peer-recovery-probe-matrix.md)
+- [peer-recovery-report-schema.json](/home/ubuntu/steelsearch/tools/fixtures/peer-recovery-report-schema.json)
+- accepted write-replication evidence;
 
-- participate in recovery start, file/chunk transfer, translog replay, and
-  finalize stages;
-- preserve Java-compatible checkpoint and retention-lease behavior;
-- fail closed on unsupported recovery source or relocation state.
+Current repo-local write replication baseline:
 
-Required evidence:
+- [mixed-write-replication-semantics-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/mixed-write-replication-semantics-matrix.md)
+- [write-replication-report-schema.json](/home/ubuntu/steelsearch/tools/fixtures/write-replication-report-schema.json)
+- accepted failure/restart/reject evidence;
 
-- canonical recovery wire fixture:
-  `tools/fixtures/mixed-cluster-recovery-wire.json`
-- bounded peer recovery integration runner:
-  `tools/probe_mixed_cluster_recovery_profile.sh`
-- canonical fail-closed fixture:
-  `tools/fixtures/mixed-cluster-recovery-fail-closed.json`
-- canonical aggregate report runner:
-  `tools/run_mixed_cluster_recovery_profile.sh`
-- bounded recovery/relocation harness;
-- artifact tree for start/chunk/translog/finalize stages;
-- interruption and rollback failure cases.
+Current repo-local join reject baseline:
 
-### 5. Mixed-Cluster Write Replication
-
-Steelsearch must:
-
-- accept replicated operations with Java-compatible sequencing;
-- preserve `_seq_no`, `_primary_term`, version, checkpoint, and refresh
-  semantics;
-- reject unsupported write families before partial replication can occur.
-
-Required evidence:
-
-- canonical replicated action family fixture:
-  `tools/fixtures/mixed-cluster-write-replication.json`
-- mixed primary/replica write harness;
-- bounded action family allow-list;
-- fail-closed reject cases for unsupported write action or stale term/seq_no.
-- canonical aggregate report runner:
-  `tools/run_mixed_cluster_write_replication_profile.sh`
-
-### 6. Failure Handling And Restart Safety
-
-Steelsearch must:
-
-- survive Java-node loss, Steelsearch-node loss, restart, and rejoin scenarios;
-- reject stale publications, stale replicas, or routing holes before corruption;
-- prove safe recovery after interruption.
-
-Required evidence:
-
-- failure-injection topology runner:
-  `tools/probe_mixed_cluster_failure_profile.sh`
-- restart/rejoin reports;
-- explicit reject ledger for non-admitted mixed-cluster states:
-  `tools/fixtures/mixed-cluster-failure-ledger.json`
-- canonical aggregate report runner:
-  `tools/run_mixed_cluster_failure_profile.sh`
-
-## Canonical Report Set
-
-`Phase C` should converge on the following report families:
-
-- `mixed-cluster-join-report.json`
-- `mixed-cluster-publication-report.json`
-- `mixed-cluster-allocation-report.json`
-- `mixed-cluster-recovery-report.json`
-- `mixed-cluster-write-replication-report.json`
-- `mixed-cluster-failure-report.json`
-- `mixed-cluster-reject-ledger.json`
-
-These reports should live under a dedicated compare tree for the `Phase C`
-runner, analogous to `Phase A-1` and `Phase B`.
-
-Canonical runner:
-
-- `tools/run-phase-c-mixed-cluster-harness.sh`
-
-## Release Gate
-
-Treat `Phase C` as complete only when all of the following are true:
-
-- canonical mixed-cluster profiles exist and clean-pass for the accepted Phase C
-  surface;
-- join, publication, allocation, recovery, and write replication each have
-  runtime-backed evidence;
-- unsupported mixed-cluster states fail closed before ownership or data
-  movement;
-- docs and ledgers clearly distinguish accepted mixed-cluster peer behavior from
-  still-deferred work.
-
-## Completion Checklist
-
-- mixed-cluster join runner exists and clean-passes
-- mixed-cluster publication/apply/ack runner exists and clean-passes
-- mixed-cluster allocation runner exists and clean-passes
-- mixed-cluster recovery runner exists and clean-passes
-- mixed-cluster write replication runner exists and clean-passes
-- mixed-cluster failure runner exists and clean-passes
-- canonical reject ledger covers unsupported membership, publication, routing,
-  recovery, and write states
-- `docs/api-spec/*` and `docs/rust-port/*` describe `Phase C` as peer-node
-  mixed-cluster participation rather than external interop
+- [join-validation-reject-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/join-validation-reject-matrix.md)
+- [join-validation-reject-transcripts.json](/home/ubuntu/steelsearch/tools/fixtures/join-validation-reject-transcripts.json)
+- [mixed-cluster-failure-profiles.json](/home/ubuntu/steelsearch/tools/fixtures/mixed-cluster-failure-profiles.json)
+- [run-phase-c-gap-harness.sh](/home/ubuntu/steelsearch/tools/run-phase-c-gap-harness.sh)
+- documented operational limits for profiles that remain unsupported.

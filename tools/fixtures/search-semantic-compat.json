@@ -77,34 +77,6 @@
   ],
   "cases": [
     {
-      "name": "search_root_term_summary",
-      "area": "search-semantic",
-      "method": "POST",
-      "path": "/_search",
-      "body": {
-        "query": {
-          "term": {
-            "tenant": "tenant-a"
-          }
-        }
-      },
-      "extract": "search_summary"
-    },
-    {
-      "name": "search_target_missing_field_summary",
-      "area": "search-semantic",
-      "method": "POST",
-      "path": "/logs-search-semantic-*/_search",
-      "body": {
-        "query": {
-          "term": {
-            "missing_field": "tenant-a"
-          }
-        }
-      },
-      "extract": "search_summary"
-    },
-    {
       "name": "count_root_term_semantic",
       "area": "search-semantic",
       "method": "POST",
@@ -116,7 +88,9 @@
           }
         }
       },
-      "extract": "count_query"
+      "extract": "count_query",
+      "family": "lexical",
+      "description": "[lexical] count root term semantic"
     },
     {
       "name": "count_target_term_semantic",
@@ -130,7 +104,557 @@
           }
         }
       },
-      "extract": "count_query"
+      "extract": "count_query",
+      "family": "lexical",
+      "description": "[lexical] count target term semantic"
+    },
+    {
+      "name": "count_query_string_q_unsupported_error",
+      "area": "search-semantic",
+      "method": "GET",
+      "path": "/_count?q=tenant:tenant-a",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-b"
+          }
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] count query-string q unsupported error"
+    },
+    {
+      "name": "count_wildcard_empty_match_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/missing-search-semantic-*/_count",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "count_query",
+      "family": "failure-path",
+      "description": "[failure-path] count wildcard empty match semantic"
+    },
+    {
+      "name": "count_allow_no_indices_empty_wildcard_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/missing-search-semantic-*/_count?allow_no_indices=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "count_query",
+      "family": "failure-path",
+      "description": "[failure-path] count allow_no_indices empty wildcard semantic"
+    },
+    {
+      "name": "count_missing_exact_index_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/missing-search-semantic-000001/_count",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "count_query",
+      "family": "failure-path",
+      "description": "[failure-path] count missing exact index semantic"
+    },
+    {
+      "name": "count_unsupported_query_type_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_count",
+      "body": {
+        "query": {
+          "range": {
+            "tenant": {
+              "gte": "a"
+            }
+          }
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] count unsupported query type error"
+    },
+    {
+      "name": "count_malformed_payload_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_count",
+      "body": "{\"query\":",
+      "raw_json": true,
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] count malformed payload error"
+    },
+    {
+      "name": "render_template_named_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_render/template/probe-template",
+      "body": {
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "render_template_output",
+      "family": "lexical",
+      "description": "[lexical] render template named semantic"
+    },
+    {
+      "name": "search_root_term_summary",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] search root term summary"
+    },
+    {
+      "name": "search_template_named_root_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] search template named root semantic"
+    },
+    {
+      "name": "search_template_named_missing_params_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "probe-template"
+      },
+      "extract": "search_summary",
+      "family": "failure-path",
+      "description": "[failure-path] search template named missing params semantic"
+    },
+    {
+      "name": "search_template_named_extra_params_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a",
+          "unused": "noop"
+        }
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] search template named extra params semantic"
+    },
+    {
+      "name": "render_template_malformed_source_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_render/template",
+      "body": {
+        "source": "not-an-object"
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for malformed inline render template source.",
+      "family": "failure-path",
+      "description": "[failure-path] render template malformed source error"
+    },
+    {
+      "name": "search_template_named_target_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_search/template",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] search template named target semantic"
+    },
+    {
+      "name": "search_root_sort_from_size_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "tenant": "asc"
+          }
+        ],
+        "from": 1,
+        "size": 1
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] search root sort from size semantic"
+    },
+    {
+      "name": "search_root_track_total_hits_threshold_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "tenant": "asc"
+          }
+        ],
+        "size": 1,
+        "track_total_hits": 1
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] search root track total hits threshold semantic"
+    },
+    {
+      "name": "search_target_missing_field_summary",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_search",
+      "body": {
+        "query": {
+          "term": {
+            "missing_field": "tenant-a"
+          }
+        }
+      },
+      "extract": "search_summary",
+      "family": "failure-path",
+      "description": "[failure-path] search target missing field summary"
+    },
+    {
+      "name": "search_allow_no_indices_empty_wildcard_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/missing-search-semantic-*/_search?allow_no_indices=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_summary",
+      "family": "failure-path",
+      "description": "[failure-path] search allow_no_indices empty wildcard semantic"
+    },
+    {
+      "name": "search_ignore_unavailable_multi_target_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001,missing-search-semantic/_search?ignore_unavailable=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_summary",
+      "family": "failure-path",
+      "description": "[failure-path] search ignore_unavailable multi target semantic"
+    },
+    {
+      "name": "msearch_root_header_index_override_semantic",
+      "area": "search-semantic",
+      "extract": "msearch_summary",
+      "steps": [
+        {
+          "name": "root-msearch-header-index-override",
+          "method": "POST",
+          "path": "/_msearch",
+          "body": "{\"index\":\"metrics-search-semantic-000001\"}\n{\"query\":{\"match_all\":{}}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "msearch_summary"
+        }
+      ],
+      "family": "ranking",
+      "description": "[ranking] msearch root header index override semantic"
+    },
+    {
+      "name": "msearch_target_path_fallback_semantic",
+      "area": "search-semantic",
+      "extract": "msearch_summary",
+      "steps": [
+        {
+          "name": "targeted-msearch-path-fallback",
+          "method": "POST",
+          "path": "/logs-search-semantic-*/_msearch",
+          "body": "{}\n{\"query\":{\"match_all\":{}}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "msearch_summary"
+        }
+      ],
+      "family": "ranking",
+      "description": "[ranking] msearch targeted path fallback semantic"
+    },
+    {
+      "name": "msearch_target_header_override_semantic",
+      "area": "search-semantic",
+      "extract": "msearch_summary",
+      "steps": [
+        {
+          "name": "targeted-msearch-header-override",
+          "method": "POST",
+          "path": "/logs-search-semantic-*/_msearch",
+          "body": "{\"index\":\"metrics-search-semantic-000001\"}\n{\"query\":{\"match_all\":{}}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "msearch_summary"
+        }
+      ],
+      "family": "ranking",
+      "description": "[ranking] msearch targeted header override semantic"
+    },
+    {
+      "name": "msearch_malformed_ndjson_error",
+      "area": "search-semantic",
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for malformed NDJSON body parsing in _msearch.",
+      "steps": [
+        {
+          "name": "malformed-msearch-body",
+          "method": "POST",
+          "path": "/_msearch",
+          "body": "{}\n{\"query\":{\"match_all\":{}}\n",
+          "raw": true,
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "failure-path",
+      "description": "[failure-path] msearch malformed ndjson error"
+    },
+    {
+      "name": "msearch_odd_line_count_error",
+      "area": "search-semantic",
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for odd-line-count NDJSON rejection in _msearch.",
+      "steps": [
+        {
+          "name": "odd-line-count-msearch",
+          "method": "POST",
+          "path": "/_msearch",
+          "body": "{}\n{\"query\":{\"match_all\":{}}}\n{}\n",
+          "raw": true,
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "failure-path",
+      "description": "[failure-path] msearch odd line count error"
+    },
+    {
+      "name": "msearch_malformed_header_error",
+      "area": "search-semantic",
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for malformed header rejection in _msearch.",
+      "steps": [
+        {
+          "name": "malformed-msearch-header",
+          "method": "POST",
+          "path": "/_msearch",
+          "body": "[]\n{\"query\":{\"match_all\":{}}}\n",
+          "raw": true,
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "failure-path",
+      "description": "[failure-path] msearch malformed header error"
+    },
+    {
+      "name": "search_knn_unsupported_option_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3
+              ],
+              "k": 1,
+              "expand_nested": "yes"
+            }
+          }
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for unsupported k-NN option validation.",
+      "family": "failure-path",
+      "description": "[failure-path] search knn unsupported option error"
+    },
+    {
+      "name": "search_rescore_unsupported_option_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "rescore": {
+          "window_size": 10,
+          "query": {
+            "rescore_query": {
+              "match_all": {}
+            },
+            "score_mode": "avg"
+          }
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for unsupported rescore option validation.",
+      "family": "failure-path",
+      "description": "[failure-path] search rescore unsupported option error"
+    },
+    {
+      "name": "search_highlight_unsupported_option_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "highlight": {
+          "fields": {
+            "message": {}
+          },
+          "encoder": "html"
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for unsupported highlight option validation.",
+      "family": "failure-path",
+      "description": "[failure-path] search highlight unsupported option error"
+    },
+    {
+      "name": "search_suggest_unsupported_option_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "suggest": {
+          "tenant_hint": {
+            "text": "tenant",
+            "term": {
+              "field": "tenant",
+              "size": 2
+            }
+          }
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for unsupported suggest option validation.",
+      "family": "failure-path",
+      "description": "[failure-path] search suggest unsupported option error"
+    },
+    {
+      "name": "search_template_missing_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search/template",
+      "body": {
+        "id": "missing-template"
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 404,
+      "reason": "Steelsearch semantic hardening fixture for missing named search template.",
+      "family": "failure-path",
+      "description": "[failure-path] search template missing error"
+    },
+    {
+      "name": "search_template_named_malformed_source_error",
+      "area": "search-semantic",
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch semantic hardening fixture for malformed stored template source.",
+      "steps": [
+        {
+          "name": "store-malformed-template-source",
+          "method": "PUT",
+          "path": "/_scripts/bad-template",
+          "body": {
+            "script": {
+              "lang": "mustache",
+              "source": "not-an-object"
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "read-malformed-template-source",
+          "method": "POST",
+          "path": "/_search/template",
+          "body": {
+            "id": "bad-template"
+          },
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "failure-path",
+      "description": "[failure-path] search template named malformed source error"
     },
     {
       "name": "validate_query_root_invalid_semantic",
@@ -146,7 +670,39 @@
           }
         }
       },
-      "extract": "validate_query_semantic"
+      "extract": "validate_query_semantic",
+      "family": "failure-path",
+      "description": "[failure-path] validate query root invalid semantic"
+    },
+    {
+      "name": "validate_query_root_empty_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {
+        "query": {}
+      },
+      "extract": "validate_query_semantic",
+      "family": "failure-path",
+      "description": "[failure-path] validate query root empty semantic"
+    },
+    {
+      "name": "validate_query_target_invalid_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_validate/query",
+      "body": {
+        "query": {
+          "range": {
+            "tenant": {
+              "gte": "tenant-a"
+            }
+          }
+        }
+      },
+      "extract": "validate_query_semantic",
+      "family": "failure-path",
+      "description": "[failure-path] validate query target invalid semantic"
     },
     {
       "name": "validate_query_target_empty_semantic",
@@ -156,58 +712,108 @@
       "body": {
         "query": {}
       },
-      "extract": "validate_query_semantic"
+      "extract": "validate_query_semantic",
+      "family": "failure-path",
+      "description": "[failure-path] validate query target empty semantic"
     },
     {
-      "name": "render_template_named_semantic",
+      "name": "validate_query_root_malformed_payload_error",
       "area": "search-semantic",
       "method": "POST",
-      "path": "/_render/template/probe-template",
+      "path": "/_validate/query",
+      "body": "{\"query\":",
+      "raw_json": true,
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] validate query root malformed payload error"
+    },
+    {
+      "name": "validate_query_target_rewrite_unsupported_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-*/_validate/query?rewrite=true",
       "body": {
-        "params": {
-          "tenant": "tenant-a"
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
         }
       },
-      "extract": "render_template_output"
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] validate query target rewrite unsupported error"
     },
     {
-      "name": "search_template_named_root_semantic",
+      "name": "explain_missing_doc_semantic",
       "area": "search-semantic",
       "method": "POST",
-      "path": "/_search/template",
+      "path": "/logs-search-semantic-000001/_explain/doc-missing",
       "body": {
-        "id": "probe-template",
-        "params": {
-          "tenant": "tenant-a"
+        "query": {
+          "match_all": {}
         }
       },
-      "extract": "search_summary"
+      "extract": "explain_doc",
+      "family": "failure-path",
+      "description": "[failure-path] explain missing doc semantic"
     },
     {
-      "name": "search_template_named_target_semantic",
+      "name": "explain_wildcard_target_semantic",
       "area": "search-semantic",
       "method": "POST",
-      "path": "/logs-search-semantic-*/_search/template",
+      "path": "/logs-search-semantic-*/_explain/doc-1",
       "body": {
-        "id": "probe-template",
-        "params": {
-          "tenant": "tenant-a"
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
         }
       },
-      "extract": "search_summary"
+      "extract": "explain_doc",
+      "family": "lexical",
+      "description": "[lexical] explain wildcard target semantic"
     },
     {
-      "name": "search_template_missing_error",
+      "name": "explain_missing_index_error",
       "area": "search-semantic",
       "method": "POST",
-      "path": "/_search/template",
+      "path": "/missing-search-semantic/_explain/doc-1",
       "body": {
-        "id": "missing-template"
+        "query": {
+          "match_all": {}
+        }
       },
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 404,
-      "reason": "Steelsearch semantic hardening fixture for missing named search template."
+      "family": "failure-path",
+      "description": "[failure-path] explain missing index error"
+    },
+    {
+      "name": "explain_unsupported_query_type_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_explain/doc-1",
+      "body": {
+        "query": {
+          "range": {
+            "tenant": {
+              "gte": "a"
+            }
+          }
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] explain unsupported query type error"
     }
-  ]
+  ],
+  "profile": "light-semantic-smoke",
+  "fixture_role": "Targeted semantic smoke for selected search/count/validate/template routes; not a full strict parity suite."
 }

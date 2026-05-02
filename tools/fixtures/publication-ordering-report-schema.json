@@ -1,0 +1,28 @@
+{
+  "name": "publication-ordering-report-schema",
+  "cases": [
+    "full-publication",
+    "delta-publication",
+    "repeated-publication",
+    "rejected-publication"
+  ],
+  "required_fields": [
+    "publication_case",
+    "term_before",
+    "term_after",
+    "version_before",
+    "version_after",
+    "state_uuid_before",
+    "state_uuid_after",
+    "received",
+    "applied",
+    "acked",
+    "rejected",
+    "monotonicity_assertions"
+  ],
+  "ack_invariants": [
+    "receive-before-apply",
+    "apply-before-ack",
+    "no-ack-on-reject"
+  ]
+}

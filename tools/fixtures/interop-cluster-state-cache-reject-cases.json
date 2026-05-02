@@ -1,0 +1,36 @@
+{
+  "name": "interop-cluster-state-cache-reject-cases",
+  "description": "Fail-closed reject fixtures for stale decoded cluster-state cache scenarios.",
+  "cases": [
+    {
+      "name": "stale_metadata_cache_forwarding_reject",
+      "class": "stale-cache",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "stale metadata cache",
+        "forwarding rejected",
+        "fail-closed"
+      ]
+    },
+    {
+      "name": "cache_refresh_miss_reject",
+      "class": "refresh-miss",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "cache refresh miss",
+        "authoritative view unavailable",
+        "interop rejected"
+      ]
+    },
+    {
+      "name": "remote_disconnect_reject",
+      "class": "remote-disconnect",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "remote disconnect",
+        "upstream unavailable",
+        "forwarding refused"
+      ]
+    }
+  ]
+}

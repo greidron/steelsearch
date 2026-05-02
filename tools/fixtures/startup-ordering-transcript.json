@@ -1,0 +1,68 @@
+{
+  "name": "startup-ordering-transcript",
+  "description": "Canonical startup ordering and misordering checks for standalone runtime startup logs.",
+  "canonical_sequence": [
+    {
+      "name": "gateway_manifest_or_state_load",
+      "markers": [
+        "gateway manifest load",
+        "shared-runtime-state load"
+      ],
+      "match": "any"
+    },
+    {
+      "name": "metadata_apply",
+      "markers": [
+        "metadata apply"
+      ],
+      "match": "all"
+    },
+    {
+      "name": "service_start",
+      "markers": [
+        "service start"
+      ],
+      "match": "all"
+    },
+    {
+      "name": "transport_bind",
+      "markers": [
+        "transport bind"
+      ],
+      "match": "all"
+    },
+    {
+      "name": "http_bind",
+      "markers": [
+        "http bind"
+      ],
+      "match": "all"
+    }
+  ],
+  "forbidden_orderings": [
+    {
+      "name": "bind_before_metadata_apply",
+      "earlier": "http bind",
+      "later": "metadata apply"
+    },
+    {
+      "name": "transport_before_state_load",
+      "earlier": "transport bind",
+      "later": "shared-runtime-state load"
+    },
+    {
+      "name": "ready_before_binds",
+      "earlier": "node ready",
+      "later": "http bind"
+    }
+  ],
+  "required_absence_after_failure": [
+    {
+      "name": "misordered_startup_must_not_reach_ready",
+      "markers": [
+        "corrupt state accepted",
+        "node ready after startup ordering failure"
+      ]
+    }
+  ]
+}

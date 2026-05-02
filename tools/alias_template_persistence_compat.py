@@ -132,6 +132,7 @@ def stable_fields(responses: dict[str, Any], fixture: dict[str, Any]) -> dict[st
         "component_template_get": "get_component_template",
         "index_template_get": "get_index_template",
         "index_get": "get_index",
+        "data_stream_get": "get_data_stream",
     }
     for section, request_name in source_requests.items():
         body = responses.get(request_name, {}).get("body")
@@ -143,13 +144,45 @@ def stable_fields(responses: dict[str, Any], fixture: dict[str, Any]) -> dict[st
     stable["snapshot_restore"] = {
         "snapshot.state": extract_path(responses.get("create_snapshot", {}).get("body"), "snapshot.state"),
         "snapshot.indices": extract_path(responses.get("create_snapshot", {}).get("body"), "snapshot.indices"),
+        "restored_component_template.name": extract_path(
+            responses.get("get_restored_component_template", {}).get("body"),
+            "component_templates[0].name",
+        ),
+        "restored_component_template.component_template.template.mappings.properties.component_field.type": extract_path(
+            responses.get("get_restored_component_template", {}).get("body"),
+            "component_templates[0].component_template.template.mappings.properties.component_field.type",
+        ),
         "restored_template.name": extract_path(
             responses.get("get_restored_index_template", {}).get("body"),
-            "index_template[0].name",
+            "index_templates[0].name",
+        ),
+        "restored_template.index_template.template.aliases.steelsearch-template-alias": extract_path(
+            responses.get("get_restored_index_template", {}).get("body"),
+            "index_templates[0].index_template.template.aliases.steelsearch-template-alias",
+        ),
+        "restored_index.settings.index.number_of_shards": extract_path(
+            responses.get("get_restored_index", {}).get("body"),
+            "steelsearch-template-000001.settings.index.number_of_shards",
+        ),
+        "restored_index.settings.index.number_of_replicas": extract_path(
+            responses.get("get_restored_index", {}).get("body"),
+            "steelsearch-template-000001.settings.index.number_of_replicas",
+        ),
+        "restored_index.mappings.properties.component_field.type": extract_path(
+            responses.get("get_restored_index", {}).get("body"),
+            "steelsearch-template-000001.mappings.properties.component_field.type",
         ),
         "restored_index.aliases": extract_path(
             responses.get("get_restored_index", {}).get("body"),
             "steelsearch-template-000001.aliases",
+        ),
+        "restored_data_stream.name": extract_path(
+            responses.get("get_restored_data_stream", {}).get("body"),
+            "data_streams[0].name",
+        ),
+        "restored_data_stream.template": extract_path(
+            responses.get("get_restored_data_stream", {}).get("body"),
+            "data_streams[0].template",
         ),
     }
     return stable

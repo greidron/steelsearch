@@ -151,6 +151,26 @@
       }
     },
     {
+      "name": "verify_missing_snapshot_repository_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-missing/_verify",
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "error_reason",
+          "root_cause_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "root_cause_type"
+        ]
+      }
+    },
+    {
       "name": "create_snapshot_happy_path",
       "method": "PUT",
       "path": "/_snapshot/repo-compat/snapshot-compat",
@@ -325,6 +345,22 @@
       }
     },
     {
+      "name": "restore_missing_snapshot_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/missing-snapshot/_restore",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "delete_snapshot_happy_path",
       "method": "DELETE",
       "path": "/_snapshot/repo-compat/snapshot-compat",
@@ -353,6 +389,26 @@
         "body_paths_equal": [
           "results.deleted_bytes",
           "results.deleted_blobs"
+        ]
+      }
+    },
+    {
+      "name": "cleanup_missing_snapshot_repository_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-missing/_cleanup",
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "error_reason",
+          "root_cause_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "root_cause_type"
         ]
       }
     },

@@ -470,90 +470,14 @@
   ],
   "cases": [
     {
-      "name": "head_index",
-      "area": "index",
-      "method": "HEAD",
-      "path": "/logs-compat",
-      "extract": "status_only"
-    },
-    {
-      "name": "get_index",
-      "area": "index",
-      "method": "GET",
-      "path": "/logs-compat",
-      "extract": "get_index"
-    },
-    {
-      "name": "get_index_aliases_and_settings",
-      "area": "index",
-      "method": "GET",
-      "path": "/logs-compat",
-      "extract": "index_metadata"
-    },
-    {
-      "name": "get_alias_readback",
-      "area": "alias",
-      "method": "GET",
-      "path": "/_alias/logs-compat-read",
-      "extract": "alias_metadata"
-    },
-    {
-      "name": "get_aliases_readback",
-      "area": "alias",
-      "method": "GET",
-      "path": "/_aliases",
-      "extract": "alias_metadata"
-    },
-    {
-      "name": "wildcard_alias_readback",
-      "area": "alias",
-      "method": "GET",
-      "path": "/_alias/*-compat-read",
-      "extract": "alias_metadata"
-    },
-    {
-      "name": "wildcard_index_read_expansion",
-      "area": "index",
-      "method": "GET",
-      "path": "/logs-*",
-      "extract": "get_index"
-    },
-    {
-      "name": "cat_indices_json",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/indices?format=json",
-      "extract": "cat_indices"
-    },
-    {
-      "name": "cat_indices_text_parameters_skip",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/indices?v=true",
-      "accept": "text/plain",
-      "extract": "cat_indices_text"
-    },
-    {
-      "name": "cat_count_json",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/count?format=json",
-      "extract": "cat_count"
-    },
-    {
-      "name": "cat_count_text",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/count?v=true",
-      "accept": "text/plain",
-      "extract": "cat_count"
-    },
-    {
       "name": "cat_aliases_json",
       "area": "cat",
       "method": "GET",
       "path": "/_cat/aliases?format=json",
-      "extract": "cat_aliases"
+      "extract": "cat_aliases",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat aliases json",
+      "strict_source_parity_required": true
     },
     {
       "name": "cat_aliases_text",
@@ -561,14 +485,20 @@
       "method": "GET",
       "path": "/_cat/aliases/logs-*?v=true",
       "accept": "text/plain",
-      "extract": "cat_aliases"
+      "extract": "cat_aliases",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat aliases text",
+      "strict_source_parity_required": true
     },
     {
       "name": "cat_health_json",
       "area": "cat",
       "method": "GET",
       "path": "/_cat/health?format=json",
-      "extract": "cat_health"
+      "extract": "cat_health",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat health json",
+      "strict_source_parity_required": true
     },
     {
       "name": "cat_health_text",
@@ -576,37 +506,20 @@
       "method": "GET",
       "path": "/_cat/health?v=true",
       "accept": "text/plain",
-      "extract": "cat_health"
+      "extract": "cat_health",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat health text",
+      "strict_source_parity_required": true
     },
     {
-      "name": "cat_nodes_json",
+      "name": "cat_indices_json",
       "area": "cat",
       "method": "GET",
-      "path": "/_cat/nodes?format=json",
-      "extract": "cat_nodes"
-    },
-    {
-      "name": "cat_nodes_text",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/nodes?v=true",
-      "accept": "text/plain",
-      "extract": "cat_nodes"
-    },
-    {
-      "name": "cat_nodeattrs_json",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/nodeattrs?format=json",
-      "extract": "cat_nodeattrs"
-    },
-    {
-      "name": "cat_nodeattrs_text",
-      "area": "cat",
-      "method": "GET",
-      "path": "/_cat/nodeattrs?v=true",
-      "accept": "text/plain",
-      "extract": "cat_nodeattrs"
+      "path": "/_cat/indices?format=json",
+      "extract": "cat_indices",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices json",
+      "strict_source_parity_required": true
     },
     {
       "name": "cat_indices_targeted_text",
@@ -614,28 +527,123 @@
       "method": "GET",
       "path": "/_cat/indices/logs-*?v=true",
       "accept": "text/plain",
-      "extract": "cat_indices_text"
+      "extract": "cat_indices_text",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices targeted text",
+      "strict_source_parity_required": true
     },
     {
-      "name": "cat_count_targeted_json",
+      "name": "cat_indices_text_parameters_skip",
       "area": "cat",
       "method": "GET",
-      "path": "/_cat/count/logs-*?format=json",
-      "extract": "cat_count"
+      "path": "/_cat/indices?v=true",
+      "accept": "text/plain",
+      "extract": "cat_indices_text",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text parameters skip",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_nodeattrs_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?format=json",
+      "extract": "cat_nodeattrs",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodeattrs json",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_nodeattrs_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?v=true",
+      "accept": "text/plain",
+      "extract": "cat_nodeattrs",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodeattrs text",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_nodes_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodes?format=json",
+      "extract": "cat_nodes",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodes json",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_nodes_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodes?v=true",
+      "accept": "text/plain",
+      "extract": "cat_nodes",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodes text",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_alias_readback",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_alias/logs-compat-read",
+      "extract": "alias_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] get alias readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_aliases_readback",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_aliases",
+      "extract": "alias_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] get aliases readback",
+      "strict_source_parity_required": true
     },
     {
       "name": "get_document",
       "area": "document",
       "method": "GET",
       "path": "/logs-compat/_doc/log-2",
-      "extract": "get_document"
+      "extract": "get_document",
+      "family": "admin-cat",
+      "description": "[admin-cat] get document",
+      "strict_source_parity_required": true
     },
     {
       "name": "get_document_via_alias",
       "area": "document",
       "method": "GET",
       "path": "/logs-compat-read/_doc/log-2",
-      "extract": "get_document"
+      "extract": "get_document",
+      "family": "admin-cat",
+      "description": "[admin-cat] get document via alias",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_index",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-compat",
+      "extract": "get_index",
+      "family": "admin-cat",
+      "description": "[admin-cat] get index",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_index_aliases_and_settings",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-compat",
+      "extract": "index_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] get index aliases and settings",
+      "strict_source_parity_required": true
     },
     {
       "name": "index_document_via_alias",
@@ -649,29 +657,38 @@
         "bytes": 1,
         "ts": "2026-04-22T00:03:00Z"
       },
-      "extract": "status_only"
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] index document via alias",
+      "strict_source_parity_required": true
     },
     {
-      "name": "bulk_match_search",
+      "name": "wildcard_alias_readback",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_alias/*-compat-read",
+      "extract": "alias_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] wildcard alias readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "alias_match_search",
       "area": "search",
       "method": "POST",
-      "path": "/logs-compat/_search",
+      "path": "/logs-compat-read/_search",
       "body": {
         "query": {
           "match": {
             "message": "checkout"
           }
         },
-        "sort": [
-          {
-            "bytes": {
-              "order": "desc"
-            }
-          }
-        ],
         "size": 2
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] alias match search",
+      "strict_source_parity_required": true
     },
     {
       "name": "bool_filter_range",
@@ -705,60 +722,82 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] bool filter range",
+      "strict_source_parity_required": true
     },
     {
-      "name": "multi_match_best_fields_search",
+      "name": "bulk_match_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "multi_match": {
-            "query": "catalog",
-            "fields": [
-              "message",
-              "service"
-            ]
-          }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "match_phrase_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_phrase": {
-            "message": "payment timeout"
-          }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "match_phrase_prefix_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_phrase_prefix": {
-            "message": "checkout service pay"
+          "match": {
+            "message": "checkout"
           }
         },
         "sort": [
           {
             "bytes": {
-              "order": "asc"
+              "order": "desc"
             }
           }
-        ]
+        ],
+        "size": 2
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] bulk match search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_count_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count?format=json",
+      "extract": "cat_count",
+      "family": "lexical",
+      "description": "[lexical] cat count json",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_count_targeted_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count/logs-*?format=json",
+      "extract": "cat_count",
+      "family": "lexical",
+      "description": "[lexical] cat count targeted json",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_count_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count?v=true",
+      "accept": "text/plain",
+      "extract": "cat_count",
+      "family": "lexical",
+      "description": "[lexical] cat count text",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "dfs_query_then_fetch_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?search_type=dfs_query_then_fetch",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] dfs query then fetch search",
+      "strict_source_parity_required": true
     },
     {
       "name": "dis_max_search",
@@ -790,7 +829,211 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] dis max search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "docvalue_fields_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          "ts"
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] docvalue fields search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "exists_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "location"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] exists query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "expand_wildcards_open_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search?expand_wildcards=open",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] expand wildcards open search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "explain_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "explain": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_explain",
+      "family": "lexical",
+      "description": "[lexical] explain search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "field_masking_span_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "field_masking_span": {
+            "field": "message",
+            "query": {
+              "span_term": {
+                "message": "checkout"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] field masking span query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "function_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "term": {
+                "service": "checkout"
+              }
+            },
+            "weight": 2.0,
+            "boost_mode": "replace"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] function score search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "fuzzy_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": 1
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "geo_distance_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "2km",
+            "location": {
+              "lat": 37.78,
+              "lon": -122.41
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] geo distance query search",
+      "strict_source_parity_required": true
     },
     {
       "name": "ids_query_search",
@@ -814,256 +1057,192 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] ids query search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "match_query_scoring_order_total_hits",
+      "name": "intervals_query_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "match": {
-            "message": "payment timeout"
-          }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "term_query_total_hits_exactness",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "term": {
-            "tag": "cache"
-          }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "sorted_paginated_search_window",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "term": {
-            "service": "checkout"
+          "intervals": {
+            "message": {
+              "all_of": {
+                "ordered": true,
+                "max_gaps": 0,
+                "intervals": [
+                  {
+                    "match": {
+                      "query": "checkout"
+                    }
+                  },
+                  {
+                    "match": {
+                      "query": "service"
+                    }
+                  }
+                ]
+              }
+            }
           }
         },
         "sort": [
           {
             "bytes": {
-              "order": "desc"
-            }
-          }
-        ],
-        "from": 1,
-        "size": 1
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "track_total_hits_true_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "term": {
-            "service": "checkout"
-          }
-        },
-        "size": 1,
-        "track_total_hits": true
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "alias_match_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat-read/_search",
-      "body": {
-        "query": {
-          "match": {
-            "message": "checkout"
-          }
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "wildcard_match_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-*/_search",
-      "body": {
-        "query": {
-          "match": {
-            "message": "checkout"
-          }
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "ignore_unavailable_multi_target_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat,missing-compat/_search?ignore_unavailable=true",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "allow_no_indices_empty_wildcard_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/missing-*/_search?allow_no_indices=true",
-      "body": {
-        "query": {
-          "match_all": {}
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "missing_index_search_error",
-      "area": "search",
-      "method": "POST",
-      "path": "/missing-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        }
-      },
-      "extract": "error_response"
-    },
-    {
-      "name": "malformed_search_body_parse_exception",
-      "area": "search",
-      "extract": "error_response",
-      "steps": [
-        {
-          "name": "malformed-raw-search",
-          "method": "POST",
-          "path": "/logs-compat/_search",
-          "body": "{\"query\":{\"match\":{\"message\":\"checkout\"}}",
-          "raw": true,
-          "expected_status": 400,
-          "extract": "error_response"
-        }
-      ]
-    },
-    {
-      "name": "highlight_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match": {
-            "message": "checkout"
-          }
-        },
-        "highlight": {
-          "fields": {
-            "message": {}
-          }
-        }
-      },
-      "extract": "highlight_hits"
-    },
-    {
-      "name": "highlight_custom_tags_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match": {
-            "message": "payment timeout"
-          }
-        },
-        "highlight": {
-          "pre_tags": [
-            "<mark>"
-          ],
-          "post_tags": [
-            "</mark>"
-          ],
-          "fields": {
-            "message": {}
-          }
-        }
-      },
-      "extract": "highlight_hits"
-    },
-    {
-      "name": "term_suggest_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "suggest": {
-          "message-suggest": {
-            "text": "chekout",
-            "term": {
-              "field": "message"
-            }
-          }
-        }
-      },
-      "extract": "suggest_response"
-    },
-    {
-      "name": "completion_suggest_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "suggest": {
-          "service-completion": {
-            "prefix": "che",
-            "completion": {
-              "field": "service_suggest",
-              "size": 3
-            }
-          }
-        }
-      },
-      "extract": "suggest_response"
-    },
-    {
-      "name": "scroll_initial_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search?scroll=1m",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "sort": [
-          {
-            "ts": {
               "order": "asc"
             }
           }
-        ],
-        "size": 1
+        ]
       },
-      "extract": "scroll_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "match_phrase_prefix_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": "checkout service pay"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match phrase prefix search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "match_phrase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": "payment timeout"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match phrase search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "more_like_this_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "more_like_this": {
+            "fields": [
+              "message"
+            ],
+            "like": "checkout",
+            "min_term_freq": 1,
+            "min_doc_freq": 1
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] more like this search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "multi_match_best_fields_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "catalog",
+            "fields": [
+              "message",
+              "service"
+            ]
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi match best fields search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "nested_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "events",
+            "query": {
+              "term": {
+                "events.status": "timeout"
+              }
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] nested query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_clear_search",
+      "area": "search",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-clear",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": "${last.id}"
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit clear search",
+      "strict_source_parity_required": true
     },
     {
       "name": "pit_open_search",
@@ -1071,190 +1250,10 @@
       "method": "POST",
       "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
       "body": null,
-      "extract": "pit_open"
-    },
-    {
-      "name": "disallow_no_indices_empty_wildcard_fail_closed",
-      "area": "search",
-      "method": "POST",
-      "path": "/missing-*/_search?allow_no_indices=false",
-      "body": {
-        "query": {
-          "match_all": {}
-        }
-      },
-      "extract": "error_response"
-    },
-    {
-      "name": "expand_wildcards_open_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-*/_search?expand_wildcards=open",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "expand_wildcards_none_empty_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-*/_search?expand_wildcards=none&allow_no_indices=true",
-      "body": {
-        "query": {
-          "match_all": {}
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "dfs_query_then_fetch_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search?search_type=dfs_query_then_fetch",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "pre_filter_shard_size_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search?pre_filter_shard_size=1",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "size": 2
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "expand_wildcards_closed_fail_closed",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-*/_search?expand_wildcards=closed",
-      "body": {
-        "query": {
-          "match_all": {}
-        }
-      },
-      "extract": "error_response",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "out-of-phase-defer",
-      "reason": "Closed-index engine state is intentionally deferred out of Phase A-1 lexical strict parity; the current search strict fixture keeps this as an explicit out-of-phase defer."
-    },
-    {
-      "name": "highlight_match_all_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "highlight": {
-          "fields": {
-            "message": {}
-          }
-        }
-      },
-      "extract": "highlight_hits"
-    },
-    {
-      "name": "rescore_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "sort": [
-          {
-            "ts": {
-              "order": "asc"
-            }
-          }
-        ],
-        "rescore": {
-          "window_size": 2,
-          "query": {
-            "rescore_query": {
-              "match": {
-                "message": "timeout"
-              }
-            },
-            "query_weight": 1.0,
-            "rescore_query_weight": 10.0
-          }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "collapse_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "sort": [
-          {
-            "ts": {
-              "order": "asc"
-            }
-          }
-        ],
-        "collapse": {
-          "field": "service"
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "service_term_suggest_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "suggest": {
-          "service-suggest": {
-            "text": "chekout",
-            "term": {
-              "field": "service"
-            }
-          }
-        }
-      },
-      "extract": "suggest_response"
-    },
-    {
-      "name": "phrase_suggest_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "suggest": {
-          "message-phrase": {
-            "text": "chekout service",
-            "phrase": {
-              "field": "message"
-            }
-          }
-        }
-      },
-      "extract": "suggest_response"
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open search",
+      "strict_source_parity_required": true
     },
     {
       "name": "pit_search",
@@ -1293,55 +1292,171 @@
           "expected_status": 200,
           "extract": "search_hits"
         }
-      ]
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "pit_clear_search",
+      "name": "pre_filter_shard_size_search",
       "area": "search",
-      "extract": "pit_clear",
-      "steps": [
-        {
-          "name": "pit-open",
-          "method": "POST",
-          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
-          "body": null,
-          "expected_status": 200,
-          "extract": "pit_open"
+      "method": "POST",
+      "path": "/logs-compat/_search?pre_filter_shard_size=1",
+      "body": {
+        "query": {
+          "match_all": {}
         },
-        {
-          "name": "pit-clear",
-          "method": "DELETE",
-          "path": "/_search/point_in_time",
-          "body": {
-            "pit_id": "${last.id}"
-          },
-          "expected_status": 200,
-          "extract": "pit_clear"
-        }
-      ]
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] pre filter shard size search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "search_after_search",
+      "name": "prefix_query_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "match_all": {}
+          "prefix": {
+            "tag": {
+              "value": "pay"
+            }
+          }
         },
         "sort": [
           {
-            "ts": {
+            "bytes": {
               "order": "asc"
             }
           }
-        ],
-        "search_after": [
-          "2026-04-22T00:00:00Z"
-        ],
-        "size": 1
+        ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] prefix query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "query_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout AND payment"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] query string search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "regexp_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": "check.*"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] regexp query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "script_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "script_score": {
+            "query": {
+              "term": {
+                "service": "checkout"
+              }
+            },
+            "script": {
+              "source": "2"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] script score search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "scroll_clear_search",
+      "area": "search",
+      "extract": "scroll_clear",
+      "steps": [
+        {
+          "name": "scroll-start",
+          "method": "POST",
+          "path": "/logs-compat/_search?scroll=1m",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "scroll_hits"
+        },
+        {
+          "name": "scroll-clear",
+          "method": "DELETE",
+          "path": "/_search/scroll",
+          "body": {
+            "scroll_id": "${last._scroll_id}"
+          },
+          "expected_status": 200,
+          "extract": "scroll_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] scroll clear search",
+      "strict_source_parity_required": true
     },
     {
       "name": "scroll_follow_up_search",
@@ -1379,55 +1494,20 @@
           "expected_status": 200,
           "extract": "scroll_hits"
         }
-      ]
+      ],
+      "family": "lexical",
+      "description": "[lexical] scroll follow up search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "scroll_clear_search",
-      "area": "search",
-      "extract": "scroll_clear",
-      "steps": [
-        {
-          "name": "scroll-start",
-          "method": "POST",
-          "path": "/logs-compat/_search?scroll=1m",
-          "body": {
-            "query": {
-              "match_all": {}
-            },
-            "sort": [
-              {
-                "ts": {
-                  "order": "asc"
-                }
-              }
-            ],
-            "size": 1
-          },
-          "expected_status": 200,
-          "extract": "scroll_hits"
-        },
-        {
-          "name": "scroll-clear",
-          "method": "DELETE",
-          "path": "/_search/scroll",
-          "body": {
-            "scroll_id": "${last._scroll_id}"
-          },
-          "expected_status": 200,
-          "extract": "scroll_clear"
-        }
-      ]
-    },
-    {
-      "name": "track_total_hits_threshold_search",
+      "name": "scroll_initial_search",
       "area": "search",
       "method": "POST",
-      "path": "/logs-compat/_search",
+      "path": "/logs-compat/_search?scroll=1m",
       "body": {
         "query": {
           "match_all": {}
         },
-        "track_total_hits": 1,
         "sort": [
           {
             "ts": {
@@ -1435,146 +1515,12 @@
             }
           }
         ],
-        "size": 2
+        "size": 1
       },
-      "extract": "search_summary"
-    },
-    {
-      "name": "terminate_after_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "terminate_after": 1,
-        "sort": [
-          {
-            "ts": {
-              "order": "asc"
-            }
-          }
-        ],
-        "size": 2
-      },
-      "extract": "search_summary"
-    },
-    {
-      "name": "timeout_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "timeout": "1s",
-        "sort": [
-          {
-            "ts": {
-              "order": "asc"
-            }
-          }
-        ],
-        "size": 2
-      },
-      "extract": "search_summary"
-    },
-    {
-      "name": "explain_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "explain": true,
-        "sort": [
-          {
-            "ts": {
-              "order": "asc"
-            }
-          }
-        ],
-        "size": 2
-      },
-      "extract": "search_explain"
-    },
-    {
-      "name": "profile_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "profile": true
-      },
-      "extract": "search_profile"
-    },
-    {
-      "name": "stored_fields_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "sort": [
-          {
-            "ts": "asc"
-          }
-        ],
-        "stored_fields": [
-          "service"
-        ]
-      },
-      "extract": "search_fields"
-    },
-    {
-      "name": "docvalue_fields_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "match_all": {}
-        },
-        "sort": [
-          {
-            "ts": "asc"
-          }
-        ],
-        "docvalue_fields": [
-          "ts"
-        ]
-      },
-      "extract": "search_fields"
-    },
-    {
-      "name": "query_string_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "query_string": {
-            "query": "checkout AND payment"
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
+      "extract": "scroll_hits",
+      "family": "lexical",
+      "description": "[lexical] scroll initial search",
+      "strict_source_parity_required": true
     },
     {
       "name": "simple_query_string_search",
@@ -1596,140 +1542,25 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] simple query string search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "wildcard_query_search",
+      "name": "span_multi_query_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "wildcard": {
-            "service": "check*"
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "prefix_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "prefix": {
-            "tag": {
-              "value": "pay"
-            }
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "function_score_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "function_score": {
-            "query": {
-              "term": {
-                "service": "checkout"
-              }
-            },
-            "weight": 2.0,
-            "boost_mode": "replace"
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "script_score_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "script_score": {
-            "query": {
-              "term": {
-                "service": "checkout"
-              }
-            },
-            "script": {
-              "source": "2"
-            }
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "nested_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "nested": {
-            "path": "events",
-            "query": {
-              "term": {
-                "events.status": "timeout"
+          "span_multi": {
+            "match": {
+              "prefix": {
+                "message": "check"
               }
             }
           }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "geo_distance_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "geo_distance": {
-            "distance": "2km",
-            "location": {
-              "lat": 37.78,
-              "lon": -122.41
-            }
-          }
         },
         "sort": [
           {
@@ -1739,174 +1570,10 @@
           }
         ]
       },
-      "extract": "search_hits"
-    },
-    {
-      "name": "regexp_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "regexp": {
-            "service": "check.*"
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "fuzzy_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "fuzzy": {
-            "message": {
-              "value": "paymnt",
-              "fuzziness": 1
-            }
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "exists_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "exists": {
-            "field": "location"
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "terms_set_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "terms_set": {
-            "labels": {
-              "terms": [
-                "payment",
-                "checkout"
-              ],
-              "minimum_should_match_script": {
-                "source": "2"
-              }
-            }
-          }
-        }
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "more_like_this_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "more_like_this": {
-            "fields": [
-              "message"
-            ],
-            "like": "checkout",
-            "min_term_freq": 1,
-            "min_doc_freq": 1
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "span_term_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "span_term": {
-            "message": "checkout"
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
-    },
-    {
-      "name": "span_or_query_search",
-      "area": "search",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "query": {
-          "span_or": {
-            "clauses": [
-              {
-                "span_term": {
-                  "message": "checkout"
-                }
-              },
-              {
-                "span_term": {
-                  "message": "catalog"
-                }
-              }
-            ]
-          }
-        },
-        "sort": [
-          {
-            "bytes": {
-              "order": "asc"
-            }
-          }
-        ]
-      },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span multi query search",
+      "strict_source_parity_required": true
     },
     {
       "name": "span_near_query_search",
@@ -1940,21 +1607,31 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span near query search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "span_multi_query_search",
+      "name": "span_or_query_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "span_multi": {
-            "match": {
-              "prefix": {
-                "message": "check"
+          "span_or": {
+            "clauses": [
+              {
+                "span_term": {
+                  "message": "checkout"
+                }
+              },
+              {
+                "span_term": {
+                  "message": "catalog"
+                }
               }
-            }
+            ]
           }
         },
         "sort": [
@@ -1965,22 +1642,20 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span or query search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "field_masking_span_query_search",
+      "name": "span_term_query_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "field_masking_span": {
-            "field": "message",
-            "query": {
-              "span_term": {
-                "message": "checkout"
-              }
-            }
+          "span_term": {
+            "message": "checkout"
           }
         },
         "sort": [
@@ -1991,34 +1666,151 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span term query search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "intervals_query_search",
+      "name": "stored_fields_search",
       "area": "search",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "query": {
-          "intervals": {
-            "message": {
-              "all_of": {
-                "ordered": true,
-                "max_gaps": 0,
-                "intervals": [
-                  {
-                    "match": {
-                      "query": "checkout"
-                    }
-                  },
-                  {
-                    "match": {
-                      "query": "service"
-                    }
-                  }
-                ]
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "stored_fields": [
+          "service"
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] stored fields search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "term_query_total_hits_exactness",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": "cache"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query total hits exactness",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terminate_after_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": 1,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] terminate after search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_set_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment",
+                "checkout"
+              ],
+              "minimum_should_match_script": {
+                "source": "2"
               }
             }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] terms set query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "timeout_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "timeout": "1s",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] timeout search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "wildcard_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] wildcard match search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "wildcard_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": "check*"
           }
         },
         "sort": [
@@ -2029,24 +1821,353 @@
           }
         ]
       },
-      "extract": "search_hits"
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] wildcard query search",
+      "strict_source_parity_required": true
     },
     {
-      "name": "terms_aggregation",
+      "name": "collapse_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service"
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] collapse search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "match_query_scoring_order_total_hits",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "payment timeout"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] match query scoring order total hits",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "profile_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": true
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "rescore_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            },
+            "query_weight": 1.0,
+            "rescore_query_weight": 10.0
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] rescore search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ],
+        "size": 1
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search after search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "sorted_paginated_search_window",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ],
+        "from": 1,
+        "size": 1
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] sorted paginated search window",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "track_total_hits_threshold_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": 1,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] track total hits threshold search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "track_total_hits_true_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        },
+        "size": 1,
+        "track_total_hits": true
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] track total hits true search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cardinality_aggregation",
       "area": "aggregation",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "size": 0,
         "aggs": {
-          "by_service": {
-            "terms": {
+          "services": {
+            "cardinality": {
               "field": "service"
             }
           }
         }
       },
-      "extract": "terms_aggregation"
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] cardinality aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "composite_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service_level": {
+            "composite": {
+              "size": 10,
+              "sources": [
+                {
+                  "service": {
+                    "terms": {
+                      "field": "service"
+                    }
+                  }
+                },
+                {
+                  "level": {
+                    "terms": {
+                      "field": "level"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] composite aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "filter_aggregations",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "checkout_only": {
+            "filter": {
+              "term": {
+                "service": "checkout"
+              }
+            }
+          },
+          "by_level": {
+            "filters": {
+              "filters": {
+                "infos": {
+                  "term": {
+                    "level": "info"
+                  }
+                },
+                "warnings": {
+                  "term": {
+                    "level": "warn"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] filter aggregations",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "geo_bounds_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "viewport": {
+            "geo_bounds": {
+              "field": "location"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] geo bounds aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "histogram_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] histogram aggregation",
+      "strict_source_parity_required": true
     },
     {
       "name": "metric_aggregations",
@@ -2083,249 +2204,10 @@
           }
         }
       },
-      "extract": "aggregations"
-    },
-    {
-      "name": "stats_metric_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "bytes_stats": {
-            "stats": {
-              "field": "bytes"
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "filter_aggregations",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "checkout_only": {
-            "filter": {
-              "term": {
-                "service": "checkout"
-              }
-            }
-          },
-          "by_level": {
-            "filters": {
-              "filters": {
-                "infos": {
-                  "term": {
-                    "level": "info"
-                  }
-                },
-                "warnings": {
-                  "term": {
-                    "level": "warn"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "top_hits_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "sample": {
-            "top_hits": {
-              "size": 3
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "top_hits_sorted_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "latest_checkout": {
-            "top_hits": {
-              "size": 1,
-              "sort": [
-                {
-                  "ts": {
-                    "order": "desc"
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "composite_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "by_service_level": {
-            "composite": {
-              "size": 10,
-              "sources": [
-                {
-                  "service": {
-                    "terms": {
-                      "field": "service"
-                    }
-                  }
-                },
-                {
-                  "level": {
-                    "terms": {
-                      "field": "level"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "significant_terms_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "interesting_services": {
-            "significant_terms": {
-              "field": "service",
-              "size": 2
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "geo_bounds_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "viewport": {
-            "geo_bounds": {
-              "field": "location"
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "sum_bucket_pipeline_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "by_service": {
-            "terms": {
-              "field": "service"
-            }
-          },
-          "service_doc_total": {
-            "sum_bucket": {
-              "buckets_path": "by_service>_count"
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "scripted_metric_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "custom_metric": {
-            "scripted_metric": {
-              "init_script": "state.count = 0",
-              "map_script": "state.count += params.inc",
-              "combine_script": "return state.count",
-              "reduce_script": "double sum = 0; for (s in states) { sum += s } return sum",
-              "params": {
-                "inc": 1
-              }
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "date_histogram_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "by_day": {
-            "date_histogram": {
-              "field": "ts",
-              "calendar_interval": "day"
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "histogram_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "bytes": {
-            "histogram": {
-              "field": "bytes",
-              "interval": 100
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] metric aggregations",
+      "strict_source_parity_required": true
     },
     {
       "name": "range_aggregation",
@@ -2352,64 +2234,57 @@
           }
         }
       },
-      "extract": "aggregations"
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] range aggregation",
+      "strict_source_parity_required": true
     },
     {
-      "name": "cardinality_aggregation",
+      "name": "scripted_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "size": 0,
         "aggs": {
-          "services": {
-            "cardinality": {
-              "field": "service"
-            }
-          }
-        }
-      },
-      "extract": "aggregations"
-    },
-    {
-      "name": "terms_order_aggregation",
-      "area": "aggregation",
-      "method": "POST",
-      "path": "/logs-compat/_search",
-      "body": {
-        "size": 0,
-        "aggs": {
-          "by_service": {
-            "terms": {
-              "field": "service",
-              "order": {
-                "_count": "desc"
+          "custom_metric": {
+            "scripted_metric": {
+              "init_script": "state.count = 0",
+              "map_script": "state.count += params.inc",
+              "combine_script": "return state.count",
+              "reduce_script": "double sum = 0; for (s in states) { sum += s } return sum",
+              "params": {
+                "inc": 1
               }
             }
           }
         }
       },
-      "extract": "aggregations"
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] scripted metric aggregation",
+      "strict_source_parity_required": true
     },
     {
-      "name": "terms_key_order_aggregation",
+      "name": "significant_terms_aggregation",
       "area": "aggregation",
       "method": "POST",
       "path": "/logs-compat/_search",
       "body": {
         "size": 0,
         "aggs": {
-          "by_service": {
-            "terms": {
+          "interesting_services": {
+            "significant_terms": {
               "field": "service",
-              "order": {
-                "_key": "asc"
-              }
+              "size": 2
             }
           }
         }
       },
-      "extract": "aggregations"
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] significant terms aggregation",
+      "strict_source_parity_required": true
     },
     {
       "name": "significant_terms_background_filter_aggregation",
@@ -2429,14 +2304,409 @@
           }
         }
       },
-      "extract": "aggregations"
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] significant terms background filter aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "stats_metric_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_stats": {
+            "stats": {
+              "field": "bytes"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] stats metric aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "sum_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "service_doc_total": {
+            "sum_bucket": {
+              "buckets_path": "by_service>_count"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] sum bucket pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "extract": "terms_aggregation",
+      "family": "aggregation",
+      "description": "[aggregation] terms aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_key_order_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms key order aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_order_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_count": "desc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms order aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "top_hits_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "sample": {
+            "top_hits": {
+              "size": 3
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] top hits aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "top_hits_sorted_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "latest_checkout": {
+            "top_hits": {
+              "size": 1,
+              "sort": [
+                {
+                  "ts": {
+                    "order": "desc"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] top hits sorted aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "completion_suggest_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "suggest": {
+          "service-completion": {
+            "prefix": "che",
+            "completion": {
+              "field": "service_suggest",
+              "size": 3
+            }
+          }
+        }
+      },
+      "extract": "suggest_response",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] completion suggest search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "highlight_custom_tags_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "payment timeout"
+          }
+        },
+        "highlight": {
+          "pre_tags": [
+            "<mark>"
+          ],
+          "post_tags": [
+            "</mark>"
+          ],
+          "fields": {
+            "message": {}
+          }
+        }
+      },
+      "extract": "highlight_hits",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] highlight custom tags search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "highlight_match_all_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "highlight": {
+          "fields": {
+            "message": {}
+          }
+        }
+      },
+      "extract": "highlight_hits",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] highlight match all search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "highlight_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "highlight": {
+          "fields": {
+            "message": {}
+          }
+        }
+      },
+      "extract": "highlight_hits",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] highlight search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "phrase_suggest_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "suggest": {
+          "message-phrase": {
+            "text": "chekout service",
+            "phrase": {
+              "field": "message"
+            }
+          }
+        }
+      },
+      "extract": "suggest_response",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] phrase suggest search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "service_term_suggest_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "suggest": {
+          "service-suggest": {
+            "text": "chekout",
+            "term": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "extract": "suggest_response",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] service term suggest search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "term_suggest_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "suggest": {
+          "message-suggest": {
+            "text": "chekout",
+            "term": {
+              "field": "message"
+            }
+          }
+        }
+      },
+      "extract": "suggest_response",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] term suggest search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "allow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-*/_search?allow_no_indices=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_hits",
+      "family": "failure-path",
+      "description": "[failure-path] allow no indices empty wildcard search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "disallow_no_indices_empty_wildcard_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-*/_search?allow_no_indices=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "family": "failure-path",
+      "description": "[failure-path] disallow no indices empty wildcard fail closed",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "expand_wildcards_none_empty_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search?expand_wildcards=none&allow_no_indices=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_hits",
+      "family": "failure-path",
+      "description": "[failure-path] expand wildcards none empty search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "ignore_unavailable_multi_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat,missing-compat/_search?ignore_unavailable=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "failure-path",
+      "description": "[failure-path] ignore unavailable multi target search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "malformed_search_body_parse_exception",
+      "area": "search",
+      "extract": "error_response",
+      "steps": [
+        {
+          "name": "malformed-raw-search",
+          "method": "POST",
+          "path": "/logs-compat/_search",
+          "body": "{\"query\":{\"match\":{\"message\":\"checkout\"}}",
+          "raw": true,
+          "expected_status": 400,
+          "extract": "error_response"
+        }
+      ],
+      "family": "failure-path",
+      "description": "[failure-path] malformed search body parse exception",
+      "strict_source_parity_required": true
     },
     {
       "name": "missing_document_shape",
       "area": "error",
       "method": "GET",
       "path": "/logs-compat/_doc/missing",
-      "extract": "get_document"
+      "extract": "get_document",
+      "family": "failure-path",
+      "description": "[failure-path] missing document shape",
+      "strict_source_parity_required": true
     },
     {
       "name": "missing_index_error_type",
@@ -2448,7 +2718,64 @@
           "match_all": {}
         }
       },
-      "extract": "error_response"
+      "extract": "error_response",
+      "family": "failure-path",
+      "description": "[failure-path] missing index error type",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "missing_index_search_error",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "family": "failure-path",
+      "description": "[failure-path] missing index search error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "expand_wildcards_closed_fail_closed",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search?expand_wildcards=closed",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "error_response",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "out-of-phase-defer",
+      "reason": "Closed-index engine state is intentionally deferred out of Phase A-1 lexical strict parity; the current search strict fixture keeps this as an explicit out-of-phase defer.",
+      "family": "misc",
+      "description": "[misc] expand wildcards closed fail closed",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "head_index",
+      "area": "index",
+      "method": "HEAD",
+      "path": "/logs-compat",
+      "extract": "status_only",
+      "family": "misc",
+      "description": "[misc] head index",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "wildcard_index_read_expansion",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-*",
+      "extract": "get_index",
+      "family": "misc",
+      "description": "[misc] wildcard index read expansion",
+      "strict_source_parity_required": true
     }
   ]
 }

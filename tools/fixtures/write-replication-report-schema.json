@@ -1,0 +1,20 @@
+{
+  "name": "write-replication-report-schema",
+  "required_fields": [
+    "direction",
+    "seq_no_ok",
+    "primary_term_ok",
+    "checkpoint_ok",
+    "refresh_visibility_ok",
+    "replica_failure_case",
+    "retry_result"
+  ],
+  "directions": [
+    "primary-java_replica-rust",
+    "primary-rust_replica-java"
+  ],
+  "failure_cases": [
+    "partial-replica-failure",
+    "retry-after-failure"
+  ]
+}

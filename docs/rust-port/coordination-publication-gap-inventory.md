@@ -4,50 +4,61 @@ This note scopes the remaining gap between the current Steelsearch
 development-only publication flow and an OpenSearch-style coordination
 publication pipeline.
 
-## Current State
+Replacement profile scope:
 
-- Discovery, pre-vote, election, voting exclusions, and joint-consensus quorum
-  helpers now exist in the daemon-owned coordination runtime.
-- Development coordination still publishes exactly one synthetic cluster-state
-  update per startup path.
-- Publication is not modeled as a repeated leader-driven pipeline with
-  proposal, follower validation, commit acknowledgement, apply, and durable
-  follower catch-up stages.
+- `standalone`
+- `secure standalone`
+- `external interop`
+- `same-cluster peer-node`
 
-## Concrete Gaps
+This document is primarily about `external interop` and `same-cluster
+peer-node`, where publication ordering and acknowledgement semantics become
+cluster-safety requirements.
 
-1. Publication round model
-   - There is no explicit publication round object that tracks
-     state uuid, version, term, target voters, acknowledgements, apply status,
-     and timeout/failure state across multiple updates.
+## Current Evidence
 
-2. Follower publication wire/runtime
-   - There is no live transport publication request/response exchange for
-     cluster-state publication to followers.
-   - Followers do not separately validate, acknowledge, and apply repeated
-     publications from the elected cluster-manager.
+The repository already has:
 
-3. Commit versus apply lifecycle
-   - Commit and apply are collapsed into the single current development publish
-     path.
-   - There is no staged transition from proposed publication to committed
-     publication to follower-applied publication.
+- discovery, pre-vote, election, voting exclusions, and joint-consensus quorum
+  helpers in the daemon-owned coordination runtime;
+- a development coordination path that can publish one synthetic cluster-state
+  update per startup path;
+- publication-shaped primitives that are enough for focused local tests.
 
-4. Repeated publications
-   - The current runtime does not support a second or later publication round
-     with updated version/state lineage.
-   - There is no follower catch-up path for lagging or rejoining nodes.
+The remaining gap is that publication is not yet modeled as a repeated
+leader-driven pipeline with proposal, follower validation, commit
+acknowledgement, apply, and durable follower catch-up stages.
 
-5. Leader/follower coordination checks
-   - Leader publication does not incorporate follower validation responses and
-     apply acknowledgements as distinct coordination signals.
-   - Publication failure handling does not feed back into leader health,
-     follower health, or rerun logic.
+## Replacement Blockers
 
-## Recommended Implementation Order
+The main blockers are:
 
-1. Add explicit publication round state in `ClusterCoordinationState`.
-2. Add transport-framed publication proposal/ack/apply wire primitives.
-3. Execute repeated publication rounds over live transport.
-4. Split commit from follower apply tracking.
-5. Feed publication failures into existing liveness/fault-detection logic.
+- no explicit publication-round state across repeated updates;
+- no live transport publication proposal/ack/apply exchange with followers;
+- no distinct commit-versus-apply lifecycle;
+- no repeated-publication or lagging-follower catch-up path;
+- no feedback from publication failure into liveness or rerun logic.
+
+## Required Tests
+
+- repeated publication round artifacts with evolving term/version/state UUID;
+- transport-backed publication proposal/ack/apply exchange tests;
+- commit-success but apply-failure coverage;
+- lagging or rejoining follower catch-up transcripts;
+- publication failure driving leader/follower health transitions.
+
+## Required Implementation
+
+The remaining work should move in these leaves:
+
+1. explicit publication round object/state in coordination runtime;
+2. transport-backed follower proposal/ack/apply lifecycle;
+3. repeated publication and follower catch-up support;
+4. failure feedback into liveness, health, and rerun logic.
+
+## Required Implementation Order
+
+1. explicit publication round model;
+2. transport-backed proposal/ack/apply lifecycle;
+3. repeated publication and follower catch-up;
+4. failure feedback into liveness and rerun logic.

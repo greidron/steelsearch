@@ -2059,3 +2059,252 @@
     - [x] `/_tier/all` (GET) [implemented-read]
     - [x] `/{index}/_field_caps` (GET) [implemented-read]
     - [x] `/{index}/_tier` (GET) [implemented-read]
+
+- [x] OpenSearch replacement gap backlog
+  - [x] gap roadmap 문서 기준 재정렬: phase 완료 표현 대신 replacement blocker 기준으로 공식 문서와 backlog 정렬
+    - [x] `docs/rust-port/milestones.md`, `docs/rust-port/source-compatibility-matrix.md`, `docs/rust-port/node-runtime-gap-inventory.md` 사이의 용어를 `standalone`, `secure standalone`, `external interop`, `same-cluster peer-node` 네 프로필로 통일
+    - [x] `docs/rust-port/*gap-inventory.md` 문서마다 `current evidence`, `replacement blocker`, `required tests`, `required implementation` 섹션 강제
+      - [x] `docs/rust-port/node-runtime-gap-inventory.md`에 네 섹션을 추가하고 profile scope를 명시
+      - [x] `docs/rust-port/cluster-coordination-gap-inventory.md`를 같은 섹션 구조로 정렬
+      - [x] `docs/rust-port/coordination-gateway-gap-inventory.md`를 같은 섹션 구조로 정렬
+      - [x] `docs/rust-port/coordination-metadata-persistence-gap-inventory.md`를 같은 섹션 구조로 정렬
+      - [x] `docs/rust-port/metadata-routing-allocation-gap-inventory.md`를 같은 섹션 구조로 정렬
+      - [x] `docs/rust-port/coordination-*.md` 나머지 inventory에도 같은 섹션 구조를 순차 적용
+        - [x] `docs/rust-port/coordination-election-gap-inventory.md`를 같은 섹션 구조로 정렬
+        - [x] `docs/rust-port/coordination-publication-gap-inventory.md`를 같은 섹션 구조로 정렬
+        - [x] `docs/rust-port/coordination-liveness-gap-inventory.md`를 같은 섹션 구조로 정렬
+        - [x] `docs/rust-port/coordination-task-queue-gap-inventory.md`를 같은 섹션 구조로 정렬
+        - [x] `docs/rust-port/coordination-voting-config-gap-inventory.md`를 같은 섹션 구조로 정렬
+        - [x] `docs/rust-port/coordination-cluster-manager-task-gap-inventory.md`를 같은 섹션 구조로 정렬
+        - [x] `docs/rust-port/coordination-multi-node-failure-test-gap-inventory.md`를 같은 섹션 구조로 정렬
+    - [x] `tasks.md`의 기존 `Phase B`, `Phase C`, `Swagger/runtime route parity` 완료 기록에 replacement-gap 섹션 cross-reference 추가
+      - [x] `docs/rust-port/milestones.md`에서 phase 문서가 replacement gap 관점으로 supersede 되었음을 명시
+      - [x] `docs/rust-port/source-compatibility-matrix.md`에서 세부 gap inventory로 읽어야 한다는 cross-reference 추가
+  - [x] standalone semantic gap closure
+    - [x] search semantic audit: 현재 존재하는 `search-compat`, `search-strict-compat`, `search-semantic-compat` fixture를 lexical, ranking, aggregation, suggest/highlight, vector/k-NN, failure-path bucket으로 재분류
+      - [x] `tools/fixtures/search-compat.json` case를 family 태그 기준으로 재정렬하고 주석성 description 추가
+        - [x] `tools/fixtures/search-compat.json` case에 `family`/`description` 메타데이터 추가
+        - [x] physical case order를 family bucket 기준으로 재배치
+        - [x] lexical bucket: `term`, `match`, `match_phrase`, `match_phrase_prefix`, `multi_match`, `bool`, `range`, `ids` case를 연속 블록으로 재배치
+        - [x] ranking/pagination bucket: `sort`, `search_after`, `collapse`, `rescore`, `profile`, `track_total_hits` case를 연속 블록으로 재배치
+        - [x] aggregation bucket: metric/bucket/filter aggregation case를 연속 블록으로 재배치
+        - [x] suggest/highlight bucket: term/phrase/completion suggest와 highlight case를 연속 블록으로 재배치
+        - [x] vector/k-NN bucket: positive/negative k-NN case를 연속 블록으로 재배치
+        - [x] failure-path bucket: `ignore_unavailable`, `allow_no_indices`, unsupported option, malformed payload case를 연속 블록으로 재배치
+      - [x] `tools/fixtures/search-strict-compat.json` case별로 `strict-source-parity-required` 여부 메타데이터 추가
+        - [x] strict parity가 필요한 case와 semantic tolerance case를 boolean 필드로 분리
+        - [x] strict parity가 불가능한 case는 reason 필드에 `partial-implementation`, `known-open-gap`, `source-instability` 중 하나 명시
+      - [x] `tools/fixtures/search-semantic-compat.json`을 “light semantic smoke”로 명시하고 strict fixture와 역할 분리 문서화
+        - [x] fixture 상단 comment 역할의 top-level metadata 추가
+      - [x] `docs/api-spec/README.md` 또는 별도 문서에서 세 fixture의 목적 차이를 설명
+      - [x] `tools/search_compat.py` report에 family별 pass/fail summary 추가
+        - [x] report JSON에 `family_summary` 필드 추가
+        - [x] CLI stdout에 family별 `passed/failed/skipped` summary 1줄 출력 추가
+    - [x] search parameter coverage matrix 문서화: `term`, `match`, `match_phrase`, `bool`, `range`, `sort`, `search_after`, `collapse`, `rescore`, `profile`, `highlight`, `suggest`, `aggregations`, `k-NN` 별로 strict compare / semantic probe / fail-closed 여부 표 작성
+      - [x] 새 문서 `docs/api-spec/search-parameter-coverage-matrix.md` 추가
+      - [x] 각 parameter family별로 `implemented`, `strict-compared`, `semantic-probed`, `fail-closed`, `missing` 컬럼 정의
+      - [x] `standalone_runtime.rs`에 실제 evaluator/handler가 없는 parameter는 문서에 코드 위치와 함께 표시
+      - [x] 각 row에 근거 파일 링크 추가: `tools/fixtures/*.json`, `crates/os-node/src/standalone_runtime.rs`, `generated_api_spec_artifacts.rs`
+      - [x] `query-string parameters`와 `body DSL parameters`를 별도 표로 분리
+      - [x] `root _search`, `targeted _search`, `template search`, `msearch`별 적용 범위 차이를 각 row에 표시
+    - [x] unsupported search DSL / parameter fail-closed audit: 노출된 route에서 아직 strict compare가 없는 query option, ranking option, vector option을 `400` 또는 explicit unsupported로 고정
+      - [x] `crates/os-node/src/standalone_runtime.rs`의 `_search`, `_msearch`, `_search/template` body parser가 무시하는 field 목록 인벤토리 작성
+      - [x] 무시 중인 field를 `silent ignore`에서 `fail-closed`로 바꿀지 `documented partial`로 둘지 case-by-case 결정표 작성
+      - [x] unsupported vector option, rescoring option, highlight option, suggest option에 대한 negative fixture 추가
+      - [x] negative fixture 후보를 `tools/fixtures/search-semantic-compat.json`와 `tools/fixtures/search-strict-compat.json` 중 어디에 둘지 기준 문서화
+      - [x] fail-closed로 바꾸는 경우 `standalone_runtime.rs`의 error type/reason/status를 OpenSearch 형태로 맞추는 unit test 추가
+      - [x] documented partial로 남기는 경우 `docs/api-spec/search-parameter-coverage-matrix.md`에 반드시 명시
+    - [x] `_search`, `_msearch`, `_search/template`, `_count`, `_validate/query`, `_explain` family의 query-string/body parameter matrix를 fixture 기반으로 확장
+      - [x] `_search`/`{index}/_search`: `from`, `size`, `sort`, `track_total_hits`, `allow_no_indices`, `ignore_unavailable` matrix 추가
+        - [x] `tools/fixtures/search-semantic-compat.json`에 최소 semantic smoke 추가
+        - [x] `tools/fixtures/search-strict-compat.json`에 strict compare 가능한 subset 추가
+        - [x] `standalone_runtime.rs`에 pagination/sort/target-expansion unit test 추가
+      - [x] `_msearch`/`{index}/_msearch`: header/body isolation, per-request index override, mixed success/failure matrix 추가
+        - [x] NDJSON parse error / odd-line-count / malformed header negative case 추가
+        - [x] root header index override와 path target precedence matrix 추가
+      - [x] `_search/template` family: params 누락, extra params, malformed template, stored template overwrite matrix 추가
+        - [x] `/_render/template`, `/_render/template/{id}`도 같은 matrix에 포함
+        - [x] stored script source mutation 후 search/render readback consistency probe 추가
+        - [x] params 누락 matrix 추가
+        - [x] extra params matrix 추가
+        - [x] malformed template matrix 추가
+      - [x] `_count` family: wildcard target, missing index, invalid query matrix 추가
+        - [x] query-string `q=`와 body `query`의 precedence 또는 unsupported policy를 명시
+        - [x] wildcard target empty-match와 `allow_no_indices` count semantics를 fixture로 고정
+        - [x] missing index vs empty wildcard count error/zero-result policy를 fixture로 고정
+        - [x] invalid query payload와 unsupported query type의 `_count` envelope를 fixture로 고정
+      - [x] `_validate/query` family: explain mode, unsupported query type, malformed payload matrix 추가
+        - [x] `rewrite=true` 또는 unsupported explain options는 explicit unsupported 정책으로 문서화
+        - [x] malformed JSON payload의 `_validate/query` parse_exception envelope를 fixture로 고정
+        - [x] unsupported query type와 empty query object의 `_validate/query` explanation body를 fixture로 고정
+        - [x] targeted `/{index}/_validate/query`에서 wildcard target + unsupported option 조합 policy를 fixture로 고정
+      - [x] `_explain/{id}` family: wildcard/unavailable target, unsupported query payload matrix 추가
+        - [x] missing index vs missing doc error envelope 차이를 fixture로 고정
+        - [x] wildcard target explain readback semantics를 fixture로 고정
+        - [x] unsupported query payload의 `_explain` fail-closed policy를 fixture로 고정
+    - [x] document write semantic audit: `_bulk`, `_doc`, `_create`, `_update`, `_delete_by_query`, `_update_by_query`, `_reindex`의 conflict, retry, noop, overwrite, refresh, routing semantics 차이 표 작성
+      - [x] 새 문서 `docs/api-spec/document-write-semantic-gap-matrix.md` 추가
+      - [x] `bulk`, single-doc, by-query, reindex family를 나눠 versioning/refresh/routing/overwrite/noop semantics 표 작성
+      - [x] `tools/fixtures/document-write-semantic-compat.json`에 retry/conflict/routing negative case 추가
+      - [x] `standalone_runtime.rs` write-path helper가 아직 지원하지 않는 metadata field(`routing`, `if_seq_no`, `if_primary_term` 등) 처리 상태를 코드 참조와 함께 기록
+      - [x] `_bulk` family를 `index/create/update/delete` op별 success/error matrix로 분리
+      - [x] single-doc family에서 explicit id vs auto id semantics 표 작성
+      - [x] by-query family에서 matched/unmatched/noop/repeated-call semantics 표 작성
+      - [x] reindex family에서 source wildcard, dest overwrite, missing dest, unsupported script semantics 표 작성
+    - [x] snapshot/migration route semantic audit: snapshot create/delete/verify/cleanup/restore readback과 rollback-safe error handling fixture 추가
+      - [x] snapshot route별 current state mutation/readback matrix 작성
+      - [x] restore/cleanup/verify failure-path fixture 추가
+      - [x] migration helper route가 snapshot metadata를 얼마나 보존하는지 compare fixture 추가
+      - [x] repository missing, snapshot missing, duplicate create, repeated delete, repeated cleanup semantics 표 작성
+      - [x] cleanup missing-repository semantics를 fixture expectation과 runtime 동작 중 하나로 정렬
+      - [x] restore 이후 settings/mappings/aliases/data stream metadata 보존 수준 compare 추가
+    - [x] security/authz gap closure
+      - [x] security-enabled test harness 추가: auth on/off, TLS on/off, basic role/index permission matrix를 분리 실행하는 runner 추가
+      - [x] `tools/run-security-compat-harness.sh` 추가
+      - [x] single-node secure profile과 multi-node secure profile을 분리
+      - [x] test credentials/bootstrap policy를 repo-local fixture로 고정
+      - [x] self-signed test CA, server cert, client credential fixture 디렉터리 구조 정의
+      - [x] secure profile용 runtime boot args/env vars를 스크립트에 고정
+      - [x] CI/local 공용 실행 절차를 문서화
+    - [x] unauthenticated `401` / unauthorized `403` envelope parity fixture 추가
+      - [x] 새 fixture `tools/fixtures/security-authz-compat.json` 추가
+      - [x] `WWW-Authenticate`, error type, status, reason body compare 추가
+      - [x] root cluster read, index read, document write, admin route 각 1개 이상 포함
+      - [x] wrong credential, missing credential, insufficient role 세 경우 분리
+    - [x] read/write/admin route 최소 권한 matrix 문서화 및 probe 추가
+      - [x] read/write/admin API family를 역할별(`reader`, `writer`, `admin`)로 매핑한 문서 추가
+      - [x] 최소 권한 성공, 권한 부족 실패, overbroad access 차단 probe 추가
+      - [x] route family별로 required action/privilege 이름까지 명시
+      - [x] `tasks.md`에서 high-risk route(`_bulk`, `_search`, `_settings`, `_snapshot`, `_cluster/*`)는 별도 하위 표기
+      - [x] high-risk authz probe를 route family별로 분리
+        - [x] `/_bulk` 최소 권한 성공, writer/admin 경계, reader 거부 probe 추가
+        - [x] `/_search` root vs targeted search의 reader 성공, unauthenticated `401`, overbroad deny probe 추가
+        - [x] `/{index}/_settings` read/write 경계와 admin-only mutation probe 추가
+        - [x] `/_snapshot/*` repository/snapshot read와 restore/cleanup/admin-only mutation probe 추가
+        - [x] `/_cluster/*` health/settings/state/reroute family를 read/admin 권한 경계별로 분리
+    - [x] system/restricted index access-control probe 추가
+      - [x] `.opensearch*`, `.plugins*` 등 restricted prefix inventory 작성
+      - [x] allowed/denied matrix를 fixture와 문서에 동시 반영
+      - [x] hidden/system index read 허용 여부를 profile별로 구분
+      - [x] alias를 통한 우회 접근 차단 probe 추가
+    - [x] secret redaction, audit log, authn failure-path baseline 문서화
+      - [x] log/redaction expectations 문서화
+      - [x] bad password, missing header, malformed token failure-path probe 추가
+      - [x] config dump, error body, debug log에 credential/token이 노출되지 않는지 grep 기반 smoke 추가
+  - [x] node runtime and bootstrap gap closure
+    - [x] bootstrap/preflight gap inventory를 구현 backlog로 분해: data path, lock, config, port binding, incompatible setting fail-closed
+      - [x] startup preflight checklist 문서 추가
+      - [x] data path absent/readonly/locked/duplicate node-id fail-closed case 추가
+      - [x] invalid config / incompatible setting parse failure test 추가
+      - [x] port in use, malformed bind address, unsupported cluster setting failure-path 추가
+      - [x] exit code / stderr / log marker expectation을 각 case에 문서화
+    - [x] task/thread-pool/runtime controls gap을 code path와 operator-visible API 기준으로 세분화
+      - [x] current runtime control surface inventory 작성
+      - [x] operator-visible route/API와 internal scheduler/thread control gap 매핑
+      - [x] task cancellation, throttling, queue backpressure, maintenance task lifecycle를 별도 항목으로 분리
+      - [x] task cancellation lifecycle gap을 별도 항목으로 문서화
+      - [x] throttling lifecycle gap을 별도 항목으로 문서화
+      - [x] queue/backpressure gap을 별도 항목으로 문서화
+      - [x] maintenance task lifecycle gap을 별도 항목으로 문서화
+      - [x] thread-pool API가 없다면 explicit out-of-scope 또는 planned route로 분류
+    - [x] startup ordering and lifecycle checklist 문서화: gateway load, metadata apply, service start, transport bind 순서 증거 추가
+      - [x] startup event trace를 남기는 harness 또는 debug transcript 추가
+      - [x] misordered startup이 corrupt state를 만들지 않는지 smoke 추가
+      - [x] `shared-runtime-state.json` 생성/로드 시점과 transport/HTTP bind 시점의 ordering transcript 고정
+    - [x] node restart smoke harness 추가: clean restart, dirty restart, partial state restart 구분
+      - [x] `tools/run-node-restart-smoke.sh` 추가
+      - [x] clean stop/restart
+      - [x] crash/restart
+      - [x] partial persisted state/restart
+      세 프로필 분리
+      - [x] 각 프로필마다 pre-restart writes, post-restart reads, metadata/state continuity assertions 포함
+  - [x] persistence and gateway durability gap closure
+    - [x] authoritative gateway manifest ownership 규칙 문서화 및 test fixture 추가
+      - [x] `shared-runtime-state.json`와 manifest 계열 파일의 ownership/update ordering 규칙 문서화
+      - [x] concurrent writer / stale manifest / truncated manifest failure-path fixture 추가
+      - [x] 파일별 authoritative source, derived cache, rebuild 가능 여부를 표로 정리
+    - [x] restart-safe metadata replay / corruption fencing / node-loss continuity probe 추가
+      - [x] corrupt metadata, missing shard manifest, partial replay state에 대한 restart probe 추가
+      - [x] replay가 중단된 뒤 재시작했을 때 fail-closed 또는 recover path를 문서화
+      - [x] replay 중단 시 operator-visible error transcript와 safe-stop 조건을 명시
+    - [x] shard/local metadata durability compare harness 추가
+      - [x] on-disk metadata snapshot을 OpenSearch와 나란히 비교하는 harness 추가
+      - [x] shard count, routing metadata, settings/mapping persistence compare 추가
+      - [x] compare artifact를 `target/durability-compat/` 아래에 profile별로 저장
+    - [x] on-disk state compatibility and upgrade boundary 문서화
+      - [x] versioned state schema 문서화
+      - [x] backward-incompatible state change guardrail 명시
+      - [x] incompatible schema detect 시 auto-migrate 금지인지, explicit tool required인지 정책 정의
+  - [x] migration and cutover gap closure
+    - [x] standalone cutover runbook 문서화: snapshot/export, restore/import, verification, rollback sequence 정리
+      - [x] 운영자 관점 cutover checklist 문서 추가
+      - [x] pre-cutover validation, cutover, post-cutover verification, rollback 네 단계로 분리
+      - [x] required evidence artifact 경로와 pass 조건을 각 단계에 명시
+    - [x] unsupported feature detection checklist 추가: migration 전에 차단해야 하는 DSL, plugin, index feature 목록화
+      - [x] incompatible search feature, plugin feature, mapping feature inventory 작성
+      - [x] migrate-blocking vs degraded-but-allowed 분류
+      - [x] 탐지 방법을 API-based / metadata-based / fixture-based 세 방식으로 구분
+    - [x] snapshot/restore completeness matrix를 route parity와 별도로 작성
+      - [x] repository, snapshot metadata, restore option, cleanup/verify 지원 상태 표 작성
+      - [x] partial support인 옵션은 restore safety risk를 같이 기재
+    - [x] migration acceptance harness 추가: source dataset import -> verify -> rollback rehearsal
+      - [x] small fixture dataset 기반 end-to-end cutover harness 추가
+      - [x] rollback 후 source/target divergence check 추가
+      - [x] harness 결과를 `target/migration-acceptance/`에 저장하고 report schema 고정
+  - [x] external Java OpenSearch interop gap closure
+    - [x] transport handshake/version-skew reject matrix 작성
+      - [x] supported/unsupported wire version 표 작성
+      - [x] bad handshake / unexpected action / version mismatch reject fixture 추가
+      - [x] accepted/rejected action inventory와 연결되는 doc link 추가
+    - [x] decoded cluster-state cache invalidation / stale read fail-closed probe 추가
+      - [x] stale metadata cache에서 read/write forwarding이 어떻게 reject되는지 probe 추가
+      - [x] cache refresh miss / remote disconnect semantics 문서화
+      - [x] cache age / publication lag / remote disconnect 세 경우를 분리한 transcript artifact 저장
+    - [x] read coordination vs write forwarding 지원 범위를 문서화하고 unsupported action reject fixture 추가
+      - [x] interop allowlist 문서 추가
+      - [x] unsupported forwarded action은 explicit reject로 고정
+      - [x] allowlist에 route, transport action, precondition, fail-closed reason 네 컬럼 추가
+    - [x] mixed-mode disconnect, stale publication, incompatible metadata failure-path harness 추가
+      - [x] disconnect during read coordination
+      - [x] stale publication observation
+      - [x] incompatible metadata decode
+      프로필별 harness 추가
+      - [x] harness 실행 스크립트를 `tools/run-phase-b-gap-harness.sh` 또는 동등 이름으로 분리
+  - [x] same-cluster peer-node gap closure
+    - [x] join validation / reject reason parity backlog 작성
+      - [x] discovery identity, role, version, cluster UUID mismatch별 reject matrix 작성
+      - [x] operator-visible reject reason transcript 고정
+      - [x] each reject case에 Java baseline transcript와 Steelsearch transcript를 나란히 저장
+    - [x] publication receive/apply/ack ordering probe 세분화
+      - [x] full publication, delta publication, repeated publication, rejected publication 케이스 분리
+      - [x] ack timing/ordering invariant 문서화
+      - [x] publish term/version monotonicity assertion을 report schema에 포함
+    - [x] allocation / relocation / retention-lease convergence probe 세분화
+      - [x] mixed-cluster allocation allow/deny matrix 작성
+      - [x] relocation start/finalize/interruption harness 추가
+      - [x] retention lease grant/update/remove probe 추가
+      - [x] shard state timeline을 artifact로 남기는 report 필드 설계
+    - [x] peer recovery file-chunk-translog-finalize matrix 추가
+      - [x] Java->Rust, Rust->Java source/target 방향 분리
+      - [x] interrupted recovery / resumed recovery / finalized recovery matrix 작성
+      - [x] source/target direction마다 data checksum 및 doc visibility assertion 포함
+    - [x] mixed primary/replica write replication semantics matrix 추가
+      - [x] seq_no, primary_term, checkpoint, refresh visibility matrix 작성
+      - [x] partial replica failure / retry semantics probe 추가
+      - [x] primary-on-Java/replica-on-Rust, primary-on-Rust/replica-on-Java 두 방향 분리
+    - [x] crash/restart/stale replica mixed-cluster harness 추가
+      - [x] peer node crash during publication
+      - [x] crash during recovery
+      - [x] stale replica detect and reject
+      harness 추가
+      - [x] harness 결과를 `target/mixed-cluster-failure/`에 profile별로 저장
+  - [x] replacement claim exit criteria 문서화
+    - [x] "REST parity complete"와 "OpenSearch replacement ready"를 구분하는 공식 기준 추가
+      - [x] route parity / semantic parity / durability parity / security parity / distributed parity를 구분 정의
+      - [x] 각 parity 종류별 최소 evidence artifact 목록을 표로 정리
+    - [x] production profile별 readiness checklist 작성: standalone, secure standalone, external interop, same-cluster peer-node
+      - [x] 각 프로필마다 required docs, required fixtures, required harnesses, required pass conditions 표 작성
+      - [x] `go/no-go` 체크리스트를 운영자용과 개발자용 두 버전으로 분리
+    - [x] source-compatibility-matrix의 `Partial` 항목을 backlog task와 1:1 링크
+      - [x] matrix 각 행에 대응 task id 또는 section anchor 연결
+      - [x] `No` 또는 `Partial` 상태의 각 행마다 왜 blocker인지 한 줄 사유 추가

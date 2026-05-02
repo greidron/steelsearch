@@ -1,0 +1,39 @@
+{
+  "name": "security-bootstrap-policy",
+  "pki_root": "tools/fixtures/security-pki",
+  "profiles": {
+    "single-node-secure": {
+      "fixture": "tools/fixtures/security-authz-compat.json",
+      "report_dir": "target/security-compat/single-node-secure",
+      "bootstrap_mode": "existing-secure-endpoint",
+      "server_cert_dir": "tools/fixtures/security-pki/server/single-node-secure",
+      "steelsearch_url_env": "SECURITY_SINGLE_NODE_STEELSEARCH_URL",
+      "opensearch_url_env": "SECURITY_SINGLE_NODE_OPENSEARCH_URL",
+      "credential_env": {
+        "admin_username": "SECURITY_ADMIN_USERNAME",
+        "admin_password": "SECURITY_ADMIN_PASSWORD",
+        "reader_username": "SECURITY_READER_USERNAME",
+        "reader_password": "SECURITY_READER_PASSWORD",
+        "writer_username": "SECURITY_WRITER_USERNAME",
+        "writer_password": "SECURITY_WRITER_PASSWORD"
+      }
+    },
+    "multi-node-secure": {
+      "fixture": "tools/fixtures/security-authz-compat.json",
+      "report_dir": "target/security-compat/multi-node-secure",
+      "bootstrap_mode": "existing-secure-coordinator-endpoint",
+      "server_cert_dir": "tools/fixtures/security-pki/server/multi-node-secure",
+      "steelsearch_url_env": "SECURITY_MULTI_NODE_STEELSEARCH_URL",
+      "opensearch_url_env": "SECURITY_MULTI_NODE_OPENSEARCH_URL",
+      "multi_node_seeds_env": "SECURITY_MULTI_NODE_SEEDS",
+      "credential_env": {
+        "admin_username": "SECURITY_ADMIN_USERNAME",
+        "admin_password": "SECURITY_ADMIN_PASSWORD",
+        "reader_username": "SECURITY_READER_USERNAME",
+        "reader_password": "SECURITY_READER_PASSWORD",
+        "writer_username": "SECURITY_WRITER_USERNAME",
+        "writer_password": "SECURITY_WRITER_PASSWORD"
+      }
+    }
+  }
+}

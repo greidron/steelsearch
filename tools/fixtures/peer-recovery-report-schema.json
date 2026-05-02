@@ -1,0 +1,24 @@
+{
+  "name": "peer-recovery-report-schema",
+  "required_fields": [
+    "direction",
+    "recovery_case",
+    "source_node",
+    "target_node",
+    "file_chunk_phase",
+    "translog_phase",
+    "finalize_phase",
+    "data_checksum_ok",
+    "doc_visibility_ok",
+    "final_state"
+  ],
+  "directions": [
+    "java-to-rust",
+    "rust-to-java"
+  ],
+  "recovery_cases": [
+    "interrupted-recovery",
+    "resumed-recovery",
+    "finalized-recovery"
+  ]
+}

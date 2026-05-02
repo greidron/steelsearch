@@ -4,7 +4,19 @@ This note narrows the remaining gateway-backed metadata persistence work under
 `Persist authoritative coordination state and cluster metadata in a gateway
 layer that survives restart and node loss.`
 
-## Current persisted scope
+Replacement profile scope:
+
+- `standalone`
+- `secure standalone`
+- `external interop`
+- `same-cluster peer-node`
+
+This document is a metadata-focused leaf of the broader gateway durability
+story. It is relevant to every profile because aliases, settings, templates,
+routing, and shard ownership cannot be replacement-safe without authoritative
+replay.
+
+## Current Evidence
 
 The current gateway path already persists and replays:
 
@@ -20,7 +32,10 @@ The current gateway path already persists and replays:
   - aliases
   - legacy/component/composable templates
 
-## Current limitation
+This is important progress: the repository no longer depends purely on
+ephemeral in-memory metadata for restart tests.
+
+## Replacement Blockers
 
 The persistence boundary is still development-snapshot driven instead of
 authoritative cluster-manager-owned metadata mutation.
@@ -37,7 +52,17 @@ REST handlers mutate in-memory state. That leaves several gaps:
   fencing, not whether metadata changes were committed and applied by the
   elected cluster-manager
 
-## Remaining work
+## Required Tests
+
+- restart replay tests for settings, aliases, legacy templates, component
+  templates, composable templates, routing table, and shard ownership;
+- corruption or partial-write tests for `cluster_metadata_manifest` and
+  gateway-owned metadata files;
+- commit/apply ownership tests showing uncommitted metadata changes are rejected
+  on replay;
+- node-loss tests showing metadata continuity or explicit fail-closed behavior.
+
+## Required Implementation
 
 The remaining persistence work splits into these leaves:
 

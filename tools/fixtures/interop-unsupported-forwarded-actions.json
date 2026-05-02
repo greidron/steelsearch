@@ -1,0 +1,39 @@
+{
+  "name": "interop-unsupported-forwarded-actions",
+  "description": "Reject fixtures for transport actions outside the bounded external interop allowlist.",
+  "cases": [
+    {
+      "name": "unsupported_forwarded_bulk_reject",
+      "route_family": "/_bulk",
+      "transport_action": "bulk write forwarding",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "unsupported forwarded action",
+        "bulk forwarding not allowlisted",
+        "interop rejected"
+      ]
+    },
+    {
+      "name": "unsupported_forwarded_search_admin_reject",
+      "route_family": "/_search with unsupported forwarding path",
+      "transport_action": "search/admin forwarding outside allowlist",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "unsupported forwarded action",
+        "route not in interop allowlist",
+        "fail-closed"
+      ]
+    },
+    {
+      "name": "unsupported_forwarded_cluster_admin_reject",
+      "route_family": "/_cluster/* admin forwarding",
+      "transport_action": "cluster admin forwarding",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "unsupported forwarded action",
+        "cluster admin forwarding disabled",
+        "interop rejected"
+      ]
+    }
+  ]
+}

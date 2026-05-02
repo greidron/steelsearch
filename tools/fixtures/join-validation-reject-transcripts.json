@@ -1,0 +1,49 @@
+{
+  "name": "join-validation-reject-transcripts",
+  "cases": [
+    {
+      "name": "discovery_identity_mismatch",
+      "java_baseline_markers": [
+        "join validation failed",
+        "discovery identity mismatch"
+      ],
+      "steelsearch_markers": [
+        "join rejected",
+        "discovery identity mismatch"
+      ]
+    },
+    {
+      "name": "node_role_mismatch",
+      "java_baseline_markers": [
+        "join validation failed",
+        "incompatible node role"
+      ],
+      "steelsearch_markers": [
+        "join rejected",
+        "incompatible node role"
+      ]
+    },
+    {
+      "name": "version_mismatch",
+      "java_baseline_markers": [
+        "join validation failed",
+        "incompatible version"
+      ],
+      "steelsearch_markers": [
+        "join rejected",
+        "incompatible version"
+      ]
+    },
+    {
+      "name": "cluster_uuid_mismatch",
+      "java_baseline_markers": [
+        "join validation failed",
+        "cluster UUID mismatch"
+      ],
+      "steelsearch_markers": [
+        "join rejected",
+        "cluster UUID mismatch"
+      ]
+    }
+  ]
+}

@@ -6,7 +6,17 @@ queue work landed. The remaining gap is not a missing primitive so much as a
 missing multi-node failure matrix that proves the runtime behaves like Java
 OpenSearch under crash, restart, quorum-loss, and partition conditions.
 
-## Current Coverage
+Replacement profile scope:
+
+- `standalone`
+- `secure standalone`
+- `external interop`
+- `same-cluster peer-node`
+
+This document is primarily about `same-cluster peer-node`, but some restart and
+quorum-loss paths also gate stronger standalone replacement claims.
+
+## Current Evidence
 
 The current Rust test surface already covers focused single-process primitives:
 
@@ -28,7 +38,7 @@ Those tests validate components in isolation or with a single local runtime
 driving synthetic peers. They do not yet prove multi-node behavior across
 independent daemons with failure and recovery sequences.
 
-## Missing Coverage
+## Replacement Blockers
 
 The following multi-node behavior is still unverified against Java
 OpenSearch-shaped expectations:
@@ -44,7 +54,16 @@ OpenSearch-shaped expectations:
 5. heal/rejoin behavior after partition, including queued reroute and
    publication recovery.
 
-## Recommended Task Breakdown
+## Required Tests
+
+- multi-daemon crash/restart replay harnesses;
+- isolated-manager and isolated-follower quorum-loss tests;
+- network partition and heal transcripts;
+- queue-aware recovery assertions after restart/heal;
+- compare artifacts showing no unsafe dual-manager or unsafe publication
+  progression.
+
+## Required Implementation
 
 Execute the remaining coverage work in this order:
 
@@ -57,9 +76,9 @@ Execute the remaining coverage work in this order:
 4. add queue-aware recovery assertions so interrupted reroute/node-left work is
    replayed or fenced explicitly after restart/heal.
 
-## Test Harness Direction
+## Required Implementation Order
 
-Prefer reusing the existing daemon integration harness in
-`crates/os-node/src/main.rs` rather than inventing another fake coordination
-driver. The missing value is concurrent daemon behavior, not more isolated unit
-coverage.
+1. crash/restart replay harnesses;
+2. quorum-loss fencing harnesses;
+3. partition/heal harnesses;
+4. queue-aware recovery assertions.

@@ -5,6 +5,17 @@ current `steelsearch` daemon and the local OpenSearch `Node` baseline. It is a
 planning artifact for the backlog item `Close node runtime and configuration
 gaps versus OpenSearch`.
 
+Replacement profile scope:
+
+- `standalone`
+- `secure standalone`
+- `external interop`
+- `same-cluster peer-node`
+
+This document is primarily about the first two profiles. For the latter two,
+node-runtime concerns overlap with transport, coordination, publication, and
+recovery inventories that are tracked separately.
+
 Source anchors:
 
 - OpenSearch runtime wiring:
@@ -32,6 +43,41 @@ The current daemon is intentionally small:
 
 This matches the documented project stage: a development replacement daemon,
 not a production-equivalent OpenSearch node.
+
+## Current Evidence
+
+The repository already proves a meaningful node-runtime baseline:
+
+- `steelsearch` starts a working REST daemon with persisted local state;
+- development and compatibility routes can be registered and served
+  coherently;
+- readiness reporting exists;
+- selected multi-node Steelsearch-native scenarios are exercised elsewhere in
+  the repo;
+- production claims are intentionally gated rather than silently implied.
+
+That evidence is enough to support development replacement work. It is not yet
+enough to claim production-equivalent node lifecycle behavior for
+`standalone`, let alone `secure standalone` or mixed-cluster profiles.
+
+## Replacement Blockers
+
+The runtime blockers are not route-list problems. They are node-lifecycle
+problems:
+
+- startup is not yet guarded by the same class of concrete preflight checks as
+  OpenSearch `Node`;
+- runtime controls such as task tracking, scheduling, accounting, and
+  background services are still partial or absent;
+- module/plugin registration remains monolithic relative to OpenSearch runtime
+  composition;
+- config and identity presentation still needs a stricter accepted/ignored/
+  rejected contract;
+- authoritative restart-safe behavior still depends on durability work tracked
+  in the gateway and metadata persistence inventories.
+
+The checklist that later failure-path tests should derive from is tracked in
+[startup-preflight-checklist.md](/home/ubuntu/steelsearch/docs/rust-port/startup-preflight-checklist.md).
 
 ## OpenSearch Node Surface Still Missing
 
@@ -70,6 +116,9 @@ examples from the generated inventory:
 Steelsearch has partial or development-only substitutes for some of these
 surfaces, but not authoritative OpenSearch-equivalent runtime wiring.
 
+The current operator-visible control surface inventory is tracked in
+[current-runtime-control-surface-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/current-runtime-control-surface-inventory.md).
+
 ## Gap Class 1: Bootstrap And Preflight
 
 OpenSearch has a much richer startup contract than the current daemon.
@@ -94,6 +143,13 @@ Required next implementation direction:
 
 - move from "production mode blocked by policy checklist" to "node startup is
   blocked by concrete runtime preflight checks".
+
+Required tests:
+
+- startup refusal fixture for absent/readonly/locked data paths;
+- startup refusal fixture for invalid bind/config combinations;
+- readiness/startup consistency probe showing blocked startup and blocked
+  readiness use the same underlying gate reasons.
 
 ## Gap Class 2: Thread Pools, Task Tracking, And Runtime Controls
 
@@ -121,6 +177,12 @@ Required next implementation direction:
   OpenSearch-shaped at the API boundary, rather than adding route stubs without
   real scheduling or accounting semantics.
 
+Required tests:
+
+- task cancellation and throttling probes that touch real runtime state;
+- queue/backpressure smoke tests for administrative and search/write workloads;
+- telemetry probes that verify task and runtime status is not merely synthetic.
+
 ## Gap Class 3: Plugin And Module Boundaries
 
 OpenSearch runtime is heavily assembled from modules and plugin extension
@@ -147,6 +209,13 @@ Required next implementation direction:
 - expose module/feature registration as runtime wiring, not just crate
   composition.
 
+Required tests:
+
+- startup transcript showing registered modules/features per profile;
+- reject-path tests for unsupported/disabled modules;
+- explicit reporting tests for Rust-native feature registration versus missing
+  Java plugin ABI.
+
 ## Gap Class 4: User-Facing Runtime Identity And Config Hygiene
 
 The binary name is now `steelsearch`, but runtime/config presentation still
@@ -162,6 +231,19 @@ Remaining identity/config work:
 - separate development-only config from future production config;
 - align daemon mode, readiness categories, and documented cutover rules.
 
+Required implementation direction:
+
+- make accepted, ignored-with-warning, and rejected-fail-closed config keys
+  explicit in user-facing docs and code;
+- ensure CLI help, logs, readiness output, and runbooks all use the same
+  profile language as the replacement roadmap.
+
+Required tests:
+
+- CLI/help text snapshot tests for supported/unsupported settings;
+- readiness/log terminology smoke tests;
+- fail-closed config parsing tests for unsupported production-only settings.
+
 ## Implementation Order
 
 Recommended implementation sequence for this backlog item:
@@ -174,3 +256,12 @@ Recommended implementation sequence for this backlog item:
 This order is deliberate. Without a stricter startup contract, adding more
 routes and services only increases ambiguity. Without runtime controls,
 additional API coverage will not behave like OpenSearch under load or failure.
+
+## Required Implementation
+
+For backlog purposes, the minimum implementation slices from this document are:
+
+1. concrete startup/preflight checks with refusal semantics;
+2. authoritative runtime control model for tasks, scheduling, and accounting;
+3. explicit module and feature registration boundary;
+4. user-facing config contract and identity cleanup.

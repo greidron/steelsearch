@@ -73,6 +73,49 @@
       "reason": "Steelsearch semantic hardening fixture for missing dest validation."
     },
     {
+      "name": "create_conflict_error",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-source-a/_create/doc-1",
+      "body": {
+        "message": "duplicate create",
+        "tenant": "tenant-a"
+      },
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 409,
+      "reason": "Steelsearch semantic hardening fixture for duplicate create conflict."
+    },
+    {
+      "name": "single_doc_seq_term_conflict_error",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-source-a/_doc/doc-1?if_seq_no=7&if_primary_term=1",
+      "body": {
+        "message": "stale optimistic concurrency write",
+        "tenant": "tenant-a"
+      },
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 409,
+      "reason": "Steelsearch semantic hardening fixture for stale seq_no/primary_term conflict."
+    },
+    {
+      "name": "update_wrong_routing_missing_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-source-a/_update/doc-1?routing=tenant-route",
+      "body": {
+        "doc": {
+          "processed": true
+        }
+      },
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 404,
+      "reason": "Steelsearch semantic hardening fixture for wrong-routing update miss."
+    },
+    {
       "name": "reindex_wildcard_source_summary",
       "area": "document-write",
       "method": "POST",

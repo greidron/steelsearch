@@ -239,6 +239,12 @@
       ]
     },
     {
+      "name": "component_template_metadata_summary",
+      "method": "GET",
+      "path": "/_component_template/migration-cutover-component",
+      "extract": "template_metadata"
+    },
+    {
       "name": "index_template_readback",
       "method": "GET",
       "path": "/_index_template/migration-cutover-template",
@@ -250,12 +256,30 @@
       ]
     },
     {
+      "name": "index_template_metadata_summary",
+      "method": "GET",
+      "path": "/_index_template/migration-cutover-template",
+      "extract": "template_metadata"
+    },
+    {
+      "name": "concrete_index_metadata_summary",
+      "method": "GET",
+      "path": "/migration-cutover-compat-000001",
+      "extract": "index_metadata"
+    },
+    {
       "name": "alias_readback",
       "method": "GET",
       "path": "/migration-cutover-compat-000001/_alias/migration-cutover-search",
       "compare_paths": [
         "migration-cutover-compat-000001.aliases.migration-cutover-search.is_write_index"
       ]
+    },
+    {
+      "name": "alias_metadata_summary",
+      "method": "GET",
+      "path": "/migration-cutover-compat-000001/_alias/migration-cutover-search",
+      "extract": "alias_metadata"
     },
     {
       "name": "vector_payload_doc",
@@ -279,6 +303,12 @@
         "data_streams.0.template",
         "data_streams.0.indices.0.index_name"
       ]
+    },
+    {
+      "name": "data_stream_metadata_summary",
+      "method": "GET",
+      "path": "/_data_stream/migration-cutover-ds",
+      "extract": "data_stream_metadata"
     }
   ]
 }

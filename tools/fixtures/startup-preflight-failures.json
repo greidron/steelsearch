@@ -1,0 +1,156 @@
+{
+  "name": "startup-preflight-failures",
+  "description": "Repo-local startup/preflight failure matrix for standalone runtime refusal semantics.",
+  "profile": "standalone",
+  "cases": [
+    {
+      "name": "data_path_missing",
+      "class": "data-path",
+      "setup": {
+        "data_path": "missing directory",
+        "node_metadata": "absent"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "data path",
+        "missing"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "data path"
+      ]
+    },
+    {
+      "name": "data_path_readonly",
+      "class": "data-path",
+      "setup": {
+        "data_path": "existing but readonly",
+        "node_metadata": "present or absent"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "data path",
+        "permission"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "readonly"
+      ]
+    },
+    {
+      "name": "data_path_locked",
+      "class": "data-path",
+      "setup": {
+        "data_path": "existing and writable",
+        "lock_state": "exclusive lock already held by another process"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "lock",
+        "data path"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "lock conflict"
+      ]
+    },
+    {
+      "name": "duplicate_node_id",
+      "class": "node-identity",
+      "setup": {
+        "data_path": "existing and writable",
+        "persisted_node_id": "conflicts with requested runtime identity"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "node id",
+        "conflict"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "duplicate node"
+      ]
+    },
+    {
+      "name": "invalid_config_parse",
+      "class": "config-parse",
+      "setup": {
+        "config_file": "malformed yaml/json or invalid env override syntax"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "config",
+        "parse"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "config parse"
+      ]
+    },
+    {
+      "name": "incompatible_setting_combination",
+      "class": "config-semantics",
+      "setup": {
+        "config_file": "syntactically valid",
+        "runtime_settings": "mutually incompatible startup settings"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "setting",
+        "incompatible"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "rejected setting"
+      ]
+    },
+    {
+      "name": "http_port_in_use",
+      "class": "network-bind",
+      "setup": {
+        "http_bind": "port already occupied by another process"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "bind",
+        "port"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "http bind"
+      ]
+    },
+    {
+      "name": "malformed_bind_address",
+      "class": "network-bind",
+      "setup": {
+        "bind_address": "syntactically invalid host/ip literal"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "address",
+        "bind"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "address parse"
+      ]
+    },
+    {
+      "name": "unsupported_cluster_setting",
+      "class": "runtime-settings",
+      "setup": {
+        "cluster_setting": "startup receives unsupported cluster/runtime setting"
+      },
+      "expected_exit_class": "non-zero",
+      "expected_stderr_markers": [
+        "unsupported",
+        "setting"
+      ],
+      "expected_log_markers": [
+        "startup preflight",
+        "unsupported setting"
+      ]
+    }
+  ]
+}

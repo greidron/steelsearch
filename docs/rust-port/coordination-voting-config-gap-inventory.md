@@ -3,94 +3,51 @@
 This document narrows the remaining gap inside the backlog item
 `Add voting-configuration exclusions and joint-consensus style voting updates so reconfiguration does not rely on directly mutating a single flat voter set.`
 
-Source anchors:
+Replacement profile scope:
 
-- Current Steelsearch coordination runtime:
-  - [`crates/os-node/src/lib.rs`](/home/ubuntu/steelsearch/crates/os-node/src/lib.rs)
-- Existing coordination planning inventories:
-  - [`docs/rust-port/coordination-election-gap-inventory.md`](/home/ubuntu/steelsearch/docs/rust-port/coordination-election-gap-inventory.md)
-  - [`docs/rust-port/cluster-coordination-gap-inventory.md`](/home/ubuntu/steelsearch/docs/rust-port/cluster-coordination-gap-inventory.md)
-- OpenSearch coordination references:
-  - `/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/cluster/coordination/CoordinationState.java`
-  - `/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/cluster/coordination/VotingConfiguration.java`
-  - `/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/cluster/coordination/CoordinationMetadata.java`
-  - `/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/cluster/coordination/Reconfigurator.java`
+- `standalone`
+- `secure standalone`
+- `external interop`
+- `same-cluster peer-node`
 
-## Current Steelsearch Voting Configuration Shape
+This document is primarily about `external interop` and `same-cluster
+peer-node`, where reconfiguration must be authoritative and restart-safe.
+
+## Current Evidence
 
 Steelsearch already has a smaller split than before:
 
-- `ClusterCoordinationState.last_accepted_voting_configuration`
-- `ClusterCoordinationState.last_committed_voting_configuration`
-- `PersistedPublicationState` persists both sets
+- `ClusterCoordinationState.last_accepted_voting_configuration`;
+- `ClusterCoordinationState.last_committed_voting_configuration`;
+- `PersistedPublicationState` persists both sets;
 - quorum checks, election, publication ownership, and liveness still read the
-  accepted set directly
+  accepted set directly.
 
-Focused tests already pin that split:
+Focused tests already pin that split. That means Steelsearch no longer has a
+single merged voting set everywhere, but it still does not have OpenSearch-style
+reconfiguration semantics.
 
-- `accepted_and_committed_voting_configurations_are_tracked_separately`
-- `publication_state_manifest_persists_and_restores_accepted_publication`
-- `persisted_publication_state_replays_term_and_rejects_old_acknowledgements`
+## Replacement Blockers
 
-That means Steelsearch no longer has a single merged voting set everywhere,
-but it still does not have OpenSearch-style reconfiguration semantics.
+The main blockers are:
 
-## What Still Differs From OpenSearch
+- no voting-config exclusion state;
+- accepted and committed sets do not yet form a true joint configuration;
+- membership changes still mutate voting state too directly;
+- runtime users still mostly read only the accepted set.
 
-## Gap Class 1: No Voting-Config Exclusion State
+## Required Tests
 
-OpenSearch can temporarily exclude voters from cluster-manager elections and
-publication quorum calculations. Steelsearch has no equivalent state.
+- exclusion add/remove/replay tests;
+- joint-consensus quorum tests across accepted and committed sets;
+- join/remove paths proving discovered membership does not silently rewrite the
+  authoritative voter set;
+- publication/election/liveness tests that honor exclusions and joint-config
+  transitions.
 
-Missing behavior:
+## Required Implementation
 
-- explicit exclusion records keyed by node id;
-- exclusion validation and duplicate handling;
-- fencing that prevents excluded nodes from continuing to count toward
-  ownership and publication majority;
-- persisted replay of exclusion state across restart.
-
-## Gap Class 2: Accepted And Committed Sets Do Not Form A Joint Configuration
-
-Steelsearch tracks accepted and committed voter sets separately, but it does
-not model a transitional joint configuration where both old and new
-configurations must be respected.
-
-Missing behavior:
-
-- joint-consensus quorum rules during reconfiguration;
-- transitional publication ownership checks against both configurations;
-- clear apply/commit step that moves a new configuration from accepted to
-  committed only after a successful authoritative commit;
-- rollback-safe behavior when reconfiguration does not commit.
-
-## Gap Class 3: Membership Changes Mutate Voting State Too Directly
-
-`join_peer(...)` currently inserts every admitted peer directly into the
-accepted voting configuration.
-
-Missing behavior:
-
-- separation between discovered membership and authoritative voting membership;
-- cluster-manager owned reconfiguration proposals instead of join-time mutation;
-- explicit removal path for failed or excluded voters;
-- tests that prove joins do not silently rewrite the authoritative voter set.
-
-## Gap Class 4: Runtime Users Still Read Only The Accepted Set
-
-Even after the accepted/committed split, the runtime mostly treats the accepted
-set as the only authoritative quorum surface.
-
-Missing behavior:
-
-- election ownership checks that account for joint configuration transitions;
-- liveness and quorum-loss checks that can reason about exclusions and
-  committed-vs-accepted transitions;
-- publication ack and commit semantics that fence against partially applied
-  reconfiguration;
-- JSON manifest shape for future operator-visible reconfiguration state.
-
-## Recommended Execution Order
+The remaining work should move in these leaves:
 
 1. add explicit voting-config exclusion state and persist it;
 2. stop mutating accepted voters directly from `join_peer(...)`;
@@ -100,3 +57,10 @@ Missing behavior:
    configuration helpers;
 5. add targeted tests for exclusion, reconfiguration proposal, commit, and
    rollback behavior.
+
+## Required Implementation Order
+
+1. exclusion state;
+2. authoritative membership-to-voter separation;
+3. joint-consensus quorum helpers;
+4. publication/election/liveness integration.

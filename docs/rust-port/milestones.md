@@ -1,187 +1,194 @@
-# Steelsearch Milestones
+# Steelsearch Replacement Gap Roadmap
 
 ## Goal
 
-Steelsearch is intended to replace OpenSearch, not merely imitate selected
-development routes. Milestones therefore need to distinguish:
+Steelsearch is intended to replace OpenSearch for supported workloads, not just
+mirror selected REST routes. The roadmap therefore needs to describe the
+remaining gaps that block real replacement rather than phase labels that imply
+capability closure.
 
-- standalone replacement of an OpenSearch deployment by a Steelsearch-only
-  cluster;
-- mixed-cluster interoperability with Java OpenSearch;
-- eventual same-cluster participation as a peer node.
+This document supersedes earlier `Phase A`, `Phase B`, and `Phase C` milestone
+framing. Those names were useful while building acceptance harnesses and report
+families, but they are too coarse to describe what still blocks replacement.
+The active question is simpler:
 
-These phases are cumulative. A later phase does not weaken an earlier one.
+- what is already evidenced;
+- what is partially implemented but not replacement-safe;
+- what is still missing for standalone production use, migration, external
+  interop, and same-cluster participation.
 
-## Phase A: Standalone Replacement
+## Current State Summary
 
-Phase A is the first real replacement gate. A Steelsearch-only cluster must be
-able to take over workloads that currently run on OpenSearch for the supported
-surface area, with comparable externally visible behavior.
+The repository now has strong evidence for two things:
 
-### Definition of Done
+- broad REST route availability and response-shape parity for the standalone
+  daemon;
+- growing semantic probe coverage for selected write, search, metadata, and
+  admin families.
 
-- OpenSearch-shaped REST APIs exist for the replacement surface and return
-  compatible status codes, JSON fields, and error shapes for both happy-path and
-  failure cases.
-- Index, document, bulk, search, metadata, cluster, and snapshot APIs work with
-  production-oriented semantics for the declared Phase A surface, not just
-  development stubs.
-- Multi-node Steelsearch cluster behavior is stable enough for shard
-  allocation, cluster health/state, metadata propagation, task tracking, and
-  operational administration required by the supported subset.
-- Unsupported APIs fail closed with explicit, OpenSearch-shaped responses rather
-  than silent partial behavior.
-- Side-by-side compatibility tests compare Steelsearch and OpenSearch behavior
-  for the supported subset, including golden success cases and representative
-  error cases.
+That evidence is necessary, but it is not sufficient to claim full OpenSearch
+replacement. The remaining work is dominated by runtime semantics, durability,
+security, distributed behavior, and migration safety rather than route listing.
 
-### Required Capability Areas
+## Replacement Gap Categories
 
-- REST surface parity for root, cluster, node, task, index, mapping, settings,
-  alias, template, document, bulk, search, snapshot, and selected vector/ML
-  APIs.
-- Write-path semantics for `_version`, `_seq_no`, `_primary_term`, refresh
-  visibility, optimistic concurrency, routing, and replica-safe state changes.
-- Search semantics for the declared Query DSL surface, pagination, sorting,
-  aggregations, alias and wildcard target expansion, and shard failure
-  reporting.
-- Snapshot, restore, cleanup, and migration flows sufficient for cutover and
-  rollback rehearsal.
-- Test evidence showing Steelsearch and OpenSearch behave compatibly on the
-  declared Phase A surface.
+### 1. Standalone Semantic Gaps
 
-### Non-Goals for Completion
+The standalone daemon still needs deeper coverage and, in some families, deeper
+implementation parity for:
 
-- Java OpenSearch node membership.
-- Binary plugin ABI compatibility.
-- Full parity for every OpenSearch plugin or every route in the source
-  inventory.
+- full search DSL parameter behavior;
+- write-path concurrency, conflict, refresh, and failure semantics;
+- metadata overwrite, merge, and invalid mutation behavior;
+- admin/session lifecycle consistency across repeated and mixed operations.
 
-## Phase A-1: Standalone Fullset Closure
+The canonical detailed backlog for this category lives in:
 
-Phase A-1 extends `Phase A` without changing its deployment model.
+- [source-compatibility-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/source-compatibility-matrix.md)
+- [node-runtime-gap-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/node-runtime-gap-inventory.md)
 
-The target is no longer "bounded subset plus explicit fail-closed" for already
-live standalone surfaces. The target becomes "full standalone OpenSearch
-replacement for those surfaces" while keeping Java interop and mixed-cluster
-semantics out of scope.
+### 2. Security And Access-Control Gaps
 
-### Definition of Done
+A production replacement claim requires more than unsecured route parity.
+Remaining work includes:
 
-- REST routes already exposed in `Phase A` no longer stop at a bounded subset
-  unless the missing behavior is explicitly pushed to `Phase B` or `Phase C`.
-- Search, aggregation, vector, snapshot, index/metadata, and write-path
-  behavior broaden from initial Phase A parity to full standalone parity for
-  the chosen route families.
-- Validation is profile-driven:
-  - common baseline profile where possible
-  - feature-specific profiles where the feature requires extra source or target
-    capabilities
-- Steelsearch and OpenSearch are compared on the same capability profile for
-  every fullset claim.
+- authentication and authorization enforcement;
+- `401`/`403` error-envelope parity;
+- role and index-permission checks;
+- restricted/system-index access control;
+- TLS and secret-handling expectations.
 
-### Required Capability Areas
+Canonical detail lives in:
 
-- Full standalone Query DSL closure for exposed `_search` surfaces.
-- Full standalone response-shaping and search-session closure for exposed search
-  routes.
-- Aggregation family closure beyond the currently supported subset.
-- Data stream and rollover implementation instead of fail-closed behavior.
-- Write-path closure for the remaining OpenSearch document semantics expected of
-  a standalone replacement.
-- Snapshot/repository closure beyond bounded lifecycle support.
-- Vector/k-NN closure for the chosen standalone-compatible surface.
-- Cat/admin/readback closure for already live root/cluster/node surfaces.
+- [production-security-baseline.md](/home/ubuntu/steelsearch/docs/rust-port/production-security-baseline.md)
 
-### Non-Goals for Completion
+### 3. Node Runtime And Bootstrap Gaps
 
-- Java OpenSearch mixed-cluster coordination.
-- Same-cluster shard relocation/recovery/publication parity with Java nodes.
-- Binary plugin ABI compatibility.
+The current daemon is still easier to classify as a compatibility-oriented
+runtime than a production-equivalent OpenSearch node. Missing or partial areas
+include:
 
-### Boundary Against Later Phases
+- bootstrap/preflight checks;
+- task and thread-pool runtime controls;
+- authoritative startup ordering;
+- operator-facing runtime lifecycle guarantees.
 
-- `Phase A-1` remains Steelsearch-only standalone replacement.
-- `Phase B` starts when work requires Java OpenSearch interop, strict
-  source-side mixed-mode behavior, or coordinating/read-only interop semantics.
-- `Phase C` starts when work requires same-cluster peer-node participation,
-  mixed-node shard lifecycle parity, or Java coordination/publication parity.
+Canonical detail lives in:
 
-## Phase B: Safe External Interop
+- [node-runtime-gap-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/node-runtime-gap-inventory.md)
 
-Phase B is the safe interop stage between standalone replacement and true
-same-cluster membership. Steelsearch must be able to interact with a Java
-OpenSearch cluster in controlled ways as an external transport client,
-observer, coordinator, or explicitly gated forwarder, without pretending to be
-a full peer node.
+### 4. Persistence, Gateway, And Restart-Safety Gaps
 
-### Definition of Done
+Replacement requires durable, restart-safe behavior under node loss and
+corruption pressure, not only in-memory parity during a clean run. Remaining
+work includes:
 
-- Steelsearch can safely connect to Java OpenSearch transport, decode cluster
-  state and publication diffs, and maintain a compatibility-aware local view.
-- Steelsearch can run read-only or coordinating interop flows against Java
-  OpenSearch without corrupting cluster state or acknowledging unsupported
-  semantics.
-- Transport request and response compatibility is broadened beyond handshake and
-  probing into the action families needed for read-only and coordinating
-  workflows.
-- Mixed-mode tests prove fail-closed behavior when Java OpenSearch emits unknown
-  actions, named writeables, or unsupported state transitions.
+- authoritative gateway manifest ownership;
+- restart-safe metadata replay ordering;
+- corruption fencing and recovery policy;
+- node-loss-safe continuity for cluster metadata and shard state.
 
-### Required Capability Areas
+Canonical detail lives in:
 
-- Broader transport action request/response compatibility.
-- Safe forwarding or read-only execution for selected cluster, metadata, and
-  search-oriented actions.
-- Compatibility ledgers for unknown named writeables, custom metadata, and
-  version-gated state transitions.
-- Integration tests with a live Java OpenSearch cluster covering both accepted
-  and intentionally rejected mixed-mode behaviors.
+- [coordination-gateway-gap-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/coordination-gateway-gap-inventory.md)
+- [coordination-metadata-persistence-gap-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/coordination-metadata-persistence-gap-inventory.md)
 
-Detailed design, validation profile rule, report ownership, and completion
-checklist live in
-[phase-b-safe-interop.md](/home/ubuntu/steelsearch/docs/rust-port/phase-b-safe-interop.md).
+### 5. Migration And Cutover Gaps
 
-## Phase C: Same-Cluster Participation
+Route parity alone does not make migration safe. A credible OpenSearch
+replacement still needs:
 
-Phase C is full peer-node compatibility. Steelsearch must be able to join the
-same cluster as Java OpenSearch nodes and participate without violating OpenSearch
-coordination, publication, shard lifecycle, or recovery contracts.
+- export/import and cutover procedures with rollback evidence;
+- snapshot/restore completeness for supported workloads;
+- compatibility boundaries for unsupported features;
+- operator guidance for safe migration sequencing.
 
-Canonical release-gate evidence for this phase is the
-`tools/run-phase-c-mixed-cluster-harness.sh` runner plus the
-`mixed-cluster-join`, `publication`, `allocation`, `recovery`,
-`write-replication`, `failure`, and reject-ledger artifacts.
+Canonical detail lives in:
 
-### Definition of Done
+- [source-compatibility-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/source-compatibility-matrix.md)
 
-- Steelsearch discovery, join validation, voting, publication acknowledgement,
-  and cluster-manager interaction are compatible with Java OpenSearch.
-- Cluster-state publication, named diffs, shard allocation, recovery,
-  relocation, retention leases, and write replication semantics are compatible
-  enough for mixed-node operation.
-- Same-cluster rolling operations, recovery, and failure scenarios are proven by
-  integration tests involving both Steelsearch and Java OpenSearch nodes.
-- Any still-unsupported mixed-cluster behavior is explicitly rejected before it
-  can damage cluster state or shard contents.
+### 6. External Java OpenSearch Interop Gaps
 
-### Required Capability Areas
+The repository already has accepted evidence and harnesses for external
+coordination/interop scenarios, but the gap question is not closed. Remaining
+work is now described as concrete interop gaps rather than a milestone stage.
 
-- Discovery and cluster coordination protocol parity.
-- Publication diff and acknowledgement parity.
-- Primary/replica write-path replication parity.
-- Recovery, relocation, retention lease, and task lifecycle parity.
-- Same-cluster integration harnesses that exercise steady-state, restart,
-  relocation, failure, and recovery scenarios.
+Canonical detail lives in:
 
-Detailed design, validation profile rule, report ownership, and completion
-checklist live in
-[phase-c-peer-node-compat.md](/home/ubuntu/steelsearch/docs/rust-port/phase-c-peer-node-compat.md).
+- [phase-b-safe-interop.md](/home/ubuntu/steelsearch/docs/rust-port/phase-b-safe-interop.md)
+- [interop-mode.md](/home/ubuntu/steelsearch/docs/rust-port/interop-mode.md)
 
-## Evidence Rules Across All Phases
+### 7. Same-Cluster Peer-Node Gaps
 
-- New compatibility claims require tests, fixtures, or live interop transcripts.
-- OpenSearch comparison tests should prefer side-by-side assertions over
-  narrative claims whenever practical.
-- When exact parity is not yet available, Steelsearch must either document the
-  narrower contract or fail closed with an OpenSearch-shaped error.
+The hardest replacement claim is same-cluster participation with Java
+OpenSearch. The canonical question is no longer whether a "phase" exists, but
+whether the following are evidenced and safe:
+
+- join validation;
+- publication receive/apply/ack;
+- shard allocation and routing convergence;
+- peer recovery and relocation;
+- mixed-cluster write replication;
+- failure, restart, and rejection semantics.
+
+Canonical detail lives in:
+
+- [phase-c-peer-node-compat.md](/home/ubuntu/steelsearch/docs/rust-port/phase-c-peer-node-compat.md)
+- [cluster-coordination-gap-inventory.md](/home/ubuntu/steelsearch/docs/rust-port/cluster-coordination-gap-inventory.md)
+
+## Why Gaps Still Exist Even With OpenSearch Source And API Inventory
+
+Two inputs are already available:
+
+- the OpenSearch source tree;
+- a broad API inventory plus route-parity ledger.
+
+Those inputs help identify what exists, but they do not automatically prove or
+implement replacement-level behavior.
+
+The reasons are concrete:
+
+- API inventory proves endpoint surface, not full semantics.
+- Side-by-side route compare proves selected request/response behavior, not
+  full runtime safety under restart, concurrency, failure, or distribution.
+- Source availability shows what OpenSearch does, but the Rust runtime still
+  needs equivalent execution paths, persistence rules, security checks,
+  coordination behavior, and failure handling.
+- Mixed-cluster and peer-node compatibility depend on transport, publication,
+  allocation, recovery, and replication contracts that are much broader than
+  REST surface parity.
+
+## Search-Test Coverage Status
+
+Search testing is not limited to a handful of route checks.
+
+The repository already contains parameter-level and family-level search tests,
+including:
+
+- lexical DSL cases such as `term`, `match_all`, `bool`, `range`,
+  `multi_match`, `match_phrase`, and `match_phrase_prefix`;
+- pagination and ranking-related cases such as `sort`, `search_after`,
+  `rescore`, `collapse`, `function_score`, `script_score`, and `profile`;
+- highlight and suggest coverage;
+- aggregation coverage;
+- k-NN and vector search compatibility cases, including fail-closed behavior
+  for unsupported methods and modes.
+
+The gap is therefore not "there are no search tests." The gap is that search
+coverage is still uneven across the full supported OpenSearch surface, and the
+remaining unsupported or partially supported parameter sets need explicit audit,
+strict compare, or fail-closed evidence before replacement claims are safe.
+
+## Replacement Claim Exit Criteria
+
+Steelsearch should not be described as a full OpenSearch replacement until all
+of the following are true for the declared production profile:
+
+- standalone semantic coverage is broad enough to justify workload cutover;
+- security/authz behavior is enforced and evidenced;
+- runtime/bootstrap and persistence gaps are closed;
+- migration and rollback procedures are documented and rehearsed;
+- external interop and, where claimed, same-cluster peer participation are
+  evidenced with failure-path coverage;
+- remaining unsupported features are explicit, fail closed, and documented as
+  out of scope.

@@ -1,0 +1,60 @@
+{
+  "name": "gateway-manifest-ownership-failures",
+  "description": "Failure-path fixtures for authoritative gateway manifest ownership and update ordering.",
+  "cases": [
+    {
+      "name": "concurrent_writer_manifest_race",
+      "class": "ownership-conflict",
+      "setup": [
+        "prepare two writers attempting to advance the same authoritative manifest generation",
+        "persist one candidate payload while the competing writer still holds an older generation view"
+      ],
+      "expected_exit_class": "fail-closed",
+      "expected_markers": [
+        "concurrent writer",
+        "manifest generation conflict",
+        "gateway ownership"
+      ],
+      "protected_files": [
+        "shared-runtime-state.json",
+        "cluster_metadata_manifest"
+      ]
+    },
+    {
+      "name": "stale_manifest_generation",
+      "class": "stale-generation",
+      "setup": [
+        "persist a newer metadata payload generation on disk",
+        "present an older manifest pointer during restart"
+      ],
+      "expected_exit_class": "fail-closed",
+      "expected_markers": [
+        "stale manifest",
+        "older generation",
+        "restart fenced"
+      ],
+      "protected_files": [
+        "cluster_metadata_manifest",
+        "gateway metadata payload"
+      ]
+    },
+    {
+      "name": "truncated_manifest_file",
+      "class": "corruption",
+      "setup": [
+        "truncate authoritative manifest bytes before startup replay",
+        "attempt restart with incomplete manifest payload"
+      ],
+      "expected_exit_class": "fail-closed",
+      "expected_markers": [
+        "truncated manifest",
+        "corrupt metadata",
+        "startup refused"
+      ],
+      "protected_files": [
+        "cluster_metadata_manifest",
+        "shard manifest family"
+      ]
+    }
+  ]
+}

@@ -13,28 +13,43 @@
   },
   "stable_fields": {
     "component_template_get": [
-      "component_template[0].name",
-      "component_template[0].component_template.template.settings.index.number_of_shards",
-      "component_template[0].component_template.template.aliases.steelsearch-live-alias"
+      "component_templates[0].name",
+      "component_templates[0].component_template.template.settings.index.number_of_shards",
+      "component_templates[0].component_template.template.aliases.steelsearch-live-alias",
+      "component_templates[0].component_template.template.mappings.properties.component_field.type"
     ],
     "index_template_get": [
-      "index_template[0].name",
-      "index_template[0].index_template.index_patterns",
-      "index_template[0].index_template.composed_of",
-      "index_template[0].index_template.template.settings.index.number_of_replicas"
+      "index_templates[0].name",
+      "index_templates[0].index_template.index_patterns",
+      "index_templates[0].index_template.composed_of",
+      "index_templates[0].index_template.template.settings.index.number_of_replicas",
+      "index_templates[0].index_template.template.aliases.steelsearch-template-alias"
     ],
     "index_get": [
       "steelsearch-template-000001.aliases.steelsearch-live-alias",
       "steelsearch-template-000001.aliases.steelsearch-template-alias",
       "steelsearch-template-000001.aliases.steelsearch-write.is_write_index",
       "steelsearch-template-000001.settings.index.number_of_shards",
-      "steelsearch-template-000001.settings.index.number_of_replicas"
+      "steelsearch-template-000001.settings.index.number_of_replicas",
+      "steelsearch-template-000001.mappings.properties.component_field.type"
+    ],
+    "data_stream_get": [
+      "data_streams[0].name",
+      "data_streams[0].template"
     ],
     "snapshot_restore": [
       "snapshot.state",
       "snapshot.indices",
+      "restored_component_template.name",
+      "restored_component_template.component_template.template.mappings.properties.component_field.type",
       "restored_template.name",
-      "restored_index.aliases"
+      "restored_template.index_template.template.aliases.steelsearch-template-alias",
+      "restored_index.settings.index.number_of_shards",
+      "restored_index.settings.index.number_of_replicas",
+      "restored_index.mappings.properties.component_field.type",
+      "restored_index.aliases",
+      "restored_data_stream.name",
+      "restored_data_stream.template"
     ]
   },
   "requests": [
@@ -107,6 +122,37 @@
       }
     },
     {
+      "name": "put_data_stream_template",
+      "method": "PUT",
+      "path": "/_index_template/steelsearch-live-ds-template",
+      "body": {
+        "index_patterns": [
+          "steelsearch-live-ds*"
+        ],
+        "data_stream": {},
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1,
+              "number_of_replicas": 0
+            }
+          },
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "put_data_stream",
+      "method": "PUT",
+      "path": "/_data_stream/steelsearch-live-ds"
+    },
+    {
       "name": "get_component_template",
       "method": "GET",
       "path": "/_component_template/steelsearch-live-component"
@@ -122,9 +168,24 @@
       "path": "/steelsearch-template-000001"
     },
     {
+      "name": "get_data_stream",
+      "method": "GET",
+      "path": "/_data_stream/steelsearch-live-ds"
+    },
+    {
       "name": "create_snapshot",
       "method": "PUT",
       "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot"
+    },
+    {
+      "name": "delete_data_stream",
+      "method": "DELETE",
+      "path": "/_data_stream/steelsearch-live-ds"
+    },
+    {
+      "name": "delete_data_stream_template",
+      "method": "DELETE",
+      "path": "/_index_template/steelsearch-live-ds-template"
     },
     {
       "name": "delete_index_template",
@@ -142,6 +203,11 @@
       "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot/_restore"
     },
     {
+      "name": "get_restored_component_template",
+      "method": "GET",
+      "path": "/_component_template/steelsearch-live-component"
+    },
+    {
       "name": "get_restored_index_template",
       "method": "GET",
       "path": "/_index_template/steelsearch-live-template"
@@ -150,6 +216,11 @@
       "name": "get_restored_index",
       "method": "GET",
       "path": "/steelsearch-template-000001"
+    },
+    {
+      "name": "get_restored_data_stream",
+      "method": "GET",
+      "path": "/_data_stream/steelsearch-live-ds"
     }
   ]
 }

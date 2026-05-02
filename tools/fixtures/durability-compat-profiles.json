@@ -1,0 +1,64 @@
+{
+  "name": "durability-compat-profiles",
+  "description": "Profile-specific on-disk metadata durability compare definitions.",
+  "profiles": {
+    "standalone": {
+      "compares": [
+        {
+          "name": "shard_count",
+          "kind": "numeric-field",
+          "steelsearch_file": "shard_count.json",
+          "opensearch_file": "shard_count.json",
+          "field": "count"
+        },
+        {
+          "name": "routing_metadata",
+          "kind": "json-equal",
+          "steelsearch_file": "routing_metadata.json",
+          "opensearch_file": "routing_metadata.json"
+        },
+        {
+          "name": "settings_persistence",
+          "kind": "json-equal",
+          "steelsearch_file": "settings.json",
+          "opensearch_file": "settings.json"
+        },
+        {
+          "name": "mapping_persistence",
+          "kind": "json-equal",
+          "steelsearch_file": "mappings.json",
+          "opensearch_file": "mappings.json"
+        }
+      ]
+    },
+    "secure-standalone": {
+      "compares": [
+        {
+          "name": "shard_count",
+          "kind": "numeric-field",
+          "steelsearch_file": "shard_count.json",
+          "opensearch_file": "shard_count.json",
+          "field": "count"
+        },
+        {
+          "name": "routing_metadata",
+          "kind": "json-equal",
+          "steelsearch_file": "routing_metadata.json",
+          "opensearch_file": "routing_metadata.json"
+        },
+        {
+          "name": "settings_persistence",
+          "kind": "json-equal",
+          "steelsearch_file": "settings.json",
+          "opensearch_file": "settings.json"
+        },
+        {
+          "name": "mapping_persistence",
+          "kind": "json-equal",
+          "steelsearch_file": "mappings.json",
+          "opensearch_file": "mappings.json"
+        }
+      ]
+    }
+  }
+}

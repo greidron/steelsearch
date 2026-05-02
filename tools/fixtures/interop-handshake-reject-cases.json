@@ -1,0 +1,34 @@
+{
+  "name": "interop-handshake-reject-cases",
+  "description": "External interop reject fixtures for malformed handshake, unexpected action, and wire-version mismatch cases.",
+  "cases": [
+    {
+      "name": "bad_tcp_handshake_frame",
+      "class": "bad-handshake",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "handshake decode failed",
+        "transport handshake rejected"
+      ]
+    },
+    {
+      "name": "unexpected_action_after_handshake",
+      "class": "unexpected-action",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "unexpected transport action",
+        "interop action not allowed"
+      ]
+    },
+    {
+      "name": "wire_version_mismatch_reject",
+      "class": "version-mismatch",
+      "expected_decision": "reject",
+      "expected_markers": [
+        "unsupported wire version",
+        "version mismatch",
+        "interop refused"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "migration-acceptance-dataset",
+  "profiles": {
+    "standalone-small-fixture": {
+      "source_index": "migration-acceptance-000001",
+      "alias": "migration-acceptance-search",
+      "expected_doc_count": 2,
+      "documents": [
+        {
+          "id": "doc-1",
+          "tenant": "tenant-a",
+          "message": "migration acceptance alpha"
+        },
+        {
+          "id": "doc-2",
+          "tenant": "tenant-b",
+          "message": "migration acceptance beta"
+        }
+      ],
+      "metadata_expectations": [
+        "settings",
+        "mappings",
+        "aliases"
+      ],
+      "divergence_expectations": [
+        "source-target document count match",
+        "source-target alias summary match",
+        "no unexpected target-only document ids after rollback"
+      ]
+    }
+  }
+}

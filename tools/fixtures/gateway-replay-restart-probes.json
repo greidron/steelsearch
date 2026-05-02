@@ -1,0 +1,67 @@
+{
+  "name": "gateway-replay-restart-probes",
+  "description": "Restart-safe replay, corruption fencing, and node-loss continuity probe cases for gateway-backed state.",
+  "cases": [
+    {
+      "name": "corrupt_metadata_restart_probe",
+      "class": "corruption",
+      "setup": [
+        "corrupt authoritative cluster metadata payload before restart",
+        "attempt gateway-backed restart replay"
+      ],
+      "expected_decision": "fail-closed",
+      "expected_markers": [
+        "corrupt metadata",
+        "gateway replay refused",
+        "startup fenced before ready"
+      ],
+      "safe_stop_condition": "no transport bind and no http bind"
+    },
+    {
+      "name": "missing_shard_manifest_restart_probe",
+      "class": "missing-authoritative-state",
+      "setup": [
+        "remove shard manifest family entry required for restart",
+        "attempt restart replay"
+      ],
+      "expected_decision": "fail-closed",
+      "expected_markers": [
+        "missing shard manifest",
+        "restart fenced",
+        "authoritative state missing"
+      ],
+      "safe_stop_condition": "no ready-state marker"
+    },
+    {
+      "name": "partial_replay_state_restart_probe",
+      "class": "partial-replay",
+      "setup": [
+        "drop a rebuildable cache/projection file",
+        "keep authoritative manifest generation intact",
+        "attempt restart replay"
+      ],
+      "expected_decision": "recover-or-rebuild",
+      "expected_markers": [
+        "derived state rebuild",
+        "authoritative state intact",
+        "restart continues"
+      ],
+      "safe_stop_condition": "if recovery path is chosen, authoritative state must remain unchanged"
+    },
+    {
+      "name": "node_loss_continuity_restart_probe",
+      "class": "node-loss",
+      "setup": [
+        "simulate node-local state loss while retaining surviving authoritative gateway artifacts",
+        "attempt restart continuity decision"
+      ],
+      "expected_decision": "fail-closed-or-explicit-continuity",
+      "expected_markers": [
+        "node-loss continuity",
+        "surviving authoritative manifest",
+        "startup fenced or continuity proven"
+      ],
+      "safe_stop_condition": "ready-state only if continuity is proven from authoritative artifacts"
+    }
+  ]
+}

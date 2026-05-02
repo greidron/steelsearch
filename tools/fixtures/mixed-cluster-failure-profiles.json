@@ -1,0 +1,29 @@
+{
+  "name": "mixed-cluster-failure-profiles",
+  "profiles": {
+    "peer-node-crash-during-publication": {
+      "failure_class": "publication-crash",
+      "expected_markers": [
+        "peer node crash during publication",
+        "publication failed closed",
+        "no false ack"
+      ]
+    },
+    "crash-during-recovery": {
+      "failure_class": "recovery-crash",
+      "expected_markers": [
+        "crash during recovery",
+        "recovery interrupted",
+        "mixed-cluster recovery not finalized"
+      ]
+    },
+    "stale-replica-detect-and-reject": {
+      "failure_class": "stale-replica",
+      "expected_markers": [
+        "stale replica detected",
+        "replica rejected",
+        "fail-closed"
+      ]
+    }
+  }
+}

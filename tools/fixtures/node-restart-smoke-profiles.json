@@ -1,0 +1,64 @@
+{
+  "name": "node-restart-smoke-profiles",
+  "description": "Repo-local restart smoke profiles for clean, dirty, and partial-state restart validation.",
+  "profiles": {
+    "clean-restart": {
+      "shutdown_mode": "clean-stop",
+      "persisted_state_policy": "reuse-all-state",
+      "pre_restart_writes": [
+        "seed representative documents",
+        "persist representative metadata such as settings/mappings/aliases"
+      ],
+      "post_restart_reads": [
+        "read seeded documents",
+        "read persisted metadata",
+        "verify runtime can serve traffic again"
+      ],
+      "continuity_assertions": [
+        "document continuity",
+        "metadata continuity",
+        "node can re-bind and become ready without state loss"
+      ]
+    },
+    "dirty-restart": {
+      "shutdown_mode": "crash-stop",
+      "persisted_state_policy": "replay-or-recover-existing-state",
+      "pre_restart_writes": [
+        "seed representative documents",
+        "persist representative metadata before crash"
+      ],
+      "post_restart_reads": [
+        "read seeded documents after crash restart",
+        "verify metadata continuity after crash replay",
+        "verify runtime readiness after abrupt stop"
+      ],
+      "continuity_assertions": [
+        "crash restart does not silently drop committed state",
+        "runtime can recover persisted state without corruption",
+        "post-crash startup still reaches ready state"
+      ]
+    },
+    "partial-state-restart": {
+      "shutdown_mode": "clean-stop",
+      "persisted_state_policy": "partial-persisted-state",
+      "state_mutation": [
+        "remove derived or cache-like state only",
+        "preserve authoritative state needed for restart"
+      ],
+      "pre_restart_writes": [
+        "seed representative documents",
+        "persist authoritative metadata before mutation"
+      ],
+      "post_restart_reads": [
+        "read documents after restart from partial state",
+        "verify authoritative metadata is rebuilt or replayed correctly",
+        "verify runtime readiness after partial-state recovery"
+      ],
+      "continuity_assertions": [
+        "partial derived-state loss does not corrupt authoritative state",
+        "runtime rebuilds or replays missing derived state",
+        "restart still reaches ready state with bounded recovery behavior"
+      ]
+    }
+  }
+}

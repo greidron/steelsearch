@@ -1,0 +1,614 @@
+{
+  "name": "security-authz-compat",
+  "description": "Secure standalone authn/authz compatibility fixture for 401/403 envelope parity and minimum-role route checks.",
+  "policy": "tools/fixtures/security-bootstrap-policy.json",
+  "setup_credential_set": "admin-basic",
+  "profiles": [
+    "single-node-secure",
+    "multi-node-secure"
+  ],
+  "indices": [
+    {
+      "name": "logs-security-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": ".opensearch-restricted-alias-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "logs-security-authz-000001",
+      "documents": [
+        {
+          "_id": "authz-doc-1",
+          "_source": {
+            "message": "secured log doc",
+            "tenant": "tenant-authz"
+          }
+        }
+      ]
+    },
+    {
+      "index": ".opensearch-restricted-alias-authz-000001",
+      "documents": [
+        {
+          "_id": "authz-restricted-doc-1",
+          "_source": {
+            "message": "restricted alias doc",
+            "tenant": "tenant-authz"
+          }
+        }
+      ]
+    }
+  ],
+  "aliases": [
+    {
+      "index": ".opensearch-restricted-alias-authz-000001",
+      "alias": "restricted-authz-alias"
+    }
+  ],
+  "credential_sets": {
+    "missing": {
+      "mode": "no-auth-header"
+    },
+    "wrong-basic": {
+      "mode": "basic-auth",
+      "username_env": "SECURITY_INVALID_USERNAME",
+      "password_env": "SECURITY_INVALID_PASSWORD"
+    },
+    "admin-basic": {
+      "mode": "basic-auth",
+      "username_env": "SECURITY_ADMIN_USERNAME",
+      "password_env": "SECURITY_ADMIN_PASSWORD"
+    },
+    "reader-basic": {
+      "mode": "basic-auth",
+      "username_env": "SECURITY_READER_USERNAME",
+      "password_env": "SECURITY_READER_PASSWORD"
+    },
+    "writer-basic": {
+      "mode": "basic-auth",
+      "username_env": "SECURITY_WRITER_USERNAME",
+      "password_env": "SECURITY_WRITER_PASSWORD"
+    }
+  },
+  "case_buckets": [
+    "missing-credential-401",
+    "wrong-credential-401",
+    "insufficient-role-403",
+    "minimum-role-success"
+  ],
+  "cases": [
+    {
+      "name": "security_missing_root_cluster_read_401",
+      "area": "security-authz",
+      "bucket": "missing-credential-401",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "credential_set": "missing",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[missing-credential-401] root cluster read requires auth"
+    },
+    {
+      "name": "security_missing_header_index_read_401",
+      "area": "security-authz",
+      "bucket": "missing-credential-401",
+      "method": "GET",
+      "path": "/logs-security-authz-000001/_search",
+      "credential_set": "missing",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[missing-credential-401] index read fails when auth header is absent"
+    },
+    {
+      "name": "security_wrong_index_read_401",
+      "area": "security-authz",
+      "bucket": "wrong-credential-401",
+      "method": "GET",
+      "path": "/logs-security-authz-000001/_search",
+      "credential_set": "wrong-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[wrong-credential-401] index read rejects invalid basic auth"
+    },
+    {
+      "name": "security_bad_password_root_401",
+      "area": "security-authz",
+      "bucket": "wrong-credential-401",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "credential_set": "wrong-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[wrong-credential-401] root cluster read rejects bad password"
+    },
+    {
+      "name": "security_malformed_token_root_401",
+      "area": "security-authz",
+      "bucket": "wrong-credential-401",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "headers": {
+        "Authorization": "Bearer malformed-token-authz"
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[wrong-credential-401] malformed bearer token is rejected"
+    },
+    {
+      "name": "security_reader_document_write_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/logs-security-authz-000001/_doc/authz-doc-2",
+      "credential_set": "reader-basic",
+      "body": {
+        "message": "reader write denied",
+        "tenant": "tenant-authz"
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot write documents"
+    },
+    {
+      "name": "security_reader_index_read_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/logs-security-authz-000001/_search",
+      "credential_set": "reader-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] reader can search index"
+    },
+    {
+      "name": "security_reader_root_search_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_search",
+      "credential_set": "reader-basic",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-authz"
+          }
+        }
+      },
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] reader can use root search"
+    },
+    {
+      "name": "security_missing_target_search_401",
+      "area": "security-authz",
+      "bucket": "missing-credential-401",
+      "method": "POST",
+      "path": "/logs-security-authz-000001/_search",
+      "credential_set": "missing",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-authz"
+          }
+        }
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[missing-credential-401] targeted search requires auth"
+    },
+    {
+      "name": "security_writer_root_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_search",
+      "credential_set": "writer-basic",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-authz"
+          }
+        }
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot use root search"
+    },
+    {
+      "name": "security_writer_document_write_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/logs-security-authz-000001/_doc/authz-doc-3",
+      "credential_set": "writer-basic",
+      "body": {
+        "message": "writer write allowed",
+        "tenant": "tenant-authz"
+      },
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] writer can index documents"
+    },
+    {
+      "name": "security_writer_admin_route_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/_snapshot/_all",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot access admin snapshot route"
+    },
+    {
+      "name": "security_reader_high_risk_admin_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot access high-risk cluster settings route"
+    },
+    {
+      "name": "security_admin_snapshot_read_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/_snapshot/_all",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can read snapshot inventory"
+    },
+    {
+      "name": "security_writer_bulk_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_bulk",
+      "credential_set": "writer-basic",
+      "raw": true,
+      "body": "{\"index\":{\"_index\":\"logs-security-authz-000001\",\"_id\":\"authz-bulk-writer\"}}\n{\"message\":\"writer bulk allowed\",\"tenant\":\"tenant-authz\"}\n",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] writer can use bulk write"
+    },
+    {
+      "name": "security_admin_bulk_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_bulk",
+      "credential_set": "admin-basic",
+      "raw": true,
+      "body": "{\"index\":{\"_index\":\"logs-security-authz-000001\",\"_id\":\"authz-bulk-admin\"}}\n{\"message\":\"admin bulk allowed\",\"tenant\":\"tenant-authz\"}\n",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin retains bulk access"
+    },
+    {
+      "name": "security_reader_bulk_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_bulk",
+      "credential_set": "reader-basic",
+      "raw": true,
+      "body": "{\"index\":{\"_index\":\"logs-security-authz-000001\",\"_id\":\"authz-bulk-reader\"}}\n{\"message\":\"reader bulk denied\",\"tenant\":\"tenant-authz\"}\n",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot use bulk write"
+    },
+    {
+      "name": "security_reader_settings_read_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/logs-security-authz-000001/_settings",
+      "credential_set": "reader-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] reader can read index settings"
+    },
+    {
+      "name": "security_admin_settings_update_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "PUT",
+      "path": "/logs-security-authz-000001/_settings",
+      "credential_set": "admin-basic",
+      "body": {
+        "index": {
+          "number_of_replicas": "0"
+        }
+      },
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can mutate index settings"
+    },
+    {
+      "name": "security_writer_settings_update_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "PUT",
+      "path": "/logs-security-authz-000001/_settings",
+      "credential_set": "writer-basic",
+      "body": {
+        "index": {
+          "number_of_replicas": "0"
+        }
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot mutate index settings"
+    },
+    {
+      "name": "security_reader_settings_update_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "PUT",
+      "path": "/logs-security-authz-000001/_settings",
+      "credential_set": "reader-basic",
+      "body": {
+        "index": {
+          "number_of_replicas": "0"
+        }
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot mutate index settings"
+    },
+    {
+      "name": "security_reader_snapshot_inventory_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/_snapshot/_all",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot read snapshot inventory"
+    },
+    {
+      "name": "security_admin_repository_read_missing_repo",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/_snapshot/security-authz-repo",
+      "credential_set": "admin-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin reaches repository read path and sees missing-repo error"
+    },
+    {
+      "name": "security_writer_repository_read_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/_snapshot/security-authz-repo",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot read repository metadata"
+    },
+    {
+      "name": "security_admin_snapshot_cleanup_missing_repo",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_snapshot/security-authz-repo/_cleanup",
+      "credential_set": "admin-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin reaches cleanup path and sees missing-repo error"
+    },
+    {
+      "name": "security_writer_snapshot_cleanup_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_snapshot/security-authz-repo/_cleanup",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot cleanup snapshot repository"
+    },
+    {
+      "name": "security_admin_snapshot_restore_missing_repo",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_snapshot/security-authz-repo/authz-snap/_restore",
+      "credential_set": "admin-basic",
+      "body": {},
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin reaches restore path and sees missing-repo error"
+    },
+    {
+      "name": "security_reader_snapshot_restore_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_snapshot/security-authz-repo/authz-snap/_restore",
+      "credential_set": "reader-basic",
+      "body": {},
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot restore snapshots"
+    },
+    {
+      "name": "security_reader_cluster_health_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/_cluster/health",
+      "credential_set": "reader-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] reader can read cluster health"
+    },
+    {
+      "name": "security_admin_cluster_settings_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/_cluster/settings",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can read cluster settings"
+    },
+    {
+      "name": "security_admin_cluster_state_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/_cluster/state",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can read cluster state"
+    },
+    {
+      "name": "security_writer_cluster_state_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/_cluster/state",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot read cluster state"
+    },
+    {
+      "name": "security_admin_cluster_reroute_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_cluster/reroute",
+      "credential_set": "admin-basic",
+      "body": {},
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can access cluster reroute"
+    },
+    {
+      "name": "security_writer_cluster_reroute_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_cluster/reroute",
+      "credential_set": "writer-basic",
+      "body": {},
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot access cluster reroute"
+    },
+    {
+      "name": "security_admin_restricted_opensearch_search_allowed",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/.opensearch-restricted-authz*/_search",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin may target restricted .opensearch* search paths"
+    },
+    {
+      "name": "security_reader_restricted_opensearch_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/.opensearch-restricted-authz*/_search",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot target restricted .opensearch* search paths"
+    },
+    {
+      "name": "security_admin_restricted_plugins_search_allowed",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/.plugins-restricted-authz*/_search",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin may target restricted .plugins* search paths"
+    },
+    {
+      "name": "security_writer_restricted_plugins_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/.plugins-restricted-authz*/_search",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot target restricted .plugins* search paths"
+    },
+    {
+      "name": "security_admin_restricted_alias_search_allowed",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/restricted-authz-alias/_search",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin may reach restricted concrete index through alias"
+    },
+    {
+      "name": "security_reader_restricted_alias_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/restricted-authz-alias/_search",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot bypass restricted concrete index through alias"
+    },
+    {
+      "name": "security_writer_restricted_alias_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/restricted-authz-alias/_search",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot bypass restricted concrete index through alias"
+    }
+  ]
+}

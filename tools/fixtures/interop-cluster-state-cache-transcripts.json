@@ -1,0 +1,32 @@
+{
+  "name": "interop-cluster-state-cache-transcripts",
+  "transcripts": [
+    {
+      "name": "cache_age_reject",
+      "condition": "decoded cache age exceeds declared interop freshness bound",
+      "expected_markers": [
+        "cache age exceeded",
+        "stale metadata cache",
+        "fail-closed"
+      ]
+    },
+    {
+      "name": "publication_lag_reject",
+      "condition": "decoded cache lags authoritative publication beyond accepted bound",
+      "expected_markers": [
+        "publication lag",
+        "decoded state behind authoritative view",
+        "forwarding rejected"
+      ]
+    },
+    {
+      "name": "remote_disconnect_reject",
+      "condition": "remote Java OpenSearch endpoint disconnects during cache refresh or coordination",
+      "expected_markers": [
+        "remote disconnect",
+        "upstream unavailable",
+        "fail-closed"
+      ]
+    }
+  ]
+}

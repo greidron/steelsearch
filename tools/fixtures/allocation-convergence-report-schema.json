@@ -1,0 +1,23 @@
+{
+  "name": "allocation-convergence-report-schema",
+  "required_fields": [
+    "probe_case",
+    "shard_id",
+    "source_node",
+    "target_node",
+    "allocation_decision",
+    "relocation_phase",
+    "retention_lease_phase",
+    "timeline",
+    "final_state"
+  ],
+  "timeline_values": [
+    "allocated",
+    "relocation_started",
+    "relocation_finalized",
+    "relocation_interrupted",
+    "lease_granted",
+    "lease_updated",
+    "lease_removed"
+  ]
+}
