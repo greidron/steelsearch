@@ -124,85 +124,615 @@ Use these anchors when mapping `Partial` or `No` rows from
 
 ### <a id="area-root-and-basic-node-identity"></a>Root and basic node identity
 
-Promote only after route and semantic parity are evidenced through the route
-ledger, stateful probes, and compatibility matrix updates.
+Standalone promotion is now allowed for this row.
+
+Required gate:
+
+- route parity:
+  - `root-cluster-node-compat-report.json`
+  - required case: `root_info`
+- semantic parity:
+  - `root-cluster-node-compat-report.json`
+  - required case: `root_info`
+- secure root auth envelope:
+  - `security-authz-compat-report.json`
+  - required cases:
+    - `security_missing_root_info_401`
+    - `security_bad_password_root_info_401`
+    - `security_reader_root_info_success`
+
+The replacement claim must treat both the non-secure root shape and the secure
+root auth envelope as mandatory evidence. A stale or missing root route report
+blocks promotion.
 
 ### <a id="area-cluster-health-state-allocation-and-node-stats"></a>Cluster health, state, allocation, and node stats
 
-Promote only after semantic parity and distributed parity are evidenced through
-runtime-control, allocation, and same-cluster lifecycle artifacts.
+Standalone promotion is allowed only when the bounded admin route family and
+the distributed-required field gate are both satisfied.
+
+Required standalone route and semantic evidence:
+
+- `cluster-health-compat-report.json`
+- `allocation-explain-compat-report.json`
+- `cluster-state-compat-report.json`
+- `tasks-compat-report.json`
+- `stats-compat-report.json`
+- `search-compat-report.json` for `_cat/*`, representative `node_stats`, and
+  pending-task shape readbacks
+
+Required semantic cases:
+
+- `cluster_health_wait_parameters`
+- `cluster_health_wait_for_green_timeout_semantic`
+- `cluster_health_wait_for_nodes_timeout_semantic`
+- `cluster_state_readback`
+- `cluster_pending_tasks_shape`
+- `node_stats_shape`
+- `allocation_explain_development_shape`
+
+Distributed-required fields must stay owned by the transport-admin gate instead
+of the standalone route gate. Promotion is blocked if the allowlist boundary
+between standalone-only fields and distributed-required fields drifts.
 
 ### <a id="area-index-create-get-delete-and-mappings-settings"></a>Index create/get/delete and mappings/settings
 
-Promote only after semantic parity, durability parity, and secure mutation
-controls are evidenced through mapping/settings fixtures and restart artifacts.
+Standalone promotion is allowed only when template, alias, data-stream,
+settings, and mapping evidence are aggregated as one route family and
+restricted-target behavior remains explicitly owned by the secure gate.
+
+Required standalone reports:
+
+- `index-lifecycle-compat-report.json`
+- `mapping-compat-report.json`
+- `settings-compat-report.json`
+- `alias-read-compat-report.json`
+- `template-compat-report.json`
+- `data-stream-rollover-compat-report.json`
+- `search-compat-report.json` for wildcard/hidden/settings/template/alias/data
+  stream representative readbacks
+
+Required standalone cases:
+
+- `get_component_template_readback`
+- `get_index_template_readback`
+- `templated_index_application_readback`
+- `get_data_stream_metadata_readback`
+- `get_data_stream_stats_readback`
+- `delete_data_stream_ack`
+- `dynamic_mapping_readback`
+- `mapping_conflict_reject`
+- `settings_targeted_named_readback`
+- `settings_targeted_flat_readback`
+- `settings_global_named_readback`
+- `wildcard_index_read_visible_only`
+- `settings_hidden_wildcard_put_ack`
+- `settings_hidden_target_readback`
+- `wildcard_alias_readback`
+- `get_created_alias_readback`
+
+Restricted, hidden, and wildcard security-sensitive behavior must not be
+counted as standalone promotion evidence unless the following secure cases are
+also present through `security-authz-compat-report.json`:
+
+- `security_admin_restricted_index_get_success`
+- `security_reader_restricted_index_get_403`
+- `security_admin_restricted_settings_update_success`
+- `security_writer_restricted_settings_update_403`
+- `security_writer_restricted_delete_403`
+- `security_admin_restricted_delete_success`
+- `security_writer_restricted_create_403`
+- `security_admin_restricted_create_success`
 
 ### <a id="area-document-write-read-and-refresh"></a>Document write/read and refresh
 
-Promote only after semantic parity and durability parity are evidenced through
-document-write matrices, restart smoke, and conflict/routing fixtures.
+Standalone promotion is allowed only when single-document CRUD, routing,
+refresh visibility, and durable multi-node propagation are all present in the
+same gate.
+
+Required standalone reports:
+
+- `single-doc-crud-compat-report.json`
+- `refresh-compat-report.json`
+- `routing-compat-report.json`
+
+Required semantic cases:
+
+- `put_single_doc_explicit_id`
+- `get_single_doc_filtered_source`
+- `put_single_doc_external_version_success`
+- `put_single_doc_external_version_conflict`
+- `update_single_doc_optimistic_concurrency_success`
+- `update_single_doc_optimistic_concurrency_conflict`
+- `single_doc_routing_get_not_found`
+- `single_doc_source_includes_readback`
+- `single_doc_get_realtime_false_not_found`
+- `single_doc_stored_fields_unsupported_error`
+- `single_doc_put_lifecycle_get_not_found`
+- `single_doc_create_refresh_false`
+- `single_doc_get_realtime_false_after_refresh_false`
+- `single_doc_create_refresh_wait_for`
+- `single_doc_get_realtime_false_after_refresh_wait_for`
+- `single_doc_create_refresh_true`
+- `single_doc_get_realtime_false_after_refresh_true`
+
+Required durability evidence:
+
+- `multi-node-write-path-report.json`
+
+Promotion is blocked if single-node write semantics are present without the
+write-path durability and post-refresh visibility evidence.
 
 ### <a id="area-rest-bulk"></a>REST `_bulk`
 
-Promote only after semantic parity, security parity, and durability parity are
-evidenced through bulk metadata/error-path fixtures and secure write probes.
+Standalone promotion is allowed only when bulk metadata semantics, item-level
+failure envelopes, secure authz behavior, and post-write durability are all
+present in the same gate.
+
+Required route evidence:
+
+- `bulk-compat-report.json`
+
+Required semantic cases:
+
+- `global_bulk_optimistic_concurrency_success`
+- `global_bulk_optimistic_concurrency_conflict`
+- `global_bulk_auto_creates_missing_index`
+- `global_bulk_create_into_data_stream_target`
+- `global_bulk_partial_failure_item_shape`
+- `global_bulk_refresh_pipeline_routing_shape`
+- `get_bulk_routed_doc_after_wait_for_refresh`
+- `global_bulk_external_version_create`
+- `global_bulk_external_version_conflict`
+- `index_scoped_bulk_default_target_update_upsert_shape`
+- `bulk_routing_item_readback`
+- `bulk_external_version_success_item`
+- `bulk_external_version_conflict_item`
+- `bulk_seq_term_success_item`
+- `bulk_seq_term_conflict_item`
+- `bulk_pipeline_metadata_unsupported_error`
+- `bulk_version_without_external_policy_error`
+- `bulk_item_ordering_partial_failure_matrix`
+- `bulk_metadata_non_object_parse_error`
+- `bulk_closed_index_item_failure_matrix`
+- `bulk_refresh_false_readback_not_found`
+- `bulk_refresh_true_readback`
+- `bulk_refresh_wait_for_readback`
+- `bulk_repeated_create_replay_conflict`
+
+Required security cases through `security-authz-compat-report.json`:
+
+- `security_writer_bulk_success`
+- `security_admin_bulk_success`
+- `security_reader_bulk_403`
+- `security_writer_bulk_partial_authz_denial`
+
+Required durability evidence:
+
+- `multi-node-write-path-report.json`
+
+Promotion is blocked if bulk route parity exists without the item-level authz
+deny matrix or without replay/refresh durability evidence.
 
 ### <a id="area-rest-search"></a>REST `_search`
 
-Promote only after semantic parity and secure or profile-specific evidence are
-complete for supported DSL families and failure-path handling.
+Standalone promotion is allowed only when supported DSL families, session
+features, aggregation breadth, partial-failure handling, secure read behavior,
+and unsupported-option fail-closed policy are all present in the same gate.
+
+Required route evidence:
+
+- `search-compat-report.json`
+
+Required semantic cases:
+
+- `exists_query_search`
+- `prefix_query_search`
+- `query_string_search`
+- `regexp_query_search`
+- `terms_set_query_search`
+- `wildcard_query_search`
+- `nested_query_search`
+- `pit_open_search`
+- `pit_search`
+- `scroll_initial_search`
+- `scroll_follow_up_search`
+- `collapse_search`
+- `profile_search`
+- `rescore_search`
+- `completion_suggest_search`
+- `highlight_search`
+- `terms_aggregation`
+- `composite_aggregation`
+- `geo_bounds_aggregation`
+- `sum_bucket_pipeline_aggregation`
+- `scripted_metric_aggregation`
+- `partial_shard_failure_geo_search`
+- `allow_partial_search_results_execution_summary`
+
+Required security cases through `security-authz-compat-report.json`:
+
+- `security_reader_root_search_success`
+- `security_missing_target_search_401`
+- `security_writer_root_search_403`
+
+Required fail-closed deny ledger:
+
+- `expand_wildcards_closed_fail_closed`
+- `runtime_mappings_request_body_fail_closed`
+
+Promotion is blocked if supported search evidence is present without an
+explicit unsupported-option deny ledger.
 
 ### <a id="area-knn-vector-indexing-and-query-search"></a>k-NN vector indexing and query search
 
-Promote only after semantic parity, durability parity, and replacement-grade
-vector ranking evidence exist for the claimed vector subset.
+Promotion is allowed only when the claimed vector subset includes lucene score
+spaces, byte/binary behavior, hybrid score merge, nested/filter semantics,
+exact ranking evidence, and an explicit reject ledger for unsupported vector
+capabilities.
+
+Required route evidence:
+
+- `vector-search-compat-report.json`
+
+Required semantic cases:
+
+- `knn_search`
+- `knn_cosinesimil_search`
+- `knn_innerproduct_search`
+- `knn_query_happy_path`
+- `knn_query_filter_happy_path`
+- `knn_query_ignore_unmapped_happy_path`
+- `knn_query_radial_max_distance_happy_path`
+- `knn_query_method_parameters_happy_path`
+- `hybrid_query_happy_path`
+- `hybrid_should_query_happy_path`
+- `hybrid_minimum_should_match_happy_path`
+
+Required vector evidence classes:
+
+- `lucene-score-space`
+- `byte-vector-subset`
+- `binary-vector-subset`
+- `nested-filtered-knn`
+- `exact-ranking`
+- `hybrid-score-merge`
+
+Required reject ledger categories:
+
+- `engine`
+- `mode`
+- `space`
+- `data_type`
+
+Promotion is blocked if vector route parity exists without explicit reject
+coverage for unsupported engine/mode/space/data_type combinations.
 
 ### <a id="area-knn-plugin-rest-and-model-apis"></a>k-NN plugin REST and model APIs
 
-Promote only after semantic parity and security parity cover cache/model
-lifecycle, and distributed parity is explicit for any clustered claim.
+Standalone promotion is allowed only when settings, warmup, clear-cache,
+model-lifecycle, and breaker semantics are all present in the same vector
+profile gate.
+
+Required route evidence:
+
+- `vector-search-compat-report.json`
+
+Required semantic cases:
+
+- `knn_settings_readback`
+- `knn_warmup_basic_shape`
+- `knn_clear_cache_basic_shape`
+- `knn_model_lifecycle_shape`
+- `knn_warmup_budget_failure`
+- `knn_warmup_clear_cache_telemetry_shape`
+
+Required plugin evidence classes:
+
+- `settings-readback`
+- `warmup-cache`
+- `clear-cache`
+- `model-lifecycle`
+- `budget-breaker`
+
+Explicitly excluded from the standalone claim:
+
+- `secure-clustered-lifecycle`
+
+Any secure clustered lifecycle statement must be promoted separately through a
+secure or distributed claim gate instead of through the standalone plugin gate.
 
 ### <a id="area-ml-commons-neural-search-and-model-serving"></a>ML Commons, neural search, and model serving
 
-Promote only after semantic parity, security parity, and durability/runtime
-isolation evidence exist for deployment and task lifecycle behavior.
+Standalone promotion is allowed only when task lifecycle, deploy/predict
+behavior, connector authz, neural query rewrite, rerank, sparse encoding, and
+runtime or deployment isolation evidence are all present in the same gate.
+
+Required route evidence:
+
+- `vector-search-compat-report.json`
+
+Required semantic cases:
+
+- `ml_model_lifecycle_shape`
+
+Required security cases through `security-authz-compat-report.json`:
+
+- `security_bad_password_ml_register_401`
+- `security_writer_ml_connector_create_403`
+- `security_admin_ml_connector_create_success`
+- `security_writer_ml_predict_403`
+
+Required ML evidence classes:
+
+- `task-lifecycle`
+- `connector-authz`
+- `deploy-persistence`
+- `neural-query-rewrite`
+- `rerank-pipeline`
+- `sparse-encoder`
+- `runtime-isolation`
+- `deployment-isolation`
+
+Promotion is blocked if the lifecycle route evidence exists without the
+isolation and connector-authz evidence classes.
 
 ### <a id="area-snapshot-and-restore"></a>Snapshot and restore
 
-Promote only after semantic parity, durability parity, and migration/cutover
-evidence cover restore safety, metadata preservation, and rollback.
+Promotion is allowed only when repository lifecycle, snapshot create/readback,
+restore safety, cleanup, searchable or remote repository breadth, and
+migration/cutover linkage are all present in the same gate.
+
+Required route evidence:
+
+- `snapshot-lifecycle-compat-report.json`
+
+Required semantic cases:
+
+- `register_snapshot_repository`
+- `get_snapshot_repository`
+- `verify_snapshot_repository`
+- `create_snapshot_happy_path`
+- `get_snapshot_happy_path`
+- `get_snapshot_status_happy_path`
+- `restore_snapshot_happy_path`
+- `delete_snapshot_happy_path`
+- `cleanup_snapshot_repository_happy_path`
+- `restore_snapshot_stale_metadata_failure`
+- `restore_snapshot_corrupt_metadata_failure`
+- `restore_snapshot_incompatible_metadata_failure`
+- `restore_missing_snapshot_failure`
+- `cleanup_missing_snapshot_repository_failure`
+
+Required snapshot evidence classes:
+
+- `incremental-snapshot`
+- `remote-readonly-repository`
+- `searchable-snapshot-mount`
+- `restore-option-breadth`
+- `repository-type-validation`
+- `restore-precondition-safety`
+- `cutover-linkage`
+
+Required migration linkage:
+
+- `migration-acceptance/report.json`
+
+Promotion is blocked if snapshot lifecycle evidence exists without restore
+safety failure paths or without the migration/cutover linkage report.
 
 ### <a id="area-migration-and-replacement-tooling"></a>Migration and replacement tooling
 
-Promote only after cutover runbooks, unsupported-feature detection, and
-acceptance harness evidence prove bounded migration and rollback behavior.
+Required migration evidence:
+
+- `migration-cutover-integration-report.json`
+- `migration-acceptance/report.json`
+- `migration-cutover-go-no-go-report.json`
+
+Required semantic migration cases:
+
+- `template_metadata`
+- `index_metadata`
+- `alias_metadata`
+- `data_stream_metadata`
+- `scroll_export_sequence`
+- `pit_export_sequence`
+- `vector_payload_summary_doc`
+- `vector_knn_ranking`
+
+Required migration evidence classes:
+
+- `translation-breadth`
+- `scroll-export`
+- `pit-export`
+- `resumability-checkpoint`
+- `approval-gate`
+- `rollback-only-rehearsal`
+- `rollback-divergence-two-dataset`
+- `unsupported-feature-preflight`
+- `vector-payload-equivalence`
+- `vector-ranking-equivalence`
+
+Required final cutover go/no-go report fields:
+
+- `approval_gate`
+- `preflight`
+- `rollback`
+- `vector_validation`
+- `divergence_check`
+- `final_decision`
+
+Promotion is blocked if migration acceptance evidence exists without the
+unsupported-feature detector feeding the final go/no-go report, or if cutover
+and rollback evidence are not aggregated in the same promotion gate.
 
 ### <a id="area-steelsearch-multi-node-runtime"></a>Steelsearch multi-node runtime
 
-Promote only after durability parity and distributed parity exist for quorum,
-restart, recovery, and failure-mode handling.
+Required peer-node route evidence:
+
+- `mixed-cluster-failure/<profile>/report.json`
+- `rolling-stability/<profile>/report.json`
+- `distributed-durability-convergence/<profile>/report.json`
+
+Required peer-node evidence classes:
+
+- `quorum-evidence`
+- `publication-ordering`
+- `peer-recovery`
+- `mixed-write-replication`
+- `rolling-stability-transcript`
+- `durability-convergence`
+- `leader-failover`
+- `seed-loss-recovery`
+
+Promote this row only when the same-cluster peer gate ties phase-C mixed-node
+failure handling to standalone runtime stability and durability artifacts in a
+single claim.
 
 ### <a id="area-native-transport-frame-and-opensearch-probe-compatibility"></a>Native transport frame and OpenSearch probe compatibility
 
-Promote only after external interop and peer-node distributed parity cover
-handshake, decode, action classification, and failure-mode evidence.
+Required interop route evidence:
+
+- `phase-b-gap/<profile>/report.json`
+
+Required interop evidence classes:
+
+- `handshake-version-gate`
+- `stale-cache-failover`
+- `named-writeable-roundtrip`
+- `cluster-state-diff-apply`
+- `allowlisted-forwarding`
+- `mixed-mode-failure-harness`
+
+Required binary dispatch proof:
+
+- allowed actions:
+  - `ClusterStateAction.INSTANCE`
+  - `SearchAction.INSTANCE`
+  - `BulkAction.INSTANCE`
+- rejected actions:
+  - `MultiSearchAction.INSTANCE`
+  - `StreamSearchAction.INSTANCE`
+- required ledgers:
+  - `transport-action-subset-ledger.json`
+  - `transport-negotiation-exception-policy.json`
+  - `named-writeable-payload-corpus.json`
+  - `cluster-state-diff-apply-transcript.json`
+
+Promote this row only when the external interop gate ties the phase-B harness,
+named-writeable corpus, diff-apply transcript, and action allow/reject ledgers
+into one binary dispatch claim.
 
 ### <a id="area-security-and-access-control"></a>Security and access control
 
-Promote only after security parity is satisfied by authn/authz, TLS,
-restricted-index, and redaction artifacts.
+Required secure route evidence:
+
+- `security-authz-compat-report.json`
+- `secure-multinode-tls-report.json`
+- `security-tenant-role-index-report.json`
+- `security-audit-correlation-report.json`
+- `security-plugin-api-report.json`
+- `security-plugin-write-rotation-report.json`
+- `secure-multinode-gap-harness/report.json`
+
+Required secure evidence classes:
+
+- `tls-handshake-matrix`
+- `tenant-role-index-isolation`
+- `restricted-index-policy`
+- `audit-correlation`
+- `plugin-api-secret-redaction`
+- `plugin-write-cert-rotation`
+- `secure-multinode-join`
+- `secure-cert-rotation`
+- `restricted-index-mutation-deny`
+
+Required secure semantic cases:
+
+- `security_missing_root_info_401`
+- `security_reader_root_info_success`
+- `security_reader_restricted_index_get_403`
+- `security_admin_restricted_index_get_success`
+- `security_writer_bulk_partial_authz_denial`
+
+Required final secure claim report:
+
+- `secure-standalone-claim-report.json`
+
+The final secure claim report must fail closed when any required suite is
+missing, and it must stay `blocked` until both of the following artifacts are
+present:
+
+- `security-redaction-smoke-report.json`
+- `secure-durability-restart-report.json`
+
+Promote this row to `Yes` on production readiness only when the final secure
+claim report transitions to `ok` with both artifacts present and no required
+suite omissions.
 
 ### <a id="area-opensearch-comparison-harness"></a>OpenSearch comparison harness
 
-Promote only after the harness surface is broad enough to support each claimed
-profile rather than isolated feature families.
+The harness row is a governance and aggregation layer. It does not replace any
+feature-specific claim gate for standalone, secure, interop, or peer-node
+readiness.
+
+Required harness governance inputs:
+
+- `comparison-harness-required-suites.json`
+- `unified-comparison-report-schema.json`
+- `common-baseline-aggregation-matrix.json`
+- `comparison-harness-failclosed-smoke.json`
+
+Required fail-closed smoke classes:
+
+- `fixture_drift`
+- `missing_report_field`
+- `stale_generated_artifact`
+
+Promote this row only when the top-level harness gate ties required-suite
+manifests, unified schema, baseline aggregation completeness, and fail-closed
+smoke evidence into one all-profiles governance claim.
+
+Use the current promotion bookkeeping at
+[compatibility-promotion-ledger.md](/home/ubuntu/steelsearch/docs/rust-port/compatibility-promotion-ledger.md)
+when deciding which rows are eligible to move from conservative `Partial/No`
+matrix status into stronger official replacement claims.
 
 ### <a id="area-java-opensearch-data-node-compatibility"></a>Java OpenSearch data-node compatibility
 
-Remain blocked until same-cluster distributed parity exists for mixed
-membership, recovery, replication, and failure handling.
+This area is an optional in-progress compatibility track, not a core
+replacement-ready row.
+
+Required optional-track evidence:
+
+- `java-data-node-scope-matrix.json`
+- `java-mixed-cluster-binary-profiles.json`
+
+Required binary harness profiles:
+
+- `java-primary-rust-replica`
+- `rust-primary-java-replica`
+- `java-driven-rolling-restart`
+- `peer-recovery-interruption`
+- `segment-compatibility-verify`
+
+Keep this row outside core replacement readiness even when the optional gate is
+green.
 
 ### <a id="area-java-plugin-abi-compatibility"></a>Java plugin ABI compatibility
 
-Remain blocked until a separate compatibility track explicitly opens Java plugin
-loading and execution as an in-scope goal.
+This area is an optional in-progress compatibility track, not a core
+replacement-ready row.
+
+Required optional-track evidence:
+
+- `java-plugin-abi-scope-matrix.json`
+- `java-plugin-compat-layer-profiles.json`
+
+Required compatibility profiles:
+
+- `plugin-bootstrap-config`
+- `plugin-rest-binding`
+- `plugin-transport-binding`
+
+Keep this row outside core replacement readiness even when the optional gate is
+green.

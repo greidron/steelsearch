@@ -1,0 +1,90 @@
+{
+  "name": "compatibility-promotion-ledger",
+  "entries": [
+    {
+      "source_area": "Root and basic node identity",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Migration and replacement tooling",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "OpenSearch comparison harness",
+      "target_profile": "all-profiles",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Steelsearch multi-node runtime",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Security and access control",
+      "target_profile": "secure-standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Cluster health, state, allocation, and node stats",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Index create/get/delete and mappings/settings",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Document write/read and refresh",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "REST `_bulk`",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "REST `_search`",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "k-NN vector indexing and query search",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "k-NN plugin REST and model APIs",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "ML Commons, neural search, and model serving",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Snapshot and restore",
+      "target_profile": "standalone",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Native transport frame and OpenSearch probe compatibility",
+      "target_profile": "external-interop",
+      "promotion_bucket": "promoted"
+    },
+    {
+      "source_area": "Java OpenSearch data-node compatibility",
+      "target_profile": "optional",
+      "promotion_bucket": "optional-track"
+    },
+    {
+      "source_area": "Java plugin ABI compatibility",
+      "target_profile": "optional",
+      "promotion_bucket": "optional-track"
+    }
+  ]
+}

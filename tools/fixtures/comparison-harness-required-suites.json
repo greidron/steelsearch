@@ -1,0 +1,130 @@
+{
+  "name": "comparison-harness-required-suites",
+  "profiles": {
+    "common-baseline": {
+      "route_families": [
+        "root-cluster-node",
+        "cluster-admin",
+        "index-metadata",
+        "document-write",
+        "search-compat"
+      ],
+      "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local",
+      "required_reports": [
+        "runtime-precheck-report.json",
+        "cluster-health-compat-report.json",
+        "allocation-explain-compat-report.json",
+        "cluster-state-compat-report.json",
+        "tasks-compat-report.json",
+        "stats-compat-report.json",
+        "index-lifecycle-compat-report.json",
+        "mapping-compat-report.json",
+        "settings-compat-report.json",
+        "alias-read-compat-report.json",
+        "template-compat-report.json",
+        "data-stream-rollover-compat-report.json",
+        "single-doc-crud-compat-report.json",
+        "refresh-compat-report.json",
+        "routing-compat-report.json",
+        "bulk-compat-report.json",
+        "search-compat-report.json"
+      ]
+    },
+    "vector-ml": {
+      "route_families": [
+        "knn-vector",
+        "hybrid-search",
+        "ml-plugin"
+      ],
+      "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml",
+      "required_reports": [
+        "vector-search-compat-report.json"
+      ]
+    },
+    "snapshot-migration": {
+      "route_families": [
+        "repository-lifecycle",
+        "snapshot-restore",
+        "migration-cutover"
+      ],
+      "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope snapshot-migration",
+      "required_reports": [
+        "snapshot-lifecycle-compat-report.json",
+        "migration-acceptance/report.json"
+      ]
+    },
+    "transport-admin": {
+      "route_families": [
+        "cluster-health-state-stats",
+        "pending-tasks",
+        "task-inspection"
+      ],
+      "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope transport-admin",
+      "required_reports": [
+        "multi-node-transport-admin-report.json"
+      ]
+    },
+    "write-path-multi-node": {
+      "route_families": [
+        "replicated-write-visibility",
+        "refresh-visibility",
+        "routing-write-readback"
+      ],
+      "entrypoint": "python3 tools/multi_node_write_path_integration.py ...",
+      "required_reports": [
+        "multi-node-write-path-report.json"
+      ]
+    },
+    "search-execution": {
+      "route_families": [
+        "multi-shard-accounting",
+        "partial-search-results",
+        "search-type-execution"
+      ],
+      "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope search-execution",
+      "required_reports": [
+        "search-compat-report.json"
+      ]
+    },
+    "security-multinode": {
+      "route_families": [
+        "tls-handshake",
+        "tenant-role-index-permission",
+        "security-plugin-api"
+      ],
+      "entrypoint": "tools/run-secure-multinode-gap-harness.sh --profile <name> ...",
+      "required_reports": [
+        "secure-multinode-gap/<profile>/report.json",
+        "security-redaction-smoke-report.json",
+        "secure-durability-restart-report.json",
+        "secure-standalone-claim-report.json"
+      ]
+    },
+    "external-interop": {
+      "route_families": [
+        "transport-handshake",
+        "cluster-state-decode",
+        "allowlisted-forwarding"
+      ],
+      "entrypoint": "tools/run-phase-b-gap-harness.sh --profile <name> ...",
+      "required_reports": [
+        "phase-b-gap/<profile>/report.json",
+        "external-interop-promotion-gate.json"
+      ]
+    },
+    "same-cluster-peer": {
+      "route_families": [
+        "publication-ordering",
+        "peer-recovery",
+        "mixed-write-replication"
+      ],
+      "entrypoint": "tools/run-phase-c-gap-harness.sh --profile <name> ...",
+      "required_reports": [
+        "mixed-cluster-failure/<profile>/report.json",
+        "rolling-stability/<profile>/report.json",
+        "distributed-durability-convergence/<profile>/report.json",
+        "peer-node-promotion-gate.json"
+      ]
+    }
+  }
+}

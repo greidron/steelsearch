@@ -1,0 +1,78 @@
+{
+  "name": "cluster-admin-promotion-gate",
+  "profile": "standalone",
+  "source_area": "Cluster health, state, allocation, and node stats",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "common-baseline"
+      ],
+      "report_paths": [
+        "cluster-health-compat-report.json",
+        "allocation-explain-compat-report.json",
+        "cluster-state-compat-report.json",
+        "tasks-compat-report.json",
+        "stats-compat-report.json",
+        "search-compat-report.json"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "common-baseline"
+      ],
+      "required_cases": [
+        "cluster_health_wait_parameters",
+        "cluster_health_wait_for_green_timeout_semantic",
+        "cluster_health_wait_for_nodes_timeout_semantic",
+        "cluster_state_readback",
+        "cluster_pending_tasks_shape",
+        "node_stats_shape",
+        "allocation_explain_development_shape"
+      ]
+    },
+    "distributed_parity": {
+      "required_suites": [
+        "transport-admin"
+      ],
+      "report_paths": [
+        "multi-node-transport-admin-report.json"
+      ],
+      "standalone_only_fields": [
+        "cluster_health.status",
+        "cluster_health.timed_out",
+        "cluster_state.metadata.indices",
+        "cluster_state.routing_table.indices",
+        "cluster_pending_tasks.tasks[].priority",
+        "node_stats.nodes.*.http.current_open",
+        "cat_indices.uuid",
+        "cat_pending_tasks.timeInQueueMillis"
+      ],
+      "distributed_required_fields": [
+        "transport_admin.cluster_name_agreement",
+        "transport_admin.node_count_agreement",
+        "transport_admin.cluster_uuid_agreement",
+        "transport_admin.pending_task_vs_node_task_depth",
+        "transport_admin.required_quorum"
+      ]
+    }
+  },
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local",
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope transport-admin"
+    ],
+    "required_reports": [
+      "cluster-health-compat-report.json",
+      "allocation-explain-compat-report.json",
+      "cluster-state-compat-report.json",
+      "tasks-compat-report.json",
+      "stats-compat-report.json",
+      "search-compat-report.json",
+      "multi-node-transport-admin-report.json"
+    ]
+  }
+}

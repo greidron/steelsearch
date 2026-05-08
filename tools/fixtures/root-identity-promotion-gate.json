@@ -1,0 +1,63 @@
+{
+  "name": "root-identity-promotion-gate",
+  "profile": "standalone",
+  "source_area": "Root and basic node identity",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "root-cluster-node"
+      ],
+      "report_paths": [
+        "root-cluster-node-compat-report.json"
+      ],
+      "required_cases": [
+        "root_info"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "root-cluster-node"
+      ],
+      "report_paths": [
+        "root-cluster-node-compat-report.json"
+      ],
+      "required_cases": [
+        "root_info"
+      ]
+    },
+    "security_parity": {
+      "required_suites": [
+        "single-node-secure-root-contract"
+      ],
+      "report_paths": [
+        "security-authz-compat-report.json"
+      ],
+      "required_cases": [
+        "security_missing_root_info_401",
+        "security_bad_password_root_info_401",
+        "security_reader_root_info_success"
+      ]
+    }
+  },
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope root-cluster-node",
+      "tools/run-security-compat-harness.sh --profile single-node-secure"
+    ],
+    "required_reports": [
+      "root-cluster-node-compat-report.json",
+      "security-authz-compat-report.json"
+    ],
+    "required_status_body_contracts": [
+      "GET / root_info",
+      "HEAD / empty-body",
+      "GET / 401 missing-auth",
+      "GET / 401 bad-password",
+      "GET / 200 reader-auth"
+    ]
+  }
+}

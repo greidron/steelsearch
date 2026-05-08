@@ -1,0 +1,57 @@
+{
+  "name": "java-plugin-compat-layer-profiles",
+  "profiles": {
+    "plugin-bootstrap-config": {
+      "required_phases": [
+        "prepare",
+        "bootstrap",
+        "config",
+        "check"
+      ],
+      "expected_markers": [
+        "plugin bootstrap completed",
+        "config mutation applied",
+        "lifecycle remained isolated"
+      ]
+    },
+    "plugin-rest-binding": {
+      "required_phases": [
+        "prepare",
+        "bootstrap",
+        "rest-bind",
+        "check"
+      ],
+      "expected_markers": [
+        "plugin rest handler registered",
+        "rest request dispatched",
+        "response surfaced"
+      ]
+    },
+    "plugin-transport-binding": {
+      "required_phases": [
+        "prepare",
+        "bootstrap",
+        "transport-bind",
+        "check"
+      ],
+      "expected_markers": [
+        "plugin transport action registered",
+        "transport request dispatched",
+        "response surfaced"
+      ]
+    },
+    "plugin-failure-isolation": {
+      "required_phases": [
+        "prepare",
+        "bootstrap",
+        "config",
+        "check"
+      ],
+      "expected_markers": [
+        "plugin failure isolated",
+        "host runtime remained healthy",
+        "subsequent plugin load allowed"
+      ]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "search-unsupported-option-deny-ledger",
+  "entries": [
+    {
+      "case": "expand_wildcards_closed_fail_closed",
+      "surface": "POST /logs-*/_search?expand_wildcards=closed",
+      "expected_result": "fail-closed",
+      "evidence": "search-compat strict and common fixtures"
+    },
+    {
+      "case": "runtime_mappings_request_body_fail_closed",
+      "surface": "POST /_search with runtime_mappings body",
+      "expected_result": "fail-closed",
+      "evidence": "common-baseline blocker note and source-target parsing_exception baseline"
+    }
+  ]
+}

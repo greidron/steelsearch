@@ -1,0 +1,40 @@
+{
+  "name": "rolling-restart-transcript-profiles",
+  "profiles": {
+    "rolling-restart": {
+      "steps": [
+        "cluster-ready-before",
+        "node-1-stop",
+        "node-1-start",
+        "cluster-ready-after-node-1",
+        "node-2-stop",
+        "node-2-start",
+        "cluster-ready-after-node-2",
+        "node-3-stop",
+        "node-3-start",
+        "cluster-ready-after-node-3"
+      ],
+      "transcript_assertions": [
+        "cluster ready before restart sequence",
+        "restart steps recorded in order",
+        "cluster ready after each node rejoins"
+      ]
+    },
+    "rolling-upgrade": {
+      "steps": [
+        "cluster-ready-before",
+        "node-1-upgrade",
+        "cluster-ready-after-node-1",
+        "node-2-upgrade",
+        "cluster-ready-after-node-2",
+        "node-3-upgrade",
+        "cluster-ready-after-node-3"
+      ],
+      "transcript_assertions": [
+        "cluster ready before upgrade sequence",
+        "upgrade steps recorded in order",
+        "cluster ready after each upgraded node rejoins"
+      ]
+    }
+  }
+}

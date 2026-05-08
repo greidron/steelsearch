@@ -1,0 +1,27 @@
+{
+  "name": "harness-promotion-gate",
+  "profile": "all-profiles",
+  "source_area": "OpenSearch comparison harness",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "semantic_parity": "N/A",
+    "production_readiness": "Yes"
+  },
+  "required_inputs": {
+    "suite_manifest": "comparison-harness-required-suites.json",
+    "unified_schema": "unified-comparison-report-schema.json",
+    "baseline_aggregation": "common-baseline-aggregation-matrix.json",
+    "fail_closed_smoke": "comparison-harness-failclosed-smoke.json"
+  },
+  "required_fail_closed_classes": [
+    "fixture_drift",
+    "missing_report_field",
+    "stale_generated_artifact"
+  ],
+  "latest_harness_entrypoints": [
+    "tools/run-phase-a-acceptance-harness.sh --mode local",
+    "tools/run-secure-multinode-gap-harness.sh --profile <name> ...",
+    "tools/run-phase-b-gap-harness.sh --profile <name> ...",
+    "tools/run-phase-c-gap-harness.sh --profile <name> ..."
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "name": "search-promotion-gate",
+  "profile": "standalone",
+  "source_area": "REST `_search`",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "common-baseline",
+        "search-execution"
+      ],
+      "report_paths": [
+        "search-compat-report.json"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "common-baseline",
+        "search-execution"
+      ],
+      "required_cases": [
+        "exists_query_search",
+        "prefix_query_search",
+        "query_string_search",
+        "regexp_query_search",
+        "terms_set_query_search",
+        "wildcard_query_search",
+        "nested_query_search",
+        "pit_open_search",
+        "pit_search",
+        "scroll_initial_search",
+        "scroll_follow_up_search",
+        "collapse_search",
+        "profile_search",
+        "rescore_search",
+        "completion_suggest_search",
+        "highlight_search",
+        "terms_aggregation",
+        "composite_aggregation",
+        "geo_bounds_aggregation",
+        "sum_bucket_pipeline_aggregation",
+        "scripted_metric_aggregation",
+        "partial_shard_failure_geo_search",
+        "allow_partial_search_results_execution_summary"
+      ]
+    },
+    "security_parity": {
+      "required_suites": [
+        "single-node-secure-search"
+      ],
+      "report_paths": [
+        "security-authz-compat-report.json"
+      ],
+      "required_cases": [
+        "security_reader_root_search_success",
+        "security_missing_target_search_401",
+        "security_writer_root_search_403"
+      ]
+    }
+  },
+  "unsupported_option_deny_ledger": {
+    "fixture": "search-unsupported-option-deny-ledger.json",
+    "required_cases": [
+      "expand_wildcards_closed_fail_closed",
+      "runtime_mappings_request_body_fail_closed"
+    ]
+  },
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope search",
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope search-execution",
+      "tools/run-security-compat-harness.sh --profile single-node-secure"
+    ],
+    "required_reports": [
+      "search-compat-report.json",
+      "security-authz-compat-report.json"
+    ]
+  }
+}

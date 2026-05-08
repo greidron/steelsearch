@@ -1,0 +1,59 @@
+{
+  "profile": "secure-standalone",
+  "generated_at": "2026-05-03T00:00:00Z",
+  "route_parity": {
+    "required_suites": [
+      "security-multinode"
+    ],
+    "report_paths": [
+      "security-authz-compat-report.json",
+      "security-plugin-api-report.json",
+      "security-plugin-write-rotation-report.json"
+    ],
+    "status": "ok"
+  },
+  "semantic_parity": {
+    "required_suites": [
+      "security-multinode"
+    ],
+    "report_paths": [
+      "security-tenant-role-index-report.json",
+      "security-audit-correlation-report.json"
+    ],
+    "status": "ok"
+  },
+  "durability_parity": {
+    "required_suites": [
+      "security-multinode"
+    ],
+    "report_paths": [
+      "secure-durability-restart-report.json"
+    ],
+    "status": "blocked"
+  },
+  "security_parity": {
+    "required_suites": [
+      "security-multinode"
+    ],
+    "report_paths": [
+      "secure-multinode-tls-report.json",
+      "secure-multinode-gap-harness/report.json",
+      "security-redaction-smoke-report.json"
+    ],
+    "status": "blocked"
+  },
+  "distributed_parity": {
+    "required_suites": [
+      "security-multinode"
+    ],
+    "report_paths": [
+      "secure-multinode-gap-harness/report.json"
+    ],
+    "status": "ok"
+  },
+  "status": "blocked",
+  "blocking_reasons": [
+    "missing security-redaction-smoke-report.json",
+    "missing secure-durability-restart-report.json"
+  ]
+}

@@ -198,11 +198,16 @@
       "knn_cosinesimil_search",
       "knn_innerproduct_search",
       "knn_stats_shape",
+      "knn_settings_readback",
+      "knn_warmup_basic_shape",
+      "knn_clear_cache_basic_shape",
+      "knn_model_lifecycle_shape",
       "knn_warmup_budget_failure",
       "knn_warmup_clear_cache_telemetry_shape",
       "knn_unsupported_method_engine_fail_closed",
       "knn_unsupported_mode_fail_closed",
-      "knn_unsupported_method_parameters_fail_closed"
+      "knn_unsupported_method_parameters_fail_closed",
+      "ml_model_lifecycle_shape"
     ],
     "aggregation_requests": [
       "terms_aggregation",
@@ -544,6 +549,16 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_pending_tasks_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/pending_tasks?format=json",
+      "extract": "cat_pending_tasks",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pending tasks json",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_nodeattrs_json",
       "area": "cat",
       "method": "GET",
@@ -583,6 +598,36 @@
       "extract": "cat_nodes",
       "family": "admin-cat",
       "description": "[admin-cat] cat nodes text",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "node_stats_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/stats",
+      "extract": "node_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] node stats shape",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cluster_state_readback",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/state",
+      "extract": "cluster_state",
+      "family": "admin-cat",
+      "description": "[admin-cat] cluster state representative fields",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cluster_pending_tasks_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/pending_tasks",
+      "extract": "pending_tasks",
+      "family": "admin-cat",
+      "description": "[admin-cat] cluster pending tasks representative fields",
       "strict_source_parity_required": true
     },
     {
@@ -646,6 +691,271 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "get_component_template_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_component_template/logs-compat-component-template",
+      "extract": "template_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] component template readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_index_template_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_index_template/logs-compat-template",
+      "extract": "template_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] composable index template readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "templated_index_application_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-template-000001",
+      "extract": "index_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] concrete index reflects component/composable template application",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "delete_index_template_ack",
+      "area": "index",
+      "method": "DELETE",
+      "path": "/_index_template/logs-compat-template",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete composable index template",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "delete_component_template_ack",
+      "area": "index",
+      "method": "DELETE",
+      "path": "/_component_template/logs-compat-component-template",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete component template",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "write_data_stream_document",
+      "area": "index",
+      "method": "POST",
+      "path": "/logs-compat-stream/_doc/stream-1?refresh=true",
+      "body": {
+        "@timestamp": "2024-01-01T00:00:00Z",
+        "message": "stream event",
+        "service": "ingest"
+      },
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] write one document through data stream",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_data_stream_metadata_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_data_stream/logs-compat-stream",
+      "extract": "data_stream_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] data stream metadata readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_data_stream_stats_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_data_stream/_stats",
+      "extract": "data_stream_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] data stream stats readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "delete_data_stream_ack",
+      "area": "index",
+      "method": "DELETE",
+      "path": "/_data_stream/logs-compat-stream",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete data stream",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "dynamic_mapping_document_index",
+      "area": "index",
+      "method": "POST",
+      "path": "/logs-mapping-compat-000001/_doc/dyn-1?refresh=true",
+      "body": {
+        "tenant": "alpha",
+        "message": "hello world",
+        "region": "us-east-1"
+      },
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] dynamic mapping adds region field after document write",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "dynamic_mapping_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-mapping-compat-000001",
+      "extract": "index_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] dynamic mapping readback includes auto-added field",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_targeted_put_ack",
+      "area": "index",
+      "method": "PUT",
+      "path": "/logs-settings-compat-000001/_settings",
+      "body": {
+        "index": {
+          "refresh_interval": "1s"
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted settings mutation acknowledged",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_targeted_named_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-settings-compat-000001/_settings/index.refresh_interval",
+      "extract": "settings_named",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted settings named readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_targeted_flat_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-settings-compat-000001/_settings?flat_settings=true",
+      "extract": "settings_named",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted settings flat readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_global_put_ack",
+      "area": "index",
+      "method": "PUT",
+      "path": "/_settings",
+      "body": {
+        "index": {
+          "number_of_replicas": 0
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] global settings mutation acknowledged",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_global_named_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_settings/index.number_of_replicas",
+      "extract": "settings_named",
+      "family": "admin-cat",
+      "description": "[admin-cat] global settings named readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "wildcard_index_read_visible_only",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-target-*/?allow_no_indices=true",
+      "extract": "index_names",
+      "family": "admin-cat",
+      "description": "[admin-cat] wildcard get index excludes hidden targets by default",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "hidden_wildcard_index_read",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-target-*/?expand_wildcards=hidden",
+      "extract": "index_names",
+      "family": "admin-cat",
+      "description": "[admin-cat] hidden wildcard get index includes hidden targets",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "ignore_unavailable_get_index_multi_target",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-target-visible-000001,missing-target-000001?ignore_unavailable=true",
+      "extract": "index_names",
+      "family": "admin-cat",
+      "description": "[admin-cat] ignore unavailable preserves present index targets",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "allow_no_indices_get_index_empty",
+      "area": "index",
+      "method": "GET",
+      "path": "/missing-target-*/?allow_no_indices=true",
+      "extract": "index_names",
+      "family": "admin-cat",
+      "description": "[admin-cat] allow_no_indices returns empty get-index body",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_hidden_wildcard_put_ack",
+      "area": "index",
+      "method": "PUT",
+      "path": "/logs-target-*/_settings?expand_wildcards=hidden",
+      "body": {
+        "index": {
+          "refresh_interval": "11s"
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] wildcard settings mutation reaches hidden targets when requested",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_hidden_target_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-target-hidden-000001/_settings/index.refresh_interval",
+      "extract": "settings_named",
+      "family": "admin-cat",
+      "description": "[admin-cat] hidden target settings readback after wildcard mutation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "delete_hidden_wildcard_ack",
+      "area": "index",
+      "method": "DELETE",
+      "path": "/logs-target-delete-*/?expand_wildcards=hidden",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] wildcard delete acknowledges hidden targets when requested",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "delete_allow_no_indices_ack",
+      "area": "index",
+      "method": "DELETE",
+      "path": "/missing-delete-*/?allow_no_indices=true",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete with allow_no_indices acknowledges empty wildcard",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "index_document_via_alias",
       "area": "document",
       "method": "PUT",
@@ -673,6 +983,36 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "create_named_alias_ack",
+      "area": "index",
+      "method": "PUT",
+      "path": "/logs-compat/_alias/logs-compat-extra",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] create named alias",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_created_alias_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_alias/logs-compat-extra",
+      "extract": "alias_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] read back created alias",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "delete_created_alias_ack",
+      "area": "index",
+      "method": "DELETE",
+      "path": "/logs-compat/_alias/logs-compat-extra",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete named alias",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "alias_match_search",
       "area": "search",
       "method": "POST",
@@ -688,6 +1028,26 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] alias match search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "analyze_root_basic_tokens",
+      "area": "index",
+      "method": "GET",
+      "path": "/_analyze?text=Quick%20Fox",
+      "extract": "analyze_tokens",
+      "family": "lexical",
+      "description": "[lexical] root analyze token stream",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "analyze_targeted_basic_tokens",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-compat/_analyze?text=Hello%20World",
+      "extract": "analyze_tokens",
+      "family": "lexical",
+      "description": "[lexical] targeted analyze token stream",
       "strict_source_parity_required": true
     },
     {
@@ -2680,6 +3040,253 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "partial_shard_failure_geo_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-geo-good-compat-000001,logs-geo-bad-compat-000001/_search",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "10km",
+            "location": {
+              "lat": 37.7749,
+              "lon": -122.4194
+            }
+          }
+        }
+      },
+      "extract": "search_shard_failures",
+      "family": "failure-path",
+      "description": "[failure-path] partial shard failure geo search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "knn_settings_readback",
+      "area": "knn",
+      "extract": "knn_settings",
+      "steps": [
+        {
+          "name": "put-knn-settings",
+          "method": "PUT",
+          "path": "/_plugins/_knn/settings",
+          "body": {
+            "knn.memory.circuit_breaker.limit": "256mb",
+            "knn.model.cache.size": 4
+          },
+          "expected_status": 200,
+          "extract": "knn_settings"
+        },
+        {
+          "name": "get-knn-settings",
+          "method": "GET",
+          "path": "/_plugins/_knn/settings",
+          "expected_status": 200,
+          "extract": "knn_settings"
+        }
+      ],
+      "family": "vector-knn",
+      "description": "[vector-knn] knn settings readback",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "knn_warmup_basic_shape",
+      "area": "knn",
+      "comparison": "strict",
+      "extract": "knn_warmup_basic",
+      "steps": [
+        {
+          "name": "warmup-vectors-basic",
+          "method": "POST",
+          "path": "/_plugins/_knn/warmup/vectors-compat",
+          "body": {
+            "vector_segment_count": 2,
+            "native_memory_bytes": 64,
+            "model_cache_bytes": 16,
+            "quantization_cache_bytes": 8
+          },
+          "expected_status": 200,
+          "extract": "knn_warmup_basic"
+        },
+        {
+          "name": "stats-after-warmup-basic",
+          "method": "GET",
+          "path": "/_plugins/_knn/stats",
+          "expected_status": 200,
+          "extract": "knn_stats_shape"
+        }
+      ],
+      "family": "vector-knn",
+      "description": "[vector-knn] knn warmup basic shape",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "knn_clear_cache_basic_shape",
+      "area": "knn",
+      "comparison": "strict",
+      "extract": "knn_clear_cache_response",
+      "steps": [
+        {
+          "name": "warmup-vectors-before-clear",
+          "method": "POST",
+          "path": "/_plugins/_knn/warmup/vectors-compat",
+          "body": {
+            "vector_segment_count": 1,
+            "native_memory_bytes": 32
+          },
+          "expected_status": 200,
+          "extract": "knn_warmup_basic"
+        },
+        {
+          "name": "clear-cache-vectors-basic",
+          "method": "POST",
+          "path": "/_plugins/_knn/clear_cache/vectors-compat",
+          "expected_status": 200,
+          "extract": "knn_clear_cache_response"
+        }
+      ],
+      "family": "vector-knn",
+      "description": "[vector-knn] knn clear cache basic shape",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "knn_model_lifecycle_shape",
+      "area": "knn",
+      "extract": "knn_model_search",
+      "steps": [
+        {
+          "name": "train-knn-model",
+          "method": "POST",
+          "path": "/_plugins/_knn/models/compat-model/_train",
+          "body": {
+            "training_index": "vectors-compat",
+            "dimension": 3,
+            "description": "compat model lifecycle",
+            "method": {
+              "name": "hnsw",
+              "engine": "lucene",
+              "space_type": "l2"
+            }
+          },
+          "expected_status": 200,
+          "extract": "knn_model_train"
+        },
+        {
+          "name": "get-knn-model",
+          "method": "GET",
+          "path": "/_plugins/_knn/models/compat-model",
+          "expected_status": 200,
+          "extract": "knn_model_get"
+        },
+        {
+          "name": "search-knn-model",
+          "method": "POST",
+          "path": "/_plugins/_knn/models/_search",
+          "body": {
+            "query": {
+              "term": {
+                "model_id": "compat-model"
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "knn_model_search"
+        },
+        {
+          "name": "delete-knn-model",
+          "method": "DELETE",
+          "path": "/_plugins/_knn/models/compat-model",
+          "expected_status": 200,
+          "extract": "delete_result"
+        }
+      ],
+      "family": "vector-knn",
+      "description": "[vector-knn] knn model lifecycle shape",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "ml_model_lifecycle_shape",
+      "area": "ml",
+      "extract": "ml_model_get",
+      "steps": [
+        {
+          "name": "register-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/_register",
+          "body": {
+            "name": "bounded-embedder",
+            "function_name": "text_embedding",
+            "dimension": 3
+          },
+          "expected_status": 200,
+          "extract": "ml_register"
+        },
+        {
+          "name": "get-register-task",
+          "method": "GET",
+          "path": "/_plugins/_ml/tasks/ml-task-1",
+          "expected_status": 200,
+          "extract": "ml_task"
+        },
+        {
+          "name": "deploy-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/ml-model-1/_deploy",
+          "expected_status": 200,
+          "extract": "ml_deploy"
+        },
+        {
+          "name": "get-deploy-task",
+          "method": "GET",
+          "path": "/_plugins/_ml/tasks/ml-task-2",
+          "expected_status": 200,
+          "extract": "ml_task"
+        },
+        {
+          "name": "predict-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/ml-model-1/_predict",
+          "body": {
+            "text_docs": [
+              "hello steelsearch world"
+            ]
+          },
+          "expected_status": 200,
+          "extract": "ml_predict"
+        },
+        {
+          "name": "get-ml-model",
+          "method": "GET",
+          "path": "/_plugins/_ml/models/ml-model-1",
+          "expected_status": 200,
+          "extract": "ml_model_get"
+        },
+        {
+          "name": "search-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/_search",
+          "body": {
+            "query": {
+              "term": {
+                "model_id": "ml-model-1"
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "ml_model_search"
+        },
+        {
+          "name": "undeploy-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/ml-model-1/_undeploy",
+          "expected_status": 200,
+          "extract": "ml_deploy"
+        }
+      ],
+      "family": "ml-commons",
+      "description": "[ml-commons] model register deploy predict undeploy task lifecycle",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "malformed_search_body_parse_exception",
       "area": "search",
       "extract": "error_response",
@@ -2739,6 +3346,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "mapping_conflict_reject",
+      "area": "index",
+      "method": "POST",
+      "path": "/logs-mapping-compat-000001/_mapping",
+      "body": {
+        "properties": {
+          "message": {
+            "type": "keyword"
+          }
+        }
+      },
+      "extract": "error_response",
+      "family": "failure-path",
+      "description": "[failure-path] mapping conflict rejects type mutation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_nondynamic_reject",
+      "area": "index",
+      "method": "PUT",
+      "path": "/logs-settings-compat-000001/_settings",
+      "body": {
+        "index": {
+          "number_of_shards": 2
+        }
+      },
+      "extract": "error_response",
+      "family": "failure-path",
+      "description": "[failure-path] non-dynamic settings mutation rejected",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "expand_wildcards_closed_fail_closed",
       "area": "search",
       "method": "POST",
@@ -2776,6 +3415,269 @@
       "family": "misc",
       "description": "[misc] wildcard index read expansion",
       "strict_source_parity_required": true
+    }
+  ],
+  "requests": [
+    {
+      "method": "PUT",
+      "path": "/logs-template-000001"
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-mapping-compat-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            },
+            "message": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-settings-compat-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 1
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/metrics-settings-compat-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 1
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-geo-good-compat-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "location": {
+              "type": "geo_point"
+            },
+            "message": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-geo-bad-compat-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "location": {
+              "type": "keyword"
+            },
+            "message": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-geo-good-compat-000001/_doc/doc-1",
+      "body": {
+        "message": "geo good",
+        "location": {
+          "lat": 37.7749,
+          "lon": -122.4194
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-geo-bad-compat-000001/_doc/doc-2",
+      "body": {
+        "message": "geo bad",
+        "location": "not-a-geo-point"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-target-visible-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-target-hidden-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "hidden": true
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-target-delete-visible-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/logs-target-delete-hidden-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "hidden": true
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "component_templates": [
+    {
+      "name": "logs-compat-component-template",
+      "body": {
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_replicas": 0
+            }
+          },
+          "mappings": {
+            "properties": {
+              "tenant": {
+                "type": "keyword"
+              }
+            }
+          },
+          "aliases": {
+            "logs-template-component-alias": {}
+          }
+        }
+      }
+    }
+  ],
+  "index_templates": [
+    {
+      "name": "logs-compat-template",
+      "body": {
+        "index_patterns": [
+          "logs-template-*"
+        ],
+        "composed_of": [
+          "logs-compat-component-template"
+        ],
+        "priority": 101,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1
+            }
+          },
+          "aliases": {
+            "logs-template-read": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-compat-stream-template",
+      "body": {
+        "index_patterns": [
+          "logs-compat-stream*"
+        ],
+        "data_stream": {},
+        "priority": 102,
+        "template": {
+          "settings": {
+            "index": {
+              "number_of_shards": 1,
+              "number_of_replicas": 0
+            }
+          },
+          "mappings": {
+            "properties": {
+              "@timestamp": {
+                "type": "date"
+              },
+              "message": {
+                "type": "text"
+              },
+              "service": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "data_streams": [
+    {
+      "name": "logs-compat-stream"
     }
   ]
 }

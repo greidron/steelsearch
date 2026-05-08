@@ -1,0 +1,66 @@
+{
+  "name": "snapshot-promotion-gate",
+  "profile": "standalone",
+  "source_area": "Snapshot and restore",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "snapshot-migration"
+      ],
+      "report_paths": [
+        "snapshot-lifecycle-compat-report.json"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "snapshot-migration"
+      ],
+      "required_cases": [
+        "register_snapshot_repository",
+        "get_snapshot_repository",
+        "verify_snapshot_repository",
+        "create_snapshot_happy_path",
+        "get_snapshot_happy_path",
+        "get_snapshot_status_happy_path",
+        "restore_snapshot_happy_path",
+        "delete_snapshot_happy_path",
+        "cleanup_snapshot_repository_happy_path",
+        "restore_snapshot_stale_metadata_failure",
+        "restore_snapshot_corrupt_metadata_failure",
+        "restore_snapshot_incompatible_metadata_failure",
+        "restore_missing_snapshot_failure",
+        "cleanup_missing_snapshot_repository_failure"
+      ],
+      "required_evidence_classes": [
+        "incremental-snapshot",
+        "remote-readonly-repository",
+        "searchable-snapshot-mount",
+        "restore-option-breadth",
+        "repository-type-validation",
+        "restore-precondition-safety",
+        "cutover-linkage"
+      ]
+    },
+    "durability_parity": {
+      "required_suites": [
+        "snapshot-migration"
+      ],
+      "report_paths": [
+        "migration-acceptance/report.json"
+      ]
+    }
+  },
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope snapshot-migration"
+    ],
+    "required_reports": [
+      "snapshot-lifecycle-compat-report.json",
+      "migration-acceptance/report.json"
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "name": "security-audit-correlation-matrix",
+  "profile": "multi-node-secure",
+  "cases": [
+    {
+      "case": "allowed_same_tenant_read_event",
+      "event_type": "access_granted",
+      "credential_set": "reader-basic",
+      "tenant": "tenant-a",
+      "target": "logs-tenant-a-000001",
+      "correlation_id": "corr-allow-001",
+      "expected_result": "recorded",
+      "required_fields": [
+        "event_type",
+        "tenant",
+        "target",
+        "credential_set",
+        "correlation_id"
+      ],
+      "redaction_markers": [
+        "Authorization=[REDACTED]",
+        "password=[REDACTED]"
+      ]
+    },
+    {
+      "case": "denied_cross_tenant_read_event",
+      "event_type": "access_denied",
+      "credential_set": "reader-basic",
+      "tenant": "tenant-a",
+      "target": "logs-tenant-b-000001",
+      "correlation_id": "corr-deny-001",
+      "expected_result": "recorded",
+      "required_fields": [
+        "event_type",
+        "tenant",
+        "target",
+        "credential_set",
+        "correlation_id",
+        "decision_reason"
+      ],
+      "redaction_markers": [
+        "Authorization=[REDACTED]",
+        "password=[REDACTED]"
+      ]
+    },
+    {
+      "case": "denied_restricted_index_write_event",
+      "event_type": "access_denied",
+      "credential_set": "writer-basic",
+      "tenant": "tenant-a",
+      "target": ".opensearch-restricted-authz-000001",
+      "correlation_id": "corr-deny-002",
+      "expected_result": "recorded",
+      "required_fields": [
+        "event_type",
+        "tenant",
+        "target",
+        "credential_set",
+        "correlation_id",
+        "decision_reason"
+      ],
+      "redaction_markers": [
+        "Authorization=[REDACTED]",
+        "password=[REDACTED]"
+      ]
+    }
+  ]
+}

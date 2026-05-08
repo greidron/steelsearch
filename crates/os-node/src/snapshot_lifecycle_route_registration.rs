@@ -63,12 +63,16 @@ pub fn build_snapshot_create_response(snapshot: &serde_json::Value) -> serde_jso
     for field in [
         "snapshot",
         "uuid",
+        "generation",
         "state",
         "indices",
         "include_global_state",
         "metadata",
         "partial",
         "ignore_unavailable",
+        "incremental",
+        "base_snapshot",
+        "stats",
     ] {
         if let Some(value) = object.get(field) {
             bounded_snapshot.insert(field.to_string(), value.clone());
@@ -92,10 +96,14 @@ pub fn build_snapshot_readback_response(snapshot: &serde_json::Value) -> serde_j
     for field in [
         "snapshot",
         "uuid",
+        "generation",
         "state",
         "indices",
         "include_global_state",
         "metadata",
+        "incremental",
+        "base_snapshot",
+        "stats",
     ] {
         if let Some(value) = object.get(field) {
             bounded_snapshot.insert(field.to_string(), value.clone());

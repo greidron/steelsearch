@@ -4,21 +4,28 @@ pub const CLUSTER_ALLOCATION_EXPLAIN_ROUTE_PATH: &str = "/_cluster/allocation/ex
 pub const CLUSTER_ALLOCATION_EXPLAIN_ROUTE_METHOD: &str = "GET";
 pub const CLUSTER_ALLOCATION_EXPLAIN_ROUTE_FAMILY: &str = "allocation_explain_readback";
 
-pub const ALLOCATION_EXPLAIN_RESPONSE_FIELDS: [&str; 6] = [
+pub const ALLOCATION_EXPLAIN_RESPONSE_FIELDS: [&str; 7] = [
     "index",
     "shard",
     "primary",
     "current_state",
     "current_node",
     "node_allocation_decisions",
+    "cluster_info",
 ];
-pub const ALLOCATION_EXPLAIN_OPTIONAL_RESPONSE_FIELDS: [&str; 6] = [
+pub const ALLOCATION_EXPLAIN_OPTIONAL_RESPONSE_FIELDS: [&str; 12] = [
     "can_allocate",
     "allocate_explanation",
     "can_remain_on_current_node",
     "can_rebalance_cluster",
+    "can_move_to_other_node",
     "can_rebalance_to_other_node",
+    "move_explanation",
     "rebalance_explanation",
+    "configured_delay",
+    "configured_delay_in_millis",
+    "remaining_delay",
+    "remaining_delay_in_millis",
 ];
 
 pub const ALLOCATION_EXPLAIN_NODE_DECISION_FIELDS: [&str; 7] = [
@@ -33,15 +40,21 @@ pub const ALLOCATION_EXPLAIN_NODE_DECISION_FIELDS: [&str; 7] = [
 
 pub const ALLOCATION_EXPLAIN_DECIDER_FIELDS: [&str; 3] =
     ["decider", "decision", "explanation"];
-pub const ALLOCATION_EXPLAIN_CURRENT_NODE_FIELDS: [&str; 5] = [
+pub const ALLOCATION_EXPLAIN_CURRENT_NODE_FIELDS: [&str; 6] = [
     "id",
     "name",
     "transport_address",
     "weight_ranking",
     "attributes",
+    "roles",
 ];
-pub const ALLOCATION_EXPLAIN_UNASSIGNED_INFO_FIELDS: [&str; 2] =
-    ["reason", "last_allocation_status"];
+pub const ALLOCATION_EXPLAIN_UNASSIGNED_INFO_FIELDS: [&str; 5] = [
+    "reason",
+    "at",
+    "details",
+    "last_allocation_status",
+    "failed_allocation_attempts",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AllocationExplainRouteRegistryEntry {
@@ -176,15 +189,18 @@ mod tests {
             "shard": 0,
             "primary": true,
             "current_state": "unassigned",
-            "current_node": { "name": "node-a" },
+            "current_node": { "name": "node-a", "roles": ["data"] },
+            "cluster_info": { "nodes": {} },
             "node_allocation_decisions": [],
             "can_allocate": "drop-me"
         }));
 
         assert!(normalized.get("index").is_some());
         assert!(normalized.get("current_state").is_some());
+        assert!(normalized.get("cluster_info").is_some());
         assert!(normalized.get("node_allocation_decisions").is_some());
         assert_eq!(normalized["can_allocate"], "drop-me");
+        assert_eq!(normalized["current_node"]["roles"][0], "data");
     }
 
     #[test]

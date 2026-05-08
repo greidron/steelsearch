@@ -6,8 +6,15 @@ pub const INDEX_STATS_ROUTE_PATH: &str = "/_stats";
 pub const STATS_ROUTE_FAMILY: &str = "stats_summary_readback";
 
 pub const NODES_STATS_RESPONSE_FIELDS: [&str; 1] = ["nodes"];
-pub const CLUSTER_STATS_RESPONSE_FIELDS: [&str; 5] =
-    ["cluster_name", "status", "indices", "nodes", "fs"];
+pub const CLUSTER_STATS_RESPONSE_FIELDS: [&str; 7] = [
+    "cluster_uuid",
+    "cluster_name",
+    "timestamp",
+    "status",
+    "indices",
+    "nodes",
+    "fs",
+];
 pub const INDEX_STATS_RESPONSE_FIELDS: [&str; 3] = ["_shards", "_all", "indices"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,7 +115,9 @@ mod tests {
     #[test]
     fn cluster_and_index_stats_responses_keep_bounded_top_level_fields() {
         let cluster = build_cluster_stats_response(&serde_json::json!({
+            "cluster_uuid": "cluster-uuid",
             "cluster_name": "steelsearch-dev",
+            "timestamp": 1,
             "status": "yellow",
             "indices": { "count": 1 },
             "nodes": { "count": { "total": 1 } },
@@ -122,7 +131,9 @@ mod tests {
             "shards": "drop-me"
         }));
 
+        assert!(cluster.get("cluster_uuid").is_some());
         assert!(cluster.get("cluster_name").is_some());
+        assert!(cluster.get("timestamp").is_some());
         assert!(cluster.get("status").is_some());
         assert!(cluster.get("indices").is_some());
         assert!(cluster.get("nodes").is_some());
@@ -140,7 +151,9 @@ mod tests {
             "cluster_name": "drop-me"
         }));
         let cluster = invoke_cluster_stats_live_route(&serde_json::json!({
+            "cluster_uuid": "cluster-uuid",
             "cluster_name": "steelsearch-dev",
+            "timestamp": 1,
             "status": "yellow",
             "indices": { "count": 1 },
             "nodes": { "count": { "total": 1 } },
@@ -155,7 +168,9 @@ mod tests {
 
         assert!(nodes.get("nodes").is_some());
         assert!(nodes.get("cluster_name").is_none());
+        assert!(cluster.get("cluster_uuid").is_some());
         assert!(cluster.get("cluster_name").is_some());
+        assert!(cluster.get("timestamp").is_some());
         assert!(cluster.get("indices").is_some());
         assert!(cluster.get("status").is_some());
         assert!(cluster.get("fs").is_some());

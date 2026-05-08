@@ -16,6 +16,26 @@
     {
       "name": "logs-write-overwrite",
       "body": {}
+    },
+    {
+      "name": "logs-write-single-doc",
+      "body": {}
+    },
+    {
+      "name": "logs-write-realtime-doc",
+      "body": {}
+    },
+    {
+      "name": "logs-write-refresh-doc",
+      "body": {}
+    },
+    {
+      "name": "logs-write-lifecycle-doc",
+      "body": {}
+    },
+    {
+      "name": "logs-bulk-metadata-000001",
+      "body": {}
     }
   ],
   "bulk": [
@@ -51,6 +71,30 @@
           "_source": {
             "message": "stale dest copy",
             "tenant": "tenant-old"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-write-single-doc",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "message": "single doc baseline",
+            "tenant": "tenant-a"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-bulk-metadata-000001",
+      "documents": [
+        {
+          "_id": "seed-doc",
+          "_source": {
+            "message": "bulk metadata baseline",
+            "tenant": "tenant-seed"
           }
         }
       ]
@@ -116,6 +160,242 @@
       "reason": "Steelsearch semantic hardening fixture for wrong-routing update miss."
     },
     {
+      "name": "single_doc_update_noop_result",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-single-doc/_update/doc-1",
+      "body": {
+        "doc": {
+          "message": "single doc baseline",
+          "tenant": "tenant-a"
+        }
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_update_script_result",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-single-doc/_update/doc-1?refresh=true",
+      "body": {
+        "script": {
+          "source": "ctx._source.processed = params.processed",
+          "params": {
+            "processed": true
+          }
+        }
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_update_readback",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-single-doc/_doc/doc-1?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_delete_result",
+      "area": "document-write",
+      "method": "DELETE",
+      "path": "/logs-write-single-doc/_doc/doc-1?refresh=true",
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_delete_readback_not_found",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-single-doc/_doc/doc-1?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_update_missing_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-single-doc/_update/missing-doc",
+      "body": {
+        "doc": {
+          "processed": true
+        }
+      },
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 404,
+      "reason": "Steelsearch semantic hardening fixture for single-doc update miss."
+    },
+    {
+      "name": "single_doc_update_seq_term_success",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-source-a/_update/doc-1?if_seq_no=0&if_primary_term=1",
+      "body": {
+        "doc": {
+          "processed": true
+        }
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_routing_get_not_found",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-source-a/_doc/doc-1?routing=wrong-route",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_source_includes_readback",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-source-a/_doc/doc-1?_source_includes=message",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_stored_fields_unsupported_error",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-source-a/_doc/doc-1?stored_fields=tenant",
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch explicit deny fixture for stored_fields on GET document."
+    },
+    {
+      "name": "single_doc_create_unrefreshed",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-realtime-doc/_doc/doc-rt",
+      "body": {
+        "message": "realtime pending",
+        "tenant": "tenant-rt"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_get_realtime_false_not_found",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-realtime-doc/_doc/doc-rt?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_create_refresh_false",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-refresh-doc/_doc/doc-false",
+      "body": {
+        "message": "refresh false",
+        "tenant": "tenant-rf"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_get_realtime_false_after_refresh_false",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-refresh-doc/_doc/doc-false?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_create_refresh_wait_for",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-refresh-doc/_doc/doc-wait?refresh=wait_for",
+      "body": {
+        "message": "refresh wait_for",
+        "tenant": "tenant-rw"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_get_realtime_false_after_refresh_wait_for",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-refresh-doc/_doc/doc-wait?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_create_refresh_true",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-refresh-doc/_doc/doc-true?refresh=true",
+      "body": {
+        "message": "refresh true",
+        "tenant": "tenant-rt"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_get_realtime_false_after_refresh_true",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-refresh-doc/_doc/doc-true?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_put_lifecycle_create",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put",
+      "body": {
+        "message": "put lifecycle",
+        "tenant": "tenant-put"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_post_lifecycle_create",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post",
+      "body": {
+        "message": "post lifecycle",
+        "tenant": "tenant-post"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_put_lifecycle_get",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_post_lifecycle_get",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_put_lifecycle_delete",
+      "area": "document-write",
+      "method": "DELETE",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put?refresh=true",
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_post_lifecycle_delete",
+      "area": "document-write",
+      "method": "DELETE",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post?refresh=true",
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_put_lifecycle_get_not_found",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put?realtime=false",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_post_lifecycle_get_not_found",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post?realtime=false",
+      "extract": "get_document"
+    },
+    {
       "name": "reindex_wildcard_source_summary",
       "area": "document-write",
       "method": "POST",
@@ -144,6 +424,369 @@
         }
       },
       "extract": "reindex_summary"
+    },
+    {
+      "name": "bulk_routing_item_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "bulk-route-write",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-route\",\"routing\":\"tenant-a\"}}\n{\"message\":\"routed bulk create\",\"tenant\":\"tenant-a\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-route-readback",
+          "method": "GET",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-route?routing=tenant-a",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ]
+    },
+    {
+      "name": "bulk_external_version_success_item",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "seed-external-doc",
+          "method": "PUT",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-ext",
+          "body": {
+            "message": "baseline ext"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "bulk-external-version-update",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-ext\",\"version\":2,\"version_type\":\"external\"}}\n{\"message\":\"external bulk update\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_external_version_conflict_item",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "seed-external-conflict-doc",
+          "method": "PUT",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-ext-conflict",
+          "body": {
+            "message": "baseline ext conflict"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "bulk-external-version-conflict",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-ext-conflict\",\"version\":1,\"version_type\":\"external\"}}\n{\"message\":\"external bulk conflict\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_seq_term_success_item",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "seed-seq-doc",
+          "method": "PUT",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-seq",
+          "body": {
+            "message": "baseline seq"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "bulk-seq-term-update",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"update\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-seq\",\"if_seq_no\":0,\"if_primary_term\":1}}\n{\"doc\":{\"message\":\"seq-term bulk update\"}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_seq_term_conflict_item",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "seed-seq-conflict-doc",
+          "method": "PUT",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-seq-conflict",
+          "body": {
+            "message": "baseline seq conflict"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "bulk-seq-term-conflict",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"update\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-seq-conflict\",\"if_seq_no\":7,\"if_primary_term\":1}}\n{\"doc\":{\"message\":\"stale seq-term bulk update\"}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_pipeline_metadata_unsupported_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-pipeline\",\"pipeline\":\"ingest-1\"}}\n{\"message\":\"pipeline metadata unsupported\"}\n",
+      "raw": true,
+      "extract": "bulk_items",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "reason": "Steelsearch explicit deny fixture for bulk per-item pipeline metadata."
+    },
+    {
+      "name": "bulk_version_without_external_policy_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-version\",\"version\":7}}\n{\"message\":\"unsupported bulk versioning\"}\n",
+      "raw": true,
+      "extract": "bulk_items",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "reason": "Steelsearch explicit deny fixture for bulk version without version_type=external."
+    },
+    {
+      "name": "bulk_item_ordering_partial_failure_matrix",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "create-bulk-ordering-index",
+          "method": "PUT",
+          "path": "/logs-bulk-ordering-000001",
+          "body": {},
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "bulk-partial-failure-ordering",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"create\":{\"_index\":\"logs-bulk-ordering-000001\",\"_id\":\"doc-1\"}}\n{\"message\":\"created-once\"}\n{\"noop\":{\"_index\":\"logs-bulk-ordering-000001\",\"_id\":\"doc-noop\"}}\n{\"index\":{\"_index\":\"logs-bulk-ordering-000001\",\"_id\":\"doc-2\"}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_metadata_non_object_parse_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":[]}\n{\"message\":\"bad metadata\"}\n",
+      "raw": true,
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "reason": "Steelsearch explicit fail-closed fixture for non-object bulk action metadata."
+    },
+    {
+      "name": "bulk_create_external_version_success_item",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"create\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-create-ext\",\"version\":5,\"version_type\":\"external\"}}\n{\"message\":\"external bulk create\"}\n",
+      "raw": true,
+      "extract": "bulk_items"
+    },
+    {
+      "name": "bulk_create_external_version_conflict_item",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "seed-create-external-conflict-doc",
+          "method": "PUT",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-create-ext-conflict",
+          "body": {
+            "message": "baseline create ext conflict"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "bulk-create-external-version-conflict",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"create\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-create-ext-conflict\",\"version\":1,\"version_type\":\"external\"}}\n{\"message\":\"external bulk create conflict\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_closed_index_item_failure_matrix",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "create-open-bulk-index",
+          "method": "PUT",
+          "path": "/logs-bulk-open-000001",
+          "body": {},
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "create-closed-bulk-index",
+          "method": "PUT",
+          "path": "/logs-bulk-closed-000001",
+          "body": {},
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "close-bulk-index",
+          "method": "POST",
+          "path": "/logs-bulk-closed-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "bulk-open-and-closed-mixed-write",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"create\":{\"_index\":\"logs-bulk-open-000001\",\"_id\":\"doc-open\"}}\n{\"message\":\"open bulk create\"}\n{\"create\":{\"_index\":\"logs-bulk-closed-000001\",\"_id\":\"doc-closed\"}}\n{\"message\":\"closed bulk create\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
+      "name": "bulk_refresh_false_readback_not_found",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "create-bulk-refresh-index",
+          "method": "PUT",
+          "path": "/logs-bulk-refresh-000001",
+          "body": {},
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "bulk-refresh-false-write",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-false\"}}\n{\"message\":\"refresh false\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-refresh-false-readback",
+          "method": "GET",
+          "path": "/logs-bulk-refresh-000001/_doc/doc-false?realtime=false",
+          "expected_status": 404,
+          "extract": "get_document"
+        }
+      ]
+    },
+    {
+      "name": "bulk_refresh_true_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "bulk-refresh-true-write",
+          "method": "POST",
+          "path": "/_bulk?refresh=true",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-true\"}}\n{\"message\":\"refresh true\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-refresh-true-readback",
+          "method": "GET",
+          "path": "/logs-bulk-refresh-000001/_doc/doc-true?realtime=false",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ]
+    },
+    {
+      "name": "bulk_refresh_wait_for_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "bulk-refresh-wait-write",
+          "method": "POST",
+          "path": "/_bulk?refresh=wait_for",
+          "body": "{\"create\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-wait\"}}\n{\"message\":\"refresh wait_for\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-refresh-wait-readback",
+          "method": "GET",
+          "path": "/logs-bulk-refresh-000001/_doc/doc-wait?realtime=false",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ]
+    },
+    {
+      "name": "bulk_repeated_create_replay_conflict",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "bulk-replay-first-create",
+          "method": "POST",
+          "path": "/_bulk?refresh=wait_for",
+          "body": "{\"create\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-replay\"}}\n{\"message\":\"refresh replay\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-replay-second-create",
+          "method": "POST",
+          "path": "/_bulk?refresh=wait_for",
+          "body": "{\"create\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-replay\"}}\n{\"message\":\"refresh replay\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
     }
   ]
 }

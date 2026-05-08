@@ -1,0 +1,77 @@
+{
+  "name": "transport-negotiation-exception-policy",
+  "cases": [
+    {
+      "case": "bad_tcp_handshake_frame_reject",
+      "category": "frame_negotiation",
+      "kind": "bad_handshake",
+      "disposition": "rejected",
+      "mapped_error": "transport_frame_decode_exception",
+      "reason": "malformed transport handshake frames must reject before action dispatch"
+    },
+    {
+      "case": "wire_version_mismatch_reject",
+      "category": "frame_negotiation",
+      "kind": "version_gate",
+      "disposition": "rejected",
+      "mapped_error": "unsupported_version_exception",
+      "reason": "peer versions outside the explicit gate must fail closed"
+    },
+    {
+      "case": "malformed_exception_payload_reject",
+      "category": "exception_mapping",
+      "kind": "malformed_exception_payload",
+      "disposition": "rejected",
+      "mapped_error": "transport_serialization_exception",
+      "reason": "malformed remote exception payloads must map to transport serialization failure"
+    },
+    {
+      "case": "unknown_named_writeable_reject",
+      "category": "exception_mapping",
+      "kind": "unknown_named_writeable",
+      "disposition": "rejected",
+      "mapped_error": "named_writeable_not_supported_exception",
+      "reason": "unknown named writeables must reject and preserve prior cache"
+    },
+    {
+      "case": "cluster_state_action_server_side",
+      "category": "action_classification",
+      "kind": "ClusterStateAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded cluster-state transport contract is explicitly allowlisted"
+    },
+    {
+      "case": "search_action_server_side",
+      "category": "action_classification",
+      "kind": "SearchAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded search transport contract is explicitly allowlisted"
+    },
+    {
+      "case": "bulk_action_server_side",
+      "category": "action_classification",
+      "kind": "BulkAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded bulk transport contract is explicitly allowlisted"
+    },
+    {
+      "case": "unknown_transport_action_reject",
+      "category": "action_classification",
+      "kind": "unknown_transport_action",
+      "bucket": "unsupported",
+      "disposition": "rejected",
+      "reason": "unknown transport actions must reject before dispatch"
+    },
+    {
+      "case": "msearch_action_planned_reject",
+      "category": "action_classification",
+      "kind": "MultiSearchAction.INSTANCE",
+      "bucket": "planned",
+      "disposition": "rejected",
+      "reason": "planned transport actions must stay fail-closed until explicitly promoted"
+    }
+  ]
+}

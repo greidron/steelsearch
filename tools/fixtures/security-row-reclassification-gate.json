@@ -1,0 +1,49 @@
+{
+  "name": "security-row-reclassification-gate",
+  "profile": "secure-standalone",
+  "source_area": "Security and access control",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "semantic_parity": "Implemented",
+    "production_readiness": "No"
+  },
+  "unified_report_sections": {
+    "security_parity": {
+      "suite": "security-multinode",
+      "required_reports": [
+        "security-authz-compat-report.json",
+        "secure-multinode-tls-report.json",
+        "security-tenant-role-index-report.json",
+        "security-audit-correlation-report.json",
+        "security-plugin-api-report.json",
+        "security-plugin-write-rotation-report.json",
+        "secure-multinode-gap-harness/report.json"
+      ],
+      "required_cases": [
+        "security_missing_root_info_401",
+        "security_reader_root_info_success",
+        "security_reader_restricted_index_get_403",
+        "security_admin_restricted_index_get_success",
+        "security_writer_bulk_partial_authz_denial"
+      ],
+      "required_evidence_classes": [
+        "tls-handshake-matrix",
+        "tenant-role-index-isolation",
+        "restricted-index-policy",
+        "audit-correlation",
+        "plugin-api-secret-redaction",
+        "plugin-write-cert-rotation",
+        "secure-multinode-join",
+        "secure-cert-rotation",
+        "restricted-index-mutation-deny"
+      ]
+    }
+  },
+  "blocked_until_final_gate": {
+    "required_missing_evidence_classes": [
+      "secure-redaction-smoke",
+      "secure-durability-restart"
+    ],
+    "reason": "secure standalone readiness remains blocked until the final claim gate aggregates redaction smoke and secure restart/durability artifacts"
+  }
+}

@@ -33,10 +33,15 @@ CAT_INDEX_REQUIRED_COLUMNS = {
     "health",
     "status",
     "index",
+    "uuid",
     "pri",
     "rep",
     "docs.count",
+    "docs.deleted",
     "store.size",
+    "pri.store.size",
+    "dataset.size",
+    "creation.date.string",
 }
 CAT_ALIAS_REQUIRED_COLUMNS = {
     "alias",
@@ -75,10 +80,26 @@ CAT_NODEATTRS_REQUIRED_COLUMNS = {
     "value",
 }
 CAT_PENDING_TASKS_REQUIRED_COLUMNS = {
+    "id",
     "insertOrder",
     "timeInQueue",
+    "timeInQueueMillis",
     "priority",
     "source",
+    "executing",
+}
+PENDING_TASKS_REQUIRED_FIELDS = {
+    "id",
+    "node",
+    "node_name",
+    "action",
+    "description",
+    "insert_order",
+    "priority",
+    "source",
+    "executing",
+    "time_in_queue_millis",
+    "time_in_queue",
 }
 CAT_SHARDS_REQUIRED_COLUMNS = {
     "index",
@@ -662,6 +683,7 @@ def run_case_request(
             case["path"],
             case.get("body"),
             timeout,
+            raw=case.get("raw", False),
             raw_json=case.get("raw_json", False),
             accept=case.get("accept"),
             request_headers=case_headers,
@@ -835,10 +857,25 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     if kind == "status_only":
         return {"status": response["status"]}
     if kind == "root_info":
+        version = body.get("version") or {}
         return {
             "status": response["status"],
+            "name_present": bool(body.get("name")),
+            "cluster_name_present": bool(body.get("cluster_name")),
             "tagline": body.get("tagline"),
-            "version_number_present": bool((body.get("version") or {}).get("number")),
+            "distribution": version.get("distribution"),
+            "version_number_present": bool(version.get("number")),
+            "build_type_present": bool(version.get("build_type")),
+            "build_hash_present": bool(version.get("build_hash")),
+            "build_date_present": bool(version.get("build_date")),
+            "build_snapshot_present": "build_snapshot" in version,
+            "lucene_version_present": bool(version.get("lucene_version")),
+            "minimum_wire_compatibility_version_present": bool(
+                version.get("minimum_wire_compatibility_version")
+            ),
+            "minimum_index_compatibility_version_present": bool(
+                version.get("minimum_index_compatibility_version")
+            ),
         }
     if kind == "cluster_health":
         return {
@@ -853,6 +890,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "fields": sorted(properties.keys()),
+        }
+    if kind == "index_names":
+        return {
+            "status": response["status"],
+            "indices": sorted(body.keys()) if isinstance(body, dict) else [],
         }
     if kind == "index_metadata":
         index_body = next(iter(body.values()), {}) if isinstance(body, dict) and body else {}
@@ -1042,6 +1084,44 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "_id": body.get("_id"),
             "_source": body.get("_source"),
         }
+    if kind == "single_doc_write_result":
+        return {
+            "status": response["status"],
+            "_id": body.get("_id"),
+            "result": body.get("result"),
+            "_version": body.get("_version"),
+            "forced_refresh": body.get("forced_refresh"),
+        }
+    if kind == "bulk_items":
+        items = body.get("items") if isinstance(body, dict) else None
+        summarized = []
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict) or not item:
+                    continue
+                action, payload = next(iter(item.items()))
+                payload = payload if isinstance(payload, dict) else {}
+                error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+                summarized.append(
+                    {
+                        "action": action,
+                        "_index": payload.get("_index"),
+                        "_id": payload.get("_id"),
+                        "status": payload.get("status"),
+                        "result": payload.get("result"),
+                        "_version": payload.get("_version"),
+                        "_seq_no": payload.get("_seq_no"),
+                        "_primary_term": payload.get("_primary_term"),
+                        "forced_refresh": payload.get("forced_refresh"),
+                        "error_type": error.get("type"),
+                        "reason": error.get("reason"),
+                    }
+                )
+        return {
+            "status": response["status"],
+            "errors": body.get("errors") if isinstance(body, dict) else None,
+            "items": summarized,
+        }
     if kind == "reindex_summary":
         failures = body.get("failures")
         return {
@@ -1140,6 +1220,28 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 "skipped": shards.get("skipped"),
                 "failed": shards.get("failed"),
             },
+        }
+    if kind == "search_shard_failures":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        shards = body.get("_shards") or {}
+        failures = shards.get("failures") or []
+        return {
+            "status": response["status"],
+            "ids": [hit.get("_id") for hit in hits],
+            "shards": {
+                "total": shards.get("total"),
+                "successful": shards.get("successful"),
+                "skipped": shards.get("skipped"),
+                "failed": shards.get("failed"),
+            },
+            "failure_indices": [
+                failure.get("index") for failure in failures if isinstance(failure, dict)
+            ],
+            "failure_types": [
+                ((failure.get("reason") or {}).get("type"))
+                for failure in failures
+                if isinstance(failure, dict)
+            ],
         }
     if kind == "msearch_summary":
         responses = body.get("responses") or []
@@ -1950,6 +2052,34 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "nodes_present": bool(nodes) if isinstance(nodes, dict) else False,
             "indices_count_present": "count" in (first.get("indices") or {}),
+            "thread_pool_present": isinstance((first.get("thread_pool") or {}).get("search"), dict),
+            "fs_present": isinstance(first.get("fs"), dict),
+            "breaker_present": isinstance((first.get("breakers") or {}).get("parent"), dict),
+        }
+    if kind == "cluster_state":
+        metadata = (body.get("metadata") or {}).get("indices") or {}
+        routing = ((body.get("routing_table") or {}).get("indices") or {}).get("logs-compat") or {}
+        shard = ((((routing.get("shards") or {}).get("0") or [None])[0]) if isinstance((routing.get("shards") or {}).get("0"), list) else None) or {}
+        logs_index = metadata.get("logs-compat") if isinstance(metadata, dict) else {}
+        aliases = (logs_index or {}).get("aliases") or {}
+        return {
+            "status": response["status"],
+            "cluster_name_present": bool(body.get("cluster_name")),
+            "logs_compat_present": isinstance(logs_index, dict),
+            "settings_present": isinstance((logs_index or {}).get("settings"), dict),
+            "mappings_present": isinstance((logs_index or {}).get("mappings"), dict),
+            "aliases_present": isinstance(aliases, dict),
+            "routing_allocation_id_present": isinstance((shard or {}).get("allocation_id"), dict),
+            "routing_recovery_source_present": isinstance((shard or {}).get("recovery_source"), dict),
+        }
+    if kind == "pending_tasks":
+        rows = body.get("tasks") or []
+        first = rows[0] if isinstance(rows, list) and rows else {}
+        present = set(first.keys()) if isinstance(first, dict) else set()
+        return {
+            "status": response["status"],
+            "task_count": len(rows) if isinstance(rows, list) else 0,
+            "required_fields_present": sorted(PENDING_TASKS_REQUIRED_FIELDS & present),
         }
     if kind == "node_usage":
         nodes = body.get("nodes") or {}
@@ -2070,6 +2200,14 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "quantization_cache_used_bytes": node.get("quantization_cache_used_bytes"),
             "operational_controls_present": isinstance(node.get("operational_controls"), dict),
         }
+    if kind == "knn_settings":
+        persistent = body.get("persistent") or {}
+        return {
+            "status": response["status"],
+            "persistent_keys": sorted(persistent.keys()) if isinstance(persistent, dict) else [],
+            "breaker_limit": persistent.get("knn.memory.circuit_breaker.limit") if isinstance(persistent, dict) else None,
+            "model_cache_size": persistent.get("knn.model.cache.size") if isinstance(persistent, dict) else None,
+        }
     if kind == "knn_warmup_response":
         return {
             "status": response["status"],
@@ -2080,6 +2218,13 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "model_cache_bytes": body.get("model_cache_bytes"),
             "quantization_cache_bytes": body.get("quantization_cache_bytes"),
         }
+    if kind == "knn_warmup_basic":
+        return {
+            "status": response["status"],
+            "index": body.get("index"),
+            "warmed": body.get("warmed"),
+            "vector_segment_count": body.get("vector_segment_count"),
+        }
     if kind == "knn_clear_cache_response":
         return {
             "status": response["status"],
@@ -2088,6 +2233,106 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "released_native_memory_bytes": body.get("released_native_memory_bytes"),
             "released_model_cache_bytes": body.get("released_model_cache_bytes"),
             "released_quantization_cache_bytes": body.get("released_quantization_cache_bytes"),
+        }
+    if kind == "knn_model_train":
+        return {
+            "status": response["status"],
+            "model_id": body.get("model_id"),
+            "state": body.get("state"),
+            "training_index": body.get("training_index"),
+            "task_id_present": bool(body.get("task_id")),
+            "transport_action": body.get("transport_action"),
+        }
+    if kind == "knn_model_get":
+        return {
+            "status": response["status"],
+            "model_id": body.get("model_id"),
+            "training_index": body.get("training_index"),
+            "dimension": body.get("dimension"),
+            "state": body.get("state"),
+            "task_id_present": bool(body.get("task_id")),
+            "transport_action": body.get("transport_action"),
+        }
+    if kind == "knn_model_search":
+        hits = (((body.get("hits") or {}).get("hits")) or [])
+        model_ids = []
+        task_metadata_present = []
+        for hit in hits if isinstance(hits, list) else []:
+            if not isinstance(hit, dict):
+                continue
+            model_ids.append(hit.get("_id"))
+            source = hit.get("_source") or {}
+            task_metadata_present.append(bool(source.get("task_id")) and bool(source.get("transport_action")))
+        total = (((body.get("hits") or {}).get("total")) or {}).get("value")
+        return {
+            "status": response["status"],
+            "total": total,
+            "model_ids": model_ids,
+            "task_metadata_present": task_metadata_present,
+        }
+    if kind == "ml_register":
+        return {
+            "status": response["status"],
+            "model_id": body.get("model_id"),
+            "task_id_present": bool(body.get("task_id")),
+            "model_state": body.get("model_state"),
+            "task_state": body.get("task_state"),
+        }
+    if kind == "ml_task":
+        return {
+            "status": response["status"],
+            "task_id": body.get("task_id"),
+            "model_id": body.get("model_id"),
+            "task_type": body.get("task_type"),
+            "state": body.get("state"),
+        }
+    if kind == "ml_model_get":
+        return {
+            "status": response["status"],
+            "model_id": body.get("model_id"),
+            "dimension": body.get("dimension"),
+            "deployed": body.get("deployed"),
+            "last_task_id_present": bool(body.get("last_task_id")),
+            "last_task_state": body.get("last_task_state"),
+        }
+    if kind == "ml_model_search":
+        hits = (((body.get("hits") or {}).get("hits")) or [])
+        model_ids = []
+        deployed_values = []
+        last_task_state_values = []
+        for hit in hits if isinstance(hits, list) else []:
+            if not isinstance(hit, dict):
+                continue
+            model_ids.append(hit.get("_id"))
+            source = hit.get("_source") or {}
+            deployed_values.append(source.get("deployed"))
+            last_task_state_values.append(source.get("last_task_state"))
+        total = (((body.get("hits") or {}).get("total")) or {}).get("value")
+        return {
+            "status": response["status"],
+            "total": total,
+            "model_ids": model_ids,
+            "deployed_values": deployed_values,
+            "last_task_state_values": last_task_state_values,
+        }
+    if kind == "ml_predict":
+        results = body.get("inference_results") or []
+        first = results[0] if isinstance(results, list) and results else {}
+        output = first.get("output") if isinstance(first, dict) else None
+        first_output = output[0] if isinstance(output, list) and output else None
+        output_len = len(first_output) if isinstance(first_output, list) else None
+        return {
+            "status": response["status"],
+            "model_id": first.get("model_id") if isinstance(first, dict) else None,
+            "output_len": output_len,
+        }
+    if kind == "ml_deploy":
+        return {
+            "status": response["status"],
+            "model_id": body.get("model_id"),
+            "deployed": body.get("deployed"),
+            "task_id_present": bool(body.get("task_id")),
+            "task_state": body.get("task_state"),
         }
     if kind == "tasks":
         return {

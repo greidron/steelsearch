@@ -32,6 +32,7 @@ os-core = { path = "../os-core" }
 os-engine = { path = "../os-engine" }
 os-engine-tantivy = { path = "../os-engine-tantivy" }
 os-ml-commons = { path = "../os-ml-commons" }
+os-node-rest-core = { path = "../os-node-rest-core" }
 os-plugin-knn = { path = "../os-plugin-knn" }
 os-rest = { path = "../os-rest" }
 os-stream = { path = "../os-stream" }

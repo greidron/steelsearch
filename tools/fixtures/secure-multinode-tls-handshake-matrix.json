@@ -1,0 +1,50 @@
+{
+  "name": "secure-multinode-tls-handshake-matrix",
+  "profile": "multi-node-secure",
+  "cases": [
+    {
+      "case": "server_cert_and_ca_success",
+      "bucket": "success",
+      "transport_mode": "tls",
+      "client_auth": "server-auth-only",
+      "expected_result": "connected",
+      "expected_markers": [
+        "tls handshake succeeded",
+        "cluster transport connected"
+      ]
+    },
+    {
+      "case": "client_cert_success",
+      "bucket": "client-cert-success",
+      "transport_mode": "mtls",
+      "client_auth": "required",
+      "expected_result": "connected",
+      "expected_markers": [
+        "client certificate accepted",
+        "tls handshake succeeded"
+      ]
+    },
+    {
+      "case": "wrong_ca_reject",
+      "bucket": "wrong-ca-failure",
+      "transport_mode": "tls",
+      "client_auth": "server-auth-only",
+      "expected_result": "rejected",
+      "expected_markers": [
+        "certificate verify failed",
+        "unknown ca"
+      ]
+    },
+    {
+      "case": "expired_cert_reject",
+      "bucket": "expired-cert-failure",
+      "transport_mode": "tls",
+      "client_auth": "server-auth-only",
+      "expected_result": "rejected",
+      "expected_markers": [
+        "certificate has expired",
+        "tls handshake rejected"
+      ]
+    }
+  ]
+}

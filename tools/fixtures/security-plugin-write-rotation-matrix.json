@@ -1,0 +1,51 @@
+{
+  "name": "security-plugin-write-rotation-matrix",
+  "profile": "multi-node-secure",
+  "cases": [
+    {
+      "case": "admin_internalusers_write_allowed",
+      "route": "/_plugins/_security/api/internalusers/tenant-admin-user",
+      "method": "PUT",
+      "credential_set": "admin-basic",
+      "expected_result": "allowed",
+      "expected_status": 200,
+      "mutation_result": "acknowledged"
+    },
+    {
+      "case": "writer_internalusers_write_denied",
+      "route": "/_plugins/_security/api/internalusers/tenant-admin-user",
+      "method": "PUT",
+      "credential_set": "writer-basic",
+      "expected_result": "denied",
+      "expected_status": 403,
+      "mutation_result": "rejected"
+    },
+    {
+      "case": "admin_rolesmapping_write_allowed",
+      "route": "/_plugins/_security/api/rolesmapping/security-reader",
+      "method": "PATCH",
+      "credential_set": "admin-basic",
+      "expected_result": "allowed",
+      "expected_status": 200,
+      "mutation_result": "acknowledged"
+    },
+    {
+      "case": "admin_ssl_reload_allowed",
+      "route": "/_plugins/_security/api/ssl/transport/reloadcerts",
+      "method": "POST",
+      "credential_set": "admin-basic",
+      "expected_result": "allowed",
+      "expected_status": 200,
+      "mutation_result": "reloaded"
+    },
+    {
+      "case": "writer_ssl_reload_denied",
+      "route": "/_plugins/_security/api/ssl/transport/reloadcerts",
+      "method": "POST",
+      "credential_set": "writer-basic",
+      "expected_result": "denied",
+      "expected_status": 403,
+      "mutation_result": "rejected"
+    }
+  ]
+}

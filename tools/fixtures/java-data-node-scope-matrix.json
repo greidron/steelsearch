@@ -1,0 +1,36 @@
+{
+  "name": "java-data-node-scope-matrix",
+  "workstreams": [
+    {
+      "area": "mixed_java_membership",
+      "scope_status": "in-scope",
+      "required_harness": "tools/run-phase-c-gap-harness.sh",
+      "required_evidence": [
+        "join-validation-reject-transcripts.json",
+        "publication-ordering-report-schema.json",
+        "mixed-cluster-failure-profiles.json"
+      ],
+      "blocked_reason": "mixed Java membership still depends on explicit binary-backed transport and publication validation"
+    },
+    {
+      "area": "lucene_segment_binary_sharing",
+      "scope_status": "in-scope",
+      "required_harness": "binary-backed segment compatibility harness",
+      "required_evidence": [
+        "peer-recovery-report-schema.json",
+        "allocation-convergence-report-schema.json"
+      ],
+      "blocked_reason": "Tantivy segments are not Lucene segments, so binary segment compatibility must be explicitly bridged"
+    },
+    {
+      "area": "jvm_recovery_participation",
+      "scope_status": "in-scope",
+      "required_harness": "java-driven recovery participation harness",
+      "required_evidence": [
+        "peer-recovery-report-schema.json",
+        "write-replication-report-schema.json"
+      ],
+      "blocked_reason": "JVM-driven recovery participation needs explicit source-target interruption and resume coverage"
+    }
+  ]
+}

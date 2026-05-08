@@ -1,0 +1,50 @@
+{
+  "name": "knn-plugin-promotion-gate",
+  "profile": "standalone",
+  "source_area": "k-NN plugin REST and model APIs",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "vector-ml"
+      ],
+      "report_paths": [
+        "vector-search-compat-report.json"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "vector-ml"
+      ],
+      "required_cases": [
+        "knn_settings_readback",
+        "knn_warmup_basic_shape",
+        "knn_clear_cache_basic_shape",
+        "knn_model_lifecycle_shape",
+        "knn_warmup_budget_failure",
+        "knn_warmup_clear_cache_telemetry_shape"
+      ],
+      "required_evidence_classes": [
+        "settings-readback",
+        "warmup-cache",
+        "clear-cache",
+        "model-lifecycle",
+        "budget-breaker"
+      ]
+    }
+  },
+  "excluded_from_standalone_claim": [
+    "secure-clustered-lifecycle"
+  ],
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml"
+    ],
+    "required_reports": [
+      "vector-search-compat-report.json"
+    ]
+  }
+}

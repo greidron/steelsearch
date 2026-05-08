@@ -1,0 +1,61 @@
+{
+  "name": "common-baseline-aggregation-matrix",
+  "families": {
+    "search": {
+      "profiles": [
+        "common-baseline",
+        "search-execution",
+        "vector-ml"
+      ],
+      "required_reports": [
+        "search-compat-report.json",
+        "vector-search-compat-report.json"
+      ]
+    },
+    "write": {
+      "profiles": [
+        "common-baseline",
+        "write-path-multi-node"
+      ],
+      "required_reports": [
+        "search-compat-report.json",
+        "multi-node-write-path-report.json"
+      ]
+    },
+    "snapshot": {
+      "profiles": [
+        "snapshot-migration"
+      ],
+      "required_reports": [
+        "snapshot-lifecycle-compat-report.json",
+        "migration-acceptance/report.json"
+      ]
+    },
+    "security": {
+      "profiles": [
+        "security-multinode"
+      ],
+      "required_reports": [
+        "secure-multinode-gap/<profile>/report.json"
+      ]
+    },
+    "runtime": {
+      "profiles": [
+        "transport-admin"
+      ],
+      "required_reports": [
+        "multi-node-transport-admin-report.json"
+      ]
+    },
+    "mixed-cluster": {
+      "profiles": [
+        "external-interop",
+        "same-cluster-peer"
+      ],
+      "required_reports": [
+        "phase-b-gap/<profile>/report.json",
+        "mixed-cluster-failure/<profile>/report.json"
+      ]
+    }
+  }
+}

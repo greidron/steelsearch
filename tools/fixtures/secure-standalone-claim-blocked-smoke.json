@@ -1,0 +1,20 @@
+{
+  "name": "secure-standalone-claim-blocked-smoke",
+  "cases": [
+    {
+      "name": "missing_required_suite_blocked",
+      "missing_component": "security-multinode",
+      "expected_status": "blocked"
+    },
+    {
+      "name": "missing_redaction_smoke_blocked",
+      "missing_component": "security-redaction-smoke-report.json",
+      "expected_status": "blocked"
+    },
+    {
+      "name": "missing_secure_durability_restart_blocked",
+      "missing_component": "secure-durability-restart-report.json",
+      "expected_status": "blocked"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "migration-promotion-gate",
+  "profile": "standalone",
+  "source_area": "Migration and replacement tooling",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "semantic_parity": "N/A",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "semantic_parity": {
+      "suite": "snapshot-migration",
+      "required_reports": [
+        "migration-cutover-integration-report.json"
+      ],
+      "required_cases": [
+        "template_metadata",
+        "index_metadata",
+        "alias_metadata",
+        "data_stream_metadata",
+        "scroll_export_sequence",
+        "pit_export_sequence",
+        "vector_payload_summary_doc",
+        "vector_knn_ranking"
+      ],
+      "required_evidence_classes": [
+        "translation-breadth",
+        "scroll-export",
+        "pit-export",
+        "resumability-checkpoint",
+        "vector-payload-equivalence",
+        "vector-ranking-equivalence"
+      ]
+    },
+    "durability_parity": {
+      "suite": "snapshot-migration",
+      "required_reports": [
+        "migration-acceptance/report.json"
+      ],
+      "required_evidence_classes": [
+        "approval-gate",
+        "rollback-only-rehearsal",
+        "rollback-divergence-two-dataset",
+        "unsupported-feature-preflight"
+      ]
+    }
+  },
+  "final_cutover_go_no_go_report": {
+    "path": "migration-cutover-go-no-go-report.json",
+    "required_fields": [
+      "approval_gate",
+      "preflight",
+      "rollback",
+      "vector_validation",
+      "divergence_check",
+      "final_decision"
+    ]
+  },
+  "latest_standalone_gate": {
+    "required_entrypoint": "tools/run-migration-acceptance-harness.sh --from-phase source-export --to-phase divergence-check --require-approval --evidence-dir out/migration-evidence",
+    "required_reports": [
+      "migration-cutover-integration-report.json",
+      "migration-acceptance/report.json",
+      "migration-cutover-go-no-go-report.json"
+    ]
+  }
+}

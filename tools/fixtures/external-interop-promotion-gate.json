@@ -1,0 +1,50 @@
+{
+  "name": "external-interop-promotion-gate",
+  "profile": "external-interop",
+  "source_area": "Native transport frame and OpenSearch probe compatibility",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "semantic_parity": "N/A",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "suite": "external-interop",
+      "required_reports": [
+        "phase-b-gap/<profile>/report.json"
+      ],
+      "required_evidence_classes": [
+        "handshake-version-gate",
+        "stale-cache-failover",
+        "allowlisted-forwarding",
+        "mixed-mode-failure-harness"
+      ]
+    },
+    "semantic_parity": {
+      "suite": "external-interop",
+      "required_reports": [
+        "named-writeable-payload-corpus.json",
+        "cluster-state-diff-apply-transcript.json"
+      ],
+      "required_evidence_classes": [
+        "named-writeable-roundtrip",
+        "cluster-state-diff-apply"
+      ]
+    }
+  },
+  "binary_dispatch_proof": {
+    "required_ledgers": [
+      "transport-action-subset-ledger.json",
+      "transport-negotiation-exception-policy.json"
+    ],
+    "allowed_actions": [
+      "ClusterStateAction.INSTANCE",
+      "SearchAction.INSTANCE",
+      "BulkAction.INSTANCE"
+    ],
+    "rejected_actions": [
+      "MultiSearchAction.INSTANCE",
+      "StreamSearchAction.INSTANCE"
+    ]
+  }
+}

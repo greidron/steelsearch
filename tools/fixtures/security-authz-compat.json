@@ -37,6 +37,51 @@
           }
         }
       }
+    },
+    {
+      "name": ".opensearch-restricted-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": ".plugins-restricted-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": ".opensearch-restricted-delete-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
     }
   ],
   "bulk": [
@@ -59,6 +104,30 @@
           "_id": "authz-restricted-doc-1",
           "_source": {
             "message": "restricted alias doc",
+            "tenant": "tenant-authz"
+          }
+        }
+      ]
+    },
+    {
+      "index": ".opensearch-restricted-authz-000001",
+      "documents": [
+        {
+          "_id": "authz-restricted-opensearch-doc-1",
+          "_source": {
+            "message": "restricted doc",
+            "tenant": "tenant-authz"
+          }
+        }
+      ]
+    },
+    {
+      "index": ".plugins-restricted-authz-000001",
+      "documents": [
+        {
+          "_id": "authz-restricted-plugins-doc-1",
+          "_source": {
+            "message": "restricted doc",
             "tenant": "tenant-authz"
           }
         }
@@ -104,6 +173,17 @@
   ],
   "cases": [
     {
+      "name": "security_missing_root_info_401",
+      "area": "security-authz",
+      "bucket": "missing-credential-401",
+      "method": "GET",
+      "path": "/",
+      "credential_set": "missing",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[missing-credential-401] root info requires auth in secure profile"
+    },
+    {
       "name": "security_missing_root_cluster_read_401",
       "area": "security-authz",
       "bucket": "missing-credential-401",
@@ -135,6 +215,17 @@
       "extract": "security_error",
       "family": "security-authz",
       "description": "[wrong-credential-401] index read rejects invalid basic auth"
+    },
+    {
+      "name": "security_bad_password_root_info_401",
+      "area": "security-authz",
+      "bucket": "wrong-credential-401",
+      "method": "GET",
+      "path": "/",
+      "credential_set": "wrong-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[wrong-credential-401] root info rejects bad password"
     },
     {
       "name": "security_bad_password_root_401",
@@ -174,6 +265,17 @@
       "extract": "security_error",
       "family": "security-authz",
       "description": "[insufficient-role-403] reader cannot write documents"
+    },
+    {
+      "name": "security_reader_root_info_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/",
+      "credential_set": "reader-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] authenticated user may read root info"
     },
     {
       "name": "security_reader_index_read_success",
@@ -609,6 +711,201 @@
       "extract": "security_error",
       "family": "security-authz",
       "description": "[insufficient-role-403] writer cannot bypass restricted concrete index through alias"
+    },
+    {
+      "name": "security_admin_restricted_index_get_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/.opensearch-restricted-authz-000001",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can read restricted index metadata"
+    },
+    {
+      "name": "security_reader_restricted_index_get_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/.opensearch-restricted-authz-000001",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot read restricted index metadata"
+    },
+    {
+      "name": "security_admin_restricted_settings_update_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "PUT",
+      "path": "/.plugins-restricted-authz-000001/_settings",
+      "credential_set": "admin-basic",
+      "body": {
+        "index": {
+          "refresh_interval": "2s"
+        }
+      },
+      "extract": "acknowledged",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can mutate restricted settings"
+    },
+    {
+      "name": "security_writer_restricted_settings_update_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "PUT",
+      "path": "/.plugins-restricted-authz-000001/_settings",
+      "credential_set": "writer-basic",
+      "body": {
+        "index": {
+          "refresh_interval": "2s"
+        }
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot mutate restricted settings"
+    },
+    {
+      "name": "security_writer_restricted_delete_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "DELETE",
+      "path": "/.opensearch-restricted-delete-authz-000001",
+      "credential_set": "writer-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot delete restricted index"
+    },
+    {
+      "name": "security_admin_restricted_delete_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "DELETE",
+      "path": "/.opensearch-restricted-delete-authz-000001",
+      "credential_set": "admin-basic",
+      "extract": "acknowledged",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can delete restricted index"
+    },
+    {
+      "name": "security_writer_restricted_create_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "PUT",
+      "path": "/.opensearch-restricted-create-authz-000001",
+      "credential_set": "writer-basic",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            }
+          }
+        }
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot create restricted index"
+    },
+    {
+      "name": "security_admin_restricted_create_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "PUT",
+      "path": "/.opensearch-restricted-create-authz-000001",
+      "credential_set": "admin-basic",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            }
+          }
+        }
+      },
+      "extract": "acknowledged",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can create restricted index"
+    },
+    {
+      "name": "security_writer_bulk_partial_authz_denial",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_bulk",
+      "credential_set": "writer-basic",
+      "raw": true,
+      "body": "{\"index\":{\"_index\":\"logs-security-authz-000001\",\"_id\":\"authz-bulk-writer-open\"}}\n{\"message\":\"writer bulk allowed\",\"tenant\":\"tenant-authz\"}\n{\"index\":{\"_index\":\".opensearch-restricted-authz-000001\",\"_id\":\"authz-bulk-writer-restricted\"}}\n{\"message\":\"writer bulk denied\",\"tenant\":\"tenant-authz\"}\n",
+      "extract": "bulk_items",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer mixed bulk gets item-level deny on restricted target while regular target succeeds"
+    },
+    {
+      "name": "security_bad_password_ml_register_401",
+      "area": "security-authz",
+      "bucket": "bad-credential-401",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/_register",
+      "credential_set": "wrong-basic",
+      "body": {
+        "name": "bad-auth-model",
+        "function_name": "text_embedding",
+        "dimension": 3
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[bad-credential-401] bad password cannot register ML model"
+    },
+    {
+      "name": "security_writer_ml_connector_create_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_plugins/_ml/connectors/_create",
+      "credential_set": "writer-basic",
+      "body": {
+        "name": "writer-denied-connector",
+        "protocol": "http"
+      },
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot create ML connector"
+    },
+    {
+      "name": "security_admin_ml_connector_create_success",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "POST",
+      "path": "/_plugins/_ml/connectors/_create",
+      "credential_set": "admin-basic",
+      "body": {
+        "name": "admin-connector",
+        "protocol": "http"
+      },
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin can create ML connector"
+    },
+    {
+      "name": "security_writer_ml_predict_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "POST",
+      "path": "/_plugins/_ml/models/ml-model-1/_predict",
+      "credential_set": "writer-basic",
+      "body": {
+        "text_docs": [
+          "writer denied"
+        ]
+      },
+      "extract": "security_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 403,
+      "family": "security-authz",
+      "description": "[insufficient-role-403] writer cannot predict against ML model"
     }
   ]
 }

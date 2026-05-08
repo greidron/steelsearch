@@ -1,0 +1,55 @@
+{
+  "name": "transport-action-subset-ledger",
+  "cases": [
+    {
+      "case": "cluster_state_server_side_subset",
+      "action": "ClusterStateAction.INSTANCE",
+      "transport_class": "TransportClusterStateAction.class",
+      "family": "read",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "route_family": "/_cluster/state",
+      "reason": "bounded cluster-state read semantics are implemented and must stay explicitly allowlisted"
+    },
+    {
+      "case": "search_server_side_subset",
+      "action": "SearchAction.INSTANCE",
+      "transport_class": "TransportSearchAction.class",
+      "family": "search",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "route_family": "/_search",
+      "reason": "bounded search transport parity is declared only for the core single-search action subset"
+    },
+    {
+      "case": "bulk_server_side_subset",
+      "action": "BulkAction.INSTANCE",
+      "transport_class": "TransportBulkAction.class",
+      "family": "write",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "route_family": "/_bulk",
+      "reason": "bounded bulk write transport parity is declared only for the core bulk action subset"
+    },
+    {
+      "case": "msearch_planned_reject",
+      "action": "MultiSearchAction.INSTANCE",
+      "transport_class": "TransportMultiSearchAction.class",
+      "family": "search",
+      "bucket": "planned",
+      "disposition": "rejected",
+      "route_family": "/_msearch",
+      "reason": "multi-search transport dispatch is still planned and must reject before execution"
+    },
+    {
+      "case": "stream_search_planned_reject",
+      "action": "StreamSearchAction.INSTANCE",
+      "transport_class": "StreamTransportSearchAction.class",
+      "family": "search",
+      "bucket": "planned",
+      "disposition": "rejected",
+      "route_family": "/_search/stream",
+      "reason": "stream search transport dispatch is not implemented and must fail closed"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "name": "cluster-state-diff-apply-transcript",
+  "cases": [
+    {
+      "case": "metadata_custom_view_diff_apply",
+      "publication_mode": "diff",
+      "custom_name": "view",
+      "prior_cache_state": "view-count=1",
+      "decode_result": "decoded",
+      "apply_result": "applied",
+      "post_apply_cache_state": "view-count=2",
+      "transcript": [
+        "full-state decoded",
+        "prior cache snapshot recorded",
+        "metadata custom diff decoded",
+        "diff applied to cache"
+      ]
+    },
+    {
+      "case": "top_level_custom_restore_complete_named_diff",
+      "publication_mode": "diff",
+      "custom_name": "restore",
+      "prior_cache_state": "restore-entry-count=0",
+      "decode_result": "decoded",
+      "apply_result": "applied",
+      "post_apply_cache_state": "restore-entry-count=1",
+      "transcript": [
+        "full-state decoded",
+        "prior cache snapshot recorded",
+        "complete named diff decoded",
+        "replacement payload applied"
+      ]
+    },
+    {
+      "case": "unsupported_named_diff_preserves_prior_cache",
+      "publication_mode": "diff",
+      "custom_name": "unsupported.plugin.custom",
+      "prior_cache_state": "cluster_uuid=uuid-123",
+      "decode_result": "rejected",
+      "apply_result": "preserved_prior_cache",
+      "post_apply_cache_state": "cluster_uuid=uuid-123",
+      "transcript": [
+        "full-state decoded",
+        "prior cache snapshot recorded",
+        "unsupported named diff rejected",
+        "prior cache preserved"
+      ]
+    }
+  ]
+}

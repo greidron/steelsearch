@@ -77,6 +77,33 @@
   ],
   "cases": [
     {
+      "name": "cluster_health_wait_for_green_timeout_semantic",
+      "area": "search-semantic",
+      "method": "GET",
+      "path": "/_cluster/health?wait_for_status=green&timeout=1s",
+      "extract": "cluster_health",
+      "family": "admin-cat",
+      "description": "[admin-cat] cluster health wait_for_status timeout semantic"
+    },
+    {
+      "name": "cluster_health_wait_for_nodes_timeout_semantic",
+      "area": "search-semantic",
+      "method": "GET",
+      "path": "/_cluster/health?wait_for_nodes=2&timeout=1s",
+      "extract": "cluster_health",
+      "family": "admin-cat",
+      "description": "[admin-cat] cluster health wait_for_nodes timeout semantic"
+    },
+    {
+      "name": "cluster_health_targeted_wildcard_semantic",
+      "area": "search-semantic",
+      "method": "GET",
+      "path": "/_cluster/health/logs-search-semantic-*",
+      "extract": "cluster_health",
+      "family": "admin-cat",
+      "description": "[admin-cat] cluster health targeted wildcard semantic"
+    },
+    {
       "name": "count_root_term_semantic",
       "area": "search-semantic",
       "method": "POST",

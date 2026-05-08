@@ -16,13 +16,44 @@ use os_node::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::io::{Read, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
+
+fn now_epoch_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+#[derive(Clone, Debug)]
+struct DevTransportIdentity {
+    cluster_name: String,
+    node_name: String,
+    node_id: String,
+    ephemeral_id: String,
+    transport_address: SocketAddr,
+    attributes: Vec<(String, String)>,
+    roles: Vec<String>,
+    seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
+    coordination_state: Arc<Mutex<DevTransportCoordinationState>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DevTransportCoordinationState {
+    last_accepted_term: i64,
+    last_accepted_version: i64,
+    non_self_publish_seen: bool,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct GatewayManifestPaths {
@@ -45,9 +76,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     install_shutdown_signal_handlers();
     let mut config = daemon_config_from_env_and_args()?;
     let transport_address = SocketAddr::new(config.transport_host, config.transport_port);
+    let transport_listener = bind_transport_seed_listener(transport_address)?;
+    eprintln!(
+        "Steelsearch transport listener bound epoch_ms={} addr={}",
+        now_epoch_ms(),
+        transport_listener.local_addr()?
+    );
     let listener = bind_rest_http_listener(SocketAddr::new(config.host, config.port))?;
     let address = listener.local_addr()?;
     config.port = address.port();
+    config.transport_port = transport_listener.local_addr()?.port();
     let cluster_uuid = "steelsearch-dev-cluster-uuid";
     let gateway_paths = GatewayManifestPaths::for_data_path(&config.data_path);
     let gateway_manifest_path = gateway_paths.coordination_path.clone();
@@ -232,6 +270,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.register_default_dev_endpoints(config.cluster_name.clone(), cluster_uuid);
     node.register_development_cluster_endpoints(cluster_view);
     node.start_rest();
+    let transport_capture_path = config.data_path.join("transport-seed-capture.json");
+    let transport_identity = DevTransportIdentity {
+        cluster_name: config.cluster_name.clone(),
+        node_name: config.node_name.clone(),
+        node_id: config.node_id.clone(),
+        ephemeral_id: format!("{}-ephemeral", config.node_id),
+        transport_address: SocketAddr::new(config.transport_host, config.transport_port),
+        attributes: vec![(
+            "shard_indexing_pressure_enabled".to_string(),
+            "true".to_string(),
+        )],
+        roles: config.roles.clone(),
+        seed_peer_identity: config.seed_peer_identity.clone(),
+        coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+    };
+    serve_transport_seed_listener_until(transport_listener, transport_capture_path, transport_identity);
 
     eprintln!(
         "Steelsearch development daemon listening on http://{}",
@@ -241,7 +295,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "node id={}, name={}, transport={}, roles={}, seed_hosts={}, data_path={}",
         config.node_id,
         config.node_name,
-        transport_address,
+        SocketAddr::new(config.transport_host, config.transport_port),
         config.roles.join(","),
         if config.seed_hosts.is_empty() {
             "<none>".to_string()
@@ -258,16 +312,1425 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "production membership manifest: {}",
         membership_path.display()
     );
-    eprintln!(
-        "development mode: standalone HTTP compatibility surface only; development_security={}, production security and multi-node runtime are not complete",
-        config.development_security_mode.as_str()
-    );
+    if config.mixed_java_native_transport_join_participation_enabled() {
+        eprintln!(
+            "development mode: mixed Java native transport join participation active; development_security={}, production security and full multi-node runtime are not complete",
+            config.development_security_mode.as_str()
+        );
+    } else {
+        eprintln!(
+            "development mode: standalone HTTP compatibility surface only; development_security={}, production security and multi-node runtime are not complete",
+            config.development_security_mode.as_str()
+        );
+    }
     if let Some(manifest_path) = config.extension_manifest_path.as_ref() {
         eprintln!("extension boundary manifest: {}", manifest_path.display());
     }
 
     serve_rest_http_listener_until(node, listener, || SHUTDOWN_REQUESTED.load(Ordering::SeqCst))?;
     Ok(())
+}
+
+fn bind_transport_seed_listener(address: SocketAddr) -> std::io::Result<std::net::TcpListener> {
+    let listener = std::net::TcpListener::bind(address)?;
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
+
+fn serve_transport_seed_listener_until(
+    listener: std::net::TcpListener,
+    capture_path: PathBuf,
+    transport_identity: DevTransportIdentity,
+) {
+    let capture_write_lock = Arc::new(Mutex::new(()));
+    thread::spawn(move || loop {
+        if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+            break;
+        }
+        match listener.accept() {
+            Ok((stream, _peer_addr)) => {
+                let capture_path = capture_path.clone();
+                let transport_identity = transport_identity.clone();
+                let capture_write_lock = Arc::clone(&capture_write_lock);
+                thread::spawn(move || {
+                    let _ = handle_transport_seed_connection(
+                        stream,
+                        &capture_path,
+                        &transport_identity,
+                        &capture_write_lock,
+                    );
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => break,
+        }
+    });
+}
+
+fn handle_transport_seed_connection(
+    mut stream: std::net::TcpStream,
+    capture_path: &std::path::Path,
+    transport_identity: &DevTransportIdentity,
+    capture_write_lock: &Arc<Mutex<()>>,
+) -> std::io::Result<()> {
+    let connection_started_at_ms = unix_time_ms();
+    let pre_first_frame_timeout_ms = env::var("STEELSEARCH_TRANSPORT_PRE_FIRST_FRAME_TIMEOUT_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(5000);
+    stream.set_read_timeout(Some(Duration::from_millis(pre_first_frame_timeout_ms)))?;
+    let (header, body) = loop {
+        match read_transport_seed_frame_detailed(&mut stream)? {
+            TransportSeedFrameRead::Frame(frame) => break frame,
+            TransportSeedFrameRead::Ping(header) => {
+                let response = build_keepalive_ping_frame();
+                stream.write_all(&response)?;
+                stream.flush()?;
+                let frame_at_ms = unix_time_ms();
+                persist_transport_seed_capture(
+                    capture_path,
+                    stream.peer_addr().ok(),
+                    connection_started_at_ms,
+                    Some(frame_at_ms),
+                    summarize_keepalive_ping_frame(&header),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(frame_at_ms),
+                    Some(summarize_keepalive_ping_frame(&response)),
+                    None,
+                    Some("keepalive_ping".to_string()),
+                    Some("keepalive_ping".to_string()),
+                    Some(frame_at_ms),
+                    None,
+                    0,
+                    capture_write_lock,
+                )?;
+                continue;
+            }
+            TransportSeedFrameRead::TimedOut => {
+                let event_at_ms = unix_time_ms();
+                persist_transport_seed_capture(
+                    capture_path,
+                    stream.peer_addr().ok(),
+                    connection_started_at_ms,
+                    None,
+                    serde_json::json!({ "pre_first_frame": true }),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(connection_started_at_ms),
+                    Some("timed_out_before_first_frame".to_string()),
+                    Some("idle_timeout".to_string()),
+                    Some(event_at_ms),
+                    None,
+                    0,
+                    capture_write_lock,
+                )?;
+                return Ok(());
+            }
+            TransportSeedFrameRead::Eof => {
+                let event_at_ms = unix_time_ms();
+                persist_transport_seed_capture(
+                    capture_path,
+                    stream.peer_addr().ok(),
+                    connection_started_at_ms,
+                    None,
+                    serde_json::json!({ "pre_first_frame": true }),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(connection_started_at_ms),
+                    Some("remote_eof_before_first_frame".to_string()),
+                    Some("remote_eof".to_string()),
+                    Some(event_at_ms),
+                    None,
+                    0,
+                    capture_write_lock,
+                )?;
+                return Ok(());
+            }
+        }
+    };
+    let first_frame_received_at_ms = unix_time_ms();
+    let first_frame = summarize_transport_seed_frame(&header, &body);
+    let mut follow_up_frame = None;
+    let mut follow_up_frame_received_at_ms = None;
+    let mut post_follow_up_frame = None;
+    let mut post_follow_up_frame_received_at_ms = None;
+    let mut response_frame = None;
+    let mut response_frame_sent_at_ms = None;
+    let mut hold_open_started_at_ms = None;
+    let mut first_post_response_event = None;
+    let mut connection_end = None;
+    let mut connection_end_at_ms = None;
+    let mut proactive_keepalive_sent_at_ms = None;
+    let mut proactive_keepalive_count = 0_u32;
+    if body.len() < 17 {
+        persist_transport_seed_capture(
+            capture_path,
+            stream.peer_addr().ok(),
+            connection_started_at_ms,
+            Some(first_frame_received_at_ms),
+            first_frame,
+            follow_up_frame_received_at_ms,
+            follow_up_frame,
+            post_follow_up_frame_received_at_ms,
+            post_follow_up_frame,
+            response_frame_sent_at_ms,
+            response_frame,
+            hold_open_started_at_ms,
+            first_post_response_event,
+            connection_end,
+            connection_end_at_ms,
+            proactive_keepalive_sent_at_ms,
+            proactive_keepalive_count,
+            capture_write_lock,
+        )?;
+        return Ok(());
+    }
+    let request_id = i64::from_be_bytes([
+        body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+    ]);
+    let status = body[8];
+    let header_version_id = u32::from_be_bytes([body[9], body[10], body[11], body[12]]);
+    let is_request = status & 0x01 == 0;
+    let is_handshake = status & 0x08 != 0;
+    let action_hint = transport_frame_action_hint(&body);
+    if is_request && is_handshake {
+        eprintln!(
+            "steelsearch_tcp_handshake_response_stage=before_write request_id={} header_version_id={}",
+            request_id, header_version_id
+        );
+        let response = build_tcp_handshake_response(
+            request_id,
+            header_version_id,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        eprintln!(
+            "steelsearch_tcp_handshake_response_stage=after_write request_id={} bytes={}",
+            request_id,
+            response.len()
+        );
+        stream.flush()?;
+        eprintln!(
+            "steelsearch_tcp_handshake_response_stage=after_flush request_id={}",
+            request_id
+        );
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        let immediate_proactive_ping_after_response = env::var(
+            "STEELSEARCH_TCP_HANDSHAKE_IMMEDIATE_PROACTIVE_PING_AFTER_RESPONSE",
+        )
+        .ok()
+        .map(|value| value == "1")
+        .unwrap_or(false);
+        if immediate_proactive_ping_after_response {
+            let ping = build_keepalive_ping_frame();
+            stream.write_all(&ping)?;
+            stream.flush()?;
+            proactive_keepalive_count += 1;
+            if proactive_keepalive_sent_at_ms.is_none() {
+                proactive_keepalive_sent_at_ms = Some(unix_time_ms());
+            }
+            eprintln!(
+                "steelsearch_tcp_handshake_response_stage=immediate_proactive_ping_after_response request_id={}",
+                request_id
+            );
+        }
+        let direct_hold_open_after_tcp_response = env::var(
+            "STEELSEARCH_TCP_HANDSHAKE_DIRECT_HOLD_OPEN_AFTER_RESPONSE",
+        )
+        .ok()
+        .map(|value| value == "1")
+        .unwrap_or(false);
+        if direct_hold_open_after_tcp_response {
+            eprintln!(
+                "steelsearch_tcp_handshake_response_stage=direct_hold_open_after_response request_id={}",
+                request_id
+            );
+            hold_transport_channel_open(
+                &mut stream,
+                transport_identity,
+                &mut post_follow_up_frame,
+                &mut post_follow_up_frame_received_at_ms,
+                true,
+                &mut proactive_keepalive_sent_at_ms,
+                &mut proactive_keepalive_count,
+                Duration::from_secs(15),
+                &mut hold_open_started_at_ms,
+                &mut first_post_response_event,
+                &mut connection_end,
+                &mut connection_end_at_ms,
+            )?;
+        } else {
+            stream.set_read_timeout(Some(Duration::from_millis(400)))?;
+            if let Some((follow_up_header, follow_up_body)) = read_transport_seed_frame(&mut stream)? {
+                eprintln!(
+                    "steelsearch_tcp_handshake_response_stage=follow_up_received request_id={} action_hint={:?}",
+                    request_id,
+                    transport_frame_action_hint(&follow_up_body)
+                );
+                follow_up_frame_received_at_ms = Some(unix_time_ms());
+                follow_up_frame = Some(summarize_transport_seed_frame(
+                    &follow_up_header,
+                    &follow_up_body,
+                ));
+                if transport_frame_action_hint(&follow_up_body).as_deref()
+                    == Some("internal:transport/handshake")
+                {
+                    let follow_up_request_id = i64::from_be_bytes([
+                        follow_up_body[0],
+                        follow_up_body[1],
+                        follow_up_body[2],
+                        follow_up_body[3],
+                        follow_up_body[4],
+                        follow_up_body[5],
+                        follow_up_body[6],
+                        follow_up_body[7],
+                    ]);
+                    let follow_up_header_version_id = u32::from_be_bytes([
+                        follow_up_body[9],
+                        follow_up_body[10],
+                        follow_up_body[11],
+                        follow_up_body[12],
+                    ]);
+                    let response = build_transport_handshake_identity_response(
+                        follow_up_request_id,
+                        follow_up_header_version_id,
+                        transport_identity,
+                    );
+                    response_frame = summarize_transport_response_frame_for_action(
+                        &response,
+                        Some("internal:transport/handshake"),
+                    );
+                    stream.write_all(&response)?;
+                    stream.flush()?;
+                    response_frame_sent_at_ms = Some(unix_time_ms());
+                    hold_transport_channel_open(
+                        &mut stream,
+                        transport_identity,
+                        &mut post_follow_up_frame,
+                        &mut post_follow_up_frame_received_at_ms,
+                        true,
+                        &mut proactive_keepalive_sent_at_ms,
+                        &mut proactive_keepalive_count,
+                        Duration::from_secs(15),
+                        &mut hold_open_started_at_ms,
+                        &mut first_post_response_event,
+                        &mut connection_end,
+                        &mut connection_end_at_ms,
+                    )?;
+                }
+            } else {
+                eprintln!(
+                    "steelsearch_tcp_handshake_response_stage=no_follow_up_within_400ms request_id={}",
+                    request_id
+                );
+                hold_transport_channel_open(
+                    &mut stream,
+                    transport_identity,
+                    &mut post_follow_up_frame,
+                    &mut post_follow_up_frame_received_at_ms,
+                    true,
+                    &mut proactive_keepalive_sent_at_ms,
+                    &mut proactive_keepalive_count,
+                    Duration::from_secs(15),
+                    &mut hold_open_started_at_ms,
+                    &mut first_post_response_event,
+                    &mut connection_end,
+                    &mut connection_end_at_ms,
+                )?;
+            }
+        }
+    } else if is_request && action_hint.as_deref() == Some("internal:transport/handshake") {
+        let response = build_transport_handshake_identity_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:transport/handshake"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(15),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:discovery/request_peers") {
+        let response = build_request_peers_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(15),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:cluster/request_pre_vote") {
+        let response = build_pre_vote_response(request_id, header_version_id, 0, 0, 0);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(15),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/publish_state") {
+        let publish_state_started = std::time::Instant::now();
+        let decode_started = std::time::Instant::now();
+        let decoded = decode_publish_state_term_version(&body);
+        eprintln!(
+            "steelsearch_publish_state_decode_ms={}",
+            decode_started.elapsed().as_millis()
+        );
+        if let Some((term, version)) = decoded {
+            let (join_last_accepted_term, join_last_accepted_version) = transport_identity
+                .coordination_state
+                .lock()
+                .map(|state| (state.last_accepted_term, state.last_accepted_version))
+                .unwrap_or((0, 0));
+            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                coordination_state.last_accepted_term = term;
+                coordination_state.last_accepted_version = version;
+                coordination_state.non_self_publish_seen = true;
+            }
+            let build_started = std::time::Instant::now();
+            let response = build_publish_with_join_response(
+                request_id,
+                header_version_id,
+                term,
+                version,
+                transport_identity,
+                join_last_accepted_term,
+                join_last_accepted_version,
+            );
+            eprintln!(
+                "steelsearch_publish_state_build_ms={}",
+                build_started.elapsed().as_millis()
+            );
+            response_frame = summarize_transport_response_frame_for_action(
+                &response,
+                Some("internal:cluster/coordination/publish_state"),
+            );
+            stream.write_all(&response)?;
+            stream.flush()?;
+            response_frame_sent_at_ms = Some(unix_time_ms());
+            eprintln!(
+                "steelsearch_publish_state_total_before_write_ms={}",
+                publish_state_started.elapsed().as_millis()
+            );
+        }
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(20),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:coordination/fault_detection/follower_check")
+    {
+        let reusable_follower_check = transport_identity
+            .coordination_state
+            .lock()
+            .map(|state| state.non_self_publish_seen)
+            .unwrap_or(false);
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            reusable_follower_check,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(20),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/commit_state") {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            false,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(20),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/start_join") {
+        maybe_send_join_request_to_seed_peer(header_version_id, &body, transport_identity);
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            Duration::from_secs(15),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    }
+    persist_transport_seed_capture(
+        capture_path,
+        stream.peer_addr().ok(),
+        connection_started_at_ms,
+        Some(first_frame_received_at_ms),
+        first_frame,
+        follow_up_frame_received_at_ms,
+        follow_up_frame,
+        post_follow_up_frame_received_at_ms,
+        post_follow_up_frame,
+        response_frame_sent_at_ms,
+        response_frame,
+        hold_open_started_at_ms,
+        first_post_response_event,
+        connection_end,
+        connection_end_at_ms,
+        proactive_keepalive_sent_at_ms,
+        proactive_keepalive_count,
+        capture_write_lock,
+    )?;
+    Ok(())
+}
+
+enum TransportSeedFrameRead {
+    Frame(([u8; 6], Vec<u8>)),
+    Ping([u8; 6]),
+    TimedOut,
+    Eof,
+}
+
+fn read_transport_seed_frame(
+    stream: &mut std::net::TcpStream,
+) -> std::io::Result<Option<([u8; 6], Vec<u8>)>> {
+    match read_transport_seed_frame_detailed(stream)? {
+        TransportSeedFrameRead::Frame(frame) => Ok(Some(frame)),
+        TransportSeedFrameRead::Ping(_) => Ok(Some((build_keepalive_ping_frame(), Vec::new()))),
+        TransportSeedFrameRead::TimedOut | TransportSeedFrameRead::Eof => Ok(None),
+    }
+}
+
+fn read_transport_seed_frame_detailed(
+    stream: &mut std::net::TcpStream,
+) -> std::io::Result<TransportSeedFrameRead> {
+    let mut header = [0_u8; 6];
+    match stream.read_exact(&mut header) {
+        Ok(()) => {}
+        Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+            return Ok(TransportSeedFrameRead::TimedOut);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Ok(TransportSeedFrameRead::Eof);
+        }
+        Err(error) => return Err(error),
+    }
+    if &header[..2] != b"ES" {
+        return Ok(TransportSeedFrameRead::Eof);
+    }
+    let raw_message_length = i32::from_be_bytes([header[2], header[3], header[4], header[5]]);
+    if raw_message_length == -1 {
+        return Ok(TransportSeedFrameRead::Ping(header));
+    }
+    let message_length = raw_message_length.max(0) as usize;
+    let mut body = vec![0_u8; message_length];
+    stream.read_exact(&mut body)?;
+    Ok(TransportSeedFrameRead::Frame((header, body)))
+}
+
+fn summarize_transport_seed_frame(header: &[u8; 6], body: &[u8]) -> serde_json::Value {
+    let mut summary = serde_json::json!({
+        "marker_prefix": std::str::from_utf8(&header[..2]).unwrap_or(""),
+        "message_length": u32::from_be_bytes([header[2], header[3], header[4], header[5]]),
+        "body_len": body.len(),
+        "body_prefix_hex": hex_prefix(body, 96),
+    });
+    if body.len() >= 13 {
+        let request_id = i64::from_be_bytes([
+            body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+        ]);
+        let status = body[8];
+        let version_id = u32::from_be_bytes([body[9], body[10], body[11], body[12]]);
+        summary["request_id"] = serde_json::json!(request_id);
+        summary["status"] = serde_json::json!(status);
+        summary["is_request"] = serde_json::json!(status & 0x01 == 0);
+        summary["is_response"] = serde_json::json!(status & 0x01 != 0);
+        summary["is_handshake"] = serde_json::json!(status & 0x08 != 0);
+        summary["version_id"] = serde_json::json!(version_id);
+    }
+    if let Some(action_hint) = transport_frame_action_hint(body) {
+        if matches!(
+            action_hint.as_str(),
+            "internal:coordination/fault_detection/follower_check"
+                | "internal:cluster/coordination/publish_state"
+                | "internal:cluster/coordination/start_join"
+        ) {
+            summary["body_hex"] = serde_json::json!(
+                body.iter().map(|byte| format!("{byte:02x}")).collect::<String>()
+            );
+        }
+        summary["action_hint"] = serde_json::json!(action_hint);
+    }
+    summary
+}
+
+fn transport_frame_action_hint(body: &[u8]) -> Option<String> {
+    let needle = b"internal:";
+    let start = body.windows(needle.len()).position(|window| window == needle)?;
+    let tail = &body[start..];
+    let end = tail
+        .iter()
+        .position(|byte| !byte.is_ascii_graphic() || *byte == 0)
+        .unwrap_or(tail.len());
+    std::str::from_utf8(&tail[..end]).ok().map(str::to_string)
+}
+
+fn persist_transport_seed_capture(
+    capture_path: &std::path::Path,
+    peer_addr: Option<SocketAddr>,
+    connection_started_at_ms: u128,
+    first_frame_received_at_ms: Option<u128>,
+    first_frame: serde_json::Value,
+    follow_up_frame_received_at_ms: Option<u128>,
+    follow_up_frame: Option<serde_json::Value>,
+    post_follow_up_frame_received_at_ms: Option<u128>,
+    post_follow_up_frame: Option<serde_json::Value>,
+    response_frame_sent_at_ms: Option<u128>,
+    response_frame: Option<serde_json::Value>,
+    hold_open_started_at_ms: Option<u128>,
+    first_post_response_event: Option<String>,
+    connection_end: Option<String>,
+    connection_end_at_ms: Option<u128>,
+    proactive_keepalive_sent_at_ms: Option<u128>,
+    proactive_keepalive_count: u32,
+    capture_write_lock: &Arc<Mutex<()>>,
+) -> std::io::Result<()> {
+    let _guard = capture_write_lock.lock().map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("transport seed capture lock poisoned: {error}"),
+        )
+    })?;
+    let mut captures = if capture_path.exists() {
+        let existing = fs::read_to_string(capture_path)?;
+        serde_json::from_str::<Vec<serde_json::Value>>(&existing).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    captures.push(serde_json::json!({
+        "peer_addr": peer_addr.map(|addr| addr.to_string()),
+        "connection_started_at_ms": connection_started_at_ms,
+        "first_frame_received_at_ms": first_frame_received_at_ms,
+        "first_frame": first_frame,
+        "follow_up_frame_received_at_ms": follow_up_frame_received_at_ms,
+        "follow_up_frame": follow_up_frame,
+        "post_follow_up_frame_received_at_ms": post_follow_up_frame_received_at_ms,
+        "post_follow_up_frame": post_follow_up_frame,
+        "response_frame_sent_at_ms": response_frame_sent_at_ms,
+        "response_frame": response_frame,
+        "hold_open_started_at_ms": hold_open_started_at_ms,
+        "first_post_response_event": first_post_response_event,
+        "connection_end": connection_end,
+        "connection_end_at_ms": connection_end_at_ms,
+        "proactive_keepalive_sent_at_ms": proactive_keepalive_sent_at_ms,
+        "proactive_keepalive_count": proactive_keepalive_count,
+    }));
+    if let Some(parent) = capture_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(
+        capture_path,
+        serde_json::to_string_pretty(&captures)
+            .map(|serialized| format!("{serialized}\n"))
+            .unwrap_or_else(|_| "[]\n".to_string()),
+    )
+}
+
+fn build_keepalive_ping_frame() -> [u8; 6] {
+    [b'E', b'S', 0xff, 0xff, 0xff, 0xff]
+}
+
+fn summarize_keepalive_ping_frame(header: &[u8; 6]) -> serde_json::Value {
+    serde_json::json!({
+        "marker_prefix": std::str::from_utf8(&header[..2]).unwrap_or(""),
+        "message_length": i32::from_be_bytes([header[2], header[3], header[4], header[5]]),
+        "is_keepalive_ping": true,
+    })
+}
+
+fn build_transport_handshake_identity_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_bool(&mut payload, true);
+    write_string(&mut payload, &transport_identity.node_name);
+    write_string(&mut payload, &transport_identity.node_id);
+    write_string(&mut payload, &transport_identity.ephemeral_id);
+    let host = transport_identity.transport_address.ip().to_string();
+    write_string(&mut payload, &host);
+    write_string(&mut payload, &host);
+    write_transport_address(&mut payload, transport_identity.transport_address);
+    write_bool(&mut payload, false);
+    write_transport_vint_to(&mut payload, transport_identity.attributes.len() as u32);
+    for (key, value) in &transport_identity.attributes {
+        write_string(&mut payload, key);
+        write_string(&mut payload, value);
+    }
+    write_transport_vint_to(&mut payload, transport_identity.roles.len() as u32);
+    for role in &transport_identity.roles {
+        let (abbrev, can_contain_data) = transport_role_wire_compat(role);
+        write_string(&mut payload, role);
+        write_string(&mut payload, abbrev);
+        write_bool(&mut payload, can_contain_data);
+    }
+    write_transport_vint_to(&mut payload, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+    write_string(&mut payload, &transport_identity.cluster_name);
+    write_transport_vint_to(&mut payload, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_request_peers_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_bool(&mut payload, false);
+    write_transport_vint_to(&mut payload, 0);
+    payload.extend_from_slice(&0_i64.to_be_bytes());
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_pre_vote_response(
+    request_id: i64,
+    header_version_id: u32,
+    current_term: i64,
+    last_accepted_term: i64,
+    last_accepted_version: i64,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&current_term.to_be_bytes());
+    payload.extend_from_slice(&last_accepted_term.to_be_bytes());
+    payload.extend_from_slice(&last_accepted_version.to_be_bytes());
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_publish_with_join_response(
+    request_id: i64,
+    header_version_id: u32,
+    term: i64,
+    version: i64,
+    transport_identity: &DevTransportIdentity,
+    join_last_accepted_term: i64,
+    join_last_accepted_version: i64,
+) -> Vec<u8> {
+    if let Some(payload) = try_build_java_publish_with_join_response(
+        term,
+        version,
+        transport_identity,
+        join_last_accepted_term,
+        join_last_accepted_version,
+    )
+    {
+        return build_transport_response_frame(request_id, header_version_id, payload);
+    }
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&term.to_be_bytes());
+    payload.extend_from_slice(&version.to_be_bytes());
+    if let Some(seed_peer_identity) = transport_identity.seed_peer_identity.as_ref() {
+        write_bool(&mut payload, true);
+        write_discovery_node_wire(
+            &mut payload,
+            &transport_identity.node_name,
+            &transport_identity.node_id,
+            &transport_identity.ephemeral_id,
+            &transport_identity.transport_address.ip().to_string(),
+            &transport_identity.transport_address.ip().to_string(),
+            transport_identity.transport_address,
+            &transport_identity.attributes,
+            &transport_identity.roles,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+        let target_transport_address: SocketAddr = seed_peer_identity
+            .discovery_node
+            .transport_address
+            .parse()
+            .expect("validated transport address");
+        write_discovery_node_wire(
+            &mut payload,
+            &seed_peer_identity.discovery_node.name,
+            &seed_peer_identity.discovery_node.id,
+            &seed_peer_identity.discovery_node.ephemeral_id,
+            &seed_peer_identity.discovery_node.host_name,
+            &seed_peer_identity.discovery_node.host_address,
+            target_transport_address,
+            &[],
+            &seed_peer_identity.discovery_node.roles,
+            seed_peer_identity.discovery_node.version_id,
+        );
+        payload.extend_from_slice(&term.to_be_bytes());
+        payload.extend_from_slice(&join_last_accepted_term.to_be_bytes());
+        payload.extend_from_slice(&join_last_accepted_version.to_be_bytes());
+    } else {
+        write_bool(&mut payload, false);
+    }
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn try_build_java_publish_with_join_response(
+    term: i64,
+    version: i64,
+    transport_identity: &DevTransportIdentity,
+    join_last_accepted_term: i64,
+    join_last_accepted_version: i64,
+) -> Option<Vec<u8>> {
+    let seed_peer_identity = transport_identity.seed_peer_identity.as_ref()?;
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/build_java_publish_with_join_response.sh");
+    let local_roles = transport_identity.roles.join(",");
+    let seed_roles = seed_peer_identity.discovery_node.roles.join(",");
+    let output = Command::new("bash")
+        .arg(script_path)
+        .arg("--term")
+        .arg(term.to_string())
+        .arg("--version")
+        .arg(version.to_string())
+        .arg("--last-accepted-term")
+        .arg(join_last_accepted_term.to_string())
+        .arg("--last-accepted-version")
+        .arg(join_last_accepted_version.to_string())
+        .arg("--local-name")
+        .arg(&transport_identity.node_name)
+        .arg("--local-id")
+        .arg(&transport_identity.node_id)
+        .arg("--local-ephemeral-id")
+        .arg(&transport_identity.ephemeral_id)
+        .arg("--local-host")
+        .arg(transport_identity.transport_address.ip().to_string())
+        .arg("--local-host-address")
+        .arg(transport_identity.transport_address.ip().to_string())
+        .arg("--local-transport-address")
+        .arg(transport_identity.transport_address.to_string())
+        .arg("--local-roles")
+        .arg(local_roles)
+        .arg("--seed-name")
+        .arg(&seed_peer_identity.discovery_node.name)
+        .arg("--seed-id")
+        .arg(&seed_peer_identity.discovery_node.id)
+        .arg("--seed-ephemeral-id")
+        .arg(&seed_peer_identity.discovery_node.ephemeral_id)
+        .arg("--seed-host")
+        .arg(&seed_peer_identity.discovery_node.host_name)
+        .arg("--seed-host-address")
+        .arg(&seed_peer_identity.discovery_node.host_address)
+        .arg("--seed-transport-address")
+        .arg(&seed_peer_identity.discovery_node.transport_address)
+        .arg("--seed-roles")
+        .arg(seed_roles)
+        .arg("--seed-version-id")
+        .arg(seed_peer_identity.discovery_node.version_id.to_string())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    decode_hex_bytes(std::str::from_utf8(&output.stdout).ok()?.trim())
+}
+
+fn decode_hex_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let mut idx = 0;
+    while idx < hex.len() {
+        let byte = u8::from_str_radix(&hex[idx..idx + 2], 16).ok()?;
+        bytes.push(byte);
+        idx += 2;
+    }
+    Some(bytes)
+}
+
+fn build_empty_transport_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    build_transport_response_frame(request_id, header_version_id, Vec::new())
+}
+
+fn decode_publish_state_term_version(request_body: &[u8]) -> Option<(i64, i64)> {
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/parse_java_publish_state_request.sh");
+    let report_path = std::env::temp_dir().join(format!(
+        "steelsearch-publish-state-{}.json",
+        TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let body_hex = request_body
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let output = Command::new(script_path)
+        .arg("--body-hex")
+        .arg(body_hex)
+        .arg("--report-path")
+        .arg(&report_path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    Some((
+        parsed.get("term")?.as_i64()?,
+        parsed.get("version")?.as_i64()?,
+    ))
+}
+
+fn hold_transport_channel_open(
+    stream: &mut TcpStream,
+    transport_identity: &DevTransportIdentity,
+    post_follow_up_frame: &mut Option<serde_json::Value>,
+    post_follow_up_frame_received_at_ms: &mut Option<u128>,
+    send_proactive_keepalive_after_first_timeout: bool,
+    proactive_keepalive_sent_at_ms: &mut Option<u128>,
+    proactive_keepalive_count: &mut u32,
+    hold_for: Duration,
+    hold_open_started_at_ms: &mut Option<u128>,
+    first_post_response_event: &mut Option<String>,
+    connection_end: &mut Option<String>,
+    connection_end_at_ms: &mut Option<u128>,
+) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
+    let mut pending_proactive_keepalive = send_proactive_keepalive_after_first_timeout;
+    *hold_open_started_at_ms = Some(unix_time_ms());
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    while started.elapsed() < hold_for && !SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+        match read_transport_seed_frame_detailed(stream)? {
+            TransportSeedFrameRead::Frame((post_header, post_body)) => {
+                if post_follow_up_frame.is_none() {
+                    *post_follow_up_frame_received_at_ms = Some(unix_time_ms());
+                    *post_follow_up_frame = Some(summarize_transport_seed_frame(&post_header, &post_body));
+                }
+                if handle_subsequent_transport_request(stream, &post_body, transport_identity)? {
+                    if first_post_response_event.is_none() {
+                        *first_post_response_event = Some("handled_follow_up_request".to_string());
+                    }
+                    continue;
+                }
+                if first_post_response_event.is_none() {
+                    *first_post_response_event = Some("received_follow_up_frame".to_string());
+                }
+                *connection_end = Some("received_follow_up_frame".to_string());
+                *connection_end_at_ms = Some(unix_time_ms());
+            }
+            TransportSeedFrameRead::Ping(_header) => {
+                let response = build_keepalive_ping_frame();
+                stream.write_all(&response)?;
+                stream.flush()?;
+                if first_post_response_event.is_none() {
+                    *first_post_response_event = Some("keepalive_ping".to_string());
+                }
+                *connection_end = Some("keepalive_ping".to_string());
+                *connection_end_at_ms = Some(unix_time_ms());
+            }
+            TransportSeedFrameRead::TimedOut => {
+                if pending_proactive_keepalive {
+                    let response = build_keepalive_ping_frame();
+                    stream.write_all(&response)?;
+                    stream.flush()?;
+                    *proactive_keepalive_count += 1;
+                    if proactive_keepalive_sent_at_ms.is_none() {
+                        *proactive_keepalive_sent_at_ms = Some(unix_time_ms());
+                    }
+                    pending_proactive_keepalive = false;
+                    continue;
+                }
+                if first_post_response_event.is_none() {
+                    *first_post_response_event = Some("idle_timeout".to_string());
+                }
+                *connection_end = Some("idle_timeout".to_string());
+                *connection_end_at_ms = Some(unix_time_ms());
+            }
+            TransportSeedFrameRead::Eof => {
+                if first_post_response_event.is_none() {
+                    *first_post_response_event = Some("remote_eof".to_string());
+                }
+                *connection_end = Some("remote_eof".to_string());
+                *connection_end_at_ms = Some(unix_time_ms());
+                return Ok(());
+            }
+        }
+    }
+    if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+        *connection_end = Some("shutdown_requested".to_string());
+        *connection_end_at_ms = Some(unix_time_ms());
+    } else if connection_end.is_none() {
+        *connection_end = Some("hold_window_elapsed".to_string());
+        *connection_end_at_ms = Some(unix_time_ms());
+    }
+    Ok(())
+}
+
+fn unix_time_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn handle_subsequent_transport_request(
+    stream: &mut TcpStream,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> std::io::Result<bool> {
+    if body.len() < 13 {
+        return Ok(false);
+    }
+
+    let request_id = i64::from_be_bytes([
+        body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+    ]);
+    let status = body[8];
+    if status & 0x01 != 0 {
+        return Ok(false);
+    }
+    let header_version_id = u32::from_be_bytes([body[9], body[10], body[11], body[12]]);
+    let action_hint = transport_frame_action_hint(body);
+
+    let response = match action_hint.as_deref() {
+        Some("internal:transport/handshake") => Some(build_transport_handshake_identity_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("internal:discovery/request_peers") => {
+            Some(build_request_peers_response(request_id, header_version_id))
+        }
+        Some("internal:cluster/request_pre_vote") => Some(build_pre_vote_response(
+            request_id,
+            header_version_id,
+            0,
+            0,
+            0,
+        )),
+        Some("internal:coordination/fault_detection/follower_check")
+        | Some("internal:coordination/fault_detection/leader_check")
+        | Some("internal:cluster/coordination/join")
+        | Some("internal:cluster/coordination/join/validate")
+        | Some("internal:cluster/coordination/join/validate_compressed")
+        | Some("internal:cluster/coordination/commit_state") => {
+            Some(build_empty_transport_response(request_id, header_version_id))
+        }
+        Some("internal:cluster/coordination/start_join") => {
+            maybe_send_join_request_to_seed_peer(header_version_id, body, transport_identity);
+            Some(build_empty_transport_response(request_id, header_version_id))
+        }
+        Some("internal:cluster/coordination/publish_state") => {
+            if let Some((term, version)) = decode_publish_state_term_version(body) {
+                let (join_last_accepted_term, join_last_accepted_version) = transport_identity
+                    .coordination_state
+                    .lock()
+                    .map(|state| (state.last_accepted_term, state.last_accepted_version))
+                    .unwrap_or((0, 0));
+                if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                    coordination_state.last_accepted_term = term;
+                    coordination_state.last_accepted_version = version;
+                }
+                Some(build_publish_with_join_response(
+                    request_id,
+                    header_version_id,
+                    term,
+                    version,
+                    transport_identity,
+                    join_last_accepted_term,
+                    join_last_accepted_version,
+                ))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let Some(response) = response else {
+        return Ok(false);
+    };
+    stream.write_all(&response)?;
+    stream.flush()?;
+    Ok(true)
+}
+
+fn summarize_transport_response_frame(frame: &[u8]) -> Option<serde_json::Value> {
+    if frame.len() < 6 || &frame[..2] != b"ES" {
+        return None;
+    }
+    let mut header = [0_u8; 6];
+    header.copy_from_slice(&frame[..6]);
+    Some(summarize_transport_seed_frame(&header, &frame[6..]))
+}
+
+fn summarize_transport_response_frame_for_action(
+    frame: &[u8],
+    action_hint: Option<&str>,
+) -> Option<serde_json::Value> {
+    let mut summary = summarize_transport_response_frame(frame)?;
+    if matches!(
+        action_hint,
+        Some("internal:cluster/coordination/publish_state")
+            | Some("internal:coordination/fault_detection/follower_check")
+            | Some("internal:transport/handshake")
+    ) {
+        summary["body_hex"] = serde_json::json!(
+            frame[6..]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
+    }
+    if let Some(action_hint) = action_hint {
+        summary["action_hint"] = serde_json::json!(action_hint);
+    }
+    Some(summary)
+}
+
+fn maybe_send_join_request_to_seed_peer(
+    header_version_id: u32,
+    request_body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) {
+    let Some(seed_peer_identity) = transport_identity.seed_peer_identity.as_ref() else {
+        return;
+    };
+    if request_body.len() < 8 {
+        return;
+    }
+    let term_offset = request_body.len() - 8;
+    let Ok(term_bytes) = <[u8; 8]>::try_from(&request_body[term_offset..]) else {
+        return;
+    };
+    let term = i64::from_be_bytes(term_bytes);
+    let request = build_join_request_frame(
+        TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        header_version_id,
+        term,
+        transport_identity,
+        seed_peer_identity,
+    );
+    let Ok(target_transport_address) = seed_peer_identity.discovery_node.transport_address.parse() else {
+        return;
+    };
+    let _ = send_transport_frame(target_transport_address, &request);
+}
+
+fn build_join_request_frame(
+    request_id: i64,
+    header_version_id: u32,
+    term: i64,
+    transport_identity: &DevTransportIdentity,
+    seed_peer_identity: &InteropSeedPeerIdentityManifest,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    let (last_accepted_term, last_accepted_version) = transport_identity
+        .coordination_state
+        .lock()
+        .map(|state| (state.last_accepted_term, state.last_accepted_version))
+        .unwrap_or((0, 0));
+    write_string(&mut payload, "");
+    write_discovery_node_wire(
+        &mut payload,
+        &transport_identity.node_name,
+        &transport_identity.node_id,
+        &transport_identity.ephemeral_id,
+        &transport_identity.transport_address.ip().to_string(),
+        &transport_identity.transport_address.ip().to_string(),
+        transport_identity.transport_address,
+        &transport_identity.attributes,
+        &transport_identity.roles,
+        OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+    );
+    payload.extend_from_slice(&term.to_be_bytes());
+    write_bool(&mut payload, true);
+    write_discovery_node_wire(
+        &mut payload,
+        &transport_identity.node_name,
+        &transport_identity.node_id,
+        &transport_identity.ephemeral_id,
+        &transport_identity.transport_address.ip().to_string(),
+        &transport_identity.transport_address.ip().to_string(),
+        transport_identity.transport_address,
+        &transport_identity.attributes,
+        &transport_identity.roles,
+        OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+    );
+    let target_transport_address: SocketAddr = seed_peer_identity
+        .discovery_node
+        .transport_address
+        .parse()
+        .expect("validated transport address");
+    write_discovery_node_wire(
+        &mut payload,
+        &seed_peer_identity.discovery_node.name,
+        &seed_peer_identity.discovery_node.id,
+        &seed_peer_identity.discovery_node.ephemeral_id,
+        &seed_peer_identity.discovery_node.host_name,
+        &seed_peer_identity.discovery_node.host_address,
+        target_transport_address,
+        &[],
+        &seed_peer_identity.discovery_node.roles,
+        seed_peer_identity.discovery_node.version_id,
+    );
+    payload.extend_from_slice(&term.to_be_bytes());
+    payload.extend_from_slice(&last_accepted_term.to_be_bytes());
+    payload.extend_from_slice(&last_accepted_version.to_be_bytes());
+    build_transport_request_frame(
+        request_id,
+        header_version_id,
+        "internal:cluster/coordination/join",
+        payload,
+    )
+}
+
+fn build_transport_request_frame(
+    request_id: i64,
+    header_version_id: u32,
+    action: &str,
+    payload: Vec<u8>,
+) -> Vec<u8> {
+    let mut variable_header = Vec::new();
+    write_transport_vint_to(&mut variable_header, 0);
+    write_transport_vint_to(&mut variable_header, 0);
+    write_transport_vint_to(&mut variable_header, 0);
+    write_string(&mut variable_header, action);
+    let message_length = 8 + 1 + 4 + 4 + variable_header.len() + payload.len();
+    let mut frame = Vec::with_capacity(6 + message_length);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&(message_length as u32).to_be_bytes());
+    frame.extend_from_slice(&request_id.to_be_bytes());
+    frame.push(0x00);
+    frame.extend_from_slice(&header_version_id.to_be_bytes());
+    frame.extend_from_slice(&(variable_header.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&variable_header);
+    frame.extend_from_slice(&payload);
+    frame
+}
+
+fn send_transport_frame(target_transport_address: SocketAddr, frame: &[u8]) -> std::io::Result<()> {
+    let mut stream = TcpStream::connect_timeout(&target_transport_address, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+    stream.write_all(frame)?;
+    stream.flush()?;
+    let _ = read_transport_seed_frame(&mut stream);
+    Ok(())
+}
+
+fn build_transport_response_frame(
+    request_id: i64,
+    header_version_id: u32,
+    payload: Vec<u8>,
+) -> Vec<u8> {
+    let variable_header = [0_u8, 0_u8];
+    let message_length = 8 + 1 + 4 + 4 + variable_header.len() + payload.len();
+    let mut frame = Vec::with_capacity(6 + message_length);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&(message_length as u32).to_be_bytes());
+    frame.extend_from_slice(&request_id.to_be_bytes());
+    frame.push(0x01);
+    frame.extend_from_slice(&header_version_id.to_be_bytes());
+    frame.extend_from_slice(&(variable_header.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&variable_header);
+    frame.extend_from_slice(&payload);
+    frame
+}
+
+fn hex_prefix(bytes: &[u8], max_len: usize) -> String {
+    bytes.iter()
+        .take(max_len)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
+fn write_transport_vint_to(out: &mut Vec<u8>, mut value: u32) {
+    while (value & !0x7f) != 0 {
+        out.push(((value & 0x7f) as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+}
+
+fn write_bool(out: &mut Vec<u8>, value: bool) {
+    out.push(if value { 1 } else { 0 });
+}
+
+fn write_string(out: &mut Vec<u8>, value: &str) {
+    let bytes = value.as_bytes();
+    write_transport_vint_to(out, bytes.len() as u32);
+    out.extend_from_slice(bytes);
+}
+
+fn write_discovery_node_wire(
+    out: &mut Vec<u8>,
+    node_name: &str,
+    node_id: &str,
+    ephemeral_id: &str,
+    host_name: &str,
+    host_address: &str,
+    transport_address: SocketAddr,
+    attributes: &[(String, String)],
+    roles: &[String],
+    version_id: u32,
+) {
+    write_string(out, node_name);
+    write_string(out, node_id);
+    write_string(out, ephemeral_id);
+    write_string(out, host_name);
+    write_string(out, host_address);
+    write_transport_address(out, transport_address);
+    write_bool(out, false);
+    write_transport_vint_to(out, attributes.len() as u32);
+    for (key, value) in attributes {
+        write_string(out, key);
+        write_string(out, value);
+    }
+    write_transport_vint_to(out, roles.len() as u32);
+    for role in roles {
+        let (abbrev, can_contain_data) = transport_role_wire_compat(role);
+        write_string(out, role);
+        write_string(out, abbrev);
+        write_bool(out, can_contain_data);
+    }
+    write_transport_vint_to(out, version_id);
+}
+
+fn write_transport_address(out: &mut Vec<u8>, address: SocketAddr) {
+    match address.ip() {
+        IpAddr::V4(ipv4) => {
+            out.push(4);
+            out.extend_from_slice(&ipv4.octets());
+        }
+        IpAddr::V6(ipv6) => {
+            out.push(16);
+            out.extend_from_slice(&ipv6.octets());
+        }
+    }
+    write_string(out, &address.ip().to_string());
+    out.extend_from_slice(&(address.port() as i32).to_be_bytes());
+}
+
+fn transport_role_wire_compat(role: &str) -> (&'static str, bool) {
+    match role {
+        "cluster_manager" => ("m", false),
+        "data" => ("d", true),
+        "ingest" => ("i", false),
+        "remote_cluster_client" => ("r", false),
+        _ => ("u", false),
+    }
+}
+
+fn build_tcp_handshake_response(
+    request_id: i64,
+    header_version_id: u32,
+    response_version_id: u32,
+) -> Vec<u8> {
+    let variable_header = [0_u8, 0_u8];
+    let payload = write_transport_vint(response_version_id);
+    let message_length = 8 + 1 + 4 + 4 + variable_header.len() + payload.len();
+    let mut frame = Vec::with_capacity(6 + message_length);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&(message_length as u32).to_be_bytes());
+    frame.extend_from_slice(&request_id.to_be_bytes());
+    frame.push(0x09);
+    frame.extend_from_slice(&header_version_id.to_be_bytes());
+    frame.extend_from_slice(&(variable_header.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&variable_header);
+    frame.extend_from_slice(&payload);
+    frame
+}
+
+fn write_transport_vint(mut value: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    while (value & !0x7f) != 0 {
+        out.push(((value & 0x7f) as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+    out
 }
 
 fn production_membership_from_cluster_view(
@@ -362,10 +1825,22 @@ struct DaemonConfig {
     roles: Vec<String>,
     development_security_mode: DevelopmentSecurityMode,
     java_write_forwarding_validated: bool,
+    seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
     #[cfg_attr(not(test), allow(dead_code))]
     extension_registry: ExtensionBoundaryRegistry,
     extension_registry_overrides: ExtensionRegistryOverrideConfig,
     extension_manifest_path: Option<PathBuf>,
+}
+
+impl DaemonConfig {
+    fn mixed_java_native_transport_join_participation_enabled(&self) -> bool {
+        self.java_write_forwarding_validated
+            && self.seed_peer_identity.is_some()
+            && self
+                .seed_hosts
+                .iter()
+                .any(|seed_host| seed_host != &self.local_transport_address())
+    }
 }
 
 trait DevelopmentClusterViewConfig {
@@ -376,6 +1851,9 @@ trait DevelopmentClusterViewConfig {
     fn roles(&self) -> Vec<String>;
     fn local_http_address(&self) -> String;
     fn local_transport_address(&self) -> String;
+    fn seed_peer_identity(&self) -> Option<&InteropSeedPeerIdentityManifest> {
+        None
+    }
 }
 
 impl DevelopmentClusterViewConfig for DaemonConfig {
@@ -405,6 +1883,10 @@ impl DevelopmentClusterViewConfig for DaemonConfig {
 
     fn local_transport_address(&self) -> String {
         SocketAddr::new(self.transport_host, self.transport_port).to_string()
+    }
+
+    fn seed_peer_identity(&self) -> Option<&InteropSeedPeerIdentityManifest> {
+        self.seed_peer_identity.as_ref()
     }
 }
 
@@ -473,6 +1955,59 @@ impl DevelopmentClusterViewConfig for NodeConfig {
     fn local_transport_address(&self) -> String {
         self.transport.bind_address.clone()
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
+struct InteropSeedPeerIdentityNode {
+    name: String,
+    id: String,
+    ephemeral_id: String,
+    host_name: String,
+    host_address: String,
+    transport_address: String,
+    version_id: u32,
+    roles: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
+struct InteropSeedPeerIdentityManifest {
+    peer_identity_present: bool,
+    cluster_name: String,
+    discovery_node: InteropSeedPeerIdentityNode,
+}
+
+fn load_seed_peer_identity_manifest(
+    path: &std::path::Path,
+) -> Result<InteropSeedPeerIdentityManifest, Box<dyn std::error::Error>> {
+    let raw = fs::read(path)?;
+    let manifest: InteropSeedPeerIdentityManifest = serde_json::from_slice(&raw)?;
+    if !manifest.peer_identity_present {
+        return Err(format!(
+            "seed peer identity manifest [{}] does not contain peer identity",
+            path.display()
+        )
+        .into());
+    }
+    if manifest.discovery_node.id.trim().is_empty()
+        || manifest.discovery_node.name.trim().is_empty()
+        || manifest.discovery_node.transport_address.trim().is_empty()
+    {
+        return Err(format!(
+            "seed peer identity manifest [{}] is missing discovery node identity fields",
+            path.display()
+        )
+        .into());
+    }
+    if manifest.discovery_node.roles.is_empty() {
+        return Err(format!(
+            "seed peer identity manifest [{}] must contain at least one role",
+            path.display()
+        )
+        .into());
+    }
+    validate_seed_host(&manifest.discovery_node.transport_address)
+        .map_err(|error| format!("seed peer identity manifest [{}] {error}", path.display()))?;
+    Ok(manifest)
 }
 
 #[derive(Clone, Debug, Default)]
@@ -547,6 +2082,9 @@ where
         .unwrap_or(DaemonMode::Development);
     let mut java_write_forwarding_validated =
         parse_bool_env(vars, "STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED")?.unwrap_or(false);
+    let mut seed_peer_identity_manifest_path = vars
+        .get("STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST")
+        .map(PathBuf::from);
 
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -624,6 +2162,12 @@ where
                     .ok_or("--interop.java_write_forwarding_validated requires a value")?;
                 java_write_forwarding_validated = parse_bool_flag(&value)?;
             }
+            "--interop.seed_peer_identity_manifest" => {
+                seed_peer_identity_manifest_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--interop.seed_peer_identity_manifest requires a value")?,
+                ));
+            }
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -637,6 +2181,10 @@ where
     if roles.is_empty() {
         return Err("--node.roles must contain at least one role".into());
     }
+    let seed_peer_identity = seed_peer_identity_manifest_path
+        .as_ref()
+        .map(|path| load_seed_peer_identity_manifest(path))
+        .transpose()?;
     let config = DaemonConfig {
         host,
         port,
@@ -650,6 +2198,7 @@ where
         roles,
         development_security_mode,
         java_write_forwarding_validated,
+        seed_peer_identity,
         extension_registry,
         extension_registry_overrides,
         extension_manifest_path,
@@ -746,6 +2295,7 @@ fn default_roles() -> Vec<String> {
         "cluster_manager".to_string(),
         "data".to_string(),
         "ingest".to_string(),
+        "remote_cluster_client".to_string(),
     ]
 }
 
@@ -795,6 +2345,45 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         if !seen_seed_hosts.insert(seed_host.clone()) {
             blockers.push(format!(
                 "[multi_node] duplicate discovery seed host [{seed_host}]"
+            ));
+        }
+    }
+
+    if config.java_write_forwarding_validated
+        && config
+            .seed_hosts
+            .iter()
+            .any(|seed_host| seed_host != &config.local_transport_address())
+        && config.seed_peer_identity.is_none()
+    {
+        blockers.push(
+            "[interop] mixed Java same-cluster participation requires --interop.seed_peer_identity_manifest with actual Java seed peer identity before native transport join is implemented"
+                .to_string(),
+        );
+    }
+
+    if let Some(seed_peer_identity) = config.seed_peer_identity.as_ref() {
+        if seed_peer_identity.cluster_name != config.cluster_name {
+            blockers.push(format!(
+                "[interop] seed peer identity cluster [{}] does not match configured cluster [{}]",
+                seed_peer_identity.cluster_name, config.cluster_name
+            ));
+        }
+        let manifest_transport_address = &seed_peer_identity.discovery_node.transport_address;
+        if manifest_transport_address == &config.local_transport_address() {
+            blockers.push(format!(
+                "[interop] seed peer identity transport address [{}] must not point at the local transport address",
+                manifest_transport_address
+            ));
+        }
+        if !config
+            .seed_hosts
+            .iter()
+            .any(|seed_host| seed_host == manifest_transport_address)
+        {
+            blockers.push(format!(
+                "[interop] seed peer identity transport address [{}] is not present in --discovery.seed_hosts",
+                manifest_transport_address
             ));
         }
     }
@@ -881,6 +2470,19 @@ fn development_cluster_view(
     for (index, seed_host) in config.seed_hosts().iter().enumerate() {
         if seed_host == &local_transport_address {
             continue;
+        }
+        if let Some(seed_peer_identity) = config.seed_peer_identity() {
+            if seed_peer_identity.discovery_node.transport_address == *seed_host {
+                nodes.push(DevelopmentClusterNode {
+                    node_id: seed_peer_identity.discovery_node.id.clone(),
+                    node_name: seed_peer_identity.discovery_node.name.clone(),
+                    http_address: None,
+                    transport_address: seed_peer_identity.discovery_node.transport_address.clone(),
+                    roles: seed_peer_identity.discovery_node.roles.clone(),
+                    local: false,
+                });
+                continue;
+            }
         }
         nodes.push(DevelopmentClusterNode {
             node_id: format!("seed-{}-{}", index + 1, sanitize_node_id(seed_host)),
@@ -1450,9 +3052,15 @@ where
     let mut windows = Vec::new();
     loop {
         let window = scheduler.next_attempt();
-        let result = elect();
+        let mut result = elect();
         windows.push(window);
-        if result.elected_node_id.is_some() || scheduler.attempts() >= max_attempts {
+        let quorum_satisfied =
+            result.elected_node_id.is_some() && (result.votes.len() as u64) >= result.required_quorum;
+        if quorum_satisfied {
+            return (result, windows);
+        }
+        if scheduler.attempts() >= max_attempts {
+            result.elected_node_id = None;
             return (result, windows);
         }
     }
@@ -1504,10 +3112,14 @@ where
         return None;
     }
     let election = re_elect(coordination, config, connect_timeout);
-    if election.elected_node_id.is_some() {
+    let quorum_satisfied =
+        election.elected_node_id.is_some() && (election.votes.len() as u64) >= election.required_quorum;
+    if quorum_satisfied {
         coordination.liveness.clear_local_fence();
+        return Some(election);
     }
-    Some(election)
+    coordination.cluster_manager_node_id = None;
+    None
 }
 
 fn maybe_transition_from_liveness(
@@ -1602,7 +3214,7 @@ Options:\n\
   --transport.port <port>          Transport bind port, default 9300\n\
   --node.id <id>                   Stable node id, default node name\n\
   --node.name <name>               Node name, default steelsearch-dev-node\n\
-  --node.roles <csv>               Node roles, default cluster_manager,data,ingest\n\
+  --node.roles <csv>               Node roles, default cluster_manager,data,ingest,remote_cluster_client\n\
   --cluster.name <name>            Cluster name, default steelsearch-dev\n\
   --discovery.seed_hosts <csv>     Transport seed hosts, default empty\n\
   --path.data <path>               Data path, default data/steelsearch\n\
@@ -1611,6 +3223,8 @@ Options:\n\
   --extensions.manifest <path>     Load extension registry overrides from JSON manifest\n\
   --interop.java_write_forwarding_validated <bool>\n\
                                     Enable Phase B Java write forwarding gate, default false\n\
+  --interop.seed_peer_identity_manifest <path>\n\
+                                    Load actual Java seed peer identity manifest for same-cluster bootstrap\n\
   --development.security_mode <mode>\n\
                                     Development security mode, default disabled\n\
   --mode <development|production>  Runtime mode, default development\n\
@@ -1623,6 +3237,7 @@ Environment:\n\
   STEELSEARCH_DATA_PATH, STEELSEARCH_DEVELOPMENT_SECURITY_MODE,\n\
   STEELSEARCH_ENABLE_KNN_PLUGIN, STEELSEARCH_ENABLE_ML_COMMONS,\n\
   STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED,\n\
+  STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST,\n\
   STEELSEARCH_EXTENSION_MANIFEST,\n\
   STEELSEARCH_MODE"
 }
@@ -1824,6 +3439,63 @@ mod tests {
         let config = daemon_config_from_sources(&vars, std::iter::empty::<String>()).unwrap();
 
         assert!(config.java_write_forwarding_validated);
+    }
+
+    #[test]
+    fn daemon_config_accepts_java_same_cluster_intent_with_seed_peer_identity_manifest() {
+        let manifest_path = std::env::temp_dir().join(format!(
+            "steelsearch-seed-peer-identity-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &manifest_path,
+            br#"{
+  "peer_identity_present": true,
+  "cluster_name": "steelsearch-dev",
+  "discovery_node": {
+    "name": "java-primary-1",
+    "id": "java-primary-id",
+    "ephemeral_id": "java-primary-ephemeral",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "transport_address": "127.0.0.1:19301",
+    "version_id": 137287827,
+    "roles": ["cluster_manager", "data", "ingest"]
+  }
+}"#,
+        )
+        .unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--interop.java_write_forwarding_validated",
+                "true",
+                "--interop.seed_peer_identity_manifest",
+                manifest_path.to_str().unwrap(),
+                "--discovery.seed_hosts",
+                "127.0.0.1:19301,127.0.0.1:19302",
+                "--transport.port",
+                "19302",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        assert!(config.java_write_forwarding_validated);
+        assert_eq!(
+            config
+                .seed_peer_identity
+                .as_ref()
+                .unwrap()
+                .discovery_node
+                .transport_address,
+            "127.0.0.1:19301"
+        );
+
+        let _ = fs::remove_file(manifest_path);
     }
 
     #[test]
@@ -2049,6 +3721,28 @@ mod tests {
     }
 
     #[test]
+    fn daemon_config_rejects_java_same_cluster_intent_without_native_transport_join() {
+        let vars = BTreeMap::new();
+        let error = daemon_config_from_sources(
+            &vars,
+            [
+                "--interop.java_write_forwarding_validated",
+                "true",
+                "--discovery.seed_hosts",
+                "127.0.0.1:19301,127.0.0.1:19302",
+                "--transport.port",
+                "19302",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("requires --interop.seed_peer_identity_manifest"));
+    }
+
+    #[test]
     fn daemon_config_rejects_production_mode_without_required_gates() {
         let vars = BTreeMap::new();
         let error = daemon_config_from_sources(
@@ -2108,6 +3802,72 @@ mod tests {
         );
         assert_eq!(view.nodes[1].transport_address, "127.0.0.1:19302");
         assert_eq!(view.nodes[2].transport_address, "127.0.0.1:19303");
+    }
+
+    #[test]
+    fn development_cluster_view_uses_actual_seed_peer_identity_manifest() {
+        let manifest_path = std::env::temp_dir().join(format!(
+            "steelsearch-seed-peer-view-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &manifest_path,
+            br#"{
+  "peer_identity_present": true,
+  "cluster_name": "steelsearch-dev",
+  "discovery_node": {
+    "name": "java-primary-1",
+    "id": "java-primary-id",
+    "ephemeral_id": "java-primary-ephemeral",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "transport_address": "127.0.0.1:19302",
+    "version_id": 137287827,
+    "roles": ["cluster_manager", "data", "ingest"]
+  }
+}"#,
+        )
+        .unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--node.id",
+                "rust-replica-1",
+                "--node.name",
+                "rust-replica-1",
+                "--http.port",
+                "19201",
+                "--transport.port",
+                "19303",
+                "--discovery.seed_hosts",
+                "127.0.0.1:19302,127.0.0.1:19303",
+                "--interop.java_write_forwarding_validated",
+                "true",
+                "--interop.seed_peer_identity_manifest",
+                manifest_path.to_str().unwrap(),
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        let view = development_cluster_view(&config, "cluster-uuid");
+        assert_eq!(view.nodes.len(), 2);
+        assert_eq!(view.nodes[1].node_id, "java-primary-id");
+        assert_eq!(view.nodes[1].node_name, "java-primary-1");
+        assert_eq!(view.nodes[1].transport_address, "127.0.0.1:19302");
+        assert_eq!(
+            view.nodes[1].roles,
+            vec![
+                "cluster_manager".to_string(),
+                "data".to_string(),
+                "ingest".to_string()
+            ]
+        );
+
+        let _ = fs::remove_file(manifest_path);
     }
 
     #[test]
@@ -4726,7 +6486,13 @@ mod tests {
             ElectionResult {
                 elected_node_id: (attempts == 3).then(|| "node-a".to_string()),
                 term: attempts as i64,
-                votes: Default::default(),
+                votes: (attempts == 3)
+                    .then(|| {
+                        ["node-a".to_string(), "node-c".to_string()]
+                            .into_iter()
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 required_quorum: 2,
             }
         });
@@ -4738,6 +6504,69 @@ mod tests {
         assert_eq!(windows[2].delay, std::time::Duration::from_millis(20));
         assert_eq!(result.elected_node_id.as_deref(), Some("node-a"));
         assert_eq!(scheduler.attempts(), 3);
+    }
+
+    #[test]
+    fn scheduled_election_does_not_stop_on_insufficient_vote_count() {
+        let mut scheduler = ElectionScheduler::new(ElectionSchedulerConfig {
+            initial_timeout: std::time::Duration::from_millis(10),
+            backoff_time: std::time::Duration::from_millis(5),
+            max_timeout: std::time::Duration::from_millis(20),
+            duration: std::time::Duration::from_millis(3),
+        });
+        let mut attempts = 0u64;
+
+        let (result, windows) = run_scheduled_election(&mut scheduler, 3, || {
+            attempts += 1;
+            if attempts < 3 {
+                ElectionResult {
+                    elected_node_id: Some("node-a".to_string()),
+                    term: attempts as i64,
+                    votes: ["node-a".to_string()].into_iter().collect(),
+                    required_quorum: 2,
+                }
+            } else {
+                ElectionResult {
+                    elected_node_id: Some("node-a".to_string()),
+                    term: attempts as i64,
+                    votes: ["node-a".to_string(), "node-c".to_string()]
+                        .into_iter()
+                        .collect(),
+                    required_quorum: 2,
+                }
+            }
+        });
+
+        assert_eq!(attempts, 3);
+        assert_eq!(windows.len(), 3);
+        assert_eq!(result.elected_node_id.as_deref(), Some("node-a"));
+        assert_eq!(result.votes.len() as u64, result.required_quorum);
+    }
+
+    #[test]
+    fn scheduled_election_returns_no_leader_when_attempt_budget_expires_without_quorum() {
+        let mut scheduler = ElectionScheduler::new(ElectionSchedulerConfig {
+            initial_timeout: std::time::Duration::from_millis(10),
+            backoff_time: std::time::Duration::from_millis(5),
+            max_timeout: std::time::Duration::from_millis(20),
+            duration: std::time::Duration::from_millis(3),
+        });
+        let mut attempts = 0u64;
+
+        let (result, windows) = run_scheduled_election(&mut scheduler, 3, || {
+            attempts += 1;
+            ElectionResult {
+                elected_node_id: Some("node-a".to_string()),
+                term: attempts as i64,
+                votes: ["node-a".to_string()].into_iter().collect(),
+                required_quorum: 2,
+            }
+        });
+
+        assert_eq!(attempts, 3);
+        assert_eq!(windows.len(), 3);
+        assert_eq!(result.elected_node_id, None);
+        assert_eq!(result.required_quorum, 2);
     }
 
     #[test]
@@ -5047,7 +6876,7 @@ mod tests {
             .local_fence_reason
             .as_deref()
             .unwrap_or_default()
-            .contains("leader lost live follower quorum"));
+            .contains("leader lost live voter quorum"));
     }
 
     #[test]
@@ -5134,6 +6963,418 @@ mod tests {
         assert_eq!(coordination.liveness.local_fence_reason, None);
         assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
         assert_eq!(coordination.fault_detection.leader_nodes.get("node-b"), None);
+    }
+
+    #[test]
+    fn election_and_publication_rounds_use_majority_quorum_for_three_manager_nodes() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, port) in [
+            ("node-b", "steel-b", 19302_u16),
+            ("node-c", "steel-c", 19303_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host: "127.0.0.1".to_string(),
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination.propose_voting_config_addition(node_id).unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        let election = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(election.required_quorum, 2);
+
+        let publish = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-2".to_string(),
+            2,
+            ["node-a".to_string(), "node-b".to_string(), "node-c".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        assert!(publish.committed);
+        assert_eq!(
+            coordination
+                .active_publication_round()
+                .map(|round| round.required_quorum),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn joined_peers_do_not_change_quorum_until_voting_reconfiguration_applies() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, port) in [
+            ("node-b", "steel-b", 19302_u16),
+            ("node-c", "steel-c", 19303_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host: "127.0.0.1".to_string(),
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+        }
+
+        let before = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(before.required_quorum, 1);
+        assert_eq!(
+            coordination.last_accepted_voting_configuration,
+            std::collections::BTreeSet::from(["node-a".to_string()])
+        );
+
+        coordination.propose_voting_config_addition("node-b").unwrap();
+        coordination.propose_voting_config_addition("node-c").unwrap();
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        let after = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(after.required_quorum, 2);
+        assert_eq!(
+            coordination.last_accepted_voting_configuration,
+            std::collections::BTreeSet::from([
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn joint_voting_configuration_union_and_exclusions_drive_required_quorum() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration =
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()]);
+        coordination.last_committed_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+            "node-d".to_string(),
+        ]);
+
+        let before_exclusion = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(before_exclusion.required_quorum, 3);
+
+        coordination
+            .voting_config_exclusions
+            .insert("node-d".to_string());
+        let after_exclusion = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(after_exclusion.required_quorum, 2);
+    }
+
+    #[test]
+    fn local_manager_liveness_keeps_cluster_active_when_majority_quorum_remains_reachable() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let reachable_address = listener.local_addr().unwrap();
+        let accept_thread = std::thread::spawn(move || {
+            if let Ok((_stream, _addr)) = listener.accept() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, host, port) in [
+            (
+                "node-b",
+                "steel-b",
+                reachable_address.ip().to_string(),
+                reachable_address.port(),
+            ),
+            ("node-c", "steel-c", "192.0.2.13".to_string(), 1_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host,
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination.propose_voting_config_addition(node_id).unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+        coordination.cluster_manager_node_id = Some("node-a".to_string());
+
+        let outcome = run_periodic_liveness_checks(
+            &mut coordination,
+            &discovery,
+            1,
+            Duration::from_millis(100),
+        );
+
+        accept_thread.join().unwrap();
+        assert_eq!(outcome.ticks, vec![1]);
+        assert!(outcome.re_election.is_none());
+        assert_eq!(coordination.cluster_manager_node_id.as_deref(), Some("node-a"));
+        assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
+        assert_eq!(coordination.liveness.local_fence_reason, None);
+    }
+
+    #[test]
+    fn follower_re_election_stays_fail_closed_without_majority_votes() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, port) in [
+            ("node-b", "steel-b", 19302_u16),
+            ("node-c", "steel-c", 19303_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host: "127.0.0.1".to_string(),
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination.propose_voting_config_addition(node_id).unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+        coordination.cluster_manager_node_id = Some("node-b".to_string());
+        coordination
+            .liveness
+            .record_quorum_loss(2, "leader check failed repeatedly against manager [node-b]");
+        coordination
+            .fault_detection
+            .record_leader_failure("node-b", 2, "leader unreachable");
+
+        let outcome = maybe_transition_from_liveness(
+            &mut coordination,
+            &discovery,
+            Duration::from_millis(100),
+        );
+
+        assert!(outcome.is_none());
+        assert_eq!(coordination.cluster_manager_node_id, None);
+        assert_eq!(coordination.liveness.quorum_lost_at_tick, Some(2));
+        assert!(coordination.liveness.local_fence_reason.is_some());
+    }
+
+    #[test]
+    fn publication_commit_stays_fail_closed_when_target_set_is_below_required_quorum() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, port) in [
+            ("node-b", "steel-b", 19302_u16),
+            ("node-c", "steel-c", 19303_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host: "127.0.0.1".to_string(),
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination.propose_voting_config_addition(node_id).unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        let publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-7".to_string(),
+            7,
+            ["node-a".to_string()].into_iter().collect(),
+        );
+
+        assert!(!publication.committed);
+        assert_eq!(
+            coordination
+                .active_publication_round()
+                .map(|round| round.required_quorum),
+            Some(2)
+        );
+        assert_eq!(
+            coordination
+                .active_publication_round()
+                .map(|round| round.committed),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn restored_voting_configuration_and_exclusions_preserve_quorum_after_restart() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut original = ClusterCoordinationState::bootstrap(&discovery);
+        original.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+        ]);
+        original.last_committed_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+            "node-d".to_string(),
+        ]);
+        original
+            .voting_config_exclusions
+            .insert("node-d".to_string());
+        let persisted = original.capture_publication_state();
+
+        let mut restored = ClusterCoordinationState::bootstrap(&discovery);
+        restored.restore_publication_state(persisted);
+        let election = restored.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+
+        assert_eq!(
+            restored.last_accepted_voting_configuration,
+            std::collections::BTreeSet::from([
+                "node-a".to_string(),
+                "node-b".to_string(),
+            ])
+        );
+        assert_eq!(
+            restored.last_committed_voting_configuration,
+            std::collections::BTreeSet::from([
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+                "node-d".to_string(),
+            ])
+        );
+        assert_eq!(
+            restored.voting_config_exclusions,
+            std::collections::BTreeSet::from(["node-d".to_string()])
+        );
+        assert_eq!(election.required_quorum, 2);
     }
 }
 

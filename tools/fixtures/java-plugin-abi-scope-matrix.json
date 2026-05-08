@@ -1,0 +1,35 @@
+{
+  "name": "java-plugin-abi-scope-matrix",
+  "workstreams": [
+    {
+      "area": "plugin_loading",
+      "scope_status": "in-scope",
+      "required_harness": "representative Java plugin load/start/stop harness",
+      "required_evidence": [
+        "plugin classpath resolution transcript",
+        "plugin lifecycle start-stop report"
+      ],
+      "blocked_reason": "Rust runtime still lacks a bounded Java plugin loading boundary and classloader contract"
+    },
+    {
+      "area": "extension_point_binding",
+      "scope_status": "in-scope",
+      "required_harness": "plugin REST/transport binding compatibility harness",
+      "required_evidence": [
+        "REST handler registration report",
+        "transport action registration report"
+      ],
+      "blocked_reason": "extension point binding must be explicitly mapped before Java plugins can attach handlers"
+    },
+    {
+      "area": "lifecycle_sandbox",
+      "scope_status": "in-scope",
+      "required_harness": "plugin sandbox/failure isolation harness",
+      "required_evidence": [
+        "plugin config mutation isolation report",
+        "plugin failure containment transcript"
+      ],
+      "blocked_reason": "plugin lifecycle sandbox rules are still undefined for Rust runtime integration"
+    }
+  ]
+}

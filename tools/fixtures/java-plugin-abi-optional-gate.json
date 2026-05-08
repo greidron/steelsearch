@@ -1,0 +1,20 @@
+{
+  "name": "java-plugin-abi-optional-gate",
+  "profile": "optional",
+  "source_area": "Java plugin ABI compatibility",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "In progress",
+    "semantic_parity": "N/A",
+    "production_readiness": "No"
+  },
+  "required_fixtures": [
+    "java-plugin-abi-scope-matrix.json",
+    "java-plugin-compat-layer-profiles.json"
+  ],
+  "required_profiles": [
+    "plugin-bootstrap-config",
+    "plugin-rest-binding",
+    "plugin-transport-binding"
+  ],
+  "track_status": "optional-track"
+}

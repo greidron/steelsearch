@@ -1,0 +1,62 @@
+{
+  "name": "vector-promotion-gate",
+  "profile": "standalone",
+  "source_area": "k-NN vector indexing and query search",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "vector-ml"
+      ],
+      "report_paths": [
+        "vector-search-compat-report.json"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "vector-ml"
+      ],
+      "required_cases": [
+        "knn_search",
+        "knn_cosinesimil_search",
+        "knn_innerproduct_search",
+        "knn_query_happy_path",
+        "knn_query_filter_happy_path",
+        "knn_query_ignore_unmapped_happy_path",
+        "knn_query_radial_max_distance_happy_path",
+        "knn_query_method_parameters_happy_path",
+        "hybrid_query_happy_path",
+        "hybrid_should_query_happy_path",
+        "hybrid_minimum_should_match_happy_path"
+      ],
+      "required_evidence_classes": [
+        "lucene-score-space",
+        "byte-vector-subset",
+        "binary-vector-subset",
+        "nested-filtered-knn",
+        "exact-ranking",
+        "hybrid-score-merge"
+      ]
+    }
+  },
+  "reject_ledger": {
+    "fixture": "vector-reject-ledger.json",
+    "required_categories": [
+      "engine",
+      "mode",
+      "space",
+      "data_type"
+    ]
+  },
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml"
+    ],
+    "required_reports": [
+      "vector-search-compat-report.json"
+    ]
+  }
+}

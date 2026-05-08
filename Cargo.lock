@@ -221,6 +221,7 @@ dependencies = [
  "os-engine",
  "os-engine-tantivy",
  "os-ml-commons",
+ "os-node-rest-core",
  "os-plugin-knn",
  "os-rest",
  "os-stream",
@@ -231,6 +232,13 @@ dependencies = [
  "tokio",
  "tracing",
  "utoipa",
+]
+
+[[package]]
+name = "os-node-rest-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

@@ -1,0 +1,94 @@
+{
+  "name": "distributed-durability-convergence-profiles",
+  "profiles": {
+    "primary-relocation": {
+      "probe_case": "primary-relocation",
+      "shard_id": "logs-000001:0",
+      "source_node": "node-a",
+      "target_node": "node-b",
+      "allocation_decision": "allow",
+      "relocation_phase": "relocation_finalized",
+      "retention_lease_phase": "lease_updated",
+      "timeline": [
+        "allocated",
+        "relocation_started",
+        "lease_granted",
+        "lease_updated",
+        "relocation_finalized"
+      ],
+      "final_state": "started-on-target",
+      "direction": "rust-to-java",
+      "recovery_case": "finalized-recovery",
+      "file_chunk_phase": "completed",
+      "translog_phase": "completed",
+      "finalize_phase": "completed",
+      "data_checksum_ok": true,
+      "doc_visibility_ok": true,
+      "phases": [
+        "prepare",
+        "relocate",
+        "durability",
+        "check"
+      ]
+    },
+    "replica-catchup": {
+      "probe_case": "replica-catchup",
+      "shard_id": "logs-000001:1",
+      "source_node": "node-a",
+      "target_node": "node-c",
+      "allocation_decision": "allow",
+      "relocation_phase": "relocation_started",
+      "retention_lease_phase": "lease_updated",
+      "timeline": [
+        "allocated",
+        "lease_granted",
+        "lease_updated"
+      ],
+      "final_state": "replica-caught-up",
+      "direction": "java-to-rust",
+      "recovery_case": "resumed-recovery",
+      "file_chunk_phase": "completed",
+      "translog_phase": "completed",
+      "finalize_phase": "completed",
+      "data_checksum_ok": true,
+      "doc_visibility_ok": true,
+      "phases": [
+        "prepare",
+        "recover",
+        "durability",
+        "check"
+      ]
+    },
+    "node-left-delayed-allocation": {
+      "probe_case": "node-left-delayed-allocation",
+      "shard_id": "logs-000001:2",
+      "source_node": "node-b",
+      "target_node": "node-a",
+      "allocation_decision": "delayed",
+      "relocation_phase": "relocation_interrupted",
+      "retention_lease_phase": "lease_removed",
+      "timeline": [
+        "allocated",
+        "relocation_interrupted",
+        "lease_removed",
+        "relocation_started",
+        "relocation_finalized"
+      ],
+      "final_state": "rerouted-after-delay",
+      "direction": "rust-to-java",
+      "recovery_case": "interrupted-recovery",
+      "file_chunk_phase": "interrupted",
+      "translog_phase": "resumed",
+      "finalize_phase": "completed",
+      "data_checksum_ok": true,
+      "doc_visibility_ok": true,
+      "phases": [
+        "prepare",
+        "relocate",
+        "recover",
+        "durability",
+        "check"
+      ]
+    }
+  }
+}

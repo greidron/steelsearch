@@ -1,0 +1,37 @@
+{
+  "name": "peer-node-promotion-gate",
+  "profile": "same-cluster-peer",
+  "source_area": "Steelsearch multi-node runtime",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "semantic_parity": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "durability_parity": {
+      "suite": "same-cluster-peer",
+      "required_reports": [
+        "mixed-cluster-failure/<profile>/report.json",
+        "distributed-durability-convergence/<profile>/report.json"
+      ],
+      "required_evidence_classes": [
+        "peer-recovery",
+        "mixed-write-replication",
+        "durability-convergence"
+      ]
+    },
+    "distributed_parity": {
+      "suite": "same-cluster-peer",
+      "required_reports": [
+        "rolling-stability/<profile>/report.json"
+      ],
+      "required_evidence_classes": [
+        "quorum-evidence",
+        "publication-ordering",
+        "rolling-stability-transcript",
+        "leader-failover",
+        "seed-loss-recovery"
+      ]
+    }
+  }
+}

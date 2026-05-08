@@ -1,0 +1,66 @@
+{
+  "name": "security-tenant-role-index-matrix",
+  "profile": "multi-node-secure",
+  "cases": [
+    {
+      "case": "reader_allowed_same_tenant_read",
+      "tenant": "tenant-a",
+      "credential_set": "reader-basic",
+      "operation": "read",
+      "target": "logs-tenant-a-000001",
+      "expected_result": "allowed",
+      "expected_status": 200,
+      "reason": "reader role may read documents in its assigned tenant namespace"
+    },
+    {
+      "case": "writer_allowed_same_tenant_write",
+      "tenant": "tenant-a",
+      "credential_set": "writer-basic",
+      "operation": "write",
+      "target": "logs-tenant-a-000001",
+      "expected_result": "allowed",
+      "expected_status": 201,
+      "reason": "writer role may write documents in its assigned tenant namespace"
+    },
+    {
+      "case": "reader_denied_cross_tenant_read",
+      "tenant": "tenant-a",
+      "credential_set": "reader-basic",
+      "operation": "read",
+      "target": "logs-tenant-b-000001",
+      "expected_result": "denied",
+      "expected_status": 403,
+      "reason": "cross-tenant reads must reject rather than leak documents"
+    },
+    {
+      "case": "writer_denied_restricted_index_write",
+      "tenant": "tenant-a",
+      "credential_set": "writer-basic",
+      "operation": "write",
+      "target": ".opensearch-restricted-authz-000001",
+      "expected_result": "denied",
+      "expected_status": 403,
+      "reason": "writer role must not escalate into restricted index mutation"
+    },
+    {
+      "case": "reader_denied_restricted_alias_read",
+      "tenant": "tenant-a",
+      "credential_set": "reader-basic",
+      "operation": "read",
+      "target": "restricted-authz-alias",
+      "expected_result": "denied",
+      "expected_status": 403,
+      "reason": "restricted aliases must preserve restricted-index deny semantics"
+    },
+    {
+      "case": "admin_allowed_restricted_index_read_write",
+      "tenant": "tenant-admin",
+      "credential_set": "admin-basic",
+      "operation": "read_write",
+      "target": ".opensearch-restricted-authz-000001",
+      "expected_result": "allowed",
+      "expected_status": 200,
+      "reason": "admin role remains the only bounded role allowed to mutate restricted indices"
+    }
+  ]
+}

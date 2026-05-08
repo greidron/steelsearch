@@ -1,0 +1,96 @@
+{
+  "name": "migration-cutover-preflight-blockers",
+  "operations": [
+    {
+      "name": "delete_supported_vector_index",
+      "method": "DELETE",
+      "path": "/migration-cutover-supported-vectors-000001?ignore_unavailable=true"
+    },
+    {
+      "name": "delete_blocking_vector_index",
+      "method": "DELETE",
+      "path": "/migration-cutover-blocking-vectors-000001?ignore_unavailable=true"
+    },
+    {
+      "name": "create_supported_vector_index",
+      "method": "PUT",
+      "path": "/migration-cutover-supported-vectors-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            },
+            "embedding": {
+              "type": "knn_vector",
+              "dimension": 3,
+              "data_type": "float",
+              "mode": "in_memory",
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "l2"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "create_blocking_vector_index",
+      "method": "PUT",
+      "path": "/migration-cutover-blocking-vectors-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            },
+            "embedding": {
+              "type": "knn_vector",
+              "dimension": 3,
+              "data_type": "float",
+              "mode": "on_disk",
+              "method": {
+                "name": "hnsw",
+                "engine": "faiss",
+                "space_type": "l2"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "preflight_checks": [
+    {
+      "name": "supported_vector_metadata_preflight",
+      "method": "GET",
+      "path": "/migration-cutover-supported-vectors-000001",
+      "extract": "unsupported_feature_preflight",
+      "must_block": false
+    },
+    {
+      "name": "blocking_vector_metadata_preflight",
+      "method": "GET",
+      "path": "/migration-cutover-blocking-vectors-000001",
+      "extract": "unsupported_feature_preflight",
+      "must_block": true
+    }
+  ],
+  "checks": []
+}

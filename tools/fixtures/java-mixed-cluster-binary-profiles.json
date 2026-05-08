@@ -1,0 +1,191 @@
+{
+  "name": "java-mixed-cluster-binary-profiles",
+  "profiles": {
+    "java-primary-rust-replica": {
+      "primary_node": "java",
+      "replica_node": "rust",
+      "required_phases": [
+        "prepare",
+        "write",
+        "read",
+        "recover",
+        "restart",
+        "check"
+      ],
+      "expected_markers": [
+        "java primary write acknowledged",
+        "rust replica caught up",
+        "restart visibility preserved"
+      ],
+      "write_modes": [
+        "single-doc-crud",
+        "bulk"
+      ],
+      "visibility_stages": [
+        "post-refresh",
+        "post-recovery",
+        "post-restart"
+      ],
+      "checkpoint_fields": [
+        "seq_no_drift",
+        "global_checkpoint_drift",
+        "local_checkpoint_drift"
+      ],
+      "required_failure_classes": [
+        "decode_mismatch",
+        "apply_mismatch",
+        "checkpoint_mismatch"
+      ]
+    },
+    "rust-primary-java-replica": {
+      "primary_node": "rust",
+      "replica_node": "java",
+      "required_phases": [
+        "prepare",
+        "write",
+        "read",
+        "recover",
+        "restart",
+        "check"
+      ],
+      "expected_markers": [
+        "rust primary write acknowledged",
+        "java replica caught up",
+        "restart visibility preserved"
+      ],
+      "write_modes": [
+        "index",
+        "delete",
+        "update",
+        "bulk-replay"
+      ],
+      "visibility_stages": [
+        "realtime",
+        "read-after-refresh",
+        "recovery-after-restart"
+      ],
+      "replica_provenance_modes": [
+        "translog",
+        "segment",
+        "mixed"
+      ],
+      "replica_provenance": "mixed",
+      "required_failure_classes": [
+        "acknowledged_but_diverged",
+        "metadata_mismatch",
+        "unsupported_op"
+      ]
+    },
+    "java-driven-rolling-restart": {
+      "primary_node": "java",
+      "replica_node": "rust",
+      "required_phases": [
+        "prepare",
+        "write",
+        "read",
+        "recover",
+        "restart",
+        "check"
+      ],
+      "expected_markers": [
+        "java-driven rolling restart completed",
+        "cluster reformed",
+        "write visibility preserved"
+      ],
+      "cluster_manager_visibility_modes": [
+        "pre-restart",
+        "mid-restart",
+        "post-restart"
+      ],
+      "shard_routing_diff_fields": [
+        "node_assignment_changed",
+        "recovery_completed",
+        "write_availability_preserved"
+      ],
+      "restart_durability_stages": [
+        "accepted-write-window",
+        "post-restart-readback"
+      ],
+      "restart_decoder_path": "stable"
+    },
+    "peer-recovery-interruption": {
+      "primary_node": "java",
+      "replica_node": "rust",
+      "required_phases": [
+        "prepare",
+        "write",
+        "read",
+        "recover",
+        "restart",
+        "check"
+      ],
+      "expected_markers": [
+        "peer recovery interrupted",
+        "recovery resumed",
+        "post-recovery visibility preserved"
+      ],
+      "interruption_points": [
+        "before-file-copy",
+        "during-file-copy",
+        "during-translog-replay"
+      ],
+      "recovery_outcome_modes": [
+        "resumed",
+        "full-restart",
+        "corrupted"
+      ],
+      "recovery_outcome": "resumed",
+      "cleanup_failure_class": "stale_artifact_leftover"
+    },
+    "segment-compatibility-verify": {
+      "primary_node": "java",
+      "replica_node": "rust",
+      "required_phases": [
+        "prepare",
+        "write",
+        "read",
+        "recover",
+        "restart",
+        "check"
+      ],
+      "expected_markers": [
+        "segment compatibility verified",
+        "binary artifact accepted",
+        "recovery visibility preserved"
+      ]
+    },
+    "segment-compatibility-verify": {
+      "primary_node": "java",
+      "replica_node": "rust",
+      "required_phases": [
+        "prepare",
+        "write",
+        "read",
+        "recover",
+        "restart",
+        "check"
+      ],
+      "expected_markers": [
+        "segment compatibility verified",
+        "binary artifact accepted",
+        "recovery visibility preserved"
+      ],
+      "segment_matrix": [
+        "java-segment-to-rust-read",
+        "rust-segment-to-java-read"
+      ],
+      "segment_metadata_fields": [
+        "segment_file_list",
+        "codec_version",
+        "checksum_summary",
+        "recovery_source_provenance"
+      ],
+      "recovery_bootstrap_modes": [
+        "segment-only",
+        "translog-assisted"
+      ],
+      "recovery_bootstrap_mode": "translog-assisted",
+      "incompatibility_failure_class": "segment_incompatibility"
+    }
+  }
+}

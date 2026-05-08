@@ -13,7 +13,12 @@ pub const PENDING_TASKS_ROUTE_PATH: &str = "/_cluster/pending_tasks";
 pub const PENDING_TASKS_RESPONSE_FIELDS: [&str; 1] = ["tasks"];
 
 /// Canonical per-task fields for the current pending-tasks subset.
-pub const PENDING_TASKS_ITEM_FIELDS: [&str; 6] = [
+pub const PENDING_TASKS_ITEM_FIELDS: [&str; 11] = [
+    "id",
+    "node",
+    "node_name",
+    "action",
+    "description",
     "insert_order",
     "priority",
     "source",
@@ -106,6 +111,11 @@ mod tests {
         let body = serde_json::json!({
             "tasks": [
                 {
+                    "id": 1,
+                    "node": "node-a",
+                    "node_name": "steel-node-a",
+                    "action": "cluster:admin/reroute",
+                    "description": "publish cluster state [queued]",
                     "insert_order": 1,
                     "priority": "URGENT",
                     "source": "publish cluster state",
@@ -118,6 +128,8 @@ mod tests {
         });
 
         let normalized = normalize_pending_tasks_response(&body);
+        assert_eq!(normalized["tasks"][0]["id"], serde_json::json!(1));
+        assert_eq!(normalized["tasks"][0]["node"], serde_json::json!("node-a"));
         assert_eq!(normalized["tasks"][0]["insert_order"], serde_json::json!(1));
         assert_eq!(normalized["tasks"][0]["priority"], serde_json::json!("URGENT"));
         assert_eq!(
@@ -132,6 +144,11 @@ mod tests {
         let body = serde_json::json!({
             "tasks": [
                 {
+                    "id": 7,
+                    "node": "node-a",
+                    "node_name": "steel-node-a",
+                    "action": "cluster:admin/reroute",
+                    "description": "refresh metadata [queued]",
                     "insert_order": 7,
                     "priority": "HIGH",
                     "source": "refresh metadata",
@@ -143,6 +160,8 @@ mod tests {
         });
 
         let rendered = (PENDING_TASKS_ROUTE_REGISTRY_ENTRY.hook)(&body);
+        assert_eq!(rendered["tasks"][0]["node_name"], serde_json::json!("steel-node-a"));
+        assert_eq!(rendered["tasks"][0]["action"], serde_json::json!("cluster:admin/reroute"));
         assert_eq!(rendered["tasks"][0]["insert_order"], serde_json::json!(7));
         assert_eq!(rendered["tasks"][0]["priority"], serde_json::json!("HIGH"));
         assert_eq!(rendered["tasks"][0]["time_in_queue"], serde_json::json!("12ms"));

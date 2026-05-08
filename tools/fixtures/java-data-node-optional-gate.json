@@ -1,0 +1,22 @@
+{
+  "name": "java-data-node-optional-gate",
+  "profile": "optional",
+  "source_area": "Java OpenSearch data-node compatibility",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "In progress",
+    "semantic_parity": "N/A",
+    "production_readiness": "No"
+  },
+  "required_fixtures": [
+    "java-data-node-scope-matrix.json",
+    "java-mixed-cluster-binary-profiles.json"
+  ],
+  "required_profiles": [
+    "java-primary-rust-replica",
+    "rust-primary-java-replica",
+    "java-driven-rolling-restart",
+    "peer-recovery-interruption",
+    "segment-compatibility-verify"
+  ],
+  "track_status": "optional-track"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "secure-multinode-gap-harness-profiles",
+  "profiles": {
+    "secure-join-success": {
+      "failure_class": "secure-join",
+      "expected_markers": [
+        "secure join succeeded",
+        "mutual tls verified",
+        "membership formed"
+      ]
+    },
+    "cert-rotation-reload": {
+      "failure_class": "cert-rotation",
+      "expected_markers": [
+        "cert rotation applied",
+        "reloadcerts acknowledged",
+        "transport reconnected"
+      ]
+    },
+    "restricted-index-mutation-deny": {
+      "failure_class": "restricted-index-deny",
+      "expected_markers": [
+        "restricted index mutation denied",
+        "security_exception",
+        "fail-closed"
+      ]
+    }
+  }
+}

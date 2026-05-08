@@ -1,0 +1,82 @@
+{
+  "name": "index-metadata-promotion-gate",
+  "profile": "standalone",
+  "source_area": "Index create/get/delete and mappings/settings",
+  "matrix_expectation": {
+    "open_search_api_compatibility": "Implemented",
+    "production_readiness": "Yes"
+  },
+  "unified_report_sections": {
+    "route_parity": {
+      "required_suites": [
+        "common-baseline"
+      ],
+      "report_paths": [
+        "index-lifecycle-compat-report.json",
+        "mapping-compat-report.json",
+        "settings-compat-report.json",
+        "alias-read-compat-report.json",
+        "template-compat-report.json",
+        "data-stream-rollover-compat-report.json",
+        "search-compat-report.json"
+      ]
+    },
+    "semantic_parity": {
+      "required_suites": [
+        "common-baseline"
+      ],
+      "required_cases": [
+        "get_component_template_readback",
+        "get_index_template_readback",
+        "templated_index_application_readback",
+        "get_data_stream_metadata_readback",
+        "get_data_stream_stats_readback",
+        "delete_data_stream_ack",
+        "dynamic_mapping_readback",
+        "mapping_conflict_reject",
+        "settings_targeted_named_readback",
+        "settings_targeted_flat_readback",
+        "settings_global_named_readback",
+        "wildcard_index_read_visible_only",
+        "settings_hidden_wildcard_put_ack",
+        "settings_hidden_target_readback",
+        "wildcard_alias_readback",
+        "get_created_alias_readback"
+      ]
+    },
+    "security_parity": {
+      "required_suites": [
+        "single-node-secure-index-metadata"
+      ],
+      "report_paths": [
+        "security-authz-compat-report.json"
+      ],
+      "required_cases": [
+        "security_admin_restricted_index_get_success",
+        "security_reader_restricted_index_get_403",
+        "security_admin_restricted_settings_update_success",
+        "security_writer_restricted_settings_update_403",
+        "security_writer_restricted_delete_403",
+        "security_admin_restricted_delete_success",
+        "security_writer_restricted_create_403",
+        "security_admin_restricted_create_success"
+      ]
+    }
+  },
+  "latest_standalone_gate": {
+    "required_entrypoints": [
+      "tools/run-phase-a-acceptance-harness.sh --mode local --scope index-metadata",
+      "tools/run-security-compat-harness.sh --profile single-node-secure"
+    ],
+    "required_reports": [
+      "index-lifecycle-compat-report.json",
+      "mapping-compat-report.json",
+      "settings-compat-report.json",
+      "alias-read-compat-report.json",
+      "template-compat-report.json",
+      "data-stream-rollover-compat-report.json",
+      "search-compat-report.json",
+      "security-authz-compat-report.json"
+    ]
+  }
+}

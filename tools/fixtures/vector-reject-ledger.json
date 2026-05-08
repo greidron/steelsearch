@@ -1,0 +1,25 @@
+{
+  "name": "vector-reject-ledger",
+  "entries": [
+    {
+      "case": "knn_unsupported_method_engine_fail_closed",
+      "category": "engine",
+      "expected_result": "fail-closed"
+    },
+    {
+      "case": "knn_unsupported_mode_fail_closed",
+      "category": "mode",
+      "expected_result": "fail-closed"
+    },
+    {
+      "case": "knn_unsupported_space_type_fail_closed",
+      "category": "space",
+      "expected_result": "fail-closed"
+    },
+    {
+      "case": "knn_unsupported_data_type_fail_closed",
+      "category": "data_type",
+      "expected_result": "fail-closed"
+    }
+  ]
+}

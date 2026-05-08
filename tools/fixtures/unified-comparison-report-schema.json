@@ -1,0 +1,45 @@
+{
+  "name": "unified-comparison-report-schema",
+  "required_top_level_fields": [
+    "profile",
+    "generated_at",
+    "route_parity",
+    "semantic_parity",
+    "durability_parity",
+    "security_parity",
+    "distributed_parity",
+    "status"
+  ],
+  "parity_sections": {
+    "route_parity": [
+      "required_suites",
+      "report_paths",
+      "status"
+    ],
+    "semantic_parity": [
+      "required_suites",
+      "report_paths",
+      "status"
+    ],
+    "durability_parity": [
+      "required_suites",
+      "report_paths",
+      "status"
+    ],
+    "security_parity": [
+      "required_suites",
+      "report_paths",
+      "status"
+    ],
+    "distributed_parity": [
+      "required_suites",
+      "report_paths",
+      "status"
+    ]
+  },
+  "status_values": [
+    "ok",
+    "missing",
+    "blocked"
+  ]
+}

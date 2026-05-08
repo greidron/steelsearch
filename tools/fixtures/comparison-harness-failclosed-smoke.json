@@ -1,0 +1,32 @@
+{
+  "name": "comparison-harness-failclosed-smoke",
+  "cases": [
+    {
+      "case": "fixture_drift_blocked",
+      "failure_class": "fixture_drift",
+      "expected_result": "blocked",
+      "required_markers": [
+        "fixture drift detected",
+        "comparison aborted"
+      ]
+    },
+    {
+      "case": "missing_report_field_blocked",
+      "failure_class": "missing_report_field",
+      "expected_result": "blocked",
+      "required_markers": [
+        "required report field missing",
+        "comparison aborted"
+      ]
+    },
+    {
+      "case": "stale_generated_artifact_blocked",
+      "failure_class": "stale_generated_artifact",
+      "expected_result": "blocked",
+      "required_markers": [
+        "generated artifact stale",
+        "comparison aborted"
+      ]
+    }
+  ]
+}

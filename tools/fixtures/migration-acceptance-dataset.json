@@ -26,6 +26,30 @@
         "source-target document count match",
         "source-target alias summary match",
         "no unexpected target-only document ids after rollback"
+      ],
+      "rollback_divergence_datasets": [
+        {
+          "name": "document-primary-dataset",
+          "dataset_kind": "document",
+          "source_index": "migration-acceptance-000001",
+          "expected_doc_count": 2,
+          "expectations": [
+            "source-target document count match",
+            "source-target alias summary match",
+            "no unexpected target-only document ids after rollback"
+          ]
+        },
+        {
+          "name": "vector-ranking-dataset",
+          "dataset_kind": "vector",
+          "source_index": "migration-acceptance-vectors-000001",
+          "expected_doc_count": 2,
+          "expectations": [
+            "source-target vector document count match",
+            "source-target vector top-k ranking summary match after rollback",
+            "no unexpected target-only vector ids after rollback"
+          ]
+        }
       ]
     }
   }

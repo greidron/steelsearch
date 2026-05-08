@@ -1,0 +1,48 @@
+{
+  "name": "named-writeable-payload-corpus",
+  "cases": [
+    {
+      "case": "supported_cluster_blocks_status",
+      "registry_family": "cluster_state_custom",
+      "named_writeable": "cluster.blocks",
+      "compatibility": "supported",
+      "decode_expectation": "decode_and_round_trip",
+      "payload_hex": "0a0b0c0d",
+      "round_trip_hex": "0a0b0c0d"
+    },
+    {
+      "case": "supported_index_graveyard_metadata",
+      "registry_family": "metadata_custom",
+      "named_writeable": "index-graveyard",
+      "compatibility": "supported",
+      "decode_expectation": "decode_and_round_trip",
+      "payload_hex": "01020304",
+      "round_trip_hex": "01020304"
+    },
+    {
+      "case": "supported_repository_cleanup_in_progress",
+      "registry_family": "metadata_custom",
+      "named_writeable": "repository_cleanup_in_progress",
+      "compatibility": "supported",
+      "decode_expectation": "decode_and_round_trip",
+      "payload_hex": "a1b2c3d4",
+      "round_trip_hex": "a1b2c3d4"
+    },
+    {
+      "case": "reject_unknown_cluster_custom",
+      "registry_family": "cluster_state_custom",
+      "named_writeable": "unknown.cluster.custom",
+      "compatibility": "unsupported",
+      "decode_expectation": "fail_closed",
+      "payload_hex": "deadbeef"
+    },
+    {
+      "case": "reject_unknown_metadata_custom",
+      "registry_family": "metadata_custom",
+      "named_writeable": "unknown.metadata.custom",
+      "compatibility": "unsupported",
+      "decode_expectation": "fail_closed",
+      "payload_hex": "cafebabe"
+    }
+  ]
+}

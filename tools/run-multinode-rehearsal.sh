@@ -6,6 +6,8 @@ REHEARSAL_DIR="${MULTINODE_REHEARSAL_DIR:-${ROOT}/target/multinode-rehearsal}"
 CLUSTER_WORK_DIR="${STEELSEARCH_CLUSTER_WORK_DIR:-${REHEARSAL_DIR}/cluster}"
 MANIFEST="${CLUSTER_WORK_DIR}/cluster.json"
 LOG_DIR="${REHEARSAL_DIR}/logs"
+STABILITY_WINDOW="${STEELSEARCH_STABILITY_WINDOW:-3}"
+POLL_INTERVAL="${STEELSEARCH_STABILITY_POLL_INTERVAL:-0.5}"
 
 usage() {
   cat <<'USAGE'
@@ -46,38 +48,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-python3 - "${MANIFEST}" <<'PY'
-import json
-import sys
-import time
-import urllib.request
-from pathlib import Path
-
-manifest_path = Path(sys.argv[1])
-deadline = time.monotonic() + 120
-
-while time.monotonic() < deadline:
-    if not manifest_path.exists():
-        time.sleep(0.25)
-        continue
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    nodes = manifest.get("nodes", [])
-    if nodes:
-        ready = True
-        for node in nodes:
-            try:
-                with urllib.request.urlopen(node["http_url"] + "/_steelsearch/dev/cluster", timeout=2.0) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                ready = ready and payload.get("formed") is True and payload.get("number_of_nodes") == len(nodes)
-            except Exception:  # noqa: BLE001
-                ready = False
-                break
-        if ready:
-            print(json.dumps({"ready": True, "nodes": nodes}, indent=2))
-            raise SystemExit(0)
-    time.sleep(0.5)
-
-raise SystemExit("multi-node Steelsearch cluster did not become ready")
-PY
+python3 "${ROOT}/tools/check-multinode-rehearsal.py" \
+  "${MANIFEST}" \
+  --stability-window "${STABILITY_WINDOW}" \
+  --poll-interval "${POLL_INTERVAL}"
 
 echo "Multi-node rehearsal passed"
