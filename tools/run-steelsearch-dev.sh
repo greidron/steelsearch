@@ -9,6 +9,12 @@ TRANSPORT_ACCESS_HOST="${STEELSEARCH_TRANSPORT_ACCESS_HOST:-127.0.0.1}"
 WORK_DIR="${STEELSEARCH_WORK_DIR:-$(mktemp -d -t steelsearch-dev.XXXXXX)}"
 SPLIT_BUILD_RUN="${STEELSEARCH_SPLIT_BUILD_RUN:-0}"
 BUILD_PROFILE="${STEELSEARCH_BUILD_PROFILE:-debug}"
+RUSTUP_TOOLCHAIN_NAME="${STEELSEARCH_RUSTUP_TOOLCHAIN:-nightly}"
+
+cargo_cmd=(cargo)
+if [[ -n "${RUSTUP_TOOLCHAIN_NAME}" ]]; then
+  cargo_cmd+=(+"${RUSTUP_TOOLCHAIN_NAME}")
+fi
 
 find_free_port() {
   python3 - "$1" <<'PY'
@@ -58,7 +64,7 @@ else
 fi
 
 args=(
-  cargo run $([[ "${BUILD_PROFILE}" == "release" ]] && printf '%s' '--release') -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" --
+  "${cargo_cmd[@]}" run $([[ "${BUILD_PROFILE}" == "release" ]] && printf '%s' '--release') -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" --
   --http.host "${HOST}"
   --http.port "${PORT}"
   --transport.host "${TRANSPORT_HOST}"
@@ -98,7 +104,7 @@ import time
 print(int(time.time() * 1000))
 PY
 )" >&2
-  build_args=(cargo build -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml")
+  build_args=("${cargo_cmd[@]}" build -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml")
   if [[ "${BUILD_PROFILE}" == "release" ]]; then
     build_args+=(--release)
   fi

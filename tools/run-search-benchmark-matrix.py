@@ -180,6 +180,7 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_TRANSPORT_HOST"] = "127.0.0.1"
         env["STEELSEARCH_WORK_DIR"] = str(scenario_dir / "node-1")
         env["STEELSEARCH_BUILD_PROFILE"] = "release"
+        env["STEELSEARCH_RUSTUP_TOOLCHAIN"] = "nightly"
         process = subprocess.Popen([str(STEELSEARCH_SINGLE)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         base_url = wait_for_url_in_log(log_dir / "stderr.log", "Steelsearch access URL: ")
         return ClusterHandle(scenario, process, base_url, None, log_dir)
@@ -190,6 +191,7 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_HTTP_HOST"] = "127.0.0.1"
         env["STEELSEARCH_TRANSPORT_HOST"] = "127.0.0.1"
         env["STEELSEARCH_BUILD_PROFILE"] = "release"
+        env["STEELSEARCH_RUSTUP_TOOLCHAIN"] = "nightly"
         process = subprocess.Popen([str(STEELSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         manifest_path = Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
         base_url = wait_for_manifest_url(manifest_path)
@@ -207,6 +209,9 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
     env["OPENSEARCH_NODE_COUNT"] = str(scenario.node_count)
     env["OPENSEARCH_HTTP_HOST"] = "127.0.0.1"
     env["OPENSEARCH_CLUSTER_NAME"] = f"bench-{scenario.key}"
+    unique_suffix = f"{scenario.key}-{int(time.time())}"
+    env["OPENSEARCH_CLUSTER_CONTAINER_PREFIX"] = f"steelsearch-bench-{unique_suffix}"
+    env["OPENSEARCH_CLUSTER_NETWORK_NAME"] = f"steelsearch-bench-{unique_suffix}-net"
     process = subprocess.Popen([str(OPENSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
     manifest_path = Path(env["OPENSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
     base_url = wait_for_manifest_url(manifest_path)

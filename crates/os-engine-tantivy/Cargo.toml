@@ -11,6 +11,8 @@ os-plugin-knn = { path = "../os-plugin-knn" }
 os-query-dsl = { path = "../os-query-dsl" }
 serde = { workspace = true }
 serde_json.workspace = true
+tantivy = "=0.21.1"
+time = "=0.3.36"
 
 [[bench]]
 name = "deterministic_baselines"

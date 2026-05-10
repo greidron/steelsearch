@@ -27,8 +27,18 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::ops::Bound;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tantivy::collector::TopDocs;
+use tantivy::query::{
+    AllQuery, BooleanQuery, EmptyQuery, Occur, Query as TantivyQueryTrait, QueryParser,
+    RangeQuery, TermQuery,
+};
+use tantivy::schema::{
+    Field, Schema as TantivySchemaDef, INDEXED, STORED, STRING, TEXT,
+};
+use tantivy::{Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, Term};
 
 const SHARD_OPERATIONS_FILE_NAME: &str = "steelsearch-operations.jsonl";
 const MAX_KNN_CACHE_ENTRIES_PER_FIELD: usize = 16;
@@ -102,6 +112,7 @@ struct StoredIndex {
     translog_generation: u64,
     collector_telemetry: SearchCollectorTelemetry,
     runtime_cache: SearchRuntimeCache,
+    search_state: Option<TantivySearchState>,
 }
 
 #[derive(Clone, Debug)]
@@ -343,6 +354,26 @@ pub struct NativeHnswNodeSnapshot {
 
 type VectorValue = f32;
 
+struct TantivySearchState {
+    index: TantivyIndexHandle,
+    reader: IndexReader,
+    fields: BTreeMap<String, TantivyIndexedField>,
+}
+
+struct TantivyIndexedField {
+    field: Field,
+    field_type: TantivyFieldType,
+}
+
+impl std::fmt::Debug for TantivySearchState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TantivySearchState")
+            .field("field_count", &self.fields.len())
+            .finish()
+    }
+}
+
 impl IndexEngine for TantivyEngine {
     fn create_index(&self, request: CreateIndexRequest) -> EngineResult<CreateIndexResponse> {
         let schema = map_opensearch_index_to_tantivy_schema(&request)?;
@@ -372,6 +403,7 @@ impl IndexEngine for TantivyEngine {
                 translog_generation: 0,
                 collector_telemetry: SearchCollectorTelemetry::default(),
                 runtime_cache: SearchRuntimeCache::default(),
+                search_state: None,
             },
         );
         Ok(CreateIndexResponse {
@@ -663,6 +695,7 @@ impl IndexEngine for TantivyEngine {
             };
             index.refreshed_seq_no = index.next_seq_no - 1;
             index.runtime_cache.clear_knn_results();
+            index.rebuild_tantivy_search_state()?;
         }
         Ok(RefreshResponse { refreshed: true })
     }
@@ -1420,8 +1453,12 @@ impl TantivyEngine {
                 translog_generation: manifest.translog_generation,
                 collector_telemetry: SearchCollectorTelemetry::default(),
                 runtime_cache: SearchRuntimeCache::default(),
+                search_state: None,
             },
         );
+        if let Some(stored) = store.indices.get_mut(&index) {
+            stored.rebuild_tantivy_search_state()?;
+        }
 
         Ok(manifest)
     }
@@ -1465,11 +1502,393 @@ impl TantivyEngine {
     }
 }
 
+impl TantivySearchState {
+    fn build(
+        schema: &TantivyIndexSchema,
+        documents: &BTreeMap<String, StoredDocument>,
+        refreshed_seq_no: i64,
+    ) -> EngineResult<Self> {
+        let (tantivy_schema, fields) = build_tantivy_schema(schema);
+        let index = TantivyIndexHandle::create_in_ram(tantivy_schema);
+        let mut writer = index.writer(50_000_000).map_err(tantivy_error)?;
+        for document in documents.values() {
+            if document.metadata.seq_no > refreshed_seq_no {
+                continue;
+            }
+            let tantivy_document = build_tantivy_document(&fields, document);
+            writer.add_document(tantivy_document).map_err(tantivy_error)?;
+        }
+        writer.commit().map_err(tantivy_error)?;
+        let reader = index.reader().map_err(tantivy_error)?;
+        reader.reload().map_err(tantivy_error)?;
+        Ok(Self {
+            index,
+            reader,
+            fields,
+        })
+    }
+}
+
+fn build_tantivy_schema(
+    schema: &TantivyIndexSchema,
+) -> (TantivySchemaDef, BTreeMap<String, TantivyIndexedField>) {
+    let mut builder = TantivySchemaDef::builder();
+    let mut fields = BTreeMap::new();
+    for field_mapping in &schema.fields {
+        if field_mapping.knn_vector.is_some() || matches!(field_mapping.field_type, TantivyFieldType::KnnVector | TantivyFieldType::GeoPoint) {
+            continue;
+        }
+        let field = match field_mapping.field_type {
+            TantivyFieldType::Text => builder.add_text_field(&field_mapping.name, TEXT | STORED),
+            TantivyFieldType::Keyword => builder.add_text_field(&field_mapping.name, STRING | STORED),
+            TantivyFieldType::I64 => builder.add_i64_field(&field_mapping.name, INDEXED | STORED),
+            TantivyFieldType::F64 => builder.add_f64_field(&field_mapping.name, INDEXED | STORED),
+            TantivyFieldType::Bool => builder.add_bool_field(&field_mapping.name, INDEXED | STORED),
+            TantivyFieldType::Date => builder.add_text_field(&field_mapping.name, STRING | STORED),
+            TantivyFieldType::GeoPoint | TantivyFieldType::KnnVector => unreachable!(),
+        };
+        fields.insert(
+            field_mapping.name.clone(),
+            TantivyIndexedField {
+                field,
+                field_type: field_mapping.field_type.clone(),
+            },
+        );
+    }
+    let id_field = builder.add_text_field("_id", STRING | STORED);
+    fields.insert(
+        "_id".to_string(),
+        TantivyIndexedField {
+            field: id_field,
+            field_type: TantivyFieldType::Keyword,
+        },
+    );
+    (builder.build(), fields)
+}
+
+fn build_tantivy_document(
+    fields: &BTreeMap<String, TantivyIndexedField>,
+    document: &StoredDocument,
+) -> TantivyDocument {
+    let mut tantivy_document = TantivyDocument::default();
+    if let Some(id_field) = fields.get("_id") {
+        tantivy_document.add_text(id_field.field, &document.metadata.id);
+    }
+    for (field_name, indexed_field) in fields {
+        if field_name == "_id" {
+            continue;
+        }
+        let Some(value) = document.source.get(field_name) else {
+            continue;
+        };
+        add_json_value_to_tantivy_document(
+            &mut tantivy_document,
+            indexed_field.field,
+            &indexed_field.field_type,
+            value,
+        );
+    }
+    tantivy_document
+}
+
+fn add_json_value_to_tantivy_document(
+    document: &mut TantivyDocument,
+    field: Field,
+    field_type: &TantivyFieldType,
+    value: &Value,
+) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                add_json_value_to_tantivy_document(document, field, field_type, value);
+            }
+        }
+        Value::String(text) => match field_type {
+            TantivyFieldType::Text | TantivyFieldType::Keyword | TantivyFieldType::Date => {
+                document.add_text(field, text);
+            }
+            _ => {}
+        },
+        Value::Number(number) => match field_type {
+            TantivyFieldType::I64 => {
+                if let Some(value) = number.as_i64().or_else(|| number.as_u64().map(|value| value as i64)) {
+                    document.add_i64(field, value);
+                }
+            }
+            TantivyFieldType::F64 => {
+                if let Some(value) = number.as_f64() {
+                    document.add_f64(field, value);
+                }
+            }
+            TantivyFieldType::Keyword => document.add_text(field, &number.to_string()),
+            _ => {}
+        },
+        Value::Bool(boolean) => match field_type {
+            TantivyFieldType::Bool => document.add_bool(field, *boolean),
+            TantivyFieldType::Keyword => document.add_text(field, if *boolean { "true" } else { "false" }),
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
+fn build_tantivy_query(
+    search_state: &TantivySearchState,
+    query: &Query,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    match query {
+        Query::MatchAll => Ok(Some(Box::new(AllQuery))),
+        Query::MatchNone => Ok(Some(Box::new(EmptyQuery))),
+        Query::Term { field, value } => build_tantivy_term_query(search_state, field, value),
+        Query::Terms { field, values } => {
+            let mut clauses = Vec::new();
+            for value in values {
+                let Some(term_query) = build_tantivy_term_query(search_state, field, value)? else {
+                    return Ok(None);
+                };
+                clauses.push((Occur::Should, term_query));
+            }
+            Ok(Some(Box::new(BooleanQuery::new(clauses))))
+        }
+        Query::Match { field, query } => build_tantivy_match_query(search_state, field, query),
+        Query::Range { field, bounds } => build_tantivy_range_query(search_state, field, bounds),
+        Query::Ids { values } => {
+            let mut clauses = Vec::new();
+            for value in values {
+                let Some(id_field) = search_state.fields.get("_id") else {
+                    return Ok(None);
+                };
+                clauses.push((
+                    Occur::Should,
+                    Box::new(TermQuery::new(
+                        Term::from_field_text(id_field.field, value),
+                        tantivy::schema::IndexRecordOption::Basic,
+                    )) as Box<dyn TantivyQueryTrait>,
+                ));
+            }
+            Ok(Some(Box::new(BooleanQuery::new(clauses))))
+        }
+        Query::Bool { clauses } => {
+            if clauses.minimum_should_match.unwrap_or(0) > 1 {
+                return Ok(None);
+            }
+            let mut tantivy_clauses = Vec::new();
+            for query in &clauses.must {
+                let Some(inner) = build_tantivy_query(search_state, query)? else {
+                    return Ok(None);
+                };
+                tantivy_clauses.push((Occur::Must, inner));
+            }
+            for query in &clauses.filter {
+                let Some(inner) = build_tantivy_query(search_state, query)? else {
+                    return Ok(None);
+                };
+                tantivy_clauses.push((Occur::Must, inner));
+            }
+            for query in &clauses.must_not {
+                let Some(inner) = build_tantivy_query(search_state, query)? else {
+                    return Ok(None);
+                };
+                tantivy_clauses.push((Occur::MustNot, inner));
+            }
+            for query in &clauses.should {
+                let Some(inner) = build_tantivy_query(search_state, query)? else {
+                    return Ok(None);
+                };
+                let occur = if clauses.minimum_should_match.unwrap_or(0) >= 1 {
+                    Occur::Must
+                } else {
+                    Occur::Should
+                };
+                tantivy_clauses.push((occur, inner));
+            }
+            Ok(Some(Box::new(BooleanQuery::new(tantivy_clauses))))
+        }
+        Query::Exists { .. }
+        | Query::Prefix { .. }
+        | Query::Wildcard { .. }
+        | Query::Knn(_) => Ok(None),
+    }
+}
+
+fn build_tantivy_match_query(
+    search_state: &TantivySearchState,
+    field: &str,
+    value: &Value,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let Some(indexed_field) = search_state.fields.get(field) else {
+        return Ok(None);
+    };
+    let query_text = json_value_to_query_text(value)?;
+    match indexed_field.field_type {
+        TantivyFieldType::Text => {
+            let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
+            parser
+                .parse_query(&query_text)
+                .map(|query| Some(query))
+                .map_err(tantivy_error)
+        }
+        _ => build_tantivy_term_query(search_state, field, &Value::String(query_text)),
+    }
+}
+
+fn build_tantivy_term_query(
+    search_state: &TantivySearchState,
+    field: &str,
+    value: &Value,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let Some(indexed_field) = search_state.fields.get(field) else {
+        return Ok(None);
+    };
+    let Some(term) = json_value_to_tantivy_term(indexed_field, value)? else {
+        return Ok(None);
+    };
+    Ok(Some(Box::new(TermQuery::new(
+        term,
+        tantivy::schema::IndexRecordOption::Basic,
+    ))))
+}
+
+fn build_tantivy_range_query(
+    search_state: &TantivySearchState,
+    field: &str,
+    bounds: &RangeBounds,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let Some(indexed_field) = search_state.fields.get(field) else {
+        return Ok(None);
+    };
+    match indexed_field.field_type {
+        TantivyFieldType::I64 => {
+            let lower = bound_i64(bounds.gte.as_ref(), bounds.gt.as_ref(), false)?;
+            let upper = bound_i64(bounds.lte.as_ref(), bounds.lt.as_ref(), true)?;
+            Ok(Some(Box::new(RangeQuery::new_i64_bounds(
+                field.to_string(),
+                lower,
+                upper,
+            ))))
+        }
+        TantivyFieldType::F64 => {
+            let lower = bound_f64(bounds.gte.as_ref(), bounds.gt.as_ref(), false)?;
+            let upper = bound_f64(bounds.lte.as_ref(), bounds.lt.as_ref(), true)?;
+            Ok(Some(Box::new(RangeQuery::new_f64_bounds(
+                field.to_string(),
+                lower,
+                upper,
+            ))))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn json_value_to_query_text(value: &Value) -> EngineResult<String> {
+    match value {
+        Value::String(text) => Ok(text.clone()),
+        Value::Number(number) => Ok(number.to_string()),
+        Value::Bool(boolean) => Ok(if *boolean { "true" } else { "false" }.to_string()),
+        other => Err(invalid_request(format!(
+            "unsupported Tantivy query text value [{other}]"
+        ))),
+    }
+}
+
+fn json_value_to_tantivy_term(
+    indexed_field: &TantivyIndexedField,
+    value: &Value,
+) -> EngineResult<Option<Term>> {
+    let term = match indexed_field.field_type {
+        TantivyFieldType::Text | TantivyFieldType::Keyword | TantivyFieldType::Date => {
+            Term::from_field_text(indexed_field.field, &json_value_to_query_text(value)?)
+        }
+        TantivyFieldType::I64 => {
+            let Some(value) = value.as_i64().or_else(|| value.as_u64().map(|value| value as i64)) else {
+                return Ok(None);
+            };
+            Term::from_field_i64(indexed_field.field, value)
+        }
+        TantivyFieldType::F64 => {
+            let Some(value) = value.as_f64() else {
+                return Ok(None);
+            };
+            Term::from_field_f64(indexed_field.field, value)
+        }
+        TantivyFieldType::Bool => {
+            let Some(value) = value.as_bool() else {
+                return Ok(None);
+            };
+            Term::from_field_bool(indexed_field.field, value)
+        }
+        TantivyFieldType::GeoPoint | TantivyFieldType::KnnVector => return Ok(None),
+    };
+    Ok(Some(term))
+}
+
+fn bound_i64(
+    inclusive: Option<&Value>,
+    exclusive: Option<&Value>,
+    upper: bool,
+) -> EngineResult<Bound<i64>> {
+    if let Some(value) = inclusive {
+        let value = value
+            .as_i64()
+            .or_else(|| value.as_u64().map(|value| value as i64))
+            .ok_or_else(|| invalid_request("range bound must be an integer".to_string()))?;
+        return Ok(Bound::Included(value));
+    }
+    if let Some(value) = exclusive {
+        let value = value
+            .as_i64()
+            .or_else(|| value.as_u64().map(|value| value as i64))
+            .ok_or_else(|| invalid_request("range bound must be an integer".to_string()))?;
+        return Ok(Bound::Excluded(value));
+    }
+    Ok(if upper { Bound::Unbounded } else { Bound::Unbounded })
+}
+
+fn bound_f64(
+    inclusive: Option<&Value>,
+    exclusive: Option<&Value>,
+    upper: bool,
+) -> EngineResult<Bound<f64>> {
+    if let Some(value) = inclusive {
+        let value = value
+            .as_f64()
+            .ok_or_else(|| invalid_request("range bound must be a number".to_string()))?;
+        return Ok(Bound::Included(value));
+    }
+    if let Some(value) = exclusive {
+        let value = value
+            .as_f64()
+            .ok_or_else(|| invalid_request("range bound must be a number".to_string()))?;
+        return Ok(Bound::Excluded(value));
+    }
+    Ok(if upper { Bound::Unbounded } else { Bound::Unbounded })
+}
+
+fn tantivy_error(error: impl std::fmt::Display) -> EngineError {
+    EngineError::BackendFailure {
+        reason: format!("tantivy backend failure: {error}"),
+    }
+}
+
 impl StoredIndex {
     fn ensure_dynamic_mappings(&mut self, source: &Value) -> EngineResult<()> {
         if ensure_dynamic_mappings_for_schema(&mut self.schema, source)? {
             self.schema_hash = schema_hash(&self.index_name, &self.schema)?;
+            self.search_state = None;
         }
+        Ok(())
+    }
+
+    fn rebuild_tantivy_search_state(&mut self) -> EngineResult<()> {
+        if self.refreshed_seq_no < 0 {
+            self.search_state = None;
+            return Ok(());
+        }
+        self.search_state = Some(TantivySearchState::build(
+            &self.schema,
+            &self.documents,
+            self.refreshed_seq_no,
+        )?);
         Ok(())
     }
 
@@ -1526,6 +1945,7 @@ impl StoredIndex {
                 source,
             },
         );
+        self.search_state = None;
         (metadata, coordination, result)
     }
 
@@ -1581,6 +2001,7 @@ impl StoredIndex {
                 source,
             },
         );
+        self.search_state = None;
         Ok(result)
     }
 
@@ -1642,6 +2063,7 @@ impl StoredIndex {
                 source,
             },
         );
+        self.search_state = None;
         Some((metadata, coordination, result))
     }
 
@@ -1677,6 +2099,7 @@ impl StoredIndex {
             retention_leases: previous.coordination.retention_leases,
             noop: false,
         };
+        self.search_state = None;
         Some((metadata, coordination))
     }
 
@@ -1876,6 +2299,11 @@ impl StoredIndex {
         index_name: &str,
         query: &Query,
     ) -> EngineResult<Vec<SearchHit>> {
+        if !query_uses_vector_scores(query) {
+            if let Some(native_hits) = self.search_hits_for_query_native(index_name, query)? {
+                return Ok(native_hits);
+            }
+        }
         if let Query::Knn(knn) = query {
             if let Some(cached_hits) = self.lookup_cached_knn_search(knn) {
                 self.collector_telemetry.knn_collector_bytes_by_field.insert(
@@ -1933,6 +2361,63 @@ impl StoredIndex {
             self.cache_knn_search_result(knn, &hits);
         }
         Ok(hits)
+    }
+
+    fn search_hits_for_query_native(
+        &self,
+        index_name: &str,
+        query: &Query,
+    ) -> EngineResult<Option<Vec<SearchHit>>> {
+        let Some(search_state) = &self.search_state else {
+            return Ok(None);
+        };
+        if matches!(
+            query,
+            Query::Knn(_) | Query::MatchAll | Query::Term { .. } | Query::Terms { .. }
+        ) {
+            return Ok(None);
+        }
+        if matches!(query, Query::MatchNone) {
+            return Ok(Some(Vec::new()));
+        }
+        let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+            return Ok(None);
+        };
+        let doc_limit = self
+            .documents
+            .values()
+            .filter(|document| document.metadata.seq_no <= self.refreshed_seq_no)
+            .count();
+        if doc_limit == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        let searcher = search_state.reader.searcher();
+        let top_docs = searcher
+            .search(&*tantivy_query, &TopDocs::with_limit(doc_limit))
+            .map_err(tantivy_error)?;
+        let mut hits = Vec::with_capacity(top_docs.len());
+        let Some(id_field) = search_state.fields.get("_id") else {
+            return Ok(None);
+        };
+        for (score, address) in top_docs {
+            let retrieved: TantivyDocument = searcher.doc(address).map_err(tantivy_error)?;
+            let Some(id) = retrieved
+                .get_first(id_field.field)
+                .and_then(|value| value.as_text())
+            else {
+                continue;
+            };
+            let Some(document) = self.documents.get(id) else {
+                continue;
+            };
+            hits.push(SearchHit {
+                index: index_name.to_string(),
+                metadata: document.metadata.clone(),
+                score,
+                source: document.source.clone(),
+            });
+        }
+        Ok(Some(hits))
     }
 
     fn lookup_cached_knn_search(&mut self, knn: &KnnQuery) -> Option<Vec<SearchHit>> {
@@ -7174,6 +7659,114 @@ mod tests {
         assert_eq!(fast_field.fast_field_cache_capacity_evictions, 0);
         assert_eq!(fast_field.fast_field_cache_refresh_invalidations, 0);
         assert_eq!(fast_field.fast_field_cache_stale_invalidations, 0);
+    }
+
+    #[test]
+    fn engine_builds_native_tantivy_search_state_on_refresh() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "bytes": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "logs-000001".to_string(),
+                id: "1".to_string(),
+                source: serde_json::json!({
+                    "message": "alpha checkout",
+                    "bytes": 100
+                }),
+            })
+            .unwrap();
+
+        {
+            let store = engine.store.lock().unwrap();
+            let index = store.indices.get("logs-000001").unwrap();
+            assert!(index.search_state.is_none());
+        }
+
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let store = engine.store.lock().unwrap();
+        let index = store.indices.get("logs-000001").unwrap();
+        let search_state = index.search_state.as_ref().expect("native search state");
+        assert!(search_state.fields.contains_key("message"));
+        assert!(search_state.fields.contains_key("bytes"));
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_benchmark_style_bool_match_and_range_query() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "tenant": { "type": "keyword" },
+                        "status": { "type": "keyword" },
+                        "latency": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message, tenant, status, latency) in [
+            ("1", "alpha checkout", "tenant-a", "ok", 120),
+            ("2", "bravo catalog", "tenant-a", "warn", 320),
+            ("3", "alpha checkout", "tenant-b", "ok", 640),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": message,
+                        "tenant": tenant,
+                        "status": status,
+                        "latency": latency
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "bool": {
+                "must": [{ "match": { "message": "alpha" } }],
+                "filter": [
+                    { "term": { "tenant": "tenant-a" } },
+                    { "term": { "status": "ok" } },
+                    { "range": { "latency": { "lte": 250 } } }
+                ]
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.lock().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query)
+            .unwrap()
+            .expect("native tantivy hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
     fn field<'a>(schema: &'a TantivyIndexSchema, name: &str) -> &'a TantivyFieldMapping {

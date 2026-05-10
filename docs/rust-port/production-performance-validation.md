@@ -63,6 +63,16 @@ Current HTTP load reports include p50, p90, p95, p99, mean, min, and max
 latencies per operation, total throughput, error rate, memory RSS delta,
 operation-log byte delta, and vector cache byte delta when available.
 
+Current Steelsearch lexical validation also distinguishes between:
+
+- native Tantivy-backed lexical execution for refreshed `match`, `bool`, and
+  numeric `range` query paths; and
+- compatibility fallback execution for query families that have not yet been
+  migrated without changing OpenSearch-facing semantics.
+
+Validation notes must state which execution path was exercised whenever a run is
+used as release evidence.
+
 ## Metrics
 
 Every replacement-grade run must capture these metrics:
@@ -130,6 +140,14 @@ load and comparison harnesses. Nightly jobs must run actual load:
 - migration rehearsal and checksum validation;
 - readiness evidence attachment with freshness checks.
 
+For the current Tantivy-native engine work, benchmark jobs must launch
+Steelsearch with:
+
+- `STEELSEARCH_BUILD_PROFILE=release`
+- `STEELSEARCH_RUSTUP_TOOLCHAIN=nightly`
+
+until the workspace-wide Rust/Cargo baseline is raised beyond `1.76`.
+
 Soak jobs must run outside normal CI because they are intentionally long-running.
 They must combine writes, lexical queries, vector queries, hybrid queries,
 refresh, rolling restarts, shard relocation, snapshot, restore, and readiness
@@ -163,6 +181,12 @@ Archive these files for every replacement decision:
 - snapshot and restore reports;
 - chaos or soak report;
 - `/_steelsearch/readiness` report after evidence attachment.
+
+Current benchmark evidence produced by the Tantivy-native transition includes:
+
+- `target/tantivy-native-benchmarks/deterministic_baselines.jsonl`
+- `target/search-benchmark-matrix-tantivy-native-rerun/summary.json`
+- `target/search-benchmark-matrix-tantivy-native-rerun/report.md`
 
 The release owner must review the archive before approving a replacement gate.
 Missing archive evidence blocks production cutover even if the live cluster

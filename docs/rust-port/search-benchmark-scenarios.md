@@ -17,6 +17,23 @@ The benchmark matrix covers four cluster shapes:
 Each scenario indexes a warmed corpus and then runs mixed sustained load that
 includes both general lexical search and vector search.
 
+## Engine execution notes
+
+Current Steelsearch benchmark runs exercise the `os-engine-tantivy` backend in a
+mixed mode:
+
+- native Tantivy lexical execution is enabled for the refreshed in-memory index
+  on `match`, `bool`, and numeric `range` query paths;
+- exact `match_all`, top-level `term`/`terms`, and vector-native query paths
+  still fall back to the source-backed compatibility evaluator when their
+  semantics have to remain aligned with the existing OpenSearch-compatible test
+  suite;
+- vector and hybrid workloads therefore still measure a combination of Tantivy
+  lexical filtering and the existing Steelsearch vector implementation.
+
+This means benchmark deltas are meaningful for lexical/search-path work, but a
+“fully Tantivy-native” result is not yet claimed for every query family.
+
 ## Search workload coverage
 
 General search performance is intentionally broader than simple term matching.
@@ -61,6 +78,14 @@ Primary entry points:
 - [run-steelsearch-cluster-dev.sh](/home/ubuntu/steelsearch/tools/run-steelsearch-cluster-dev.sh)
 - [run-search-benchmark-matrix.py](/home/ubuntu/steelsearch/tools/run-search-benchmark-matrix.py)
 
+Steelsearch benchmark launchers must run with:
+
+- `STEELSEARCH_BUILD_PROFILE=release`
+- `STEELSEARCH_RUSTUP_TOOLCHAIN=nightly`
+
+The current dependency set for `os-engine-tantivy` requires a newer Cargo
+resolver than the workspace default `1.76` toolchain provides.
+
 ## Running the matrix
 
 Quick benchmark pass:
@@ -97,6 +122,10 @@ The runner writes:
 - `target/search-benchmark-matrix/report.md`
 - per-scenario JSON under `target/search-benchmark-matrix/<scenario>/baseline.json`
 - per-scenario daemon logs under `target/search-benchmark-matrix/<scenario>/logs/`
+
+Additional engine-level deterministic benchmarks are written to:
+
+- `target/tantivy-native-benchmarks/deterministic_baselines.jsonl`
 
 The report contains:
 
