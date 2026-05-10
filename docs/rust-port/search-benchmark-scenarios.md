@@ -23,7 +23,8 @@ Current Steelsearch benchmark runs exercise the `os-engine-tantivy` backend in a
 mixed mode:
 
 - native Tantivy lexical execution is enabled for the refreshed in-memory index
-  on `match`, `bool`, and numeric `range` query paths;
+  on `match_all`, top-level `term`/`terms`, `match`, `bool`, and numeric
+  `range` query paths;
 - exact `match_all`, top-level `term`/`terms`, and vector-native query paths
   still fall back to the source-backed compatibility evaluator when their
   semantics have to remain aligned with the existing OpenSearch-compatible test

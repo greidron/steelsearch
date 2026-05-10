@@ -65,8 +65,8 @@ operation-log byte delta, and vector cache byte delta when available.
 
 Current Steelsearch lexical validation also distinguishes between:
 
-- native Tantivy-backed lexical execution for refreshed `match`, `bool`, and
-  numeric `range` query paths; and
+- native Tantivy-backed lexical execution for refreshed `match_all`, top-level
+  `term`/`terms`, `match`, `bool`, and numeric `range` query paths; and
 - compatibility fallback execution for query families that have not yet been
   migrated without changing OpenSearch-facing semantics.
 

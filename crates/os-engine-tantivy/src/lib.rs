@@ -2371,10 +2371,7 @@ impl StoredIndex {
         let Some(search_state) = &self.search_state else {
             return Ok(None);
         };
-        if matches!(
-            query,
-            Query::Knn(_) | Query::MatchAll | Query::Term { .. } | Query::Terms { .. }
-        ) {
+        if matches!(query, Query::Knn(_)) {
             return Ok(None);
         }
         if matches!(query, Query::MatchNone) {
@@ -2399,7 +2396,7 @@ impl StoredIndex {
         let Some(id_field) = search_state.fields.get("_id") else {
             return Ok(None);
         };
-        for (score, address) in top_docs {
+        for (_tantivy_score, address) in top_docs {
             let retrieved: TantivyDocument = searcher.doc(address).map_err(tantivy_error)?;
             let Some(id) = retrieved
                 .get_first(id_field.field)
@@ -2410,6 +2407,9 @@ impl StoredIndex {
             let Some(document) = self.documents.get(id) else {
                 continue;
             };
+            let Some(score) = self.score_document_query(query, document)? else {
+                continue;
+            };
             hits.push(SearchHit {
                 index: index_name.to_string(),
                 metadata: document.metadata.clone(),
@@ -2417,6 +2417,13 @@ impl StoredIndex {
                 source: document.source.clone(),
             });
         }
+        hits.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.metadata.id.cmp(&right.metadata.id))
+        });
         Ok(Some(hits))
     }
 
