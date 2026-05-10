@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_QUERY_MIX = "write=20,lexical=30,vector=20,hybrid=20,refresh=10"
-OPERATIONS = ("write", "lexical", "vector", "hybrid", "refresh")
+DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,vector=15,hybrid=10,refresh=5"
+OPERATIONS = ("write", "lexical", "ranking", "facet", "sort_filter", "vector", "hybrid", "refresh")
 
 
 def main() -> int:
@@ -227,10 +227,16 @@ class LoadRunner:
             },
             "mappings": {
                 "properties": {
+                    "title": {"type": "text"},
                     "message": {"type": "text"},
+                    "category": {"type": "keyword"},
                     "service": {"type": "keyword"},
                     "tenant": {"type": "keyword"},
+                    "status": {"type": "keyword"},
+                    "tags": {"type": "keyword"},
+                    "price": {"type": "double"},
                     "latency": {"type": "long"},
+                    "event_time": {"type": "date"},
                     "embedding": {
                         "type": "knn_vector",
                         "dimension": self.config["vector_dimension"],
@@ -274,10 +280,98 @@ class LoadRunner:
             doc_id = self.config["corpus_size"] + client_id * 1_000_000 + counter
             return self.index_document(f"live-{client_id}-{counter}", document_for(doc_id, self.config["vector_dimension"]))
         if operation == "lexical":
-            return self.search({"size": 10, "query": {"match": {"message": rng.choice(["alpha", "bravo", "checkout"])}}})
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "bool": {
+                            "must": [{"match": {"message": rng.choice(["alpha", "bravo", "checkout", "premium"])}}],
+                            "filter": [
+                                {"term": {"tenant": rng.choice(["tenant-a", "tenant-b"])}},
+                                {"term": {"status": rng.choice(["ok", "warn"])}},
+                            ],
+                        }
+                    },
+                }
+            )
+        if operation == "ranking":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {
+                                    "multi_match": {
+                                        "query": rng.choice(["premium checkout", "fast catalog", "vector search", "analytics dashboard"]),
+                                        "fields": ["title^2", "message"],
+                                        "type": "best_fields",
+                                    }
+                                }
+                            ],
+                            "should": [
+                                {"match_phrase": {"message": {"query": rng.choice(["premium checkout", "fast catalog"]), "slop": 1}}},
+                                {"term": {"service": rng.choice(["checkout", "catalog", "payments", "search"])}} ,
+                            ],
+                            "minimum_should_match": 1,
+                            "filter": [{"range": {"latency": {"lte": rng.choice([250, 400, 600])}}}],
+                        }
+                    },
+                }
+            )
+        if operation == "facet":
+            return self.search(
+                {
+                    "size": 0,
+                    "query": {
+                        "bool": {
+                            "must": [{"match": {"message": rng.choice(["service", "search", "event", "analytics"])}}],
+                            "filter": [{"term": {"tenant": rng.choice(["tenant-a", "tenant-b"])}}],
+                        }
+                    },
+                    "aggs": {
+                        "by_service": {"terms": {"field": "service", "size": 8}},
+                        "by_category": {"terms": {"field": "category", "size": 8}},
+                        "latency_ranges": {
+                            "range": {
+                                "field": "latency",
+                                "ranges": [{"to": 100}, {"from": 100, "to": 300}, {"from": 300}],
+                            }
+                        },
+                        "recent_events": {
+                            "date_histogram": {
+                                "field": "event_time",
+                                "calendar_interval": "day",
+                            }
+                        },
+                    },
+                }
+            )
+        if operation == "sort_filter":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"term": {"tenant": rng.choice(["tenant-a", "tenant-b"])}},
+                                {"term": {"category": rng.choice(["commerce", "search", "analytics"])}} ,
+                                {"range": {"price": {"gte": 10.0, "lte": rng.choice([50.0, 75.0, 100.0])}}},
+                            ],
+                            "must": [{"match": {"message": rng.choice(["service", "catalog", "checkout"])}}],
+                        }
+                    },
+                    "sort": [{"latency": "asc"}, {"price": "desc"}],
+                }
+            )
         if operation == "vector":
             doc_id = rng.randrange(self.config["corpus_size"])
-            return self.search({"size": 10, "query": {"knn": {"embedding": {"vector": vector_for(doc_id, self.config["vector_dimension"]), "k": 10}}}})
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {"knn": {"embedding": {"vector": vector_for(doc_id, self.config["vector_dimension"]), "k": 10}}},
+                }
+            )
         if operation == "hybrid":
             doc_id = rng.randrange(self.config["corpus_size"])
             return self.search(
@@ -475,12 +569,24 @@ def choose_operation(rng: random.Random, cumulative: list[tuple[int, str]]) -> s
 
 
 def document_for(doc_id: int, dimension: int) -> dict[str, Any]:
-    terms = ("alpha", "bravo", "charlie", "delta", "checkout", "catalog")
+    terms = ("alpha", "bravo", "charlie", "delta", "checkout", "catalog", "premium", "analytics")
+    services = ("checkout", "catalog", "payments", "search")
+    categories = ("commerce", "search", "analytics")
+    statuses = ("ok", "warn", "error")
+    day = (doc_id % 28) + 1
+    service = services[doc_id % len(services)]
+    category = categories[doc_id % len(categories)]
     return {
+        "title": f"{category} {service} summary {doc_id}",
         "message": f"{terms[doc_id % len(terms)]} service event {doc_id}",
-        "service": ("checkout", "catalog", "payments", "search")[doc_id % 4],
+        "category": category,
+        "service": service,
         "tenant": ("tenant-a", "tenant-b")[doc_id % 2],
+        "status": statuses[doc_id % len(statuses)],
+        "tags": [service, category, terms[doc_id % len(terms)]],
+        "price": round(5.0 + ((doc_id * 17) % 1000) / 10.0, 2),
         "latency": 10 + (doc_id * 37) % 900,
+        "event_time": f"2026-01-{day:02d}T12:00:00Z",
         "embedding": vector_for(doc_id, dimension),
     }
 

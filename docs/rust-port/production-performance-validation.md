@@ -33,7 +33,7 @@ dimension, duration, client count, query mix, and seed.
 | Profile | Required mix | Required evidence |
 | --- | --- | --- |
 | Write-heavy | At least 70 percent write or bulk operations, periodic refresh, configured shards and replicas. | Throughput, p50/p95/p99 write latency, refresh latency, error rate, operation-log growth, memory growth, disk IO. |
-| Search-heavy | At least 80 percent lexical query and filter operations over a warmed corpus. | p50/p95/p99 search latency, throughput, cache pressure, CPU, memory, error rate. |
+| Search-heavy | At least 80 percent warmed lexical search made up of basic term/match queries, ranking-oriented queries, filtered/sorted queries, and facet or aggregation requests. | p50/p95/p99 search latency, throughput, cache pressure, CPU, memory, error rate. |
 | Vector-heavy | At least 70 percent k-NN vector queries with production-representative dimensions. | p50/p95/p99 vector latency, vector cache memory, native memory, throughput, error rate. |
 | Hybrid | Mixed writes, lexical queries, vector queries, hybrid bool+k-NN queries, and refresh. | Per-operation latency, throughput, memory growth, cache pressure, error rate. |
 | Snapshot/restore | Snapshot while the target cluster is serving read traffic, then restore into an isolated cluster. | Snapshot duration, restore duration, restored shard count, restored document checksums, error rate. |

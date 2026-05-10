@@ -6,6 +6,7 @@ LIB_DIR="${DIST}/lib"
 
 RESPONSE_HEX=""
 REPORT_PATH=""
+HTTP_ADDRESS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --response-hex)
@@ -16,6 +17,10 @@ while [[ $# -gt 0 ]]; do
       REPORT_PATH="$2"
       shift 2
       ;;
+    --http-address)
+      HTTP_ADDRESS="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 2
@@ -24,7 +29,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${RESPONSE_HEX}" || -z "${REPORT_PATH}" ]]; then
-  echo "usage: $0 --response-hex <hex> --report-path <path>" >&2
+  echo "usage: $0 --response-hex <hex> --report-path <path> [--http-address <host:port>]" >&2
   exit 2
 fi
 
@@ -65,6 +70,7 @@ public class JavaTransportHandshakeResponseParse {
     public static void main(String[] args) throws IOException {
         String responseHex = args[0];
         String reportPath = args[1];
+        String httpAddress = args.length > 2 ? args[2] : "";
         byte[] raw = fromHex(responseHex);
 
         String marker = new String(raw, 0, 2, StandardCharsets.US_ASCII);
@@ -108,6 +114,9 @@ public class JavaTransportHandshakeResponseParse {
         sb.append("    \"ephemeral_id\": ").append(quote(node.getEphemeralId())).append(",\n");
         sb.append("    \"host_name\": ").append(quote(node.getHostName())).append(",\n");
         sb.append("    \"host_address\": ").append(quote(node.getHostAddress())).append(",\n");
+        if (httpAddress.isEmpty() == false) {
+            sb.append("    \"http_address\": ").append(quote(httpAddress)).append(",\n");
+        }
         sb.append("    \"transport_address\": ").append(quote(node.getAddress().toString())).append(",\n");
         sb.append("    \"version_id\": ").append(node.getVersion().id).append(",\n");
         sb.append("    \"roles\": [").append(roles).append("]\n");
@@ -120,4 +129,4 @@ public class JavaTransportHandshakeResponseParse {
 }
 JAVA
 javac -cp "${LIB_DIR}/*" -d "${TMP_DIR}" "${TMP_DIR}/JavaTransportHandshakeResponseParse.java"
-java -cp "${TMP_DIR}:${LIB_DIR}/*" org.opensearch.transport.nativeprotocol.JavaTransportHandshakeResponseParse "${RESPONSE_HEX}" "${REPORT_PATH}"
+java -cp "${TMP_DIR}:${LIB_DIR}/*" org.opensearch.transport.nativeprotocol.JavaTransportHandshakeResponseParse "${RESPONSE_HEX}" "${REPORT_PATH}" "${HTTP_ADDRESS}"

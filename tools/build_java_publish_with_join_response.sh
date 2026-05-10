@@ -53,10 +53,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
+CACHE_DIR="${TMPDIR:-/tmp}/steelsearch-java-publish-with-join-response"
+mkdir -p "${CACHE_DIR}"
+SOURCE_FILE="${CACHE_DIR}/BuildPublishWithJoinResponse.java"
+CLASS_FILE="${CACHE_DIR}/BuildPublishWithJoinResponse.class"
 
-cat > "${tmpdir}/BuildPublishWithJoinResponse.java" <<'JAVA'
+cat > "${SOURCE_FILE}.tmp" <<'JAVA'
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Collections;
@@ -149,9 +151,18 @@ public class BuildPublishWithJoinResponse {
     }
 }
 JAVA
+if [[ ! -f "${SOURCE_FILE}" ]] || ! cmp -s "${SOURCE_FILE}.tmp" "${SOURCE_FILE}"; then
+  mv "${SOURCE_FILE}.tmp" "${SOURCE_FILE}"
+  rm -f "${CLASS_FILE}"
+else
+  rm -f "${SOURCE_FILE}.tmp"
+fi
 
-javac -proc:none -cp "${LIB_CP}" "${tmpdir}/BuildPublishWithJoinResponse.java"
-java -cp "${LIB_CP}:${tmpdir}" BuildPublishWithJoinResponse \
+if [[ ! -f "${CLASS_FILE}" ]] || [[ "${SOURCE_FILE}" -nt "${CLASS_FILE}" ]]; then
+  javac -proc:none -cp "${LIB_CP}" -d "${CACHE_DIR}" "${SOURCE_FILE}"
+fi
+
+java -cp "${LIB_CP}:${CACHE_DIR}" BuildPublishWithJoinResponse \
   "${term}" \
   "${version}" \
   "${last_accepted_term}" \

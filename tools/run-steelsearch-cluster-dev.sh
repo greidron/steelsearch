@@ -11,6 +11,7 @@ HTTP_ACCESS_HOST="${STEELSEARCH_HTTP_ACCESS_HOST:-127.0.0.1}"
 TRANSPORT_ACCESS_HOST="${STEELSEARCH_TRANSPORT_ACCESS_HOST:-127.0.0.1}"
 MANIFEST="${WORK_DIR}/cluster.json"
 PIDS=()
+BUILD_PROFILE="${STEELSEARCH_BUILD_PROFILE:-debug}"
 
 find_free_port() {
   python3 - "$1" <<'PY'
@@ -116,19 +117,19 @@ for ((i = 0; i < NODE_COUNT; i++)); do
 
   (
     cd "${ROOT}"
-    exec cargo run -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" -- \
-      --http.host "${HTTP_HOST}" \
-      --http.port "${http_port}" \
-      --transport.host "${TRANSPORT_HOST}" \
-      --transport.port "${transport_port}" \
-      --node.id "steel-node-${node_number}" \
-      --node.name "steel-node-${node_number}" \
-      --node.roles "cluster_manager,data,ingest" \
-      --cluster.name "${CLUSTER_NAME}" \
-      --discovery.seed_hosts "${seed_csv}" \
-      --path.data "${node_dir}/data" \
-      >"${node_dir}/logs/stdout.log" \
-      2>"${node_dir}/logs/stderr.log"
+    export STEELSEARCH_HTTP_HOST="${HTTP_HOST}"
+    export STEELSEARCH_HTTP_PORT="${http_port}"
+    export STEELSEARCH_TRANSPORT_HOST="${TRANSPORT_HOST}"
+    export STEELSEARCH_TRANSPORT_PORT="${transport_port}"
+    export STEELSEARCH_NODE_ID="steel-node-${node_number}"
+    export STEELSEARCH_NODE_NAME="steel-node-${node_number}"
+    export STEELSEARCH_NODE_ROLES="cluster_manager,data,ingest"
+    export STEELSEARCH_CLUSTER_NAME="${CLUSTER_NAME}"
+    export STEELSEARCH_DISCOVERY_SEED_HOSTS="${seed_csv}"
+    export STEELSEARCH_DATA_PATH="${node_dir}/data"
+    export STEELSEARCH_WORK_DIR="${node_dir}"
+    export STEELSEARCH_BUILD_PROFILE="${BUILD_PROFILE}"
+    exec "${ROOT}/tools/run-steelsearch-dev.sh" >"${node_dir}/logs/stdout.log" 2>"${node_dir}/logs/stderr.log"
   ) &
   PIDS+=("$!")
 done

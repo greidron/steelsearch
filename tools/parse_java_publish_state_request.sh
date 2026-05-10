@@ -38,11 +38,16 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.opensearch.Version;
 import org.opensearch.cluster.ClusterModule;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.coordination.CompressedStreamUtils;
 import org.opensearch.cluster.node.DiscoveryNode;
+import org.opensearch.cluster.routing.IndexRoutingTable;
+import org.opensearch.cluster.routing.IndexShardRoutingTable;
+import org.opensearch.cluster.routing.ShardRouting;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -90,6 +95,10 @@ public class JavaPublishStateRequestParse {
         Long version = null;
         String clusterName = null;
         String stateUuid = null;
+        String clusterManagerNodeId = null;
+        Integer routingIndexCount = null;
+        Integer routingShardCopyCount = null;
+        List<String> relevantRoutings = new ArrayList<>();
         try (StreamInput in = CompressedStreamUtils.decompressBytes(request, registry)) {
             fullState = in.readBoolean();
             if (fullState) {
@@ -103,6 +112,30 @@ public class JavaPublishStateRequestParse {
                 version = state.version();
                 clusterName = state.getClusterName().value();
                 stateUuid = state.stateUUID();
+                clusterManagerNodeId = state.nodes().getClusterManagerNodeId();
+                routingIndexCount = state.routingTable().indicesRouting().size();
+                int shardCopyCount = 0;
+                for (IndexRoutingTable indexRoutingTable : state.routingTable()) {
+                    for (IndexShardRoutingTable shardTable : indexRoutingTable) {
+                        for (ShardRouting shardRouting : shardTable) {
+                            shardCopyCount += 1;
+                            if (shardRouting.primary() || shardRouting.initializing()) {
+                                relevantRoutings.add(
+                                    indexRoutingTable.getIndex().getName()
+                                        + "#"
+                                        + shardRouting.id()
+                                        + "#primary="
+                                        + shardRouting.primary()
+                                        + "#state="
+                                        + shardRouting.state()
+                                        + "#current="
+                                        + String.valueOf(shardRouting.currentNodeId())
+                                );
+                            }
+                        }
+                    }
+                }
+                routingShardCopyCount = shardCopyCount;
             }
         }
 
@@ -115,8 +148,19 @@ public class JavaPublishStateRequestParse {
         sb.append("  \"full_state\": ").append(fullState).append(",\n");
         sb.append("  \"term\": ").append(term == null ? "null" : term).append(",\n");
         sb.append("  \"version\": ").append(version == null ? "null" : version).append(",\n");
+        sb.append("  \"cluster_manager_node_id\": ").append(clusterManagerNodeId == null ? "null" : quote(clusterManagerNodeId)).append(",\n");
         sb.append("  \"cluster_name\": ").append(clusterName == null ? "null" : quote(clusterName)).append(",\n");
-        sb.append("  \"state_uuid\": ").append(stateUuid == null ? "null" : quote(stateUuid)).append("\n");
+        sb.append("  \"state_uuid\": ").append(stateUuid == null ? "null" : quote(stateUuid)).append(",\n");
+        sb.append("  \"routing_index_count\": ").append(routingIndexCount == null ? "null" : routingIndexCount).append(",\n");
+        sb.append("  \"routing_shard_copy_count\": ").append(routingShardCopyCount == null ? "null" : routingShardCopyCount).append(",\n");
+        sb.append("  \"relevant_routings\": [");
+        for (int i = 0; i < relevantRoutings.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(quote(relevantRoutings.get(i)));
+        }
+        sb.append("]\n");
         sb.append("}\n");
 
         Files.writeString(Path.of(reportPath), sb.toString(), StandardCharsets.UTF_8);

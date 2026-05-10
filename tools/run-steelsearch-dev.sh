@@ -8,6 +8,7 @@ HTTP_ACCESS_HOST="${STEELSEARCH_HTTP_ACCESS_HOST:-127.0.0.1}"
 TRANSPORT_ACCESS_HOST="${STEELSEARCH_TRANSPORT_ACCESS_HOST:-127.0.0.1}"
 WORK_DIR="${STEELSEARCH_WORK_DIR:-$(mktemp -d -t steelsearch-dev.XXXXXX)}"
 SPLIT_BUILD_RUN="${STEELSEARCH_SPLIT_BUILD_RUN:-0}"
+BUILD_PROFILE="${STEELSEARCH_BUILD_PROFILE:-debug}"
 
 find_free_port() {
   python3 - "$1" <<'PY'
@@ -48,15 +49,23 @@ print(int(time.time() * 1000))
 PY
 )" >&2
 
+if [[ -n "${STEELSEARCH_NODE_ROLES:-}" ]]; then
+  NODE_ROLES="${STEELSEARCH_NODE_ROLES}"
+elif [[ -n "${STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST:-}" ]]; then
+  NODE_ROLES="data,ingest,remote_cluster_client"
+else
+  NODE_ROLES="cluster_manager,data,ingest,remote_cluster_client"
+fi
+
 args=(
-  cargo run -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" --
+  cargo run $([[ "${BUILD_PROFILE}" == "release" ]] && printf '%s' '--release') -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" --
   --http.host "${HOST}"
   --http.port "${PORT}"
   --transport.host "${TRANSPORT_HOST}"
   --transport.port "${TRANSPORT_PORT}"
   --node.id "${STEELSEARCH_NODE_ID:-${STEELSEARCH_NODE_NAME:-steelsearch-dev-node}}"
   --node.name "${STEELSEARCH_NODE_NAME:-steelsearch-dev-node}"
-  --node.roles "${STEELSEARCH_NODE_ROLES:-cluster_manager,data,ingest,remote_cluster_client}"
+  --node.roles "${NODE_ROLES}"
   --cluster.name "${STEELSEARCH_CLUSTER_NAME:-steelsearch-dev}"
   --path.data "${STEELSEARCH_DATA_PATH}"
 )
@@ -89,7 +98,11 @@ import time
 print(int(time.time() * 1000))
 PY
 )" >&2
-  cargo build -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml"
+  build_args=(cargo build -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml")
+  if [[ "${BUILD_PROFILE}" == "release" ]]; then
+    build_args+=(--release)
+  fi
+  "${build_args[@]}"
   echo "Steelsearch cargo build done epoch ms: $(python3 - <<'PY'
 import time
 print(int(time.time() * 1000))
@@ -100,7 +113,8 @@ import time
 print(int(time.time() * 1000))
 PY
 )" >&2
-  exec "${ROOT}/target/debug/steelsearch" "${args[@]:11}"
+  binary_path="${ROOT}/target/${BUILD_PROFILE}/steelsearch"
+  exec "${binary_path}" "${args[@]:11}"
 fi
 
 exec "${args[@]}"

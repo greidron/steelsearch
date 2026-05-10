@@ -5,3 +5,9 @@
 *.sock
 output.log
 __pycache__/
+*.mm_profdata
+shared-runtime-state.json
+tmp/
+tools/*.class
+tools/classes/
+tools/org/

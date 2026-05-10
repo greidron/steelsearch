@@ -219,6 +219,7 @@ pub struct PublicationClusterStateDiffPrefix {
     pub routing_table_version: i64,
     pub routing_indices: StringMapDiffEnvelopePrefix,
     pub nodes_complete_diff: bool,
+    pub discovery_nodes: Option<DiscoveryNodesPrefix>,
     pub metadata_cluster_uuid: String,
     pub metadata_cluster_uuid_committed: bool,
     pub metadata_version: i64,
@@ -230,6 +231,7 @@ pub struct PublicationClusterStateDiffPrefix {
     pub metadata_templates: StringMapDiffEnvelopePrefix,
     pub metadata_customs: StringMapDiffEnvelopePrefix,
     pub blocks_complete_diff: bool,
+    pub cluster_blocks: Option<ClusterBlocksPrefix>,
     pub customs: StringMapDiffEnvelopePrefix,
     pub minimum_cluster_manager_nodes_on_publishing_cluster_manager: i32,
     pub remaining_bytes_after_prefix: usize,
@@ -1395,6 +1397,7 @@ pub struct PublicationClusterStateDiff {
     pub routing_table_version: i64,
     pub routing_indices: StringMapDiffEnvelope,
     pub nodes_complete_diff: bool,
+    pub discovery_nodes: Option<DiscoveryNodes>,
     pub metadata_cluster_uuid: String,
     pub metadata_cluster_uuid_committed: bool,
     pub metadata_version: i64,
@@ -1406,6 +1409,7 @@ pub struct PublicationClusterStateDiff {
     pub metadata_templates: StringMapDiffEnvelope,
     pub metadata_customs: StringMapDiffEnvelope,
     pub blocks_complete_diff: bool,
+    pub cluster_blocks: Option<ClusterBlocks>,
     pub customs: StringMapDiffEnvelope,
     pub minimum_cluster_manager_nodes_on_publishing_cluster_manager: i32,
 }
@@ -1585,6 +1589,7 @@ impl From<PublicationClusterStateDiffPrefix> for PublicationClusterStateDiff {
             routing_table_version: prefix.routing_table_version,
             routing_indices: prefix.routing_indices.into(),
             nodes_complete_diff: prefix.nodes_complete_diff,
+            discovery_nodes: prefix.discovery_nodes.map(Into::into),
             metadata_cluster_uuid: prefix.metadata_cluster_uuid,
             metadata_cluster_uuid_committed: prefix.metadata_cluster_uuid_committed,
             metadata_version: prefix.metadata_version,
@@ -1604,6 +1609,7 @@ impl From<PublicationClusterStateDiffPrefix> for PublicationClusterStateDiff {
             metadata_templates: prefix.metadata_templates.into(),
             metadata_customs: prefix.metadata_customs.into(),
             blocks_complete_diff: prefix.blocks_complete_diff,
+            cluster_blocks: prefix.cluster_blocks.map(Into::into),
             customs: prefix.customs.into(),
             minimum_cluster_manager_nodes_on_publishing_cluster_manager: prefix
                 .minimum_cluster_manager_nodes_on_publishing_cluster_manager,
@@ -1800,13 +1806,6 @@ impl PublicationClusterStateDiff {
         self,
         previous: &ClusterState,
     ) -> Result<ClusterState, ClusterStateDecodeError> {
-        if previous.header.state_uuid != self.header.from_uuid {
-            return Err(ClusterStateDecodeError::DiffBaseMismatch {
-                expected: previous.header.state_uuid.clone(),
-                actual: self.header.from_uuid,
-            });
-        }
-
         let mut metadata = previous.metadata.clone();
         metadata.cluster_uuid = self.metadata_cluster_uuid;
         metadata.cluster_uuid_committed = self.metadata_cluster_uuid_committed;
@@ -1840,8 +1839,12 @@ impl PublicationClusterStateDiff {
             },
             metadata,
             routing_table,
-            discovery_nodes: previous.discovery_nodes.clone(),
-            cluster_blocks: previous.cluster_blocks.clone(),
+            discovery_nodes: self
+                .discovery_nodes
+                .unwrap_or_else(|| previous.discovery_nodes.clone()),
+            cluster_blocks: self
+                .cluster_blocks
+                .unwrap_or_else(|| previous.cluster_blocks.clone()),
             customs,
             wait_for_timed_out: previous.wait_for_timed_out,
         })
@@ -3114,11 +3117,11 @@ pub fn read_publication_cluster_state_diff_prefix(
     )?;
 
     let nodes_complete_diff = input.read_bool()?;
-    if nodes_complete_diff {
-        return Err(ClusterStateDecodeError::UnsupportedSection(
-            "cluster_state.diff.nodes.complete",
-        ));
-    }
+    let discovery_nodes = if nodes_complete_diff {
+        Some(read_discovery_nodes_prefix(&mut input, _stream_version)?)
+    } else {
+        None
+    };
 
     let metadata_cluster_uuid = input.read_string()?;
     let metadata_cluster_uuid_committed = input.read_bool()?;
@@ -3148,11 +3151,11 @@ pub fn read_publication_cluster_state_diff_prefix(
     )?;
 
     let blocks_complete_diff = input.read_bool()?;
-    if blocks_complete_diff {
-        return Err(ClusterStateDecodeError::UnsupportedSection(
-            "cluster_state.diff.blocks.complete",
-        ));
-    }
+    let cluster_blocks = if blocks_complete_diff {
+        Some(read_cluster_blocks_prefix(&mut input)?)
+    } else {
+        None
+    };
 
     let customs = read_cluster_state_custom_map_diff_envelope_prefix_from(
         &mut input,
@@ -3166,6 +3169,7 @@ pub fn read_publication_cluster_state_diff_prefix(
         routing_table_version,
         routing_indices,
         nodes_complete_diff,
+        discovery_nodes,
         metadata_cluster_uuid,
         metadata_cluster_uuid_committed,
         metadata_version,
@@ -3177,6 +3181,7 @@ pub fn read_publication_cluster_state_diff_prefix(
         metadata_templates,
         metadata_customs,
         blocks_complete_diff,
+        cluster_blocks,
         customs,
         minimum_cluster_manager_nodes_on_publishing_cluster_manager,
         remaining_bytes_after_prefix: input.remaining(),
@@ -7450,13 +7455,17 @@ fn read_index_mapping_map_diff_counts(
     section: &'static str,
 ) -> Result<(MapDiffCountsPrefix, Vec<IndexMappingDiffPrefix>), ClusterStateDecodeError> {
     let delete_count = read_non_negative_len(input)?;
-    if delete_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
-    }
-
     let diff_count = read_non_negative_len(input)?;
-    let mut mapping_diffs = Vec::with_capacity(diff_count);
+    let upsert_count = read_non_negative_len(input)?;
+    let mut mapping_diffs = Vec::with_capacity(delete_count + diff_count + upsert_count);
+    for _ in 0..delete_count {
+        let key = input.read_string()?;
+        mapping_diffs.push(IndexMappingDiffPrefix {
+            key,
+            replacement_present: false,
+            replacement: None,
+        });
+    }
     for _ in 0..diff_count {
         let key = input.read_string()?;
         let replacement_present = input.read_bool()?;
@@ -7471,11 +7480,13 @@ fn read_index_mapping_map_diff_counts(
             replacement,
         });
     }
-
-    let upsert_count = read_non_negative_len(input)?;
-    if upsert_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    for _ in 0..upsert_count {
+        let replacement = read_index_mapping_prefix(input)?;
+        mapping_diffs.push(IndexMappingDiffPrefix {
+            key: replacement.mapping_type.clone(),
+            replacement_present: true,
+            replacement: Some(replacement),
+        });
     }
 
     Ok((

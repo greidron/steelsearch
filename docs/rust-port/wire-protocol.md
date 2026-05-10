@@ -32,14 +32,16 @@ The Rust implementation lives in `crates/os-wire/src/status.rs`.
 
 ## Ping
 
-A ping is the marker plus a zero message length:
+A ping is the marker plus a `-1` message length. OpenSearch writes this via
+`TransportKeepAlive.PING_DATA_SIZE = -1`.
 
 ```text
-45 53 00 00 00 00
- E  S
+45 53 ff ff ff ff
+ E  S  -1
 ```
 
-The Rust constant is `os_transport::PING_FRAME`.
+Follow-up required: the current Rust `os_transport::PING_FRAME` constant still
+uses `ES + 0` and must be corrected before claiming keepalive wire parity.
 
 ## Compression
 

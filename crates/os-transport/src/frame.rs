@@ -32,7 +32,7 @@ pub fn decode_frame(src: &mut BytesMut) -> Result<Option<DecodedFrame>, FrameErr
     }
 
     let message_size = (&src[2..6]).get_i32();
-    if message_size == 0 {
+    if message_size == -1 {
         src.advance(PING_FRAME.len());
         return Ok(Some(DecodedFrame::Ping));
     }

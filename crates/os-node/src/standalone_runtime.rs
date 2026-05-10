@@ -815,6 +815,26 @@ impl DiscoveryPeer {
     }
 }
 
+fn is_placeholder_seed_node_id(node_id: &str) -> bool {
+    node_id.starts_with("seed-")
+}
+
+fn initial_voting_configuration(
+    config: &DiscoveryConfig,
+    joined: &[DiscoveryPeer],
+) -> BTreeSet<String> {
+    if !config.cluster_manager_eligible {
+        return BTreeSet::new();
+    }
+    let mut voting = BTreeSet::from([config.local_node_id.clone()]);
+    for peer in joined {
+        if peer.cluster_manager_eligible && !is_placeholder_seed_node_id(&peer.node_id) {
+            voting.insert(peer.node_id.clone());
+        }
+    }
+    voting
+}
+
 impl Default for DiscoveryPeer {
     fn default() -> Self {
         Self {
@@ -922,6 +942,64 @@ pub struct ClusterCoordinationState {
 }
 
 impl ClusterCoordinationState {
+    fn rewrite_publication_round_node_id(round: &mut CompletedPublicationRound, old_id: &str, new_id: &str) {
+        fn rewrite_set(values: &mut BTreeSet<String>, old_id: &str, new_id: &str) {
+            if values.remove(old_id) {
+                values.insert(new_id.to_string());
+            }
+        }
+
+        fn rewrite_map(values: &mut BTreeMap<String, String>, old_id: &str, new_id: &str) {
+            if let Some(value) = values.remove(old_id) {
+                values.insert(new_id.to_string(), value);
+            }
+        }
+
+        rewrite_set(&mut round.target_nodes, old_id, new_id);
+        rewrite_set(&mut round.acknowledged_nodes, old_id, new_id);
+        rewrite_set(&mut round.applied_nodes, old_id, new_id);
+        rewrite_set(&mut round.missing_nodes, old_id, new_id);
+        rewrite_map(&mut round.proposal_transport_failures, old_id, new_id);
+        rewrite_map(
+            &mut round.acknowledgement_transport_failures,
+            old_id,
+            new_id,
+        );
+        rewrite_map(&mut round.apply_transport_failures, old_id, new_id);
+    }
+
+    fn rewrite_member_identity(&mut self, old_id: &str, new_id: &str) {
+        if self.cluster_manager_node_id.as_deref() == Some(old_id) {
+            self.cluster_manager_node_id = Some(new_id.to_string());
+        }
+        if self.last_accepted_voting_configuration.remove(old_id) {
+            self.last_accepted_voting_configuration
+                .insert(new_id.to_string());
+        }
+        if self.last_committed_voting_configuration.remove(old_id) {
+            self.last_committed_voting_configuration
+                .insert(new_id.to_string());
+        }
+        if self.pending_voting_config_additions.remove(old_id) {
+            self.pending_voting_config_additions
+                .insert(new_id.to_string());
+        }
+        if let Some(round) = self.active_publication_round.as_mut() {
+            Self::rewrite_publication_round_node_id(round, old_id, new_id);
+        }
+        if let Some(round) = self.last_completed_publication_round.as_mut() {
+            Self::rewrite_publication_round_node_id(round, old_id, new_id);
+        }
+        if let Some(tick) = self.fault_detection.leader_nodes.remove(old_id) {
+            self.fault_detection
+                .leader_nodes
+                .insert(new_id.to_string(), tick);
+        }
+        if let Some(tick) = self.liveness.leader_checks.remove(old_id) {
+            self.liveness.leader_checks.insert(new_id.to_string(), tick);
+        }
+    }
+
     fn authoritative_voting_nodes(&self) -> BTreeSet<String> {
         self.last_accepted_voting_configuration
             .union(&self.last_committed_voting_configuration)
@@ -948,21 +1026,14 @@ impl ClusterCoordinationState {
             cluster_manager_eligible: config.cluster_manager_eligible,
             membership_epoch: config.local_membership_epoch,
         });
+        let voting_configuration = initial_voting_configuration(config, &joined);
         Self {
             current_term: 0,
             last_accepted_version: 0,
             last_accepted_state_uuid: String::new(),
             cluster_manager_node_id: Some(config.local_node_id.clone()),
-            last_accepted_voting_configuration: if config.cluster_manager_eligible {
-                BTreeSet::from([config.local_node_id.clone()])
-            } else {
-                BTreeSet::new()
-            },
-            last_committed_voting_configuration: if config.cluster_manager_eligible {
-                BTreeSet::from([config.local_node_id.clone()])
-            } else {
-                BTreeSet::new()
-            },
+            last_accepted_voting_configuration: voting_configuration.clone(),
+            last_committed_voting_configuration: voting_configuration,
             voting_config_exclusions: BTreeSet::new(),
             liveness: LivenessState::default(),
             fault_detection: CoordinationFaultDetectionState::default(),
@@ -1087,7 +1158,27 @@ impl ClusterCoordinationState {
         _config: &DiscoveryConfig,
         peer: DiscoveryPeer,
     ) -> std::io::Result<()> {
-        if !self.joined.iter().any(|existing| existing.node_id == peer.node_id) {
+        if let Some(existing_index) = self
+            .joined
+            .iter()
+            .position(|existing| existing.transport_address() == peer.transport_address())
+        {
+            let old_id = self.joined[existing_index].node_id.clone();
+            let old_was_placeholder = is_placeholder_seed_node_id(&old_id);
+            if old_id != peer.node_id {
+                if old_was_placeholder {
+                    if peer.cluster_manager_eligible {
+                        self.last_accepted_voting_configuration
+                            .insert(peer.node_id.clone());
+                        self.last_committed_voting_configuration
+                            .insert(peer.node_id.clone());
+                    }
+                } else {
+                    self.rewrite_member_identity(&old_id, &peer.node_id);
+                }
+            }
+            self.joined[existing_index] = peer;
+        } else if !self.joined.iter().any(|existing| existing.node_id == peer.node_id) {
             self.joined.push(peer);
         }
         Ok(())
@@ -1297,21 +1388,14 @@ impl DevelopmentDiscoveryRuntime {
             cluster_manager_eligible: self.config.cluster_manager_eligible,
             membership_epoch: self.config.local_membership_epoch,
         });
+        let voting_configuration = initial_voting_configuration(&self.config, &joined);
         ClusterCoordinationState {
             current_term: 0,
             last_accepted_version: 0,
             last_accepted_state_uuid: String::new(),
             cluster_manager_node_id: Some(self.config.local_node_id.clone()),
-            last_accepted_voting_configuration: if self.config.cluster_manager_eligible {
-                BTreeSet::from([self.config.local_node_id.clone()])
-            } else {
-                BTreeSet::new()
-            },
-            last_committed_voting_configuration: if self.config.cluster_manager_eligible {
-                BTreeSet::from([self.config.local_node_id.clone()])
-            } else {
-                BTreeSet::new()
-            },
+            last_accepted_voting_configuration: voting_configuration.clone(),
+            last_committed_voting_configuration: voting_configuration,
             voting_config_exclusions: BTreeSet::new(),
             liveness: LivenessState::default(),
             fault_detection: CoordinationFaultDetectionState::default(),
@@ -28747,5 +28831,107 @@ mod tests {
             bad_context.body["error"]["type"],
             Value::String("illegal_argument_exception".to_string())
         );
+    }
+
+    #[test]
+    fn bootstrap_uses_actual_seed_manager_ids_for_initial_quorum() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: vec![
+                DiscoveryPeer {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-b".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 19302,
+                    cluster_name: "steelsearch-dev".to_string(),
+                    cluster_uuid: "cluster-uuid".to_string(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 1,
+                },
+                DiscoveryPeer {
+                    node_id: "seed-3-127-0-0-1-19303".to_string(),
+                    node_name: "seed-3".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 19303,
+                    cluster_name: "steelsearch-dev".to_string(),
+                    cluster_uuid: "cluster-uuid".to_string(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 1,
+                },
+            ],
+        };
+
+        let coordination = ClusterCoordinationState::bootstrap(&discovery);
+
+        assert_eq!(
+            coordination.last_accepted_voting_configuration,
+            BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+        assert_eq!(coordination.required_quorum(), 2);
+    }
+
+    #[test]
+    fn join_peer_replaces_placeholder_seed_with_actual_identity() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: vec![DiscoveryPeer {
+                node_id: "seed-2-127-0-0-1-19302".to_string(),
+                node_name: "seed-2".to_string(),
+                host: "127.0.0.1".to_string(),
+                port: 19302,
+                cluster_name: "steelsearch-dev".to_string(),
+                cluster_uuid: "cluster-uuid".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+                cluster_manager_eligible: true,
+                membership_epoch: 1,
+            }],
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+
+        coordination
+            .join_peer(
+                &discovery,
+                DiscoveryPeer {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-b".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 19302,
+                    cluster_name: "steelsearch-dev".to_string(),
+                    cluster_uuid: "cluster-uuid".to_string(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 2,
+                },
+            )
+            .unwrap();
+
+        assert!(coordination
+            .joined_nodes()
+            .iter()
+            .any(|peer| peer.node_id == "node-b" && peer.node_name == "steel-b"));
+        assert!(!coordination
+            .joined_nodes()
+            .iter()
+            .any(|peer| peer.node_id == "seed-2-127-0-0-1-19302"));
+        assert!(coordination.last_accepted_voting_configuration.contains("node-b"));
+        assert!(!coordination
+            .last_accepted_voting_configuration
+            .contains("seed-2-127-0-0-1-19302"));
     }
 }

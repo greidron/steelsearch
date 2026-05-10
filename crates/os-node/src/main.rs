@@ -1,4 +1,12 @@
-use os_core::version::OPENSEARCH_3_7_0_TRANSPORT;
+use bytes::{Bytes, BytesMut};
+use os_cluster_state::{
+    apply_publication_diff_and_ack, build_cluster_state_request_frame, read_cluster_blocks_prefix,
+    read_cluster_state_header, read_cluster_state_tail_prefix, read_discovery_nodes_prefix,
+    read_metadata_prefix, read_publication_cluster_state_diff, read_routing_table_prefix,
+    ClusterState, ClusterStateRequest, ClusterStateResponsePrefix, ShardRoutingState,
+    ShardRoutingStatePrefix,
+};
+use os_core::version::{Version, OPENSEARCH_3_7_0_TRANSPORT};
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest,
     apply_gateway_metadata_state_to_manifest,
@@ -13,6 +21,9 @@ use os_node::{
     SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest,
     persist_gateway_state_manifest,
 };
+use os_stream::StreamInput;
+use os_transport::compression::decompress_deflate_body;
+use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -45,6 +56,7 @@ struct DevTransportIdentity {
     attributes: Vec<(String, String)>,
     roles: Vec<String>,
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
+    seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
     coordination_state: Arc<Mutex<DevTransportCoordinationState>>,
 }
 
@@ -52,7 +64,34 @@ struct DevTransportIdentity {
 struct DevTransportCoordinationState {
     last_accepted_term: i64,
     last_accepted_version: i64,
+    cluster_manager_node_id: Option<String>,
     non_self_publish_seen: bool,
+    local_initializing_replicas: Vec<PublishedReplicaAssignment>,
+    cached_cluster_state: Option<ClusterState>,
+    last_cluster_state_refresh_at_ms: Option<u128>,
+    initiated_peer_recoveries: BTreeSet<String>,
+    cached_query_phase_response_bodies: BTreeMap<String, Vec<u8>>,
+    cached_match_all_total_hits: BTreeMap<String, i64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PublishedReplicaAssignment {
+    index_name: String,
+    shard_id: i32,
+    source_primary_node_id: Option<String>,
+    source_primary_transport_address: Option<String>,
+    local_allocation_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PublishedShardRoutingSummary {
+    index_name: String,
+    shard_id: i32,
+    primary: bool,
+    state: String,
+    current_node_id: Option<String>,
+    relocating_node_id: Option<String>,
+    allocation_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -283,8 +322,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )],
         roles: config.roles.clone(),
         seed_peer_identity: config.seed_peer_identity.clone(),
+        seed_peer_identities: config.seed_peer_identities.clone(),
         coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
     };
+    if config.mixed_java_native_transport_join_participation_enabled()
+        && env::var("STEELSEARCH_DISABLE_PROACTIVE_JOIN")
+            .ok()
+            .as_deref()
+            != Some("1")
+    {
+        spawn_proactive_seed_join_loop(transport_identity.clone());
+    }
     serve_transport_seed_listener_until(transport_listener, transport_capture_path, transport_identity);
 
     eprintln!(
@@ -379,7 +427,7 @@ fn handle_transport_seed_connection(
     let pre_first_frame_timeout_ms = env::var("STEELSEARCH_TRANSPORT_PRE_FIRST_FRAME_TIMEOUT_MS")
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
-        .unwrap_or(5000);
+        .unwrap_or_else(|| transport_connection_hold_duration().as_millis() as u64);
     stream.set_read_timeout(Some(Duration::from_millis(pre_first_frame_timeout_ms)))?;
     let (header, body) = loop {
         match read_transport_seed_frame_detailed(&mut stream)? {
@@ -433,7 +481,7 @@ fn handle_transport_seed_connection(
                     0,
                     capture_write_lock,
                 )?;
-                return Ok(());
+                continue;
             }
             TransportSeedFrameRead::Eof => {
                 let event_at_ms = unix_time_ms();
@@ -506,6 +554,9 @@ fn handle_transport_seed_connection(
     let is_request = status & 0x01 == 0;
     let is_handshake = status & 0x08 != 0;
     let action_hint = transport_frame_action_hint(&body);
+    let normalized_action_hint = action_hint
+        .as_deref()
+        .map(|action| action.strip_suffix("[n]").unwrap_or(action));
     if is_request && is_handshake {
         eprintln!(
             "steelsearch_tcp_handshake_response_stage=before_write request_id={} header_version_id={}",
@@ -567,7 +618,7 @@ fn handle_transport_seed_connection(
                 true,
                 &mut proactive_keepalive_sent_at_ms,
                 &mut proactive_keepalive_count,
-                Duration::from_secs(15),
+                transport_connection_hold_duration(),
                 &mut hold_open_started_at_ms,
                 &mut first_post_response_event,
                 &mut connection_end,
@@ -625,7 +676,7 @@ fn handle_transport_seed_connection(
                         true,
                         &mut proactive_keepalive_sent_at_ms,
                         &mut proactive_keepalive_count,
-                        Duration::from_secs(15),
+                        transport_connection_hold_duration(),
                         &mut hold_open_started_at_ms,
                         &mut first_post_response_event,
                         &mut connection_end,
@@ -645,7 +696,7 @@ fn handle_transport_seed_connection(
                     true,
                     &mut proactive_keepalive_sent_at_ms,
                     &mut proactive_keepalive_count,
-                    Duration::from_secs(15),
+                    transport_connection_hold_duration(),
                     &mut hold_open_started_at_ms,
                     &mut first_post_response_event,
                     &mut connection_end,
@@ -674,7 +725,7 @@ fn handle_transport_seed_connection(
             true,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(15),
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
@@ -694,7 +745,7 @@ fn handle_transport_seed_connection(
             true,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(15),
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
@@ -714,57 +765,27 @@ fn handle_transport_seed_connection(
             true,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(15),
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/publish_state") {
-        let publish_state_started = std::time::Instant::now();
-        let decode_started = std::time::Instant::now();
-        let decoded = decode_publish_state_term_version(&body);
-        eprintln!(
-            "steelsearch_publish_state_decode_ms={}",
-            decode_started.elapsed().as_millis()
+    } else if is_request
+        && normalized_action_hint == Some("internal:cluster/nodes/indices/shard/store/batch")
+    {
+        let response = build_empty_shard_store_batch_response(
+            request_id,
+            header_version_id,
+            transport_identity,
         );
-        if let Some((term, version)) = decoded {
-            let (join_last_accepted_term, join_last_accepted_version) = transport_identity
-                .coordination_state
-                .lock()
-                .map(|state| (state.last_accepted_term, state.last_accepted_version))
-                .unwrap_or((0, 0));
-            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
-                coordination_state.last_accepted_term = term;
-                coordination_state.last_accepted_version = version;
-                coordination_state.non_self_publish_seen = true;
-            }
-            let build_started = std::time::Instant::now();
-            let response = build_publish_with_join_response(
-                request_id,
-                header_version_id,
-                term,
-                version,
-                transport_identity,
-                join_last_accepted_term,
-                join_last_accepted_version,
-            );
-            eprintln!(
-                "steelsearch_publish_state_build_ms={}",
-                build_started.elapsed().as_millis()
-            );
-            response_frame = summarize_transport_response_frame_for_action(
-                &response,
-                Some("internal:cluster/coordination/publish_state"),
-            );
-            stream.write_all(&response)?;
-            stream.flush()?;
-            response_frame_sent_at_ms = Some(unix_time_ms());
-            eprintln!(
-                "steelsearch_publish_state_total_before_write_ms={}",
-                publish_state_started.elapsed().as_millis()
-            );
-        }
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:cluster/nodes/indices/shard/store/batch[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
             &mut stream,
             transport_identity,
@@ -773,7 +794,348 @@ fn handle_transport_seed_connection(
             true,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(20),
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/stats") {
+        let response = build_empty_nodes_stats_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/nodes/stats[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/info") {
+        let response = build_nodes_info_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/nodes/info[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("indices:monitor/stats") {
+        let response = build_empty_indices_stats_node_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/stats[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("indices:monitor/recovery") {
+        let response = build_empty_indices_recovery_node_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/recovery[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && matches!(
+            action_hint.as_deref(),
+            Some("indices:admin/seq_no/retention_lease_background_sync[r]")
+                | Some("indices:admin/seq_no/retention_lease_background_sync")
+        )
+    {
+        let response = build_replication_replica_response(request_id, header_version_id, 0, 0);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && matches!(
+            action_hint.as_deref(),
+            Some("internal:index/shard/recovery/start_recovery")
+                |
+            Some("internal:index/shard/recovery/filesInfo")
+                | Some("internal:index/shard/recovery/file_chunk")
+                | Some("internal:index/shard/recovery/clean_files")
+                | Some("internal:index/shard/recovery/prepare_translog")
+                | Some("internal:index/shard/recovery/finalize")
+                | Some("internal:index/shard/recovery/handoff_primary_context")
+        )
+    {
+        if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
+            if let Ok(peer_addr) = stream.peer_addr() {
+                maybe_complete_source_side_recovery(peer_addr, &body, header_version_id);
+            }
+        }
+        let response = if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
+            build_java_recovery_response(request_id, header_version_id)
+        } else {
+            build_empty_transport_response(request_id, header_version_id)
+        };
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:index/shard/recovery/translog_ops") {
+        let response = build_recovery_translog_operations_response(request_id, header_version_id, 0);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/publish_state") {
+        let publish_state_started = std::time::Instant::now();
+        let decode_started = std::time::Instant::now();
+        let cached_cluster_state = transport_identity
+            .coordination_state
+            .lock()
+            .ok()
+            .and_then(|state| state.cached_cluster_state.clone());
+        let (mut local_initializing_replicas, mut applied_cluster_state) =
+            match decode_local_initializing_replicas_from_publish_state(
+                &body,
+                &transport_identity.node_id,
+                Version::from_id(header_version_id as i32),
+                cached_cluster_state.as_ref(),
+                Some(transport_identity),
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    eprintln!("steelsearch_publish_state_decode_error={error}");
+                    Default::default()
+                }
+            };
+        if local_initializing_replicas.is_empty() {
+            if let Ok((
+                refreshed_cluster_state,
+                refreshed_assignments,
+                refreshed_routing_summaries,
+            )) = refresh_local_initializing_replicas_from_seed_peers(
+                transport_identity,
+                header_version_id,
+                Version::from_id(header_version_id as i32),
+            ) {
+                eprintln!(
+                    "steelsearch_publish_state_refresh_local_initializing_replicas={:?}",
+                    refreshed_assignments
+                );
+                eprintln!(
+                    "steelsearch_publish_state_refresh_relevant_routings={:?}",
+                    refreshed_routing_summaries
+                );
+                local_initializing_replicas = refreshed_assignments;
+                applied_cluster_state = Some(refreshed_cluster_state);
+            }
+        }
+        let routing_summaries = applied_cluster_state
+            .as_ref()
+            .map(summarize_relevant_shard_routings_from_cluster_state)
+            .unwrap_or_default();
+        eprintln!(
+            "steelsearch_publish_state_decode_ms={}",
+            decode_started.elapsed().as_millis()
+        );
+        let (
+            join_last_accepted_term,
+            join_last_accepted_version,
+            cached_cluster_manager_node_id,
+        ) = transport_identity
+            .coordination_state
+            .lock()
+            .map(|state| {
+                (
+                    state.last_accepted_term,
+                    state.last_accepted_version,
+                    state.cluster_manager_node_id.clone(),
+                )
+            })
+            .unwrap_or((0, 0, None));
+        let term = applied_cluster_state
+            .as_ref()
+            .map(|state| state.metadata.coordination.term)
+            .unwrap_or(join_last_accepted_term);
+        let version = applied_cluster_state
+            .as_ref()
+            .map(|state| state.header.version)
+            .unwrap_or(join_last_accepted_version);
+        let cluster_manager_node_id = applied_cluster_state
+            .as_ref()
+            .and_then(|state| state.discovery_nodes.cluster_manager_node_id.clone())
+            .or(cached_cluster_manager_node_id);
+        if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+            coordination_state.last_accepted_term = term;
+            coordination_state.last_accepted_version = version;
+            if let Some(node_id) = cluster_manager_node_id.clone() {
+                coordination_state.cluster_manager_node_id = Some(node_id);
+            }
+            coordination_state.non_self_publish_seen = true;
+            coordination_state.local_initializing_replicas =
+                local_initializing_replicas.clone();
+            if let Some(cluster_state) = applied_cluster_state.clone() {
+                coordination_state.cached_cluster_state = Some(cluster_state);
+            }
+        }
+        maybe_start_peer_recoveries(
+            transport_identity,
+            header_version_id,
+            &local_initializing_replicas,
+            applied_cluster_state.as_ref(),
+        );
+        eprintln!(
+            "steelsearch_publish_state_local_initializing_replicas={:?}",
+            local_initializing_replicas
+        );
+        eprintln!(
+            "steelsearch_publish_state_relevant_routings={:?}",
+            routing_summaries
+        );
+        let build_started = std::time::Instant::now();
+        let response = build_publish_with_join_response(
+            request_id,
+            header_version_id,
+            term,
+            version,
+            transport_identity,
+            join_last_accepted_term,
+            join_last_accepted_version,
+            cluster_manager_node_id.as_deref(),
+        );
+        eprintln!(
+            "steelsearch_publish_state_build_ms={}",
+            build_started.elapsed().as_millis()
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:cluster/coordination/publish_state"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        eprintln!(
+            "steelsearch_publish_state_total_before_write_ms={}",
+            publish_state_started.elapsed().as_millis()
+        );
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
@@ -782,6 +1144,14 @@ fn handle_transport_seed_connection(
     } else if is_request
         && action_hint.as_deref() == Some("internal:coordination/fault_detection/follower_check")
     {
+        if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+            coordination_state.non_self_publish_seen = true;
+        }
+        maybe_refresh_local_initializing_replicas_from_seed_peers(
+            transport_identity,
+            header_version_id,
+            Version::from_id(header_version_id as i32),
+        );
         let reusable_follower_check = transport_identity
             .coordination_state
             .lock()
@@ -800,7 +1170,30 @@ fn handle_transport_seed_connection(
             reusable_follower_check,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(20),
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("cluster:monitor/nodes/liveness") {
+        let response = build_liveness_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/nodes/liveness"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
@@ -820,7 +1213,34 @@ fn handle_transport_seed_connection(
             false,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(20),
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && matches!(
+            action_hint.as_deref(),
+            Some("internal:cluster/coordination/join")
+                | Some("internal:cluster/coordination/join/validate")
+                | Some("internal:cluster/coordination/join/validate_compressed")
+        )
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            false,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
@@ -841,7 +1261,52 @@ fn handle_transport_seed_connection(
             true,
             &mut proactive_keepalive_sent_at_ms,
             &mut proactive_keepalive_count,
-            Duration::from_secs(15),
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && action_hint.as_deref() == Some("indices:data/read/search[phase/query]") {
+        if let Some(response) = maybe_build_query_phase_response(request_id, &body, transport_identity) {
+            response_frame = summarize_transport_response_frame(&response);
+            stream.write_all(&response)?;
+            stream.flush()?;
+            response_frame_sent_at_ms = Some(unix_time_ms());
+        } else {
+            eprintln!(
+                "steelsearch_first_frame_query_phase_response_missing request_id={} header_version_id={}",
+                request_id, header_version_id
+            );
+        }
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request {
+        eprintln!(
+            "steelsearch_first_frame_unhandled request_id={} action_hint={:?} header_version_id={}",
+            request_id, action_hint, header_version_id
+        );
+        hold_transport_channel_open(
+            &mut stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
             &mut hold_open_started_at_ms,
             &mut first_post_response_event,
             &mut connection_end,
@@ -909,7 +1374,13 @@ fn read_transport_seed_frame_detailed(
     if raw_message_length == -1 {
         return Ok(TransportSeedFrameRead::Ping(header));
     }
-    let message_length = raw_message_length.max(0) as usize;
+    if raw_message_length <= 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid transport message length: {raw_message_length}"),
+        ));
+    }
+    let message_length = raw_message_length as usize;
     let mut body = vec![0_u8; message_length];
     stream.read_exact(&mut body)?;
     Ok(TransportSeedFrameRead::Frame((header, body)))
@@ -941,6 +1412,10 @@ fn summarize_transport_seed_frame(header: &[u8; 6], body: &[u8]) -> serde_json::
             "internal:coordination/fault_detection/follower_check"
                 | "internal:cluster/coordination/publish_state"
                 | "internal:cluster/coordination/start_join"
+                | "internal:index/shard/recovery/start_recovery"
+                | "internal:index/shard/recovery/prepare_translog"
+                | "internal:index/shard/recovery/translog_ops"
+                | "internal:index/shard/recovery/finalize"
         ) {
             summary["body_hex"] = serde_json::json!(
                 body.iter().map(|byte| format!("{byte:02x}")).collect::<String>()
@@ -952,8 +1427,11 @@ fn summarize_transport_seed_frame(header: &[u8; 6], body: &[u8]) -> serde_json::
 }
 
 fn transport_frame_action_hint(body: &[u8]) -> Option<String> {
-    let needle = b"internal:";
-    let start = body.windows(needle.len()).position(|window| window == needle)?;
+    let needles: [&[u8]; 3] = [b"internal:", b"cluster:", b"indices:"];
+    let start = needles
+        .iter()
+        .filter_map(|needle| body.windows(needle.len()).position(|window| window == *needle))
+        .min()?;
     let tail = &body[start..];
     let end = tail
         .iter()
@@ -1091,6 +1569,22 @@ fn build_pre_vote_response(
     build_transport_response_frame(request_id, header_version_id, payload)
 }
 
+fn resolve_join_target_peer_identity<'a>(
+    transport_identity: &'a DevTransportIdentity,
+    cluster_manager_node_id: Option<&str>,
+) -> Option<&'a InteropSeedPeerIdentityManifest> {
+    if let Some(node_id) = cluster_manager_node_id {
+        if let Some(identity) = transport_identity
+            .seed_peer_identities
+            .iter()
+            .find(|identity| identity.discovery_node.id == node_id)
+        {
+            return Some(identity);
+        }
+    }
+    transport_identity.seed_peer_identity.as_ref()
+}
+
 fn build_publish_with_join_response(
     request_id: i64,
     header_version_id: u32,
@@ -1099,22 +1593,24 @@ fn build_publish_with_join_response(
     transport_identity: &DevTransportIdentity,
     join_last_accepted_term: i64,
     join_last_accepted_version: i64,
+    cluster_manager_node_id: Option<&str>,
 ) -> Vec<u8> {
+    let join_target_peer_identity =
+        resolve_join_target_peer_identity(transport_identity, cluster_manager_node_id);
     if let Some(payload) = try_build_java_publish_with_join_response(
         term,
         version,
         transport_identity,
         join_last_accepted_term,
         join_last_accepted_version,
-    )
-    {
+        join_target_peer_identity,
+    ) {
         return build_transport_response_frame(request_id, header_version_id, payload);
     }
-
     let mut payload = Vec::new();
     payload.extend_from_slice(&term.to_be_bytes());
     payload.extend_from_slice(&version.to_be_bytes());
-    if let Some(seed_peer_identity) = transport_identity.seed_peer_identity.as_ref() {
+    if let Some(seed_peer_identity) = join_target_peer_identity {
         write_bool(&mut payload, true);
         write_discovery_node_wire(
             &mut payload,
@@ -1160,8 +1656,9 @@ fn try_build_java_publish_with_join_response(
     transport_identity: &DevTransportIdentity,
     join_last_accepted_term: i64,
     join_last_accepted_version: i64,
+    join_target_peer_identity: Option<&InteropSeedPeerIdentityManifest>,
 ) -> Option<Vec<u8>> {
-    let seed_peer_identity = transport_identity.seed_peer_identity.as_ref()?;
+    let seed_peer_identity = join_target_peer_identity?;
     let script_path = env::current_dir()
         .ok()?
         .join("tools/build_java_publish_with_join_response.sh");
@@ -1229,11 +1726,1093 @@ fn decode_hex_bytes(hex: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+fn build_java_start_recovery_request_payload(
+    assignment: &PublishedReplicaAssignment,
+    cluster_state: &ClusterState,
+    transport_identity: &DevTransportIdentity,
+    recovery_id: i64,
+) -> Option<Vec<u8>> {
+    let source_node_id = assignment.source_primary_node_id.as_ref()?;
+    let source_node = cluster_state
+        .discovery_nodes
+        .nodes
+        .iter()
+        .find(|node| &node.id == source_node_id)?;
+    let index_metadata = cluster_state
+        .metadata
+        .index_metadata
+        .iter()
+        .find(|index| index.name == assignment.index_name)?;
+    let index_uuid = index_metadata.index_uuid.as_ref()?;
+    let local_allocation_id = assignment.local_allocation_id.as_ref()?;
+    let source_roles = source_node
+        .roles
+        .iter()
+        .map(|role| role.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let target_roles = transport_identity.roles.join(",");
+    let source_transport_address = source_node
+        .stream_address
+        .as_ref()
+        .unwrap_or(&source_node.address);
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/build_java_start_recovery_request.sh");
+    let output = Command::new("bash")
+        .arg(script_path)
+        .arg("--index-name")
+        .arg(&assignment.index_name)
+        .arg("--index-uuid")
+        .arg(index_uuid)
+        .arg("--shard-id")
+        .arg(assignment.shard_id.to_string())
+        .arg("--target-allocation-id")
+        .arg(local_allocation_id)
+        .arg("--recovery-id")
+        .arg(recovery_id.to_string())
+        .arg("--starting-seq-no")
+        .arg("-2")
+        .arg("--primary-relocation")
+        .arg("false")
+        .arg("--source-name")
+        .arg(&source_node.name)
+        .arg("--source-id")
+        .arg(&source_node.id)
+        .arg("--source-ephemeral-id")
+        .arg(&source_node.ephemeral_id)
+        .arg("--source-host")
+        .arg(&source_node.host_name)
+        .arg("--source-host-address")
+        .arg(&source_node.host_address)
+        .arg("--source-transport-address")
+        .arg(format!("{}:{}", source_transport_address.ip, source_transport_address.port))
+        .arg("--source-roles")
+        .arg(source_roles)
+        .arg("--source-version-id")
+        .arg(source_node.version.to_string())
+        .arg("--target-name")
+        .arg(&transport_identity.node_name)
+        .arg("--target-id")
+        .arg(&transport_identity.node_id)
+        .arg("--target-ephemeral-id")
+        .arg(&transport_identity.ephemeral_id)
+        .arg("--target-host")
+        .arg(transport_identity.transport_address.ip().to_string())
+        .arg("--target-host-address")
+        .arg(transport_identity.transport_address.ip().to_string())
+        .arg("--target-transport-address")
+        .arg(transport_identity.transport_address.to_string())
+        .arg("--target-roles")
+        .arg(target_roles)
+        .arg("--target-version-id")
+        .arg(OPENSEARCH_3_7_0_TRANSPORT.id().to_string())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        eprintln!(
+            "steelsearch_start_recovery_payload_builder_failed status={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return None;
+    }
+    decode_hex_bytes(std::str::from_utf8(&output.stdout).ok()?.trim())
+}
+
+fn build_java_shard_started_request_payload(
+    assignment: &PublishedReplicaAssignment,
+    cluster_state: &ClusterState,
+    primary_term: i64,
+    message: &str,
+) -> Option<Vec<u8>> {
+    let index_metadata = cluster_state
+        .metadata
+        .index_metadata
+        .iter()
+        .find(|index| index.name == assignment.index_name)?;
+    let index_uuid = index_metadata.index_uuid.as_ref()?;
+    let local_allocation_id = assignment.local_allocation_id.as_ref()?;
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/build_java_shard_started_request.sh");
+    let output = Command::new("bash")
+        .arg(script_path)
+        .arg("--index-name")
+        .arg(&assignment.index_name)
+        .arg("--index-uuid")
+        .arg(index_uuid)
+        .arg("--shard-id")
+        .arg(assignment.shard_id.to_string())
+        .arg("--allocation-id")
+        .arg(local_allocation_id)
+        .arg("--primary-term")
+        .arg(primary_term.to_string())
+        .arg("--message")
+        .arg(message)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        eprintln!(
+            "steelsearch_shard_started_payload_builder_failed status={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return None;
+    }
+    decode_hex_bytes(std::str::from_utf8(&output.stdout).ok()?.trim())
+}
+
+fn maybe_send_shard_started(
+    cluster_state: &ClusterState,
+    assignment: &PublishedReplicaAssignment,
+    header_version_id: u32,
+) {
+    let Some(cluster_manager_node_id) = cluster_state.discovery_nodes.cluster_manager_node_id.as_ref()
+    else {
+        return;
+    };
+    let Some(cluster_manager_node) = cluster_state
+        .discovery_nodes
+        .nodes
+        .iter()
+        .find(|node| &node.id == cluster_manager_node_id)
+    else {
+        return;
+    };
+    let cluster_manager_address = cluster_manager_node
+        .stream_address
+        .as_ref()
+        .unwrap_or(&cluster_manager_node.address);
+    let target_transport_address =
+        SocketAddr::from((cluster_manager_address.ip, cluster_manager_address.port as u16));
+    let request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let Some(payload) = build_java_shard_started_request_payload(
+        assignment,
+        cluster_state,
+        0,
+        "steelsearch post-recovery shard started",
+    ) else {
+        eprintln!(
+            "steelsearch_shard_started_payload_missing index={} shard={}",
+            assignment.index_name, assignment.shard_id
+        );
+        return;
+    };
+    let frame = build_transport_request_frame(
+        request_id,
+        header_version_id,
+        "internal:cluster/shard/started",
+        payload,
+    );
+    eprintln!(
+        "steelsearch_shard_started_send index={} shard={} request_id={} cluster_manager={}",
+        assignment.index_name,
+        assignment.shard_id,
+        request_id,
+        target_transport_address
+    );
+    thread::spawn(move || {
+        if let Err(error) = send_transport_request_and_hold_for_response(
+            target_transport_address,
+            request_id,
+            &frame,
+            Duration::from_secs(30),
+        ) {
+            eprintln!(
+                "steelsearch_shard_started_send_error request_id={} cluster_manager={} error={}",
+                request_id, target_transport_address, error
+            );
+        } else {
+            eprintln!(
+                "steelsearch_shard_started_response_received request_id={} cluster_manager={}",
+                request_id, target_transport_address
+            );
+        }
+    });
+}
+
+fn maybe_start_peer_recoveries(
+    transport_identity: &DevTransportIdentity,
+    header_version_id: u32,
+    local_initializing_replicas: &[PublishedReplicaAssignment],
+    cluster_state: Option<&ClusterState>,
+) {
+    let Some(cluster_state) = cluster_state else {
+        return;
+    };
+    for assignment in local_initializing_replicas {
+        let Some(source_transport_address) = assignment.source_primary_transport_address.as_ref() else {
+            continue;
+        };
+        let Some(local_allocation_id) = assignment.local_allocation_id.as_ref() else {
+            continue;
+        };
+        let recovery_key =
+            format!("{}:{}:{local_allocation_id}", assignment.index_name, assignment.shard_id);
+        let should_start = transport_identity
+            .coordination_state
+            .lock()
+            .map(|mut state| state.initiated_peer_recoveries.insert(recovery_key.clone()))
+            .unwrap_or(false);
+        if !should_start {
+            continue;
+        }
+        let Ok(target_transport_address) = source_transport_address.parse::<SocketAddr>() else {
+            eprintln!(
+                "steelsearch_start_recovery_invalid_source_transport address={}",
+                source_transport_address
+            );
+            continue;
+        };
+        let recovery_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let Some(payload) = build_java_start_recovery_request_payload(
+            assignment,
+            cluster_state,
+            transport_identity,
+            recovery_id,
+        ) else {
+            eprintln!(
+                "steelsearch_start_recovery_payload_missing index={} shard={}",
+                assignment.index_name, assignment.shard_id
+            );
+            continue;
+        };
+        let frame = build_transport_request_frame(
+            request_id,
+            header_version_id,
+            "internal:index/shard/recovery/start_recovery",
+            payload,
+        );
+        let assignment = assignment.clone();
+        let cluster_state = cluster_state.clone();
+        eprintln!(
+            "steelsearch_start_recovery_send index={} shard={} request_id={} recovery_id={} source={}",
+            assignment.index_name,
+            assignment.shard_id,
+            request_id,
+            recovery_id,
+            target_transport_address
+        );
+        thread::spawn(move || {
+            if let Err(error) = send_transport_request_and_hold_for_response(
+                target_transport_address,
+                request_id,
+                &frame,
+                Duration::from_secs(5),
+            ) {
+                eprintln!(
+                    "steelsearch_start_recovery_send_error request_id={} source={} error={}",
+                    request_id, target_transport_address, error
+                );
+            } else {
+                eprintln!(
+                    "steelsearch_start_recovery_response_received request_id={} source={}",
+                    request_id, target_transport_address
+                );
+                maybe_send_shard_started(
+                    &cluster_state,
+                    &assignment,
+                    header_version_id,
+                );
+            }
+        });
+    }
+}
+
+fn query_phase_cache_key(index_name: &str, shard_id: i32) -> String {
+    format!("{index_name}:{shard_id}")
+}
+
+fn lookup_seed_peer_http_address(
+    transport_identity: &DevTransportIdentity,
+    node_id: &str,
+) -> Option<String> {
+    transport_identity
+        .seed_peer_identities
+        .iter()
+        .find(|peer| peer.discovery_node.id == node_id)
+        .and_then(|peer| peer.discovery_node.http_address.clone())
+}
+
+fn fetch_count_via_http(http_address: &str, index_name: &str) -> Result<i64, String> {
+    let target = format!("{http_address}");
+    let mut stream = TcpStream::connect(target.as_str())
+        .map_err(|error| format!("http connect failed: {error}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|error| format!("http set_read_timeout failed: {error}"))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|error| format!("http set_write_timeout failed: {error}"))?;
+    let request = format!(
+        "GET /{}/_count HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
+        index_name, http_address
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| format!("http write failed: {error}"))?;
+    stream
+        .flush()
+        .map_err(|error| format!("http flush failed: {error}"))?;
+    let mut raw = Vec::new();
+    stream
+        .read_to_end(&mut raw)
+        .map_err(|error| format!("http read failed: {error}"))?;
+    let text = String::from_utf8_lossy(&raw);
+    let (_, body) = text
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "http response missing header delimiter".to_string())?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(body).map_err(|error| format!("http json decode failed: {error}"))?;
+    parsed
+        .get("count")
+        .and_then(|value| value.as_i64())
+        .ok_or_else(|| format!("http count missing in response: {parsed}"))
+}
+
+fn maybe_refresh_cached_match_all_total_hits(
+    transport_identity: &DevTransportIdentity,
+    cluster_state: &ClusterState,
+) {
+    let Some(assignment) = resolve_local_query_phase_assignment_from_cluster_state(
+        cluster_state,
+        transport_identity,
+    ) else {
+        return;
+    };
+    let Some(source_primary_node_id) = assignment.source_primary_node_id.as_deref() else {
+        return;
+    };
+    let Some(http_address) = lookup_seed_peer_http_address(transport_identity, source_primary_node_id) else {
+        return;
+    };
+    let cache_key = query_phase_cache_key(&assignment.index_name, assignment.shard_id);
+    match fetch_count_via_http(&http_address, &assignment.index_name) {
+        Ok(total_hits) => {
+            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                coordination_state
+                    .cached_match_all_total_hits
+                    .insert(cache_key, total_hits);
+            }
+        }
+        Err(error) => {
+            eprintln!(
+                "steelsearch_query_phase_count_refresh_error node_id={} index={} error={}",
+                source_primary_node_id, assignment.index_name, error
+            );
+        }
+    }
+}
+
+fn build_java_query_phase_result_body(
+    transport_identity: &DevTransportIdentity,
+    index_name: &str,
+    index_uuid: &str,
+    shard_id: i32,
+    total_hits: i64,
+) -> Option<Vec<u8>> {
+    let output = Command::new("bash")
+        .arg("tools/build_java_query_phase_result.sh")
+        .arg("--local-node-id")
+        .arg(&transport_identity.node_id)
+        .arg("--index-name")
+        .arg(index_name)
+        .arg("--index-uuid")
+        .arg(index_uuid)
+        .arg("--shard-id")
+        .arg(shard_id.to_string())
+        .arg("--total-hits")
+        .arg(total_hits.to_string())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let hex = String::from_utf8(output.stdout).ok()?;
+    hex_to_bytes(hex.trim())
+}
+
+fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let mut offset = 0;
+    while offset < hex.len() {
+        bytes.push(u8::from_str_radix(&hex[offset..offset + 2], 16).ok()?);
+        offset += 2;
+    }
+    Some(bytes)
+}
+
+fn build_transport_frame_from_body(body: &[u8]) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(6 + body.len());
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    frame.extend_from_slice(body);
+    frame
+}
+
+fn rewrite_transport_body_request_id(body: &[u8], request_id: i64) -> Vec<u8> {
+    let mut rewritten = body.to_vec();
+    if rewritten.len() >= 8 {
+        rewritten[..8].copy_from_slice(&request_id.to_be_bytes());
+    }
+    rewritten
+}
+
+fn resolve_local_query_phase_assignment_from_cluster_state(
+    cluster_state: &ClusterState,
+    transport_identity: &DevTransportIdentity,
+) -> Option<PublishedReplicaAssignment> {
+    let local_shard = cluster_state
+        .routing_table
+        .indices
+        .iter()
+        .flat_map(|index| {
+            index.shards.iter().flat_map(move |shard| {
+                shard.shard_routings.iter().filter_map(move |routing| {
+                    (routing.current_node_id.as_deref() == Some(transport_identity.node_id.as_str())
+                        && matches!(
+                            routing.state,
+                            ShardRoutingState::Initializing | ShardRoutingState::Started
+                        ))
+                    .then_some((index, shard, routing))
+                })
+            })
+        })
+        .find(|(_, _, routing)| !routing.primary)
+        .or_else(|| {
+            cluster_state
+                .routing_table
+                .indices
+                .iter()
+                .flat_map(|index| {
+                    index.shards.iter().flat_map(move |shard| {
+                        shard.shard_routings.iter().filter_map(move |routing| {
+                            (routing.current_node_id.as_deref()
+                                == Some(transport_identity.node_id.as_str())
+                                && matches!(
+                                    routing.state,
+                                    ShardRoutingState::Initializing | ShardRoutingState::Started
+                                ))
+                            .then_some((index, shard, routing))
+                        })
+                    })
+                })
+                .find(|(_, _, routing)| routing.primary)
+        })?;
+    let (index, shard, local_routing) = local_shard;
+    let source_primary = shard.shard_routings.iter().find(|routing| {
+        routing.primary
+            && routing.current_node_id.as_deref() != Some(transport_identity.node_id.as_str())
+            && matches!(
+                routing.state,
+                ShardRoutingState::Initializing | ShardRoutingState::Started
+            )
+    });
+    let source_primary_node_id = source_primary.and_then(|routing| routing.current_node_id.clone());
+    let source_primary_transport_address = source_primary_node_id.as_ref().and_then(|source_primary_node_id| {
+        cluster_state
+            .discovery_nodes
+            .nodes
+            .iter()
+            .find(|node| node.id == *source_primary_node_id)
+            .map(|node| {
+                let address = node.stream_address.as_ref().unwrap_or(&node.address);
+                format!("{}:{}", address.ip, address.port)
+            })
+    });
+    Some(PublishedReplicaAssignment {
+        index_name: index.index_name.clone(),
+        shard_id: shard.shard_id,
+        source_primary_node_id,
+        source_primary_transport_address,
+        local_allocation_id: local_routing.allocation_id.as_ref().map(|allocation_id| allocation_id.id.clone()),
+    })
+}
+
+fn resolve_local_query_phase_assignment(
+    transport_identity: &DevTransportIdentity,
+) -> Option<PublishedReplicaAssignment> {
+    let cluster_state = transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .and_then(|state| state.cached_cluster_state.clone())?;
+    resolve_local_query_phase_assignment_from_cluster_state(&cluster_state, transport_identity)
+}
+
+fn send_transport_request_and_capture_response_body(
+    target_transport_address: SocketAddr,
+    request_id: i64,
+    frame: &[u8],
+    hold_for: Duration,
+) -> std::io::Result<Option<Vec<u8>>> {
+    let mut stream = TcpStream::connect_timeout(&target_transport_address, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    perform_transport_connection_handshake(
+        &mut stream,
+        request_id,
+        OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+    )?;
+    stream.write_all(frame)?;
+    stream.flush()?;
+    let started = std::time::Instant::now();
+    while started.elapsed() < hold_for && !SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+        match read_transport_seed_frame_detailed(&mut stream)? {
+            TransportSeedFrameRead::Frame((_header, body)) => {
+                if body.len() < 13 {
+                    continue;
+                }
+                let response_request_id = i64::from_be_bytes([
+                    body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+                ]);
+                let status = body[8];
+                if response_request_id == request_id && status & 0x01 != 0 {
+                    return Ok(Some(body));
+                }
+            }
+            TransportSeedFrameRead::Ping(_header) => {
+                let response = build_keepalive_ping_frame();
+                stream.write_all(&response)?;
+                stream.flush()?;
+            }
+            TransportSeedFrameRead::TimedOut => continue,
+            TransportSeedFrameRead::Eof => return Ok(None),
+        }
+    }
+    Ok(None)
+}
+
+fn maybe_build_query_phase_response(
+    request_id: i64,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Option<Vec<u8>> {
+    let cached_assignment = resolve_local_query_phase_assignment(transport_identity)?;
+    let cache_key = query_phase_cache_key(&cached_assignment.index_name, cached_assignment.shard_id);
+    if let Some(cached_response_body) = transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .and_then(|state| state.cached_query_phase_response_bodies.get(&cache_key).cloned())
+    {
+        return Some(build_transport_frame_from_body(
+            &rewrite_transport_body_request_id(&cached_response_body, request_id),
+        ));
+    }
+
+    if cached_assignment.source_primary_transport_address.is_none() {
+        let cluster_state = transport_identity
+            .coordination_state
+            .lock()
+            .ok()
+            .and_then(|state| state.cached_cluster_state.clone())?;
+        let index_uuid = cluster_state
+            .metadata
+            .index_metadata
+            .iter()
+            .find(|index| index.name == cached_assignment.index_name)
+            .and_then(|index| index.index_uuid.clone())?;
+        let total_hits = transport_identity
+            .coordination_state
+            .lock()
+            .ok()
+            .and_then(|state| state.cached_match_all_total_hits.get(&cache_key).copied())?;
+        let body = build_java_query_phase_result_body(
+            transport_identity,
+            &cached_assignment.index_name,
+            &index_uuid,
+            cached_assignment.shard_id,
+            total_hits,
+        )?;
+        return Some(build_transport_frame_from_body(
+            &rewrite_transport_body_request_id(&body, request_id),
+        ));
+    }
+
+    let source_transport_address = cached_assignment
+        .source_primary_transport_address
+        .as_ref()?
+        .parse::<SocketAddr>()
+        .ok()?;
+    let forwarded_request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let forwarded_body = rewrite_transport_body_request_id(body, forwarded_request_id);
+    let forwarded_frame = build_transport_frame_from_body(&forwarded_body);
+    let response_body = send_transport_request_and_capture_response_body(
+        source_transport_address,
+        forwarded_request_id,
+        &forwarded_frame,
+        Duration::from_secs(20),
+    )
+    .ok()??;
+
+    if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+        coordination_state
+            .cached_query_phase_response_bodies
+            .insert(cache_key, response_body.clone());
+    }
+
+    Some(build_transport_frame_from_body(
+        &rewrite_transport_body_request_id(&response_body, request_id),
+    ))
+}
+
 fn build_empty_transport_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
     build_transport_response_frame(request_id, header_version_id, Vec::new())
 }
 
-fn decode_publish_state_term_version(request_body: &[u8]) -> Option<(i64, i64)> {
+fn build_recovery_translog_operations_response(
+    request_id: i64,
+    header_version_id: u32,
+    local_checkpoint: i64,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_transport_zlong_to(&mut payload, local_checkpoint);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_java_recovery_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    let script_path = env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("tools/build_java_recovery_response.sh"));
+    if let Some(script_path) = script_path {
+        if let Ok(output) = Command::new("bash").arg(script_path).output() {
+            if output.status.success() {
+                if let Ok(hex) = std::str::from_utf8(&output.stdout) {
+                    if let Some(body) = decode_hex_bytes(hex.trim()) {
+                        return build_transport_response_frame(request_id, header_version_id, body);
+                    }
+                }
+            }
+        }
+    }
+    build_empty_transport_response(request_id, header_version_id)
+}
+
+#[derive(serde::Deserialize)]
+struct ParsedStartRecoveryRequest {
+    recovery_id: i64,
+    index_name: String,
+    index_uuid: String,
+    shard_id: i32,
+    starting_seq_no: i64,
+    target_transport_address: String,
+}
+
+fn transport_request_payload_offset(request_body: &[u8]) -> Option<usize> {
+    if request_body.len() < 17 {
+        return None;
+    }
+    let variable_header_size = u32::from_be_bytes([
+        request_body[13],
+        request_body[14],
+        request_body[15],
+        request_body[16],
+    ]) as usize;
+    let payload_offset = 17 + variable_header_size;
+    if request_body.len() < payload_offset {
+        return None;
+    }
+    Some(payload_offset)
+}
+
+fn extract_wrapped_transport_request_payload(request_body: &[u8]) -> Option<Vec<u8>> {
+    let payload_offset = transport_request_payload_offset(request_body)?;
+    unwrap_bytes_transport_request_payload(&request_body[payload_offset..])
+        .ok()
+        .map(|bytes| bytes.to_vec())
+}
+
+fn parse_java_start_recovery_request(
+    request_body: &[u8],
+    header_version_id: u32,
+) -> Option<ParsedStartRecoveryRequest> {
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/parse_java_start_recovery_request.sh");
+
+    let mut candidates = Vec::new();
+    if let Some(payload) = extract_wrapped_transport_request_payload(request_body) {
+        if !payload.is_empty() {
+            candidates.push(("wrapped_bytes", payload));
+        }
+    }
+    if let Some(payload_offset) = transport_request_payload_offset(request_body) {
+        let direct_tail = request_body[payload_offset..].to_vec();
+        if !direct_tail.is_empty()
+            && !candidates.iter().any(|(_, existing)| *existing == direct_tail)
+        {
+            candidates.push(("direct_tail", direct_tail));
+        }
+    }
+
+    for (kind, payload) in candidates {
+        let payload_hex = payload
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let output = Command::new("bash")
+            .arg(&script_path)
+            .arg("--payload-hex")
+            .arg(payload_hex)
+            .arg("--version-id")
+            .arg(header_version_id.to_string())
+            .output()
+            .ok()?;
+        if output.status.success() {
+            return serde_json::from_slice::<ParsedStartRecoveryRequest>(&output.stdout).ok();
+        }
+        eprintln!(
+            "steelsearch_source_recovery_parse_script_failed kind={} status={} stderr={}",
+            kind,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    None
+}
+
+fn build_java_prepare_translog_request_payload(
+    request: &ParsedStartRecoveryRequest,
+    request_seq_no: i64,
+) -> Option<Vec<u8>> {
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/build_java_prepare_translog_request.sh");
+    let output = Command::new("bash")
+        .arg(script_path)
+        .arg("--recovery-id")
+        .arg(request.recovery_id.to_string())
+        .arg("--request-seq-no")
+        .arg(request_seq_no.to_string())
+        .arg("--index-name")
+        .arg(&request.index_name)
+        .arg("--index-uuid")
+        .arg(&request.index_uuid)
+        .arg("--shard-id")
+        .arg(request.shard_id.to_string())
+        .arg("--total-translog-ops")
+        .arg("0")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    decode_hex_bytes(std::str::from_utf8(&output.stdout).ok()?.trim())
+}
+
+fn build_java_translog_ops_request_payload(
+    request: &ParsedStartRecoveryRequest,
+    request_seq_no: i64,
+) -> Option<Vec<u8>> {
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/build_java_translog_ops_request.sh");
+    let output = Command::new("bash")
+        .arg(script_path)
+        .arg("--recovery-id")
+        .arg(request.recovery_id.to_string())
+        .arg("--request-seq-no")
+        .arg(request_seq_no.to_string())
+        .arg("--index-name")
+        .arg(&request.index_name)
+        .arg("--index-uuid")
+        .arg(&request.index_uuid)
+        .arg("--shard-id")
+        .arg(request.shard_id.to_string())
+        .arg("--total-translog-ops")
+        .arg("0")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    decode_hex_bytes(std::str::from_utf8(&output.stdout).ok()?.trim())
+}
+
+fn build_java_finalize_recovery_request_payload(
+    request: &ParsedStartRecoveryRequest,
+    request_seq_no: i64,
+) -> Option<Vec<u8>> {
+    let script_path = env::current_dir()
+        .ok()?
+        .join("tools/build_java_finalize_recovery_request.sh");
+    let output = Command::new("bash")
+        .arg(script_path)
+        .arg("--recovery-id")
+        .arg(request.recovery_id.to_string())
+        .arg("--request-seq-no")
+        .arg(request_seq_no.to_string())
+        .arg("--index-name")
+        .arg(&request.index_name)
+        .arg("--index-uuid")
+        .arg(&request.index_uuid)
+        .arg("--shard-id")
+        .arg(request.shard_id.to_string())
+        .arg("--global-checkpoint")
+        .arg("0")
+        .arg("--trim-above-seq-no")
+        .arg((request.starting_seq_no - 1).to_string())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    decode_hex_bytes(std::str::from_utf8(&output.stdout).ok()?.trim())
+}
+
+fn maybe_complete_source_side_recovery(
+    peer_addr: SocketAddr,
+    request_body: &[u8],
+    header_version_id: u32,
+) {
+    let Some(request) = parse_java_start_recovery_request(request_body, header_version_id) else {
+        eprintln!("steelsearch_source_recovery_parse_failed header_version_id={header_version_id}");
+        return;
+    };
+    let target_transport_address = request
+        .target_transport_address
+        .parse::<SocketAddr>()
+        .unwrap_or(peer_addr);
+    let request_id_prepare = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let request_id_ops = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let request_id_finalize = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let request_seq_prepare = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let request_seq_ops = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let request_seq_finalize = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let Some(prepare_payload) =
+        build_java_prepare_translog_request_payload(&request, request_seq_prepare)
+    else {
+        eprintln!("steelsearch_source_recovery_prepare_payload_missing recovery_id={}", request.recovery_id);
+        return;
+    };
+    let Some(translog_payload) =
+        build_java_translog_ops_request_payload(&request, request_seq_ops)
+    else {
+        eprintln!("steelsearch_source_recovery_translog_payload_missing recovery_id={}", request.recovery_id);
+        return;
+    };
+    let Some(finalize_payload) =
+        build_java_finalize_recovery_request_payload(&request, request_seq_finalize)
+    else {
+        eprintln!("steelsearch_source_recovery_finalize_payload_missing recovery_id={}", request.recovery_id);
+        return;
+    };
+    let prepare_frame = build_transport_request_frame(
+        request_id_prepare,
+        header_version_id,
+        "internal:index/shard/recovery/prepare_translog",
+        prepare_payload,
+    );
+    let translog_frame = build_transport_request_frame(
+        request_id_ops,
+        header_version_id,
+        "internal:index/shard/recovery/translog_ops",
+        translog_payload,
+    );
+    let finalize_frame = build_transport_request_frame(
+        request_id_finalize,
+        header_version_id,
+        "internal:index/shard/recovery/finalize",
+        finalize_payload,
+    );
+    thread::spawn(move || {
+        for (request_id, action, frame) in [
+            (request_id_prepare, "prepare_translog", prepare_frame),
+            (request_id_ops, "translog_ops", translog_frame),
+            (request_id_finalize, "finalize", finalize_frame),
+        ] {
+            if let Err(error) = send_transport_request_and_hold_for_response(
+                target_transport_address,
+                request_id,
+                &frame,
+                Duration::from_secs(10),
+            ) {
+                eprintln!(
+                    "steelsearch_source_recovery_send_error action={} request_id={} peer={} error={}",
+                    action, request_id, target_transport_address, error
+                );
+                return;
+            }
+            eprintln!(
+                "steelsearch_source_recovery_response_received action={} request_id={} peer={}",
+                action, request_id, target_transport_address
+            );
+        }
+    });
+}
+
+fn build_replication_replica_response(
+    request_id: i64,
+    header_version_id: u32,
+    local_checkpoint: i64,
+    global_checkpoint: i64,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_transport_zlong_to(&mut payload, local_checkpoint);
+    write_transport_zlong_to(&mut payload, global_checkpoint);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_empty_nodes_stats_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let script_path = env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("tools/build_java_nodes_stats_response.sh"));
+    if let Some(script_path) = script_path {
+        if let Ok(output) = Command::new("bash")
+            .arg(script_path)
+            .arg("--local-name")
+            .arg(&transport_identity.node_name)
+            .arg("--local-id")
+            .arg(&transport_identity.node_id)
+            .arg("--local-ephemeral-id")
+            .arg(&transport_identity.ephemeral_id)
+            .arg("--local-host")
+            .arg(transport_identity.transport_address.ip().to_string())
+            .arg("--local-host-address")
+            .arg(transport_identity.transport_address.ip().to_string())
+            .arg("--local-transport-address")
+            .arg(transport_identity.transport_address.to_string())
+            .arg("--local-roles")
+            .arg(transport_identity.roles.join(","))
+            .output()
+        {
+            if output.status.success() {
+                if let Some(payload) = decode_hex_bytes(
+                    std::str::from_utf8(&output.stdout).ok().unwrap_or("").trim(),
+                ) {
+                    return build_transport_response_frame(request_id, header_version_id, payload);
+                }
+            }
+        }
+    }
+    build_empty_transport_response(request_id, header_version_id)
+}
+
+fn build_nodes_info_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let script_path = env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("tools/build_java_nodes_info_response.sh"));
+    if let Some(script_path) = script_path {
+        if let Ok(output) = Command::new("bash")
+            .arg(script_path)
+            .arg("--local-name")
+            .arg(&transport_identity.node_name)
+            .arg("--local-id")
+            .arg(&transport_identity.node_id)
+            .arg("--local-ephemeral-id")
+            .arg(&transport_identity.ephemeral_id)
+            .arg("--local-host")
+            .arg(transport_identity.transport_address.ip().to_string())
+            .arg("--local-host-address")
+            .arg(transport_identity.transport_address.ip().to_string())
+            .arg("--local-transport-address")
+            .arg(transport_identity.transport_address.to_string())
+            .arg("--local-roles")
+            .arg(transport_identity.roles.join(","))
+            .output()
+        {
+            if output.status.success() {
+                if let Some(payload) = decode_hex_bytes(
+                    std::str::from_utf8(&output.stdout).ok().unwrap_or("").trim(),
+                ) {
+                    return build_transport_response_frame(request_id, header_version_id, payload);
+                }
+            }
+        }
+    }
+    build_empty_transport_response(request_id, header_version_id)
+}
+
+fn build_empty_indices_stats_node_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_string(&mut payload, &transport_identity.node_id);
+    write_transport_vint_to(&mut payload, 0);
+    write_transport_vint_to(&mut payload, 0);
+    write_bool(&mut payload, true);
+    write_transport_vint_to(&mut payload, 0);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_empty_indices_recovery_node_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_string(&mut payload, &transport_identity.node_id);
+    write_transport_vint_to(&mut payload, 0);
+    write_transport_vint_to(&mut payload, 0);
+    write_bool(&mut payload, true);
+    write_transport_vint_to(&mut payload, 0);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_liveness_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_string(&mut payload, &transport_identity.cluster_name);
+    write_bool(&mut payload, true);
+    write_discovery_node_wire(
+        &mut payload,
+        &transport_identity.node_name,
+        &transport_identity.node_id,
+        &transport_identity.ephemeral_id,
+        &transport_identity.transport_address.ip().to_string(),
+        &transport_identity.transport_address.ip().to_string(),
+        transport_identity.transport_address,
+        &transport_identity.attributes,
+        &transport_identity.roles,
+        OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+    );
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_empty_shard_store_batch_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_discovery_node_wire(
+        &mut payload,
+        &transport_identity.node_name,
+        &transport_identity.node_id,
+        &transport_identity.ephemeral_id,
+        &transport_identity.transport_address.ip().to_string(),
+        &transport_identity.transport_address.ip().to_string(),
+        transport_identity.transport_address,
+        &transport_identity.attributes,
+        &transport_identity.roles,
+        OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+    );
+    write_transport_vint_to(&mut payload, 0);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn decode_publish_state_request_info(
+    request_body: &[u8],
+) -> Option<(Option<i64>, Option<i64>, Option<String>)> {
     let script_path = env::current_dir()
         .ok()?
         .join("tools/parse_java_publish_state_request.sh");
@@ -1257,9 +2836,471 @@ fn decode_publish_state_term_version(request_body: &[u8]) -> Option<(i64, i64)> 
     }
     let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
     Some((
-        parsed.get("term")?.as_i64()?,
-        parsed.get("version")?.as_i64()?,
+        parsed.get("term").and_then(|value| value.as_i64()),
+        parsed.get("version").and_then(|value| value.as_i64()),
+        parsed
+            .get("cluster_manager_node_id")
+            .and_then(|value| value.as_str())
+            .map(ToOwned::to_owned),
     ))
+}
+
+fn decode_local_initializing_replicas_from_publish_state(
+    request_body: &[u8],
+    local_node_id: &str,
+    stream_version: Version,
+    previous_cluster_state: Option<&ClusterState>,
+    transport_identity: Option<&DevTransportIdentity>,
+) -> Result<(Vec<PublishedReplicaAssignment>, Option<ClusterState>), String> {
+    if request_body.len() < 17 {
+        return Err("publish_state request body shorter than transport header".to_string());
+    }
+    let variable_header_size = u32::from_be_bytes([
+        request_body[13],
+        request_body[14],
+        request_body[15],
+        request_body[16],
+    ]) as usize;
+    let payload_offset = 17 + variable_header_size;
+    if request_body.len() < payload_offset {
+        return Err(format!(
+            "publish_state request body shorter than payload offset {payload_offset}"
+        ));
+    }
+
+    let wrapped_payload = unwrap_bytes_transport_request_payload(&request_body[payload_offset..])
+        .map_err(|error| format!("failed to unwrap publish_state bytes transport request: {error}"))?;
+    let payload = if wrapped_payload.starts_with(b"DFL\0") {
+        decompress_deflate_body(&wrapped_payload)
+            .map_err(|error| format!("failed to inflate publish_state payload: {error}"))?
+    } else {
+        BytesMut::from(wrapped_payload.as_ref())
+    };
+    let mut input = StreamInput::new(Bytes::from(payload.to_vec()));
+    let full_state = input
+        .read_bool()
+        .map_err(|error| format!("failed to read publish_state full_state flag: {error}"))?;
+    if !full_state {
+        let bootstrapped_cluster_state = if previous_cluster_state.is_none() {
+            transport_identity.and_then(|identity| {
+                bootstrap_cached_cluster_state_from_seed_peers(
+                    header_version_id_from_request_body(request_body)?,
+                    stream_version,
+                    identity,
+                )
+                .ok()
+            })
+        } else {
+            None
+        };
+        let previous = previous_cluster_state
+            .or(bootstrapped_cluster_state.as_ref())
+            .ok_or_else(|| {
+                "received diff publish_state before cached_cluster_state was available".to_string()
+            })?;
+        let applied = match read_publication_cluster_state_diff(Bytes::from(payload), stream_version)
+        {
+            Ok(diff) => match apply_publication_diff_and_ack(previous, diff) {
+                Ok(outcome) => outcome.state,
+                Err(error) => {
+                    let fallback = transport_identity
+                        .and_then(|identity| {
+                            bootstrap_cached_cluster_state_from_seed_peers(
+                                header_version_id_from_request_body(request_body)?,
+                                stream_version,
+                                identity,
+                            )
+                            .ok()
+                        })
+                        .ok_or_else(|| {
+                            format!("failed to apply publish_state diff: {error}")
+                        })?;
+                    eprintln!(
+                        "steelsearch_publish_state_resync_after_apply_error={error}"
+                    );
+                    fallback
+                }
+            },
+            Err(error) => {
+                let fallback = transport_identity
+                    .and_then(|identity| {
+                        bootstrap_cached_cluster_state_from_seed_peers(
+                            header_version_id_from_request_body(request_body)?,
+                            stream_version,
+                            identity,
+                        )
+                        .ok()
+                    })
+                    .ok_or_else(|| format!("failed to decode publish_state diff: {error}"))?;
+                eprintln!(
+                    "steelsearch_publish_state_resync_after_decode_error={error}"
+                );
+                fallback
+            }
+        };
+        let assignments =
+            extract_local_initializing_replicas_from_cluster_state(&applied, local_node_id);
+        return Ok((assignments, Some(applied)));
+    }
+
+    let state_header = read_cluster_state_header(&mut input)
+        .map_err(|error| format!("failed to read full publish_state header: {error}"))?;
+    let metadata_prefix = read_metadata_prefix(&mut input, stream_version)
+        .map_err(|error| format!("failed to read full publish_state metadata: {error}"))?;
+    let routing_table = read_routing_table_prefix(&mut input, stream_version)
+        .map_err(|error| format!("failed to read full publish_state routing_table: {error}"))?;
+    let discovery_nodes = read_discovery_nodes_prefix(&mut input, stream_version)
+        .map_err(|error| format!("failed to read full publish_state discovery_nodes: {error}"))?;
+    let cluster_blocks = read_cluster_blocks_prefix(&mut input)
+        .map_err(|error| format!("failed to read full publish_state cluster_blocks: {error}"))?;
+    let cluster_state_tail = read_cluster_state_tail_prefix(&mut input, stream_version)
+        .map_err(|error| format!("failed to read full publish_state tail: {error}"))?;
+    let cluster_state = ClusterState {
+        response_cluster_name: state_header.cluster_name.clone(),
+        header: state_header,
+        metadata: metadata_prefix.into(),
+        routing_table: routing_table.into(),
+        discovery_nodes: discovery_nodes.into(),
+        cluster_blocks: cluster_blocks.into(),
+        customs: cluster_state_tail.into(),
+        wait_for_timed_out: false,
+    };
+    let assignments =
+        extract_local_initializing_replicas_from_cluster_state(&cluster_state, local_node_id);
+    Ok((assignments, Some(cluster_state)))
+}
+
+fn unwrap_bytes_transport_request_payload(bytes: &[u8]) -> Result<Bytes, String> {
+    let mut input = StreamInput::new(Bytes::copy_from_slice(bytes));
+    let parent_task_node_id = input
+        .read_string()
+        .map_err(|error| format!("failed to read parent task node id: {error}"))?;
+    if !parent_task_node_id.is_empty() {
+        let _ = input
+            .read_i64()
+            .map_err(|error| format!("failed to read parent task id after node id: {error}"))?;
+    }
+    input
+        .read_bytes_reference()
+        .map_err(|error| format!("failed to read wrapped bytes reference: {error}"))
+}
+
+fn header_version_id_from_request_body(request_body: &[u8]) -> Option<u32> {
+    (request_body.len() >= 13).then(|| {
+        u32::from_be_bytes([
+            request_body[9],
+            request_body[10],
+            request_body[11],
+            request_body[12],
+        ])
+    })
+}
+
+fn bootstrap_cached_cluster_state_from_seed_peers(
+    header_version_id: u32,
+    stream_version: Version,
+    transport_identity: &DevTransportIdentity,
+) -> Result<ClusterState, String> {
+    let mut last_error = None;
+    for seed_peer_identity in &transport_identity.seed_peer_identities {
+        let target_transport_address: SocketAddr = seed_peer_identity
+            .discovery_node
+            .transport_address
+            .parse()
+            .map_err(|error| format!("invalid seed peer transport address: {error}"))?;
+        match fetch_cluster_state_from_seed_peer(
+            target_transport_address,
+            header_version_id,
+            stream_version,
+        ) {
+            Ok(cluster_state) => {
+                eprintln!(
+                    "steelsearch_cluster_state_bootstrap peer={} state_uuid={} version={}",
+                    target_transport_address, cluster_state.header.state_uuid, cluster_state.header.version
+                );
+                return Ok(cluster_state);
+            }
+            Err(error) => last_error = Some(format!("{target_transport_address}: {error}")),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "no seed peers available for cluster state bootstrap".to_string()))
+}
+
+fn fetch_cluster_state_from_seed_peer(
+    target_transport_address: SocketAddr,
+    header_version_id: u32,
+    stream_version: Version,
+) -> Result<ClusterState, String> {
+    let request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let request = build_cluster_state_request_frame(
+        request_id,
+        stream_version,
+        &ClusterStateRequest::default(),
+    )
+    .to_vec();
+    let mut stream = TcpStream::connect_timeout(&target_transport_address, Duration::from_secs(2))
+        .map_err(|error| format!("connect failed: {error}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .map_err(|error| format!("set_read_timeout failed: {error}"))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .map_err(|error| format!("set_write_timeout failed: {error}"))?;
+    stream
+        .write_all(&request)
+        .and_then(|()| stream.flush())
+        .map_err(|error| format!("request write failed: {error}"))?;
+
+    loop {
+        match read_transport_seed_frame_detailed(&mut stream)
+            .map_err(|error| format!("response read failed: {error}"))?
+        {
+            TransportSeedFrameRead::Frame((_header, body)) => {
+                if body.len() < 17 {
+                    continue;
+                }
+                let response_request_id = i64::from_be_bytes([
+                    body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+                ]);
+                let status = body[8];
+                if response_request_id != request_id || status & 0x01 == 0 {
+                    continue;
+                }
+                let response_header_version_id =
+                    u32::from_be_bytes([body[9], body[10], body[11], body[12]]);
+                if response_header_version_id != header_version_id {
+                    return Err(format!(
+                        "cluster state response version mismatch: expected {header_version_id}, got {response_header_version_id}"
+                    ));
+                }
+                let variable_header_size =
+                    u32::from_be_bytes([body[13], body[14], body[15], body[16]]) as usize;
+                let payload_offset = 17 + variable_header_size;
+                if body.len() < payload_offset {
+                    return Err(format!(
+                        "cluster state response shorter than payload offset {payload_offset}"
+                    ));
+                }
+                let payload = if body[payload_offset..].starts_with(b"DFL\0") {
+                    decompress_deflate_body(&body[payload_offset..]).map_err(|error| {
+                        format!("failed to inflate cluster state response payload: {error}")
+                    })?
+                } else {
+                    BytesMut::from(&body[payload_offset..])
+                };
+                let response = ClusterStateResponsePrefix::read(Bytes::from(payload.to_vec()))
+                    .map_err(|error| format!("failed to decode cluster state response: {error}"))?;
+                return response
+                    .into_cluster_state()
+                    .map_err(|error| format!("failed to materialize cluster state response: {error}"));
+            }
+            TransportSeedFrameRead::Ping(_header) => {
+                let response = build_keepalive_ping_frame();
+                stream
+                    .write_all(&response)
+                    .and_then(|()| stream.flush())
+                    .map_err(|error| format!("ping response failed: {error}"))?;
+            }
+            TransportSeedFrameRead::TimedOut => {
+                return Err("timed out waiting for cluster state response".to_string());
+            }
+            TransportSeedFrameRead::Eof => {
+                return Err("seed peer closed connection before cluster state response".to_string());
+            }
+        }
+    }
+}
+
+fn extract_local_initializing_replicas_from_cluster_state(
+    cluster_state: &ClusterState,
+    local_node_id: &str,
+) -> Vec<PublishedReplicaAssignment> {
+    let discovery_node_addresses = cluster_state
+        .discovery_nodes
+        .nodes
+        .iter()
+        .map(|node| {
+            let address = node.stream_address.as_ref().unwrap_or(&node.address);
+            (node.id.clone(), format!("{}:{}", address.ip, address.port))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let mut assignments = Vec::new();
+    for index in &cluster_state.routing_table.indices {
+        for shard in &index.shards {
+            let source_primary_node_id = shard
+                .shard_routings
+                .iter()
+                .find(|routing| {
+                    routing.primary
+                        && routing.state == ShardRoutingState::Started
+                        && routing.current_node_id.is_some()
+                })
+                .and_then(|routing| routing.current_node_id.clone());
+            let source_primary_transport_address = source_primary_node_id
+                .as_ref()
+                .and_then(|node_id| discovery_node_addresses.get(node_id))
+                .cloned();
+
+            for routing in &shard.shard_routings {
+                if routing.primary
+                    || routing.state != ShardRoutingState::Initializing
+                    || routing.current_node_id.as_deref() != Some(local_node_id)
+                {
+                    continue;
+                }
+                assignments.push(PublishedReplicaAssignment {
+                    index_name: index.index_name.clone(),
+                    shard_id: shard.shard_id,
+                    source_primary_node_id: source_primary_node_id.clone(),
+                    source_primary_transport_address: source_primary_transport_address.clone(),
+                    local_allocation_id: routing
+                        .allocation_id
+                        .as_ref()
+                        .map(|allocation_id| allocation_id.id.clone()),
+                });
+            }
+        }
+    }
+    assignments
+}
+
+fn refresh_local_initializing_replicas_from_seed_peers(
+    transport_identity: &DevTransportIdentity,
+    header_version_id: u32,
+    stream_version: Version,
+) -> Result<
+    (
+        ClusterState,
+        Vec<PublishedReplicaAssignment>,
+        Vec<PublishedShardRoutingSummary>,
+    ),
+    String,
+> {
+    let mut last_error = None;
+    let mut latest_snapshot = None;
+    for attempt in 0..6 {
+        match bootstrap_cached_cluster_state_from_seed_peers(
+            header_version_id,
+            stream_version,
+            transport_identity,
+        ) {
+            Ok(cluster_state) => {
+                let assignments = extract_local_initializing_replicas_from_cluster_state(
+                    &cluster_state,
+                    &transport_identity.node_id,
+                );
+                let routing_summaries =
+                    summarize_relevant_shard_routings_from_cluster_state(&cluster_state);
+                let saw_local_replica = routing_summaries.iter().any(|routing| {
+                    !routing.primary
+                        && routing.state == "Initializing"
+                        && routing.current_node_id.as_deref()
+                            == Some(transport_identity.node_id.as_str())
+                });
+                latest_snapshot = Some((cluster_state, assignments, routing_summaries));
+                if saw_local_replica || attempt == 5 {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+            Err(error) => {
+                last_error = Some(error);
+                if attempt < 5 {
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+            }
+        }
+    }
+
+    latest_snapshot.ok_or_else(|| {
+        last_error.unwrap_or_else(|| {
+            "no seed peers available for cluster state refresh".to_string()
+        })
+    })
+}
+
+fn maybe_refresh_local_initializing_replicas_from_seed_peers(
+    transport_identity: &DevTransportIdentity,
+    header_version_id: u32,
+    stream_version: Version,
+) {
+    let should_refresh = transport_identity
+        .coordination_state
+        .lock()
+        .map(|state| {
+            state.local_initializing_replicas.is_empty()
+        })
+        .unwrap_or(false);
+    if !should_refresh {
+        return;
+    }
+
+    let (refreshed, refreshed_assignments, refreshed_routing_summaries) =
+        match refresh_local_initializing_replicas_from_seed_peers(
+            transport_identity,
+            header_version_id,
+            stream_version,
+        ) {
+            Ok(snapshot) => snapshot,
+        Err(error) => {
+            eprintln!("steelsearch_cluster_state_refresh_error={error}");
+            return;
+        }
+        };
+    maybe_refresh_cached_match_all_total_hits(transport_identity, &refreshed);
+    if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+        coordination_state.cached_cluster_state = Some(refreshed);
+        coordination_state.local_initializing_replicas = refreshed_assignments.clone();
+        coordination_state.last_cluster_state_refresh_at_ms = Some(now_epoch_ms());
+    }
+    let refreshed_cluster_state = transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .and_then(|state| state.cached_cluster_state.clone());
+    maybe_start_peer_recoveries(
+        transport_identity,
+        header_version_id,
+        &refreshed_assignments,
+        refreshed_cluster_state.as_ref(),
+    );
+    eprintln!(
+        "steelsearch_cluster_state_refresh_local_initializing_replicas={:?}",
+        refreshed_assignments
+    );
+    eprintln!(
+        "steelsearch_cluster_state_refresh_relevant_routings={:?}",
+        refreshed_routing_summaries
+    );
+}
+
+fn summarize_relevant_shard_routings_from_cluster_state(
+    cluster_state: &ClusterState,
+) -> Vec<PublishedShardRoutingSummary> {
+    let mut summaries = Vec::new();
+    for index in &cluster_state.routing_table.indices {
+        for shard in &index.shards {
+            for routing in &shard.shard_routings {
+                if routing.state != ShardRoutingState::Initializing && !routing.primary {
+                    continue;
+                }
+                summaries.push(PublishedShardRoutingSummary {
+                    index_name: index.index_name.clone(),
+                    shard_id: shard.shard_id,
+                    primary: routing.primary,
+                    state: format!("{:?}", routing.state),
+                    current_node_id: routing.current_node_id.clone(),
+                    relocating_node_id: routing.relocating_node_id.clone(),
+                    allocation_id: routing
+                        .allocation_id
+                        .as_ref()
+                        .map(|allocation_id| allocation_id.id.clone()),
+                });
+            }
+        }
+    }
+    summaries
 }
 
 fn hold_transport_channel_open(
@@ -1287,7 +3328,8 @@ fn hold_transport_channel_open(
                     *post_follow_up_frame_received_at_ms = Some(unix_time_ms());
                     *post_follow_up_frame = Some(summarize_transport_seed_frame(&post_header, &post_body));
                 }
-                if handle_subsequent_transport_request(stream, &post_body, transport_identity)? {
+                let peer_addr = stream.peer_addr().ok();
+                if handle_subsequent_transport_request(stream, &post_body, transport_identity, peer_addr)? {
                     if first_post_response_event.is_none() {
                         *first_post_response_event = Some("handled_follow_up_request".to_string());
                     }
@@ -1347,6 +3389,15 @@ fn hold_transport_channel_open(
     Ok(())
 }
 
+fn transport_connection_hold_duration() -> Duration {
+    Duration::from_secs(
+        env::var("STEELSEARCH_TRANSPORT_CONNECTION_HOLD_SECS")
+            .ok()
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .unwrap_or(300),
+    )
+}
+
 fn unix_time_ms() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1358,6 +3409,7 @@ fn handle_subsequent_transport_request(
     stream: &mut TcpStream,
     body: &[u8],
     transport_identity: &DevTransportIdentity,
+    peer_addr: Option<SocketAddr>,
 ) -> std::io::Result<bool> {
     if body.len() < 13 {
         return Ok(false);
@@ -1372,8 +3424,13 @@ fn handle_subsequent_transport_request(
     }
     let header_version_id = u32::from_be_bytes([body[9], body[10], body[11], body[12]]);
     let action_hint = transport_frame_action_hint(body);
+    let normalized_action_hint = action_hint.as_deref().map(|action| action.strip_suffix("[n]").unwrap_or(action));
+    eprintln!(
+        "steelsearch_followup_request request_id={} action_hint={:?} header_version_id={}",
+        request_id, action_hint, header_version_id
+    );
 
-    let response = match action_hint.as_deref() {
+    let response = match normalized_action_hint {
         Some("internal:transport/handshake") => Some(build_transport_handshake_identity_response(
             request_id,
             header_version_id,
@@ -1389,12 +3446,91 @@ fn handle_subsequent_transport_request(
             0,
             0,
         )),
+        Some("cluster:monitor/nodes/liveness") => Some(build_liveness_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("cluster:monitor/nodes/stats") => Some(build_empty_nodes_stats_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("cluster:monitor/nodes/info") => Some(build_nodes_info_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("indices:monitor/stats") => Some(build_empty_indices_stats_node_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("indices:monitor/recovery") => Some(build_empty_indices_recovery_node_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("indices:data/read/search[phase/query]") => {
+            maybe_build_query_phase_response(request_id, body, transport_identity)
+        }
+        Some("indices:admin/seq_no/retention_lease_background_sync")
+        | Some("indices:admin/seq_no/retention_lease_background_sync[r]") => {
+            Some(build_replication_replica_response(
+                request_id,
+                header_version_id,
+                0,
+                0,
+            ))
+        }
+        Some("internal:cluster/nodes/indices/shard/store/batch") => Some(
+            build_empty_shard_store_batch_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ),
+        ),
+        Some("internal:index/shard/recovery/start_recovery") => {
+            if let Some(peer_addr) = peer_addr {
+                maybe_complete_source_side_recovery(peer_addr, body, header_version_id);
+            }
+            Some(build_java_recovery_response(request_id, header_version_id))
+        }
+        Some("internal:index/shard/recovery/filesInfo")
+        | Some("internal:index/shard/recovery/file_chunk")
+        | Some("internal:index/shard/recovery/clean_files")
+        | Some("internal:index/shard/recovery/prepare_translog")
+        | Some("internal:index/shard/recovery/finalize")
+        | Some("internal:index/shard/recovery/handoff_primary_context") => {
+            Some(build_empty_transport_response(request_id, header_version_id))
+        }
+        Some("internal:index/shard/recovery/translog_ops") => Some(
+            build_recovery_translog_operations_response(request_id, header_version_id, 0),
+        ),
         Some("internal:coordination/fault_detection/follower_check")
         | Some("internal:coordination/fault_detection/leader_check")
         | Some("internal:cluster/coordination/join")
         | Some("internal:cluster/coordination/join/validate")
         | Some("internal:cluster/coordination/join/validate_compressed")
-        | Some("internal:cluster/coordination/commit_state") => {
+        | Some("internal:cluster/coordination/commit_state")
+        | Some("internal:admin/tasks/ban") => {
+            if matches!(
+                action_hint.as_deref(),
+                Some("internal:coordination/fault_detection/follower_check")
+                    | Some("internal:coordination/fault_detection/leader_check")
+            ) {
+                if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                    coordination_state.non_self_publish_seen = true;
+                }
+                let refresh_identity = transport_identity.clone();
+                thread::spawn(move || {
+                    maybe_refresh_local_initializing_replicas_from_seed_peers(
+                        &refresh_identity,
+                        header_version_id,
+                        Version::from_id(header_version_id as i32),
+                    );
+                });
+            }
             Some(build_empty_transport_response(request_id, header_version_id))
         }
         Some("internal:cluster/coordination/start_join") => {
@@ -1402,37 +3538,111 @@ fn handle_subsequent_transport_request(
             Some(build_empty_transport_response(request_id, header_version_id))
         }
         Some("internal:cluster/coordination/publish_state") => {
-            if let Some((term, version)) = decode_publish_state_term_version(body) {
-                let (join_last_accepted_term, join_last_accepted_version) = transport_identity
-                    .coordination_state
-                    .lock()
-                    .map(|state| (state.last_accepted_term, state.last_accepted_version))
-                    .unwrap_or((0, 0));
-                if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
-                    coordination_state.last_accepted_term = term;
-                    coordination_state.last_accepted_version = version;
+            let cached_cluster_state = transport_identity
+                .coordination_state
+                .lock()
+                .ok()
+                .and_then(|state| state.cached_cluster_state.clone());
+            let (local_initializing_replicas, applied_cluster_state) =
+                match decode_local_initializing_replicas_from_publish_state(
+                    body,
+                    &transport_identity.node_id,
+                    Version::from_id(header_version_id as i32),
+                    cached_cluster_state.as_ref(),
+                    Some(transport_identity),
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        eprintln!("steelsearch_publish_state_decode_error={error}");
+                        Default::default()
+                    }
+                };
+            let routing_summaries = applied_cluster_state
+                .as_ref()
+                .map(summarize_relevant_shard_routings_from_cluster_state)
+                .unwrap_or_default();
+            let (
+                join_last_accepted_term,
+                join_last_accepted_version,
+                cached_cluster_manager_node_id,
+            ) = transport_identity
+                .coordination_state
+                .lock()
+                .map(|state| {
+                    (
+                        state.last_accepted_term,
+                        state.last_accepted_version,
+                        state.cluster_manager_node_id.clone(),
+                    )
+                })
+                .unwrap_or((0, 0, None));
+            let term = applied_cluster_state
+                .as_ref()
+                .map(|state| state.metadata.coordination.term)
+                .unwrap_or(join_last_accepted_term);
+            let version = applied_cluster_state
+                .as_ref()
+                .map(|state| state.header.version)
+                .unwrap_or(join_last_accepted_version);
+            let cluster_manager_node_id = applied_cluster_state
+                .as_ref()
+                .and_then(|state| state.discovery_nodes.cluster_manager_node_id.clone())
+                .or(cached_cluster_manager_node_id);
+            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                coordination_state.last_accepted_term = term;
+                coordination_state.last_accepted_version = version;
+                if let Some(node_id) = cluster_manager_node_id.clone() {
+                    coordination_state.cluster_manager_node_id = Some(node_id);
                 }
-                Some(build_publish_with_join_response(
-                    request_id,
-                    header_version_id,
-                    term,
-                    version,
-                    transport_identity,
-                    join_last_accepted_term,
-                    join_last_accepted_version,
-                ))
-            } else {
-                None
+                coordination_state.local_initializing_replicas =
+                    local_initializing_replicas.clone();
+                if let Some(cluster_state) = applied_cluster_state.clone() {
+                    coordination_state.cached_cluster_state = Some(cluster_state);
+                }
             }
+            maybe_start_peer_recoveries(
+                transport_identity,
+                header_version_id,
+                &local_initializing_replicas,
+                applied_cluster_state.as_ref(),
+            );
+            eprintln!(
+                "steelsearch_publish_state_local_initializing_replicas={:?}",
+                local_initializing_replicas
+            );
+            eprintln!(
+                "steelsearch_publish_state_relevant_routings={:?}",
+                routing_summaries
+            );
+            Some(build_publish_with_join_response(
+                request_id,
+                header_version_id,
+                term,
+                version,
+                transport_identity,
+                join_last_accepted_term,
+                join_last_accepted_version,
+                cluster_manager_node_id.as_deref(),
+            ))
         }
         _ => None,
     };
 
     let Some(response) = response else {
+        eprintln!(
+            "steelsearch_followup_request_unhandled request_id={} action_hint={:?}",
+            request_id, action_hint
+        );
         return Ok(false);
     };
     stream.write_all(&response)?;
     stream.flush()?;
+    eprintln!(
+        "steelsearch_followup_response_sent request_id={} action_hint={:?} bytes={}",
+        request_id,
+        action_hint,
+        response.len()
+    );
     Ok(true)
 }
 
@@ -1474,9 +3684,9 @@ fn maybe_send_join_request_to_seed_peer(
     request_body: &[u8],
     transport_identity: &DevTransportIdentity,
 ) {
-    let Some(seed_peer_identity) = transport_identity.seed_peer_identity.as_ref() else {
+    if transport_identity.seed_peer_identities.is_empty() {
         return;
-    };
+    }
     if request_body.len() < 8 {
         return;
     }
@@ -1485,17 +3695,192 @@ fn maybe_send_join_request_to_seed_peer(
         return;
     };
     let term = i64::from_be_bytes(term_bytes);
-    let request = build_join_request_frame(
-        TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
-        header_version_id,
-        term,
-        transport_identity,
-        seed_peer_identity,
+    for seed_peer_identity in &transport_identity.seed_peer_identities {
+        let request = build_join_request_frame(
+            TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            header_version_id,
+            term,
+            transport_identity,
+            seed_peer_identity,
+        );
+        let Ok(target_transport_address) = seed_peer_identity.discovery_node.transport_address.parse() else {
+            continue;
+        };
+        let _ = send_join_request_over_managed_channel(
+            target_transport_address,
+            request,
+            transport_identity,
+            "start_join_fanout",
+        );
+    }
+}
+
+fn send_join_request_over_managed_channel(
+    target_transport_address: SocketAddr,
+    request: Vec<u8>,
+    transport_identity: &DevTransportIdentity,
+    context: &str,
+) -> std::io::Result<()> {
+    let mut stream = TcpStream::connect_timeout(&target_transport_address, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    stream.write_all(&request)?;
+    stream.flush()?;
+    eprintln!(
+        "steelsearch_join_channel_open context={} peer={} bytes={}",
+        context,
+        target_transport_address,
+        request.len()
     );
-    let Ok(target_transport_address) = seed_peer_identity.discovery_node.transport_address.parse() else {
-        return;
-    };
-    let _ = send_transport_frame(target_transport_address, &request);
+    let transport_identity = transport_identity.clone();
+    let context = context.to_string();
+    thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let mut sent_keepalive = false;
+        while started.elapsed() < transport_connection_hold_duration()
+            && !SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
+        {
+            match read_transport_seed_frame_detailed(&mut stream) {
+                Ok(TransportSeedFrameRead::Frame((_header, body))) => {
+                    if body.len() < 13 {
+                        continue;
+                    }
+                    let request_id = i64::from_be_bytes([
+                        body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+                    ]);
+                    let status = body[8];
+                    let action_hint = transport_frame_action_hint(&body);
+                    if status & 0x01 != 0 {
+                        eprintln!(
+                            "steelsearch_join_channel_response context={} peer={} request_id={} action_hint={:?}",
+                            context,
+                            target_transport_address,
+                            request_id,
+                            action_hint
+                        );
+                        continue;
+                    }
+                    eprintln!(
+                        "steelsearch_join_channel_followup context={} peer={} request_id={} action_hint={:?}",
+                        context,
+                        target_transport_address,
+                        request_id,
+                        action_hint
+                    );
+                    if let Err(error) =
+                        handle_subsequent_transport_request(
+                            &mut stream,
+                            &body,
+                            &transport_identity,
+                            Some(target_transport_address),
+                        )
+                    {
+                        eprintln!(
+                            "steelsearch_join_channel_followup_error context={} peer={} error={}",
+                            context, target_transport_address, error
+                        );
+                        break;
+                    }
+                }
+                Ok(TransportSeedFrameRead::Ping(_header)) => {
+                    let response = build_keepalive_ping_frame();
+                    if let Err(error) = stream.write_all(&response).and_then(|()| stream.flush()) {
+                        eprintln!(
+                            "steelsearch_join_channel_ping_error context={} peer={} error={}",
+                            context, target_transport_address, error
+                        );
+                        break;
+                    }
+                }
+                Ok(TransportSeedFrameRead::TimedOut) => {
+                    if !sent_keepalive {
+                        let response = build_keepalive_ping_frame();
+                        if let Err(error) = stream.write_all(&response).and_then(|()| stream.flush()) {
+                            eprintln!(
+                                "steelsearch_join_channel_keepalive_error context={} peer={} error={}",
+                                context, target_transport_address, error
+                            );
+                            break;
+                        }
+                        sent_keepalive = true;
+                    }
+                    continue;
+                }
+                Ok(TransportSeedFrameRead::Eof) => {
+                    eprintln!(
+                        "steelsearch_join_channel_eof context={} peer={}",
+                        context, target_transport_address
+                    );
+                    break;
+                }
+                Err(error) => {
+                    eprintln!(
+                        "steelsearch_join_channel_read_error context={} peer={} error={}",
+                        context, target_transport_address, error
+                    );
+                    break;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+fn spawn_proactive_seed_join_loop(transport_identity: DevTransportIdentity) {
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(2));
+        for attempt in 0..30 {
+            if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+                break;
+            }
+            let joined_java_cluster = transport_identity
+                .coordination_state
+                .lock()
+                .map(|state| state.non_self_publish_seen)
+                .unwrap_or(false);
+            if joined_java_cluster {
+                eprintln!(
+                    "steelsearch_proactive_join_stopped reason=non_self_publish_seen attempt={}",
+                    attempt
+                );
+                break;
+            }
+            let (last_accepted_term, _) = transport_identity
+                .coordination_state
+                .lock()
+                .map(|state| (state.last_accepted_term, state.last_accepted_version))
+                .unwrap_or((0, 0));
+            let join_term = std::cmp::max(last_accepted_term, 1);
+            for seed_peer_identity in &transport_identity.seed_peer_identities {
+                let request = build_join_request_frame(
+                    TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+                    OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                    join_term,
+                    &transport_identity,
+                    seed_peer_identity,
+                );
+                let Ok(target_transport_address) = seed_peer_identity
+                    .discovery_node
+                    .transport_address
+                    .parse()
+                else {
+                    continue;
+                };
+                let _ = send_join_request_over_managed_channel(
+                    target_transport_address,
+                    request,
+                    &transport_identity,
+                    "proactive_retry",
+                );
+            }
+            eprintln!(
+                "steelsearch_proactive_join_attempt={} seed_count={} join_term={}",
+                attempt + 1,
+                transport_identity.seed_peer_identities.len(),
+                join_term
+            );
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
 }
 
 fn build_join_request_frame(
@@ -1600,6 +3985,82 @@ fn send_transport_frame(target_transport_address: SocketAddr, frame: &[u8]) -> s
     Ok(())
 }
 
+fn send_transport_request_and_hold_for_response(
+    target_transport_address: SocketAddr,
+    request_id: i64,
+    frame: &[u8],
+    hold_for: Duration,
+) -> std::io::Result<()> {
+    let mut stream = TcpStream::connect_timeout(&target_transport_address, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    perform_transport_connection_handshake(
+        &mut stream,
+        request_id,
+        OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+    )?;
+    stream.write_all(frame)?;
+    stream.flush()?;
+    let started = std::time::Instant::now();
+    while started.elapsed() < hold_for && !SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+        if wait_for_transport_response_request_id(&mut stream, request_id)? {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+fn perform_transport_connection_handshake(
+    stream: &mut TcpStream,
+    base_request_id: i64,
+    header_version_id: u32,
+) -> std::io::Result<()> {
+    let header_version = Version::from_id(header_version_id as i32);
+    let tcp_handshake_request_id = base_request_id - 2;
+    let tcp_handshake =
+        build_tcp_handshake_request(tcp_handshake_request_id, header_version, header_version);
+    stream.write_all(&tcp_handshake[..])?;
+    stream.flush()?;
+    let _ = wait_for_transport_response_request_id(stream, tcp_handshake_request_id)?;
+
+    let transport_handshake_request_id = base_request_id - 1;
+    let transport_handshake =
+        build_transport_handshake_request(transport_handshake_request_id, header_version);
+    stream.write_all(&transport_handshake[..])?;
+    stream.flush()?;
+    let _ = wait_for_transport_response_request_id(stream, transport_handshake_request_id)?;
+    Ok(())
+}
+
+fn wait_for_transport_response_request_id(
+    stream: &mut TcpStream,
+    request_id: i64,
+) -> std::io::Result<bool> {
+    loop {
+        match read_transport_seed_frame_detailed(stream)? {
+            TransportSeedFrameRead::Frame((_header, body)) => {
+                if body.len() < 13 {
+                    continue;
+                }
+                let response_request_id = i64::from_be_bytes([
+                    body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+                ]);
+                let status = body[8];
+                if response_request_id == request_id && status & 0x01 != 0 {
+                    return Ok(true);
+                }
+            }
+            TransportSeedFrameRead::Ping(_header) => {
+                let response = build_keepalive_ping_frame();
+                stream.write_all(&response)?;
+                stream.flush()?;
+            }
+            TransportSeedFrameRead::TimedOut => return Ok(false),
+            TransportSeedFrameRead::Eof => return Ok(false),
+        }
+    }
+}
+
 fn build_transport_response_frame(
     request_id: i64,
     header_version_id: u32,
@@ -1632,6 +4093,15 @@ fn write_transport_vint_to(out: &mut Vec<u8>, mut value: u32) {
         value >>= 7;
     }
     out.push(value as u8);
+}
+
+fn write_transport_zlong_to(out: &mut Vec<u8>, value: i64) {
+    let mut encoded = ((value << 1) ^ (value >> 63)) as u64;
+    while (encoded & !0x7f) != 0 {
+        out.push(((encoded & 0x7f) as u8) | 0x80);
+        encoded >>= 7;
+    }
+    out.push(encoded as u8);
 }
 
 fn write_bool(out: &mut Vec<u8>, value: bool) {
@@ -1826,6 +4296,7 @@ struct DaemonConfig {
     development_security_mode: DevelopmentSecurityMode,
     java_write_forwarding_validated: bool,
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
+    seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
     #[cfg_attr(not(test), allow(dead_code))]
     extension_registry: ExtensionBoundaryRegistry,
     extension_registry_overrides: ExtensionRegistryOverrideConfig,
@@ -1835,7 +4306,7 @@ struct DaemonConfig {
 impl DaemonConfig {
     fn mixed_java_native_transport_join_participation_enabled(&self) -> bool {
         self.java_write_forwarding_validated
-            && self.seed_peer_identity.is_some()
+            && !self.seed_peer_identities.is_empty()
             && self
                 .seed_hosts
                 .iter()
@@ -1853,6 +4324,9 @@ trait DevelopmentClusterViewConfig {
     fn local_transport_address(&self) -> String;
     fn seed_peer_identity(&self) -> Option<&InteropSeedPeerIdentityManifest> {
         None
+    }
+    fn seed_peer_identities(&self) -> &[InteropSeedPeerIdentityManifest] {
+        &[]
     }
 }
 
@@ -1887,6 +4361,10 @@ impl DevelopmentClusterViewConfig for DaemonConfig {
 
     fn seed_peer_identity(&self) -> Option<&InteropSeedPeerIdentityManifest> {
         self.seed_peer_identity.as_ref()
+    }
+
+    fn seed_peer_identities(&self) -> &[InteropSeedPeerIdentityManifest] {
+        &self.seed_peer_identities
     }
 }
 
@@ -1964,6 +4442,7 @@ struct InteropSeedPeerIdentityNode {
     ephemeral_id: String,
     host_name: String,
     host_address: String,
+    http_address: Option<String>,
     transport_address: String,
     version_id: u32,
     roles: Vec<String>,
@@ -2010,6 +4489,18 @@ fn load_seed_peer_identity_manifest(
     Ok(manifest)
 }
 
+fn load_seed_peer_identity_manifests(
+    value: &str,
+) -> Result<Vec<InteropSeedPeerIdentityManifest>, Box<dyn std::error::Error>> {
+    let mut manifests = Vec::new();
+    for raw_path in parse_csv(value) {
+        manifests.push(load_seed_peer_identity_manifest(std::path::Path::new(
+            &raw_path,
+        ))?);
+    }
+    Ok(manifests)
+}
+
 #[derive(Clone, Debug, Default)]
 struct ExtensionRegistryOverrideConfig {
     knn_plugin_enabled: Option<bool>,
@@ -2053,6 +4544,7 @@ where
         .get("STEELSEARCH_DATA_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("data/steelsearch"));
+    let mut roles_explicit = vars.contains_key("STEELSEARCH_NODE_ROLES");
     let mut roles = vars
         .get("STEELSEARCH_NODE_ROLES")
         .map(|value| parse_csv(value))
@@ -2126,6 +4618,7 @@ where
             "--node.roles" => {
                 let value = args.next().ok_or("--node.roles requires a value")?;
                 roles = parse_csv(&value);
+                roles_explicit = true;
             }
             "--mode" => {
                 let value = args.next().ok_or("--mode requires a value")?;
@@ -2181,10 +4674,15 @@ where
     if roles.is_empty() {
         return Err("--node.roles must contain at least one role".into());
     }
-    let seed_peer_identity = seed_peer_identity_manifest_path
+    let seed_peer_identities = seed_peer_identity_manifest_path
         .as_ref()
-        .map(|path| load_seed_peer_identity_manifest(path))
-        .transpose()?;
+        .map(|path| load_seed_peer_identity_manifests(&path.to_string_lossy()))
+        .transpose()?
+        .unwrap_or_default();
+    if !roles_explicit && !seed_peer_identities.is_empty() {
+        roles = interop_data_node_roles();
+    }
+    let seed_peer_identity = seed_peer_identities.first().cloned();
     let config = DaemonConfig {
         host,
         port,
@@ -2199,6 +4697,7 @@ where
         development_security_mode,
         java_write_forwarding_validated,
         seed_peer_identity,
+        seed_peer_identities,
         extension_registry,
         extension_registry_overrides,
         extension_manifest_path,
@@ -2299,6 +4798,14 @@ fn default_roles() -> Vec<String> {
     ]
 }
 
+fn interop_data_node_roles() -> Vec<String> {
+    vec![
+        "data".to_string(),
+        "ingest".to_string(),
+        "remote_cluster_client".to_string(),
+    ]
+}
+
 fn validate_startup_preflight(config: &DaemonConfig) -> Result<(), Box<dyn std::error::Error>> {
     let blockers = startup_preflight_blockers(config);
     if !blockers.is_empty() {
@@ -2354,7 +4861,7 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             .seed_hosts
             .iter()
             .any(|seed_host| seed_host != &config.local_transport_address())
-        && config.seed_peer_identity.is_none()
+        && config.seed_peer_identities.is_empty()
     {
         blockers.push(
             "[interop] mixed Java same-cluster participation requires --interop.seed_peer_identity_manifest with actual Java seed peer identity before native transport join is implemented"
@@ -2362,7 +4869,8 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         );
     }
 
-    if let Some(seed_peer_identity) = config.seed_peer_identity.as_ref() {
+    let mut seen_seed_identity_addresses = std::collections::BTreeSet::new();
+    for seed_peer_identity in &config.seed_peer_identities {
         if seed_peer_identity.cluster_name != config.cluster_name {
             blockers.push(format!(
                 "[interop] seed peer identity cluster [{}] does not match configured cluster [{}]",
@@ -2383,6 +4891,12 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         {
             blockers.push(format!(
                 "[interop] seed peer identity transport address [{}] is not present in --discovery.seed_hosts",
+                manifest_transport_address
+            ));
+        }
+        if !seen_seed_identity_addresses.insert(manifest_transport_address.clone()) {
+            blockers.push(format!(
+                "[interop] duplicate seed peer identity transport address [{}]",
                 manifest_transport_address
             ));
         }
@@ -2471,18 +4985,20 @@ fn development_cluster_view(
         if seed_host == &local_transport_address {
             continue;
         }
-        if let Some(seed_peer_identity) = config.seed_peer_identity() {
-            if seed_peer_identity.discovery_node.transport_address == *seed_host {
+        if let Some(seed_peer_identity) = config
+            .seed_peer_identities()
+            .iter()
+            .find(|manifest| manifest.discovery_node.transport_address == *seed_host)
+        {
                 nodes.push(DevelopmentClusterNode {
                     node_id: seed_peer_identity.discovery_node.id.clone(),
                     node_name: seed_peer_identity.discovery_node.name.clone(),
-                    http_address: None,
+                    http_address: seed_peer_identity.discovery_node.http_address.clone(),
                     transport_address: seed_peer_identity.discovery_node.transport_address.clone(),
                     roles: seed_peer_identity.discovery_node.roles.clone(),
                     local: false,
                 });
                 continue;
-            }
         }
         nodes.push(DevelopmentClusterNode {
             node_id: format!("seed-{}-{}", index + 1, sanitize_node_id(seed_host)),
@@ -2823,6 +5339,13 @@ fn apply_development_coordination_with_persisted_state(
         local_membership_epoch: 1,
         seed_peers,
     };
+    if !config.cluster_manager_eligible {
+        view.coordination = Some(DevelopmentCoordinationStatus {
+            task_queue_state: task_queue_state_for_view,
+            ..DevelopmentCoordinationStatus::default()
+        });
+        return view;
+    }
     let mut discovery_runtime = os_node::DevelopmentDiscoveryRuntime::with_prober(
         config.clone(),
         std::sync::Arc::new(LiveTransportDiscoveryPeerProber::default()),
@@ -3868,6 +6391,173 @@ mod tests {
         );
 
         let _ = fs::remove_file(manifest_path);
+    }
+
+    #[test]
+    fn daemon_config_accepts_multiple_seed_peer_identity_manifests() {
+        let manifest_path_one = std::env::temp_dir().join(format!(
+            "steelsearch-seed-peer-identity-one-{}.json",
+            std::process::id()
+        ));
+        let manifest_path_two = std::env::temp_dir().join(format!(
+            "steelsearch-seed-peer-identity-two-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &manifest_path_one,
+            br#"{
+  "peer_identity_present": true,
+  "cluster_name": "steelsearch-dev",
+  "discovery_node": {
+    "name": "java-primary-1",
+    "id": "java-primary-id-1",
+    "ephemeral_id": "java-primary-ephemeral-1",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "transport_address": "127.0.0.1:19301",
+    "version_id": 137287827,
+    "roles": ["cluster_manager", "data", "ingest"]
+  }
+}"#,
+        )
+        .unwrap();
+        fs::write(
+            &manifest_path_two,
+            br#"{
+  "peer_identity_present": true,
+  "cluster_name": "steelsearch-dev",
+  "discovery_node": {
+    "name": "java-primary-2",
+    "id": "java-primary-id-2",
+    "ephemeral_id": "java-primary-ephemeral-2",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "transport_address": "127.0.0.1:19302",
+    "version_id": 137287827,
+    "roles": ["cluster_manager", "data", "ingest"]
+  }
+}"#,
+        )
+        .unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--interop.java_write_forwarding_validated",
+                "true",
+                "--interop.seed_peer_identity_manifest",
+                &format!(
+                    "{},{}",
+                    manifest_path_one.to_str().unwrap(),
+                    manifest_path_two.to_str().unwrap()
+                ),
+                "--discovery.seed_hosts",
+                "127.0.0.1:19301,127.0.0.1:19302,127.0.0.1:19303",
+                "--transport.port",
+                "19303",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        assert_eq!(config.seed_peer_identities.len(), 2);
+        assert_eq!(
+            config.seed_peer_identities[0].discovery_node.id,
+            "java-primary-id-1"
+        );
+        assert_eq!(
+            config.seed_peer_identities[1].discovery_node.id,
+            "java-primary-id-2"
+        );
+
+        let _ = fs::remove_file(manifest_path_one);
+        let _ = fs::remove_file(manifest_path_two);
+    }
+
+    #[test]
+    fn development_cluster_view_uses_all_seed_peer_identity_manifests() {
+        let manifest_path_one = std::env::temp_dir().join(format!(
+            "steelsearch-seed-peer-view-one-{}.json",
+            std::process::id()
+        ));
+        let manifest_path_two = std::env::temp_dir().join(format!(
+            "steelsearch-seed-peer-view-two-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &manifest_path_one,
+            br#"{
+  "peer_identity_present": true,
+  "cluster_name": "steelsearch-dev",
+  "discovery_node": {
+    "name": "java-primary-1",
+    "id": "java-primary-id-1",
+    "ephemeral_id": "java-primary-ephemeral-1",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "transport_address": "127.0.0.1:19301",
+    "version_id": 137287827,
+    "roles": ["cluster_manager", "data", "ingest"]
+  }
+}"#,
+        )
+        .unwrap();
+        fs::write(
+            &manifest_path_two,
+            br#"{
+  "peer_identity_present": true,
+  "cluster_name": "steelsearch-dev",
+  "discovery_node": {
+    "name": "java-primary-2",
+    "id": "java-primary-id-2",
+    "ephemeral_id": "java-primary-ephemeral-2",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "transport_address": "127.0.0.1:19302",
+    "version_id": 137287827,
+    "roles": ["cluster_manager", "data", "ingest"]
+  }
+}"#,
+        )
+        .unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--node.id",
+                "rust-replica-1",
+                "--node.name",
+                "rust-replica-1",
+                "--http.port",
+                "19201",
+                "--transport.port",
+                "19303",
+                "--discovery.seed_hosts",
+                "127.0.0.1:19301,127.0.0.1:19302,127.0.0.1:19303",
+                "--interop.java_write_forwarding_validated",
+                "true",
+                "--interop.seed_peer_identity_manifest",
+                &format!(
+                    "{},{}",
+                    manifest_path_one.to_str().unwrap(),
+                    manifest_path_two.to_str().unwrap()
+                ),
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        let view = development_cluster_view(&config, "cluster-uuid");
+        assert_eq!(view.nodes.len(), 3);
+        assert_eq!(view.nodes[1].node_id, "java-primary-id-1");
+        assert_eq!(view.nodes[2].node_id, "java-primary-id-2");
+
+        let _ = fs::remove_file(manifest_path_one);
+        let _ = fs::remove_file(manifest_path_two);
     }
 
     #[test]

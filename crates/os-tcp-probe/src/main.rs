@@ -1336,9 +1336,11 @@ fn read_expected_message(
     request_id: i64,
     expect_handshake_status: bool,
 ) -> Result<TransportMessage> {
-    let response = read_one_frame(stream)?;
-    let DecodedFrame::Message(message) = response else {
-        bail!("received ping while waiting for response");
+    let message = loop {
+        match read_one_frame(stream)? {
+            DecodedFrame::Ping => continue,
+            DecodedFrame::Message(message) => break message,
+        }
     };
 
     if message.request_id != request_id {
@@ -1386,6 +1388,9 @@ fn read_one_frame(stream: &mut TcpStream) -> Result<DecodedFrame> {
     }
 
     let message_size = i32::from_be_bytes(prefix[2..6].try_into().unwrap());
+    if message_size == -1 {
+        return Ok(DecodedFrame::Ping);
+    }
     if message_size < 0 {
         bail!("negative transport message size: {message_size}");
     }

@@ -12,7 +12,7 @@ use bytes::BytesMut;
 use os_core::Version;
 use os_wire::{TcpHeader, TransportStatus};
 
-pub const PING_FRAME: &[u8; 6] = b"ES\0\0\0\0";
+pub const PING_FRAME: &[u8; 6] = b"ES\xff\xff\xff\xff";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TransportMessage {
@@ -43,8 +43,8 @@ mod tests {
     use os_wire::TransportStatus;
 
     #[test]
-    fn ping_frame_matches_opensearch_marker_and_zero_length() {
-        assert_eq!(PING_FRAME, b"ES\0\0\0\0");
+    fn ping_frame_matches_opensearch_marker_and_negative_one_length() {
+        assert_eq!(PING_FRAME, b"ES\xff\xff\xff\xff");
     }
 
     #[test]
