@@ -7,6 +7,7 @@ REPORT_PATH="${SEARCH_COMPAT_REPORT:-${COMPARE_DIR}/search-compat-report.json}"
 LOAD_COMPARISON_REPORT="${STEELSEARCH_LOAD_COMPARISON_REPORT:-${COMPARE_DIR}/http-load-comparison.json}"
 NATIVE_ROUTE_COVERAGE_REPORT="${NATIVE_ROUTE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-coverage-report.json}"
 NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT="${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-fixture-coverage-report.json}"
+UNIFIED_E2E_REPORT_DIR="${UNIFIED_E2E_REPORT_DIR:-${COMPARE_DIR}/unified-e2e}"
 
 usage() {
   cat <<'USAGE'
@@ -37,6 +38,10 @@ Environment:
   RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON=1
                                     Include the alias/template persistence
                                     live parity report.
+  RUN_UNIFIED_E2E_REPORT=1          Generate a unified E2E coverage/parity
+                                    report from comparison outputs.
+  UNIFIED_E2E_REPORT_DIR            Unified report directory. Default:
+                                    COMPARE_DIR/unified-e2e.
 USAGE
 }
 
@@ -101,6 +106,15 @@ if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
   python3 "${ROOT}/tools/generate-native-route-coverage-report.py" "${native_route_args[@]}"
 fi
 
+if [[ "${RUN_UNIFIED_E2E_REPORT:-0}" == "1" ]]; then
+  python3 "${ROOT}/tools/run-unified-opensearch-e2e.py" \
+    --output-dir "${UNIFIED_E2E_REPORT_DIR}" \
+    --allow-missing
+  python3 "${ROOT}/tools/check-unified-opensearch-e2e-report.py" \
+    "${UNIFIED_E2E_REPORT_DIR}/unified-opensearch-e2e-report.json" \
+    --allow-missing
+fi
+
 echo "OpenSearch comparison completed"
 echo "search compatibility report: ${REPORT_PATH}"
 if [[ "${RUN_HTTP_LOAD_COMPARISON:-0}" == "1" ]]; then
@@ -112,4 +126,7 @@ fi
 if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
   echo "native route fixture coverage report: ${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT}"
   echo "native route coverage report: ${NATIVE_ROUTE_COVERAGE_REPORT}"
+fi
+if [[ "${RUN_UNIFIED_E2E_REPORT:-0}" == "1" ]]; then
+  echo "unified E2E report: ${UNIFIED_E2E_REPORT_DIR}/unified-opensearch-e2e-report.json"
 fi
