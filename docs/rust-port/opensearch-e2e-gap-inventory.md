@@ -2,20 +2,20 @@
 
 This inventory covers the remaining live OpenSearch comparison failures after
 the fixture cleanup, composable-template create-index support, search semantics
-gap pass, and index-visibility/count/stats pass.
+gap pass, index-visibility/count/stats pass, and cluster-state shape pass.
 
 Latest report:
-`target/opensearch-e2e-search-compat-visibility-fix-final-2/report/unified-opensearch-e2e-report.json`
+`target/opensearch-e2e-search-compat-cluster-state-fix/report/unified-opensearch-e2e-report.json`
 
 ## Summary
 
-- Total remaining failed rows: 6.
-- Unique remaining case names: 3.
-- Repeated in both `search-compat` and `search-strict`: 3 cases.
+- Total remaining failed rows: 4.
+- Unique remaining case names: 2.
+- Repeated in both `search-compat` and `search-strict`: 2 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 148 passed, 3 failed, 16 skipped.
-- `search-strict`: 142 passed, 3 failed, 6 skipped.
+- `search-compat`: 149 passed, 2 failed, 16 skipped.
+- `search-strict`: 143 passed, 2 failed, 6 skipped.
 
 ## Remaining Gaps
 
@@ -23,7 +23,6 @@ Latest report:
 | --- | --- | --- | --- |
 | `significant_terms_aggregation` | basic, strict | Real aggregation gap | Significant terms output does not match OpenSearch. |
 | `significant_terms_background_filter_aggregation` | basic, strict | Real aggregation gap | Significant terms with background filter does not match OpenSearch. |
-| `cluster_state_readback` | basic, strict | Cluster-state shape gap | SteelSearch reports alias and recovery-source presence where OpenSearch omits them for this request. |
 
 ## Fixed In This Pass
 
@@ -39,8 +38,8 @@ Latest report:
 | `settings_global_named_readback` | Global settings readback now excludes hidden indices by default. |
 | `cat_count_json` / `cat_count_text` | Cat count now excludes hidden-index documents by default. |
 | `index_stats_shape` | Global stats now excludes hidden indices, SteelSearch-only case-created indices are cleaned up, and delete wildcard handling keeps visible indices when `expand_wildcards=hidden`. |
+| `cluster_state_readback` | Cluster-state metadata aliases now match OpenSearch's alias-name array shape, and started routing shards no longer emit `recovery_source`. |
 
 ## Next Fix Order
 
-1. Cluster-state response shape normalization for aliases and recovery source.
-2. Significant terms and significant terms with background filter parity.
+1. Significant terms and significant terms with background filter parity.

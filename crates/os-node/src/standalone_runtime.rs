@@ -9379,6 +9379,19 @@ impl SteelNode {
                 .get(&index)
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
+            let aliases = index_metadata
+                .get("aliases")
+                .and_then(Value::as_object)
+                .map(|aliases| {
+                    Value::Array(
+                        aliases
+                            .keys()
+                            .cloned()
+                            .map(Value::String)
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .unwrap_or_else(|| Value::Array(Vec::new()));
             metadata_indices.insert(
                 index.clone(),
                 serde_json::json!({
@@ -9388,7 +9401,7 @@ impl SteelNode {
                         .unwrap_or("open"),
                     "settings": index_metadata.get("settings").cloned().unwrap_or_else(|| serde_json::json!({})),
                     "mappings": index_metadata.get("mappings").cloned().unwrap_or_else(|| serde_json::json!({})),
-                    "aliases": index_metadata.get("aliases").cloned().unwrap_or_else(|| serde_json::json!({})),
+                    "aliases": aliases,
                 }),
             );
             routing_indices.insert(
@@ -9407,9 +9420,6 @@ impl SteelNode {
                                 "index_uuid": format!("{index}-uuid"),
                                 "allocation_id": {
                                     "id": format!("{index}-p-0")
-                                },
-                                "recovery_source": {
-                                    "type": "EXISTING_STORE"
                                 },
                                 "expected_shard_size_in_bytes": 0
                             }
@@ -29967,14 +29977,17 @@ mod tests {
         assert_eq!(state.status, 200);
         assert_eq!(state.body["cluster_name"], "steelsearch-dev");
         assert_eq!(
-            state.body["metadata"]["indices"]["logs-cluster-state-000001"]["settings"]["index.number_of_replicas"],
+            state.body["metadata"]["indices"]["logs-cluster-state-000001"]["settings"]["index"]["number_of_replicas"],
             "1"
         );
         assert_eq!(
             state.body["metadata"]["indices"]["logs-cluster-state-000001"]["mappings"]["properties"]["tenant"]["type"],
             "keyword"
         );
-        assert!(state.body["metadata"]["indices"]["logs-cluster-state-000001"]["aliases"]["logs-cluster-state-alias"].is_object());
+        assert_eq!(
+            state.body["metadata"]["indices"]["logs-cluster-state-000001"]["aliases"],
+            serde_json::json!(["logs-cluster-state-alias"])
+        );
         assert_eq!(
             state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["0"][0]["state"],
             "STARTED"
@@ -29983,10 +29996,7 @@ mod tests {
             state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["0"][0]["allocation_id"]["id"],
             "logs-cluster-state-000001-p-0"
         );
-        assert_eq!(
-            state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["0"][0]["recovery_source"]["type"],
-            "EXISTING_STORE"
-        );
+        assert!(state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["0"][0]["recovery_source"].is_null());
         assert_eq!(
             state.body["routing_nodes"]["nodes"]["node-a"][0]["index"],
             "logs-cluster-state-000001"

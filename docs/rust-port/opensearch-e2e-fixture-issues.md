@@ -13,8 +13,10 @@ semantic gaps in the search compatibility suites.
   11 failed cases remain.
 - After the index visibility/count/stats pass:
   6 failed cases remain.
+- After the cluster-state shape pass:
+  4 failed cases remain.
 - Latest live run:
-  `target/opensearch-e2e-search-compat-visibility-fix-final-2/report/unified-opensearch-e2e-report.json`
+  `target/opensearch-e2e-search-compat-cluster-state-fix/report/unified-opensearch-e2e-report.json`
 - Latest command profile: `search-compat` plus `search-strict` against live
   local SteelSearch and OpenSearch endpoints.
 
@@ -50,14 +52,17 @@ The focused regression tests include
 This pass also fixed real SteelSearch visibility gaps: global settings, cat
 count, and global stats now omit hidden indices by default, and wildcard delete
 with `expand_wildcards=hidden` no longer removes visible indices.
+The cluster-state pass fixed another real SteelSearch shape gap: metadata
+aliases now use OpenSearch's alias-name array shape, and started routing shards
+no longer include `recovery_source`.
 
 ## Result
 
-The failed count moved from 53 to 6:
+The failed count moved from 53 to 4:
 
-- `search-compat`: 148 passed, 3 failed, 16 skipped.
-- `search-strict`: 142 passed, 3 failed, 6 skipped.
-- Remaining failed rows: 6, from 3 unique cases repeated across both suites.
+- `search-compat`: 149 passed, 2 failed, 16 skipped.
+- `search-strict`: 143 passed, 2 failed, 6 skipped.
+- Remaining failed rows: 4, from 2 unique cases repeated across both suites.
 
-The remaining 6 failures are not explained by the fixed setup issues. They are
+The remaining 4 failures are not explained by the fixed setup issues. They are
 tracked in `opensearch-e2e-gap-inventory.md`.
