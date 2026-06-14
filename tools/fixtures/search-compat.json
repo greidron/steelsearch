@@ -1288,8 +1288,11 @@
     {
       "name": "analyze_root_basic_tokens",
       "area": "index",
-      "method": "GET",
-      "path": "/_analyze?text=Quick%20Fox",
+      "method": "POST",
+      "path": "/_analyze",
+      "body": {
+        "text": "Quick Fox"
+      },
       "extract": "analyze_tokens",
       "family": "lexical",
       "description": "[lexical] root analyze token stream"
@@ -1297,8 +1300,11 @@
     {
       "name": "analyze_targeted_basic_tokens",
       "area": "index",
-      "method": "GET",
-      "path": "/logs-compat/_analyze?text=Hello%20World",
+      "method": "POST",
+      "path": "/logs-compat/_analyze",
+      "body": {
+        "text": "Hello World"
+      },
       "extract": "analyze_tokens",
       "family": "lexical",
       "description": "[lexical] targeted analyze token stream"

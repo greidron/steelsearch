@@ -360,6 +360,7 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
         fixture,
         {"credential_set": fixture.get("setup_credential_set")},
     )
+    steps.extend(cleanup_target(target_name, base_url, fixture, timeout, setup_headers))
     for index in fixture["indices"]:
         delete = http_json(
             base_url,
@@ -436,28 +437,6 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 put_alias,
             )
         )
-    for request in fixture.get("requests", []):
-        request_method = request["method"]
-        request_path = resolve_fixture_placeholders(request["path"])
-        request_body = resolve_fixture_placeholders(request.get("body", {}))
-        request_raw = bool(request.get("raw", False))
-        result = http_json(
-            base_url,
-            request_method,
-            request_path,
-            request_body,
-            timeout,
-            raw=request_raw,
-            request_headers=setup_headers,
-        )
-        steps.append(
-            step_result(
-                target_name,
-                f"request:{request_method}:{request_path}",
-                status_for(result),
-                result,
-            )
-        )
     for repository in fixture.get("repositories", []):
         body = resolve_fixture_placeholders(repository.get("body", {}))
         put_repository = http_json(
@@ -493,23 +472,6 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 put_template,
             )
         )
-    for template in fixture.get("index_templates", []):
-        put_template = http_json(
-            base_url,
-            "PUT",
-            f"/_index_template/{template['name']}",
-            resolve_fixture_placeholders(template.get("body", {})),
-            timeout,
-            request_headers=setup_headers,
-        )
-        steps.append(
-            step_result(
-                target_name,
-                f"index_template:{template['name']}",
-                status_for(put_template),
-                put_template,
-            )
-        )
     for template in fixture.get("component_templates", []):
         put_template = http_json(
             base_url,
@@ -523,6 +485,23 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
             step_result(
                 target_name,
                 f"component_template:{template['name']}",
+                status_for(put_template),
+                put_template,
+            )
+        )
+    for template in fixture.get("index_templates", []):
+        put_template = http_json(
+            base_url,
+            "PUT",
+            f"/_index_template/{template['name']}",
+            resolve_fixture_placeholders(template.get("body", {})),
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"index_template:{template['name']}",
                 status_for(put_template),
                 put_template,
             )
@@ -561,7 +540,137 @@ def setup_target(target_name: str, base_url: str, fixture: dict[str, Any], timeo
                 put_data_stream,
             )
         )
+    for request in fixture.get("requests", []):
+        request_method = request["method"]
+        request_path = resolve_fixture_placeholders(request["path"])
+        request_body = resolve_fixture_placeholders(request.get("body", {}))
+        request_raw = bool(request.get("raw", False))
+        result = http_json(
+            base_url,
+            request_method,
+            request_path,
+            request_body,
+            timeout,
+            raw=request_raw,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"request:{request_method}:{request_path}",
+                status_for(result),
+                result,
+            )
+        )
+    request_refresh = http_json(
+        base_url,
+        "POST",
+        "/_refresh",
+        {},
+        timeout,
+        request_headers=setup_headers,
+    )
+    steps.append(
+        step_result(
+            target_name,
+            "refresh:after-requests",
+            status_for(request_refresh),
+            request_refresh,
+        )
+    )
     return steps
+
+
+def cleanup_target(
+    target_name: str,
+    base_url: str,
+    fixture: dict[str, Any],
+    timeout: float,
+    setup_headers: dict[str, str],
+) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = []
+    for data_stream in fixture.get("data_streams", []):
+        delete_data_stream = http_json(
+            base_url,
+            "DELETE",
+            f"/_data_stream/{data_stream['name']}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"cleanup:data_stream:{data_stream['name']}",
+                "passed" if delete_data_stream["status"] in (200, 202, 404) else "failed",
+                delete_data_stream,
+            )
+        )
+    for template in fixture.get("index_templates", []):
+        delete_template = http_json(
+            base_url,
+            "DELETE",
+            f"/_index_template/{template['name']}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"cleanup:index_template:{template['name']}",
+                "passed" if delete_template["status"] in (200, 202, 404) else "failed",
+                delete_template,
+            )
+        )
+    for template in fixture.get("component_templates", []):
+        delete_template = http_json(
+            base_url,
+            "DELETE",
+            f"/_component_template/{template['name']}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"cleanup:component_template:{template['name']}",
+                "passed" if delete_template["status"] in (200, 202, 404) else "failed",
+                delete_template,
+            )
+        )
+    for index in request_created_indices(fixture):
+        delete_index = http_json(
+            base_url,
+            "DELETE",
+            f"/{index}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"cleanup:request_index:{index}",
+                "passed" if delete_index["status"] in (200, 202, 404) else "failed",
+                delete_index,
+            )
+        )
+    return steps
+
+
+def request_created_indices(fixture: dict[str, Any]) -> list[str]:
+    indices: list[str] = []
+    for request in fixture.get("requests", []):
+        if request.get("method") != "PUT":
+            continue
+        path = str(request.get("path") or "")
+        stripped = path.strip("/")
+        if not stripped or "/" in stripped or "*" in stripped or "," in stripped or stripped.startswith("_"):
+            continue
+        indices.append(stripped)
+    return sorted(set(indices))
 
 
 def resolve_fixture_placeholders(value: Any) -> Any:
@@ -627,7 +736,10 @@ def run_case(
         })
 
     expected = target_results["opensearch"]
-    if case["area"] == "knn" and missing_knn_query_response(expected["raw_response"]):
+    if case["area"] == "knn" and (
+        missing_knn_query_response(expected["raw_response"])
+        or missing_plugin_handler_response(expected["raw_response"], "_knn")
+    ):
         return case_report_with_metadata(case, {
             "name": case["name"],
             "area": case["area"],
@@ -638,6 +750,19 @@ def run_case(
             "reason": (
                 "OpenSearch target does not expose the k-NN query/plugin surface in this "
                 "environment, so vector comparison is downgraded to degraded-source skip."
+            ),
+        })
+    if case["area"] == "ml" and missing_plugin_handler_response(expected["raw_response"], "_ml"):
+        return case_report_with_metadata(case, {
+            "name": case["name"],
+            "area": case["area"],
+            "status": "skipped",
+            "mode": "comparison",
+            "targets": target_results,
+            "skip_scope": "degraded-source",
+            "reason": (
+                "OpenSearch target does not expose the ML Commons plugin surface in this "
+                "environment, so ML lifecycle comparison is downgraded to degraded-source skip."
             ),
         })
     if missing_runtime_mappings_support(expected["raw_response"]):
@@ -1081,7 +1206,9 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "data_stream_count": body.get("data_stream_count") if isinstance(body, dict) else None,
             "backing_indices": body.get("backing_indices") if isinstance(body, dict) else None,
-            "total_store_size_bytes": body.get("total_store_size_bytes") if isinstance(body, dict) else None,
+            "total_store_size_bytes_present": (
+                body.get("total_store_size_bytes") is not None if isinstance(body, dict) else False
+            ),
         }
     if kind == "acknowledged":
         return {
@@ -1323,7 +1450,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "total": total_value,
-            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "ids": sorted(hit.get("_id") for hit in hits if isinstance(hit, dict)),
             "fields": {
                 hit.get("_id"): hit.get("fields")
                 for hit in hits
@@ -1340,7 +1467,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "total": total_value,
-            "ids": [hit.get("_id") for hit in hits],
+            "ids": sorted(hit.get("_id") for hit in hits if isinstance(hit, dict)),
             "highlights": {
                 hit.get("_id"): hit.get("highlight")
                 for hit in hits
@@ -2492,6 +2619,16 @@ def missing_knn_query_response(response: dict[str, Any]) -> bool:
     caused_by = error.get("caused_by") or {}
     caused_reason = str(caused_by.get("reason") or "") if isinstance(caused_by, dict) else ""
     return "unknown query [knn]" in reason or "unknown field [knn]" in caused_reason
+
+
+def missing_plugin_handler_response(response: dict[str, Any], plugin_path_fragment: str) -> bool:
+    if response.get("status") != 400:
+        return False
+    body = response.get("body") or {}
+    error = body.get("error")
+    if not isinstance(error, str):
+        return False
+    return "no handler found for uri" in error and plugin_path_fragment in error
 
 
 def step_result(

@@ -3507,13 +3507,19 @@ impl SteelNode {
         if let Some(settings) = bounded_subset.get("settings").cloned() {
             bounded_subset["settings"] = stringify_leaf_scalars(&settings);
         }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut index_entry = Self::build_composable_template_index_entry(&manifest, index);
+        merge_object_with_null_reset(&mut index_entry, &bounded_subset);
         let _ = self.native_engine.create_index(CreateIndexRequest {
             index: index.to_string(),
-            settings: bounded_subset
+            settings: index_entry
                 .get("settings")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({})),
-            mappings: bounded_subset
+            mappings: index_entry
                 .get("mappings")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({})),
@@ -3527,16 +3533,12 @@ impl SteelNode {
             .expect("documents state lock poisoned")
             .retain(|key, _| !key.starts_with(&format!("{index}:")));
         *self.next_seq_no.lock().expect("seq_no lock poisoned") = 0;
-        let mut manifest = self
-            .metadata_manifest_state
-            .lock()
-            .expect("metadata manifest state lock poisoned");
         let indices = manifest
             .as_object_mut()
             .expect("metadata manifest object expected")
             .entry("indices".to_string())
             .or_insert_with(|| serde_json::json!({}));
-        indices[index] = Self::normalize_index_manifest_entry(index, bounded_subset);
+        indices[index] = Self::normalize_index_manifest_entry(index, index_entry);
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
@@ -4441,6 +4443,55 @@ impl SteelNode {
         merge_object_with_null_reset(&mut normalized, &entry);
         normalized["settings"] = expand_dotted_cluster_settings_section(&normalized["settings"]);
         normalized
+    }
+
+    fn index_template_matches(index: &str, template_value: &Value) -> bool {
+        let Some(index_template) = template_value.get("index_template") else {
+            return false;
+        };
+        if index_template.get("data_stream").is_some() {
+            return false;
+        }
+        index_template["index_patterns"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .any(|pattern| wildcard_match(pattern, index))
+    }
+
+    fn matching_index_template_entry(manifest: &Value, index: &str) -> Option<Value> {
+        manifest["templates"]["index_templates"]
+            .as_object()
+            .into_iter()
+            .flat_map(|templates| templates.values())
+            .filter(|template| Self::index_template_matches(index, template))
+            .max_by_key(|template| {
+                template["index_template"]
+                    .get("priority")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0)
+            })
+            .cloned()
+    }
+
+    fn build_composable_template_index_entry(manifest: &Value, index: &str) -> Value {
+        let mut entry = serde_json::json!({});
+        let Some(template_entry) = Self::matching_index_template_entry(manifest, index) else {
+            return entry;
+        };
+        let index_template = &template_entry["index_template"];
+        if let Some(component_names) = index_template["composed_of"].as_array() {
+            for component_name in component_names.iter().filter_map(Value::as_str) {
+                let component_template =
+                    &manifest["templates"]["component_templates"][component_name]["component_template"];
+                if component_template.is_object() {
+                    merge_object_with_null_reset(&mut entry, &component_template["template"]);
+                }
+            }
+        }
+        merge_object_with_null_reset(&mut entry, &index_template["template"]);
+        entry
     }
 
     fn ensure_minimal_index_exists(&self, index: &str) {
@@ -19620,6 +19671,85 @@ mod tests {
             "/_index_template/probe-index-template",
         ));
         assert_eq!(missing_head.status, 404);
+    }
+
+    #[test]
+    fn create_index_applies_matching_composable_and_component_templates() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let component_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_component_template/logs-component-template")
+                .with_json_body(serde_json::json!({
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "number_of_replicas": 0
+                            }
+                        },
+                        "mappings": {
+                            "properties": {
+                                "tenant": {
+                                    "type": "keyword"
+                                }
+                            }
+                        },
+                        "aliases": {
+                            "logs-component-read": {}
+                        }
+                    }
+                })),
+        );
+        assert_eq!(component_put.status, 200);
+
+        let index_template_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/logs-composable-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-composable-*"],
+                    "composed_of": ["logs-component-template"],
+                    "priority": 10,
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "number_of_shards": 1
+                            }
+                        },
+                        "aliases": {
+                            "logs-template-read": {}
+                        }
+                    }
+                })),
+        );
+        assert_eq!(index_template_put.status, 200);
+
+        let create_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-composable-000001",
+        ));
+        assert_eq!(create_index.status, 200);
+
+        let get_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-composable-000001",
+        ));
+        assert_eq!(get_index.status, 200);
+        let index_body = &get_index.body["logs-composable-000001"];
+        assert_eq!(
+            index_body["mappings"]["properties"]["tenant"]["type"],
+            Value::String("keyword".to_string())
+        );
+        assert!(index_body["aliases"]["logs-component-read"].is_object());
+        assert!(index_body["aliases"]["logs-template-read"].is_object());
+        assert_eq!(
+            index_body["settings"]["index"]["number_of_replicas"],
+            Value::from(0)
+        );
+        assert_eq!(
+            index_body["settings"]["index"]["number_of_shards"],
+            Value::from(1)
+        );
     }
 
     #[test]
