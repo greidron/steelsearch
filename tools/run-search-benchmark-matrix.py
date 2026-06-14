@@ -63,12 +63,23 @@ SCENARIOS = (
 
 
 class ClusterHandle:
-    def __init__(self, scenario: Scenario, process: subprocess.Popen[str], base_url: str, manifest_path: Path | None, log_dir: Path) -> None:
+    def __init__(
+        self,
+        scenario: Scenario,
+        process: subprocess.Popen[str],
+        base_url: str,
+        manifest_path: Path | None,
+        log_dir: Path,
+        container_names: list[str] | None = None,
+        operation_log_path: Path | None = None,
+    ) -> None:
         self.scenario = scenario
         self.process = process
         self.base_url = base_url
         self.manifest_path = manifest_path
         self.log_dir = log_dir
+        self.container_names = container_names or []
+        self.operation_log_path = operation_log_path
 
     def stop(self) -> None:
         if self.process.poll() is not None:
@@ -190,9 +201,12 @@ def main() -> int:
             handle = start_cluster(scenario, scenario_dir)
             handles.append(handle)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
-            result = run_baseline(scenario, handle.base_url, baseline_output, args)
+            resource_pids = resolve_resource_pids(handle)
+            result = run_baseline(scenario, handle, baseline_output, args, resource_pids)
             result["base_url"] = handle.base_url
             result["manifest_path"] = str(handle.manifest_path) if handle.manifest_path else None
+            result["resource_process_pids"] = resource_pids
+            result["resource_container_names"] = handle.container_names
             baseline_output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
             results["scenarios"][scenario.key] = result
             handle.stop()
@@ -266,7 +280,14 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_RUSTUP_TOOLCHAIN"] = "nightly"
         process = subprocess.Popen([str(STEELSEARCH_SINGLE)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         base_url = wait_for_url_in_log(log_dir / "stderr.log", "Steelsearch access URL: ")
-        return ClusterHandle(scenario, process, base_url, None, log_dir)
+        return ClusterHandle(
+            scenario,
+            process,
+            base_url,
+            None,
+            log_dir,
+            operation_log_path=Path(env["STEELSEARCH_WORK_DIR"]) / "data",
+        )
 
     if scenario.engine == "steelsearch":
         env["STEELSEARCH_CLUSTER_WORK_DIR"] = str(scenario_dir / "cluster")
@@ -278,7 +299,14 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         process = subprocess.Popen([str(STEELSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         manifest_path = Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
         base_url = wait_for_manifest_url(manifest_path)
-        return ClusterHandle(scenario, process, base_url, manifest_path, log_dir)
+        return ClusterHandle(
+            scenario,
+            process,
+            base_url,
+            manifest_path,
+            log_dir,
+            operation_log_path=Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]),
+        )
 
     if scenario.engine == "opensearch" and scenario.node_count == 1:
         env["OPENSEARCH_HTTP_HOST"] = "127.0.0.1"
@@ -286,7 +314,14 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["OPENSEARCH_VECTOR_CONTAINER_NAME"] = f"steelsearch-bench-opensearch-single-{int(time.time())}"
         process = subprocess.Popen([str(OPENSEARCH_SINGLE)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         base_url = f"http://127.0.0.1:{env['OPENSEARCH_HTTP_PORT']}"
-        return ClusterHandle(scenario, process, base_url, None, log_dir)
+        return ClusterHandle(
+            scenario,
+            process,
+            base_url,
+            None,
+            log_dir,
+            container_names=[env["OPENSEARCH_VECTOR_CONTAINER_NAME"]],
+        )
 
     env["OPENSEARCH_CLUSTER_WORK_DIR"] = str(scenario_dir / "cluster")
     env["OPENSEARCH_NODE_COUNT"] = str(scenario.node_count)
@@ -298,7 +333,11 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
     process = subprocess.Popen([str(OPENSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
     manifest_path = Path(env["OPENSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
     base_url = wait_for_manifest_url(manifest_path)
-    return ClusterHandle(scenario, process, base_url, manifest_path, log_dir)
+    container_names = [
+        f"{env['OPENSEARCH_CLUSTER_CONTAINER_PREFIX']}-{index}"
+        for index in range(1, scenario.node_count + 1)
+    ]
+    return ClusterHandle(scenario, process, base_url, manifest_path, log_dir, container_names=container_names)
 
 
 def wait_for_url_in_log(log_path: Path, prefix: str, timeout: float = 120.0) -> str:
@@ -345,13 +384,97 @@ def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) 
     raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
 
 
-def run_baseline(scenario: Scenario, base_url: str, output_path: Path, args: argparse.Namespace) -> dict[str, Any]:
+def resolve_resource_pids(handle: ClusterHandle) -> list[int]:
+    if handle.container_names:
+        return docker_container_pids(handle.container_names)
+    return steelsearch_resource_pids(handle.process.pid)
+
+
+def docker_container_pids(container_names: list[str]) -> list[int]:
+    pids: list[int] = []
+    for container_name in container_names:
+        completed = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Pid}}", container_name],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            continue
+        try:
+            pid = int(completed.stdout.strip())
+        except ValueError:
+            continue
+        if pid > 0:
+            pids.append(pid)
+    return dedupe_ints(pids)
+
+
+def steelsearch_resource_pids(root_pid: int) -> list[int]:
+    candidates = [root_pid, *descendant_pids(root_pid)]
+    steelsearch_pids = [
+        pid for pid in candidates
+        if process_cmdline(pid) and Path(process_cmdline(pid)[0]).name == "steelsearch"
+    ]
+    if steelsearch_pids:
+        return dedupe_ints(steelsearch_pids)
+    return dedupe_ints([pid for pid in candidates if Path(f"/proc/{pid}/status").exists()])
+
+
+def descendant_pids(root_pid: int) -> list[int]:
+    children_by_parent: dict[int, list[int]] = {}
+    for stat_path in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            text = stat_path.read_text(encoding="utf-8")
+            right = text.rsplit(") ", 1)[1]
+            fields = right.split()
+            parent_pid = int(fields[1])
+            pid = int(stat_path.parent.name)
+        except (IndexError, OSError, ValueError):
+            continue
+        children_by_parent.setdefault(parent_pid, []).append(pid)
+
+    descendants: list[int] = []
+    stack = list(children_by_parent.get(root_pid, []))
+    while stack:
+        pid = stack.pop()
+        descendants.append(pid)
+        stack.extend(children_by_parent.get(pid, []))
+    return descendants
+
+
+def process_cmdline(pid: int) -> list[str]:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part]
+
+
+def dedupe_ints(values: list[int]) -> list[int]:
+    deduped: list[int] = []
+    seen = set()
+    for value in values:
+        if value not in seen:
+            deduped.append(value)
+            seen.add(value)
+    return deduped
+
+
+def run_baseline(
+    scenario: Scenario,
+    handle: ClusterHandle,
+    output_path: Path,
+    args: argparse.Namespace,
+    resource_pids: list[int],
+) -> dict[str, Any]:
     replicas = 0 if scenario.node_count == 1 else min(args.number_of_replicas, scenario.node_count - 1)
     command = [
         sys.executable,
         str(BASELINE),
         "--base-url",
-        base_url,
+        handle.base_url,
         "--index",
         f"search-benchmark-{scenario.key}",
         "--clients",
@@ -377,6 +500,10 @@ def run_baseline(scenario: Scenario, base_url: str, output_path: Path, args: arg
         "--output",
         str(output_path),
     ]
+    if resource_pids:
+        command.extend(["--process-pids", ",".join(str(pid) for pid in resource_pids)])
+    if handle.operation_log_path is not None:
+        command.extend(["--operation-log-path", str(handle.operation_log_path)])
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=os.environ.copy(), check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"{scenario.label} baseline failed: {completed.stderr.strip() or completed.stdout.strip()}")
@@ -404,6 +531,10 @@ def build_comparisons(scenarios: dict[str, Any]) -> dict[str, Any]:
             "error_rate": compare_number(
                 steel["summary"]["error_rate"],
                 open_["summary"]["error_rate"],
+            ),
+            "resource_usage": compare_resource_usage(
+                steel.get("resource_usage", {}),
+                open_.get("resource_usage", {}),
             ),
             "operations": {
                 operation: {
@@ -446,6 +577,21 @@ def compare_number(steel_value: Any, open_value: Any) -> dict[str, Any]:
         "delta": delta,
         "ratio": ratio,
     }
+
+
+def compare_resource_usage(steel_usage: dict[str, Any], open_usage: dict[str, Any]) -> dict[str, Any]:
+    compared: dict[str, Any] = {}
+    for key in sorted(set(steel_usage) | set(open_usage)):
+        steel_metric = steel_usage.get(key, {})
+        open_metric = open_usage.get(key, {})
+        compared[key] = {
+            sample: compare_number(
+                steel_metric.get(sample) if isinstance(steel_metric, dict) else None,
+                open_metric.get(sample) if isinstance(open_metric, dict) else None,
+            )
+            for sample in ("before", "after", "delta", "peak")
+        }
+    return compared
 
 
 def slower_than_opensearch(comparison: dict[str, Any]) -> list[dict[str, Any]]:
@@ -513,15 +659,20 @@ def render_report(results: dict[str, Any]) -> str:
         "",
         "## Scenario summary",
         "",
-        "| Scenario | Throughput ops/s | Error rate |",
-        "| --- | ---: | ---: |",
+        "| Scenario | Throughput ops/s | Error rate | RSS peak MiB |",
+        "| --- | ---: | ---: | ---: |",
     ]
     for scenario in SCENARIOS:
         payload = results["scenarios"].get(scenario.key)
         if not payload:
             continue
+        rss_peak = (
+            payload.get("resource_usage", {})
+            .get("memory_rss_bytes", {})
+            .get("peak")
+        )
         lines.append(
-            f"| {scenario.label} | {payload['summary']['throughput_ops_per_second']:.2f} | {payload['summary']['error_rate']:.4f} |"
+            f"| {scenario.label} | {payload['summary']['throughput_ops_per_second']:.2f} | {payload['summary']['error_rate']:.4f} | {safe_mib(rss_peak)} |"
         )
 
     for scenario in SCENARIOS:
@@ -568,6 +719,7 @@ def render_report(results: dict[str, Any]) -> str:
                 "",
                 f"- Throughput ratio (Steelsearch/OpenSearch): `{safe_ratio(payload['throughput_ops_per_second']['ratio'])}`",
                 f"- Error rate delta (Steelsearch-OpenSearch): `{safe_number(payload['error_rate']['delta'])}`",
+                f"- RSS peak ratio (Steelsearch/OpenSearch): `{safe_ratio(payload.get('resource_usage', {}).get('memory_rss_bytes', {}).get('peak', {}).get('ratio'))}`",
                 "",
                 "| Operation | Steelsearch p50 ms | OpenSearch p50 ms | Steelsearch p95 ms | OpenSearch p95 ms | Steelsearch p99 ms | OpenSearch p99 ms | Steelsearch mean ms | OpenSearch mean ms |",
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -618,6 +770,12 @@ def safe_number(value: Any) -> str:
     if value is None:
         return "n/a"
     return str(value)
+
+
+def safe_mib(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{value / (1024 * 1024):.2f}"
+    return "n/a"
 
 
 def safe_ratio(value: Any) -> str:

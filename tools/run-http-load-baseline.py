@@ -41,6 +41,10 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="validate configuration without issuing HTTP requests")
     parser.add_argument("--no-reset", action="store_true", help="reuse an existing index instead of deleting it first")
     parser.add_argument("--process-pid", type=positive_int, help="sample daemon VmRSS from /proc/<pid>/status")
+    parser.add_argument(
+        "--process-pids",
+        help="comma-separated daemon PIDs; VmRSS is sampled as the sum across live PIDs",
+    )
     parser.add_argument("--operation-log-path", help="sample operation-log file or directory size before and after the run")
     parser.add_argument(
         "--metrics-path",
@@ -84,7 +88,7 @@ def main() -> int:
                 "operations": planned_operations(query_mix),
                 "resource_usage": {
                     "memory_rss_bytes": {
-                        "source": f"/proc/{args.process_pid}/status" if args.process_pid else None,
+                        "source": resource_pid_source(args.process_pid, args.process_pids),
                     },
                     "operation_log_bytes": {
                         "source": args.operation_log_path,
@@ -102,7 +106,7 @@ def main() -> int:
     probes = ResourceProbes(
         base_url=config["base_url"],
         timeout=args.timeout_seconds,
-        process_pid=args.process_pid,
+        process_pids=parse_process_pids(args.process_pid, args.process_pids),
         operation_log_path=args.operation_log_path,
         metrics_path=args.metrics_path,
     )
@@ -116,6 +120,35 @@ def positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be greater than zero")
     return parsed
+
+
+def parse_process_pids(process_pid: int | None, process_pids: str | None) -> list[int]:
+    pids: list[int] = []
+    if process_pid is not None:
+        pids.append(process_pid)
+    if process_pids:
+        for raw in process_pids.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            parsed = int(raw)
+            if parsed <= 0:
+                raise argparse.ArgumentTypeError("--process-pids values must be greater than zero")
+            pids.append(parsed)
+    deduped: list[int] = []
+    seen = set()
+    for pid in pids:
+        if pid not in seen:
+            deduped.append(pid)
+            seen.add(pid)
+    return deduped
+
+
+def resource_pid_source(process_pid: int | None, process_pids: str | None) -> str | None:
+    pids = parse_process_pids(process_pid, process_pids)
+    if not pids:
+        return None
+    return ",".join(f"/proc/{pid}/status" for pid in pids)
 
 
 def non_negative_int(value: str) -> int:
@@ -177,6 +210,7 @@ class LoadRunner:
         self.prepare_index()
         self.seed_corpus()
 
+        probes.start_peak_sampling()
         start = time.monotonic()
         deadline = start + self.config["duration_seconds"]
         threads = [
@@ -191,6 +225,7 @@ class LoadRunner:
 
         total_success = sum(self.success.values())
         total_errors = sum(self.errors.values())
+        peak = probes.stop_peak_sampling()
         after = probes.sample()
         return {
             "config": self.config,
@@ -202,7 +237,7 @@ class LoadRunner:
                 "error_rate": total_errors / (total_success + total_errors) if total_success + total_errors else 0.0,
                 "throughput_ops_per_second": total_success / elapsed if elapsed else 0.0,
             },
-            "resource_usage": compare_resource_samples(before, after),
+            "resource_usage": compare_resource_samples(before, after, peak),
             "operations": {
                 operation: self.operation_summary(operation)
                 for operation in OPERATIONS
@@ -483,23 +518,52 @@ class ResourceProbes:
         self,
         base_url: str,
         timeout: float,
-        process_pid: int | None,
+        process_pids: list[int],
         operation_log_path: str | None,
         metrics_path: str,
     ) -> None:
         self.base_url = base_url
         self.timeout = timeout
-        self.process_pid = process_pid
+        self.process_pids = process_pids
         self.operation_log_path = Path(operation_log_path) if operation_log_path else None
         self.metrics_path = metrics_path
+        self._peak_memory_rss_bytes: int | None = None
+        self._sampler_stop = threading.Event()
+        self._sampler_thread: threading.Thread | None = None
 
     def sample(self) -> dict[str, Any]:
         metrics = self.http_metrics()
         return {
-            "memory_rss_bytes": process_rss_bytes(self.process_pid),
+            "memory_rss_bytes": process_rss_bytes(self.process_pids),
             "operation_log_bytes": path_size(self.operation_log_path),
             "vector_cache_bytes": vector_cache_bytes(metrics),
         }
+
+    def start_peak_sampling(self, interval_seconds: float = 0.25) -> None:
+        if not self.process_pids or self._sampler_thread is not None:
+            return
+        self._sampler_stop.clear()
+
+        def run() -> None:
+            while not self._sampler_stop.wait(interval_seconds):
+                value = process_rss_bytes(self.process_pids)
+                if value is not None:
+                    if self._peak_memory_rss_bytes is None or value > self._peak_memory_rss_bytes:
+                        self._peak_memory_rss_bytes = value
+
+        self._sampler_thread = threading.Thread(target=run, daemon=True)
+        self._sampler_thread.start()
+
+    def stop_peak_sampling(self) -> dict[str, Any]:
+        if self.process_pids:
+            value = process_rss_bytes(self.process_pids)
+            if value is not None:
+                if self._peak_memory_rss_bytes is None or value > self._peak_memory_rss_bytes:
+                    self._peak_memory_rss_bytes = value
+        self._sampler_stop.set()
+        if self._sampler_thread is not None:
+            self._sampler_thread.join(timeout=2.0)
+        return {"memory_rss_bytes": self._peak_memory_rss_bytes}
 
     def http_metrics(self) -> Any:
         if not self.metrics_path:
@@ -516,9 +580,17 @@ class ResourceProbes:
             return None
 
 
-def process_rss_bytes(pid: int | None) -> int | None:
-    if pid is None:
+def process_rss_bytes(pids: list[int]) -> int | None:
+    if not pids:
         return None
+    values = [process_single_rss_bytes(pid) for pid in pids]
+    live_values = [value for value in values if value is not None]
+    if not live_values:
+        return None
+    return sum(live_values)
+
+
+def process_single_rss_bytes(pid: int) -> int | None:
     status = Path(f"/proc/{pid}/status")
     try:
         for line in status.read_text(encoding="utf-8").splitlines():
@@ -568,12 +640,18 @@ def find_numeric_metrics(value: Any, required_key_terms: tuple[str, ...], value_
     return found
 
 
-def compare_resource_samples(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+def compare_resource_samples(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    peak: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    peak = peak or {}
     return {
         key: {
             "before": before.get(key),
             "after": after.get(key),
             "delta": delta(after.get(key), before.get(key)),
+            "peak": peak.get(key),
         }
         for key in ("memory_rss_bytes", "operation_log_bytes", "vector_cache_bytes")
     }
