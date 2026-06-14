@@ -201,6 +201,8 @@ def main() -> int:
             handle = start_cluster(scenario, scenario_dir)
             handles.append(handle)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
+            if scenario.engine == "opensearch":
+                clear_opensearch_cluster_blocks(handle.base_url, args.timeout_seconds)
             resource_pids = resolve_resource_pids(handle)
             result = run_baseline(scenario, handle, baseline_output, args, resource_pids)
             result["base_url"] = handle.base_url
@@ -372,7 +374,7 @@ def free_port(host: str = "127.0.0.1") -> int:
 
 def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
     deadline = time.time() + 180.0
-    health_url = f"{base_url}/_cluster/health?wait_for_nodes=%3E={scenario.node_count}&timeout=1s"
+    health_url = f"{base_url}/_cluster/health"
     while time.time() < deadline:
         try:
             payload = http_json(health_url, timeout_seconds)
@@ -382,6 +384,25 @@ def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) 
             pass
         time.sleep(0.5)
     raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
+
+
+def clear_opensearch_cluster_blocks(base_url: str, timeout_seconds: float) -> None:
+    payload = {
+        "persistent": {
+            "cluster.blocks.create_index": False,
+            "cluster.routing.allocation.disk.threshold_enabled": False,
+        },
+        "transient": {
+            "cluster.blocks.create_index": False,
+            "cluster.routing.allocation.disk.threshold_enabled": False,
+        },
+    }
+    http_json(
+        f"{base_url}/_cluster/settings",
+        timeout_seconds,
+        method="PUT",
+        payload=payload,
+    )
 
 
 def resolve_resource_pids(handle: ClusterHandle) -> list[int]:
@@ -510,8 +531,18 @@ def run_baseline(
     return json.loads(output_path.read_text(encoding="utf-8"))
 
 
-def http_json(url: str, timeout_seconds: float) -> Any:
-    request = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+def http_json(
+    url: str,
+    timeout_seconds: float,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, method=method, headers=headers, data=data)
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         return json.loads(response.read().decode("utf-8"))
 
