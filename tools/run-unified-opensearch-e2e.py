@@ -172,6 +172,13 @@ def collect_suite(
             report_path = recursive_report
             source = "target-recursive"
     report = load_json(report_path) if report_path.exists() else None
+    if report is not None and report_has_no_reachable_targets(report):
+        result = summarize_suite(suite, fixture, None)
+        result["fixture_path"] = str(fixture_path)
+        result["report_path"] = str(report_path)
+        result["report_source"] = "missing"
+        result["note"] = "ignored existing report because every recorded target request failed before receiving an HTTP status"
+        return result
     result = summarize_suite(suite, fixture, report)
     result["fixture_path"] = str(fixture_path)
     result["report_path"] = str(report_path) if report_path.exists() else str(output_dir / suite.report)
@@ -193,6 +200,23 @@ def newest_target_report(report_name: str) -> Path | None:
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def report_has_no_reachable_targets(report: dict[str, Any]) -> bool:
+    cases = report.get("cases")
+    if not isinstance(cases, list) or not cases:
+        return False
+    target_pairs = []
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        steelsearch = case.get("steelsearch")
+        opensearch = case.get("opensearch")
+        if isinstance(steelsearch, dict) and isinstance(opensearch, dict):
+            target_pairs.append((steelsearch, opensearch))
+    if not target_pairs:
+        return False
+    return all(left.get("status") is None and right.get("status") is None for left, right in target_pairs)
 
 
 def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any] | None) -> dict[str, Any]:

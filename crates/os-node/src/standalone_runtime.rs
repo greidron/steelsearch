@@ -3485,7 +3485,7 @@ impl SteelNode {
         if let Some(object) = body.as_object_mut() {
             object.insert("timed_out".to_string(), Value::Bool(timed_out));
         }
-        RestResponse::json(200, body)
+        RestResponse::json(if timed_out { 408 } else { 200 }, body)
     }
 
     fn handle_create_index_route(&self, request: &RestRequest) -> RestResponse {
@@ -8893,7 +8893,7 @@ impl SteelNode {
                 })),
             );
         }
-        RestResponse::json(404, tasks_route_registration::build_unknown_task_error(task_id))
+        RestResponse::json(200, self.unknown_task_cancel_body(task_id))
     }
 
     fn handle_tasks_rethrottle_route(&self, request: &RestRequest) -> RestResponse {
@@ -19910,7 +19910,7 @@ mod tests {
             RestMethod::Get,
             "/_cluster/health?wait_for_status=green&timeout=1s",
         ));
-        assert_eq!(wait_for_green.status, 200);
+        assert_eq!(wait_for_green.status, 408);
         assert_eq!(wait_for_green.body["status"], "yellow");
         assert_eq!(wait_for_green.body["timed_out"], true);
 
@@ -19918,7 +19918,7 @@ mod tests {
             RestMethod::Get,
             "/_cluster/health?wait_for_nodes=2&timeout=1s",
         ));
-        assert_eq!(wait_for_nodes.status, 200);
+        assert_eq!(wait_for_nodes.status, 408);
         assert_eq!(wait_for_nodes.body["number_of_nodes"], 1);
         assert_eq!(wait_for_nodes.body["timed_out"], true);
 
@@ -21184,10 +21184,10 @@ mod tests {
             RestMethod::Post,
             "/_tasks/node-a:999/_cancel",
         ));
-        assert_eq!(missing.status, 404);
+        assert_eq!(missing.status, 200);
         assert_eq!(
-            missing.body["error"]["type"],
-            Value::String("resource_not_found_exception".to_string())
+            missing.body["node_failures"][0]["type"],
+            Value::String("failed_node_exception".to_string())
         );
     }
 
