@@ -11240,6 +11240,7 @@ impl SteelNode {
             .get("refresh")
             .is_some_and(|value| value == "wait_for" || value == "true");
         let native_source = source.clone();
+        self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
             source,
             version,
@@ -11326,6 +11327,7 @@ impl SteelNode {
             .get("refresh")
             .is_some_and(|value| value == "wait_for" || value == "true");
         let native_source = source.clone();
+        self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
             source,
             version: 1,
@@ -11358,6 +11360,31 @@ impl SteelNode {
         }
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(201, response)
+    }
+
+    fn apply_dynamic_mappings_for_source(&self, index: &str, source: &Value) {
+        let Some(source_object) = source.as_object() else {
+            return;
+        };
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        if !manifest["indices"][index]["mappings"].is_object() {
+            manifest["indices"][index]["mappings"] = serde_json::json!({});
+        }
+        if !manifest["indices"][index]["mappings"]["properties"].is_object() {
+            manifest["indices"][index]["mappings"]["properties"] = serde_json::json!({});
+        }
+        let properties = manifest["indices"][index]["mappings"]["properties"]
+            .as_object_mut()
+            .expect("index mappings properties must be an object");
+        for (field, value) in source_object {
+            if properties.contains_key(field) {
+                continue;
+            }
+            properties.insert(field.clone(), infer_dynamic_mapping_for_value(value));
+        }
     }
 
     fn handle_get_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
@@ -18685,6 +18712,29 @@ fn infer_field_caps_type(value: &Value) -> &'static str {
         Value::Array(_) => "keyword",
         Value::Object(_) => "object",
         _ => "text",
+    }
+}
+
+fn infer_dynamic_mapping_for_value(value: &Value) -> Value {
+    match value {
+        Value::Bool(_) => serde_json::json!({ "type": "boolean" }),
+        Value::Number(number) if number.is_f64() => serde_json::json!({ "type": "float" }),
+        Value::Number(_) => serde_json::json!({ "type": "long" }),
+        Value::Object(_) => serde_json::json!({ "type": "object" }),
+        Value::Array(values) => values
+            .iter()
+            .find(|candidate| !candidate.is_null())
+            .map(infer_dynamic_mapping_for_value)
+            .unwrap_or_else(|| serde_json::json!({ "type": "keyword" })),
+        _ => serde_json::json!({
+            "type": "text",
+            "fields": {
+                "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                }
+            }
+        }),
     }
 }
 
@@ -26344,6 +26394,58 @@ mod tests {
         assert_eq!(
             after_conflict.body["logs-mapping-semantic-000001"]["mappings"]["properties"]["region"]["type"],
             "keyword"
+        );
+    }
+
+    #[test]
+    fn document_indexing_promotes_unmapped_source_fields_to_dynamic_mappings() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-dynamic-mapping-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-dynamic-mapping-000001/_doc/dyn-1")
+                .with_json_body(serde_json::json!({
+                    "tenant": "acme",
+                    "region": "us-east-1"
+                })),
+        );
+        assert_eq!(write.status, 201);
+
+        let readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-dynamic-mapping-000001",
+        ));
+        assert_eq!(readback.status, 200);
+        assert_eq!(
+            readback.body["logs-dynamic-mapping-000001"]["mappings"]["properties"]["tenant"]["type"],
+            "keyword"
+        );
+        assert_eq!(
+            readback.body["logs-dynamic-mapping-000001"]["mappings"]["properties"]["region"]["type"],
+            "text"
+        );
+        assert_eq!(
+            readback.body["logs-dynamic-mapping-000001"]["mappings"]["properties"]["region"]["fields"]["keyword"]["type"],
+            "keyword"
+        );
+        assert_eq!(
+            readback.body["logs-dynamic-mapping-000001"]["mappings"]["properties"]["region"]["fields"]["keyword"]["ignore_above"],
+            256
         );
     }
 
