@@ -267,6 +267,9 @@ fi
 
 cleanup() {
   local status=$?
+  if [[ "${status}" != "0" ]]; then
+    emit_rehearsal_diagnostics "${status}" || true
+  fi
   if [[ "${STEELSEARCH_STARTED}" == "1" && -n "${STEELSEARCH_PID}" ]]; then
     stop_process "Steelsearch" "${STEELSEARCH_PID}"
   fi
@@ -277,6 +280,64 @@ cleanup() {
     stop_process "OpenSearch" "${OPENSEARCH_PID}"
   fi
   exit "${status}"
+}
+
+emit_rehearsal_diagnostics() {
+  local status="$1"
+  python3 - "${status}" \
+    "${REHEARSAL_DIR}/readiness-timeout-diagnostics.json" \
+    "${STEELSEARCH_PID:-}" \
+    "${OPENSEARCH_PID:-}" \
+    "${STEELSEARCH_URL:-}" \
+    "${OPENSEARCH_URL:-}" \
+    "${REHEARSAL_DIR}/steelsearch.log" \
+    "${REHEARSAL_DIR}/opensearch.log" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+status, report, steel_pid, opensearch_pid, steel_url, opensearch_url, steel_log, opensearch_log = sys.argv[1:]
+
+def process_state(pid: str) -> dict[str, object]:
+    if not pid:
+        return {"pid": None, "running": False}
+    proc = Path("/proc") / pid
+    state = {"pid": int(pid), "running": proc.exists()}
+    status_path = proc / "status"
+    if status_path.exists():
+        for line in status_path.read_text(errors="replace").splitlines():
+            if line.startswith(("Name:", "State:", "VmRSS:", "Threads:")):
+                key, value = line.split(":", 1)
+                state[key.lower()] = value.strip()
+    return state
+
+def tail(path: str, lines: int = 120) -> list[str]:
+    p = Path(path)
+    if not p.exists():
+        return []
+    return p.read_text(errors="replace").splitlines()[-lines:]
+
+payload = {
+    "exit_status": int(status),
+    "steelsearch": {
+        "url": steel_url or None,
+        "process": process_state(steel_pid),
+        "log": steel_log,
+        "log_tail": tail(steel_log),
+    },
+    "opensearch": {
+        "url": opensearch_url or None,
+        "process": process_state(opensearch_pid),
+        "log": opensearch_log,
+        "log_tail": tail(opensearch_log),
+    },
+}
+target = Path(report)
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+print(f"readiness diagnostics report: {target}", file=sys.stderr)
+PY
 }
 
 stop_process() {

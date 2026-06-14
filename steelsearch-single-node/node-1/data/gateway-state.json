@@ -1,0 +1,117 @@
+{
+  "coordination_state": {
+    "current_term": 1,
+    "last_accepted_version": 2,
+    "last_accepted_state_uuid": "steelsearch-dev-cluster-uuid-dev-state-2",
+    "cluster_manager_node_id": "steelsearch-dev-node",
+    "last_accepted_voting_configuration": [
+      "steelsearch-dev-node"
+    ],
+    "last_committed_voting_configuration": [
+      "steelsearch-dev-node"
+    ],
+    "voting_config_exclusions": [],
+    "active_publication_round": {
+      "version": 2,
+      "state_uuid": "steelsearch-dev-cluster-uuid-dev-state-2",
+      "term": 1,
+      "target_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "acknowledged_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "applied_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "missing_nodes": [],
+      "proposal_transport_failures": {},
+      "acknowledgement_transport_failures": {},
+      "apply_transport_failures": {},
+      "required_quorum": 1,
+      "committed": true
+    },
+    "last_completed_publication_round": {
+      "version": 1,
+      "state_uuid": "steelsearch-dev-cluster-uuid-dev-state-1",
+      "term": 1,
+      "target_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "acknowledged_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "applied_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "missing_nodes": [],
+      "proposal_transport_failures": {},
+      "acknowledgement_transport_failures": {},
+      "apply_transport_failures": {},
+      "required_quorum": 1,
+      "committed": true
+    },
+    "local_fence_reason": null,
+    "quorum_lost_at_tick": null,
+    "fault_detection": {
+      "leader_nodes": {}
+    }
+  },
+  "cluster_state": {
+    "cluster_name": "steelsearch-dev",
+    "cluster_uuid": "steelsearch-dev-cluster-uuid",
+    "local_node_id": "steelsearch-dev-node",
+    "nodes": [
+      {
+        "node_id": "steelsearch-dev-node",
+        "node_name": "steelsearch-dev-node",
+        "http_address": "127.0.0.1:44715",
+        "transport_address": "127.0.0.1:55871",
+        "roles": [
+          "cluster_manager",
+          "data",
+          "ingest",
+          "remote_cluster_client"
+        ],
+        "local": true
+      }
+    ],
+    "coordination": {
+      "elected_node_id": "steelsearch-dev-node",
+      "term": 1,
+      "votes": [
+        "steelsearch-dev-node"
+      ],
+      "required_quorum": 1,
+      "publication_committed": true,
+      "publication_round_versions": [
+        1,
+        2
+      ],
+      "last_completed_publication_round_version": 1,
+      "last_completed_publication_round_state_uuid": "steelsearch-dev-cluster-uuid-dev-state-1",
+      "acked_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "applied_nodes": [
+        "steelsearch-dev-node"
+      ],
+      "missing_nodes": [],
+      "last_accepted_version": 2,
+      "last_accepted_state_uuid": "steelsearch-dev-cluster-uuid-dev-state-2",
+      "applied": true,
+      "liveness_ticks": [
+        1,
+        2
+      ],
+      "quorum_lost_at_tick": null,
+      "local_fence_reason": null,
+      "task_queue_state": null
+    }
+  },
+  "cluster_metadata_manifest": null,
+  "routing_metadata": null,
+  "metadata_state": null,
+  "metadata_commit_state": null,
+  "task_queue_state": null
+}

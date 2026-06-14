@@ -8,6 +8,8 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 const DOC_COUNT: usize = 128;
+const NESTED_DOC_COUNT: usize = 4096;
+const NESTED_CHILDREN_PER_DOC: usize = 8;
 const INDEX: &str = "bench";
 
 fn main() {
@@ -29,6 +31,11 @@ fn main() {
         benchmark_hnsw_vector_search(&engine),
     );
     record("hybrid_search", 32, benchmark_hybrid_search(&engine));
+    record(
+        "nested_child_index_search",
+        64,
+        benchmark_nested_child_index_search(),
+    );
 }
 
 fn benchmark_index() -> Duration {
@@ -75,24 +82,16 @@ fn benchmark_refresh() -> Duration {
 fn benchmark_lexical_search(engine: &TantivyEngine) -> Duration {
     repeat_search(
         engine,
-        SearchRequest {
-            indices: vec![INDEX.to_string()],
-            query: json!({ "match": { "message": "alpha" } }),
-            aggregations: json!({}),
-            sort: Vec::new(),
-            from: 0,
-            size: 10,
-        },
+        search_request(json!({ "match": { "message": "alpha" } }), json!({})),
     )
 }
 
 fn benchmark_aggregation(engine: &TantivyEngine) -> Duration {
     repeat_search(
         engine,
-        SearchRequest {
-            indices: vec![INDEX.to_string()],
-            query: json!({ "match_all": {} }),
-            aggregations: json!({
+        search_request(
+            json!({ "match_all": {} }),
+            json!({
                 "by_service": {
                     "terms": {
                         "field": "service",
@@ -100,10 +99,7 @@ fn benchmark_aggregation(engine: &TantivyEngine) -> Duration {
                     }
                 }
             }),
-            sort: Vec::new(),
-            from: 0,
-            size: 10,
-        },
+        ),
     )
 }
 
@@ -134,9 +130,8 @@ fn benchmark_hnsw_vector_search(engine: &TantivyEngine) -> Duration {
 fn benchmark_hybrid_search(engine: &TantivyEngine) -> Duration {
     repeat_search(
         engine,
-        SearchRequest {
-            indices: vec![INDEX.to_string()],
-            query: json!({
+        search_request(
+            json!({
                 "bool": {
                     "must": [
                         { "match": { "message": "alpha" } },
@@ -155,12 +150,66 @@ fn benchmark_hybrid_search(engine: &TantivyEngine) -> Duration {
                     ]
                 }
             }),
-            aggregations: json!({}),
-            sort: Vec::new(),
-            from: 0,
-            size: 10,
-        },
+            json!({}),
+        ),
     )
+}
+
+fn benchmark_nested_child_index_search() -> Duration {
+    let engine = empty_engine();
+    for id in 0..NESTED_DOC_COUNT {
+        engine.index_document(nested_document_request(id)).unwrap();
+    }
+    engine
+        .refresh(RefreshRequest {
+            indices: vec![INDEX.to_string()],
+        })
+        .unwrap();
+
+    let request = search_request(
+        json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            { "term": { "comments.author": "alice" } },
+                            { "term": { "comments.tag": "y" } }
+                        ]
+                    }
+                }
+            }
+        }),
+        json!({}),
+    );
+
+    let started = Instant::now();
+    for _ in 0..64 {
+        let response = engine.search(request.clone()).unwrap();
+        assert_eq!(response.total_hits, (NESTED_DOC_COUNT / 16) as u64);
+        black_box(response);
+    }
+    started.elapsed()
+}
+
+fn search_request(query: serde_json::Value, aggregations: serde_json::Value) -> SearchRequest {
+    SearchRequest {
+        indices: vec![INDEX.to_string()],
+        query,
+        aggregations,
+        sort: Vec::new(),
+        from: 0,
+        size: 10,
+        stored_fields: None,
+        source_fields: None,
+        source_filter: None,
+        source_includes: None,
+        source_include: None,
+        source_excludes: None,
+        source_exclude: None,
+        highlight: None,
+        explain: false,
+    }
 }
 
 fn repeat_search(engine: &TantivyEngine, request: SearchRequest) -> Duration {
@@ -202,7 +251,8 @@ fn empty_engine() -> TantivyEngine {
                         "type": "knn_vector",
                         "dimension": 3,
                         "space_type": "l2"
-                    }
+                    },
+                    "comments": { "type": "object" }
                 }
             }),
         })
@@ -228,6 +278,43 @@ fn document_request(id: usize) -> IndexDocumentRequest {
                 (id % 7) as f32 / 10.0,
                 (id % 5) as f32 / 10.0
             ]
+        }),
+    }
+}
+
+fn nested_document_request(id: usize) -> IndexDocumentRequest {
+    let mut comments = Vec::with_capacity(NESTED_CHILDREN_PER_DOC);
+    for child in 0..NESTED_CHILDREN_PER_DOC {
+        let matching_tuple = id % 16 == 0 && child == id % NESTED_CHILDREN_PER_DOC;
+        let flatten_false_positive_left = id % 16 == 1 && child == 0;
+        let flatten_false_positive_right = id % 16 == 1 && child == 1;
+        comments.push(json!({
+            "author": if matching_tuple || flatten_false_positive_left {
+                "alice".to_string()
+            } else if flatten_false_positive_right {
+                "bob".to_string()
+            } else {
+                format!("author-{}", (id + child) % 257)
+            },
+            "tag": if matching_tuple || flatten_false_positive_right {
+                "y".to_string()
+            } else if flatten_false_positive_left {
+                "x".to_string()
+            } else {
+                format!("tag-{}", (id * 31 + child) % 251)
+            }
+        }));
+    }
+    IndexDocumentRequest {
+        index: INDEX.to_string(),
+        id: format!("nested-doc-{id:05}"),
+        source: json!({
+            "message": "nested benchmark",
+            "service": "nested",
+            "tenant": "tenant-nested",
+            "latency": (id % 17) as u64,
+            "embedding": [0.1, 0.2, 0.3],
+            "comments": comments
         }),
     }
 }

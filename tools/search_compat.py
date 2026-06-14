@@ -615,7 +615,7 @@ def run_case(
             status = "skipped"
         else:
             status = "passed" if passed else "failed"
-        return {
+        return case_report_with_metadata(case, {
             "name": case["name"],
             "area": case["area"],
             "status": status,
@@ -624,11 +624,11 @@ def run_case(
             "expected_steelsearch_status": expected_status,
             "skip_scope": case.get("skip_scope", "opensearch-comparison") if status == "skipped" else None,
             "reason": case.get("reason"),
-        }
+        })
 
     expected = target_results["opensearch"]
     if case["area"] == "knn" and missing_knn_query_response(expected["raw_response"]):
-        return {
+        return case_report_with_metadata(case, {
             "name": case["name"],
             "area": case["area"],
             "status": "skipped",
@@ -639,9 +639,9 @@ def run_case(
                 "OpenSearch target does not expose the k-NN query/plugin surface in this "
                 "environment, so vector comparison is downgraded to degraded-source skip."
             ),
-        }
+        })
     if missing_runtime_mappings_support(expected["raw_response"]):
-        return {
+        return case_report_with_metadata(case, {
             "name": case["name"],
             "area": case["area"],
             "status": "skipped",
@@ -652,20 +652,31 @@ def run_case(
                 "OpenSearch target does not expose request-body runtime_mappings in this "
                 "environment, so runtime-fields comparison is downgraded to degraded-source skip."
             ),
-        }
+        })
     matches = (
         steel["status"] == expected["status"]
         and steel["extract"] == expected["extract"]
         and not step_failed
     )
-    return {
+    return case_report_with_metadata(case, {
         "name": case["name"],
         "area": case["area"],
         "status": "passed" if matches else "failed",
         "mode": "comparison",
         "targets": target_results,
         "diff": None if matches else {"steelsearch": steel["extract"], "opensearch": expected["extract"]},
-    }
+    })
+
+
+def case_report_with_metadata(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    metadata = case.get("metadata")
+    if isinstance(metadata, dict) and metadata:
+        result["metadata"] = metadata
+    if "native_route_group" in case:
+        result["native_route_group"] = case["native_route_group"]
+    if "native_route_groups" in case:
+        result["native_route_groups"] = case["native_route_groups"]
+    return result
 
 
 def run_case_request(

@@ -237,6 +237,10 @@ mod tests {
                                     },
                                     score: 1.0,
                                     source: json!({ "message": "remote" }),
+                                    fields: None,
+                                    highlight: None,
+                                    explanation: None,
+                sort: None,
                                 }],
                                 json!({}),
                             ),
@@ -267,6 +271,15 @@ mod tests {
                     sort: Vec::new(),
                     from: 0,
                     size: 10,
+                    stored_fields: None,
+                    source_fields: None,
+                    source_filter: None,
+                    source_includes: None,
+                    source_include: None,
+                    source_excludes: None,
+                    source_exclude: None,
+                    highlight: None,
+                    explain: false,
                 },
             },
         )
@@ -274,10 +287,7 @@ mod tests {
         .unwrap();
 
         server.await.unwrap();
-        assert_eq!(
-            response.result.response.unwrap().hits[0].metadata.id,
-            "remote-1"
-        );
+        assert_eq!(response.first_hit().unwrap().metadata.id, "remote-1");
     }
 
     #[tokio::test]
@@ -544,6 +554,15 @@ mod tests {
                     sort: Vec::new(),
                     from: 0,
                     size: 10,
+                    stored_fields: None,
+                    source_fields: None,
+                    source_filter: None,
+                    source_includes: None,
+                    source_include: None,
+                    source_excludes: None,
+                    source_exclude: None,
+                    highlight: None,
+                    explain: false,
                 },
             },
         )

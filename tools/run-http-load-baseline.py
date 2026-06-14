@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,vector=15,hybrid=10,refresh=5"
-OPERATIONS = ("write", "lexical", "ranking", "facet", "sort_filter", "vector", "hybrid", "refresh")
+DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5"
+OPERATIONS = ("write", "lexical", "ranking", "facet", "sort_filter", "nested", "vector", "hybrid", "refresh")
 
 
 def main() -> int:
@@ -217,31 +217,48 @@ class LoadRunner:
             if response["status"] not in (200, 202, 404):
                 raise RuntimeError(f"failed to delete {index}: {response}")
 
+        vector_enabled = (
+            self.config["query_mix"].get("vector", 0) > 0
+            or self.config["query_mix"].get("hybrid", 0) > 0
+        )
+        settings = {
+            "index": {
+                "number_of_shards": self.config["number_of_shards"],
+                "number_of_replicas": self.config["number_of_replicas"],
+            }
+        }
+        if vector_enabled:
+            settings["index"]["knn"] = True
+        properties = {
+            "title": {"type": "text"},
+            "message": {"type": "text"},
+            "category": {"type": "keyword"},
+            "service": {"type": "keyword"},
+            "tenant": {"type": "keyword"},
+            "status": {"type": "keyword"},
+            "tags": {"type": "keyword"},
+            "events": {
+                "type": "nested",
+                "properties": {
+                    "kind": {"type": "keyword"},
+                    "status": {"type": "keyword"},
+                },
+            },
+            "price": {"type": "double"},
+            "latency": {"type": "long"},
+            "event_time": {"type": "date"},
+        }
+        if vector_enabled:
+            properties["embedding"] = {
+                "type": "knn_vector",
+                "dimension": self.config["vector_dimension"],
+            }
         body = {
             "settings": {
-                "index": {
-                    "knn": True,
-                    "number_of_shards": self.config["number_of_shards"],
-                    "number_of_replicas": self.config["number_of_replicas"],
-                }
+                **settings,
             },
             "mappings": {
-                "properties": {
-                    "title": {"type": "text"},
-                    "message": {"type": "text"},
-                    "category": {"type": "keyword"},
-                    "service": {"type": "keyword"},
-                    "tenant": {"type": "keyword"},
-                    "status": {"type": "keyword"},
-                    "tags": {"type": "keyword"},
-                    "price": {"type": "double"},
-                    "latency": {"type": "long"},
-                    "event_time": {"type": "date"},
-                    "embedding": {
-                        "type": "knn_vector",
-                        "dimension": self.config["vector_dimension"],
-                    },
-                }
+                "properties": properties,
             },
         }
         response = self.http("PUT", f"/{index}", body)
@@ -362,6 +379,25 @@ class LoadRunner:
                         }
                     },
                     "sort": [{"latency": "asc"}, {"price": "desc"}],
+                }
+            )
+        if operation == "nested":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "nested": {
+                            "path": "events",
+                            "query": {
+                                "bool": {
+                                    "must": [
+                                        {"term": {"events.kind": rng.choice(["payment", "cache"])}},
+                                        {"term": {"events.status": rng.choice(["timeout", "accepted"])}},
+                                    ]
+                                }
+                            },
+                        }
+                    },
                 }
             )
         if operation == "vector":
@@ -584,6 +620,16 @@ def document_for(doc_id: int, dimension: int) -> dict[str, Any]:
         "tenant": ("tenant-a", "tenant-b")[doc_id % 2],
         "status": statuses[doc_id % len(statuses)],
         "tags": [service, category, terms[doc_id % len(terms)]],
+        "events": [
+            {
+                "kind": "payment" if doc_id % 4 in (0, 1) else "cache",
+                "status": "timeout" if doc_id % 4 == 0 else "accepted",
+            },
+            {
+                "kind": "cache" if doc_id % 4 in (0, 2) else "payment",
+                "status": "timeout" if doc_id % 4 == 1 else "accepted",
+            },
+        ],
         "price": round(5.0 + ((doc_id * 17) % 1000) / 10.0, 2),
         "latency": 10 + (doc_id * 37) % 900,
         "event_time": f"2026-01-{day:02d}T12:00:00Z",

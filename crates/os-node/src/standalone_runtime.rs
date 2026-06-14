@@ -24,6 +24,13 @@ use crate::snapshot_repository_route_registration;
 use crate::stats_route_registration;
 use crate::tasks_route_registration;
 use crate::template_route_registration;
+use actix_web::http::StatusCode;
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use os_engine::{
+    CreateIndexRequest, EngineError, IndexDocumentRequest, IndexEngine, RefreshRequest,
+    SearchRequest, SearchResponse, SortOrder, SortSpec,
+};
+use os_engine_tantivy::TantivyEngine;
 use os_core::Version;
 use os_node_rest_core::RestServerConfig;
 use os_rest::{RestMethod, RestRequest, RestResponse};
@@ -91,21 +98,102 @@ pub fn serve_rest_http_listener_until<F>(
     should_stop: F,
 ) -> std::io::Result<()>
 where
-    F: Fn() -> bool,
+    F: Fn() -> bool + Send + 'static,
 {
     listener.set_nonblocking(true)?;
-    while !should_stop() {
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                let _ = handle_http_connection(&node, &mut stream);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+    actix_web::rt::System::new().block_on(async move {
+        let node_data = web::Data::new(node);
+        let workers = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(4)
+            .max(4);
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(node_data.clone())
+                .default_service(web::to(handle_actix_rest_request))
+        })
+        .workers(workers)
+        .listen(listener)?
+        .run();
+        let handle = server.handle();
+        std::thread::spawn(move || {
+            while !should_stop() {
                 std::thread::sleep(Duration::from_millis(25));
             }
-            Err(error) => return Err(error),
+            actix_web::rt::System::new().block_on(handle.stop(true));
+        });
+        server.await
+    })
+}
+
+async fn handle_actix_rest_request(
+    node: web::Data<SteelNode>,
+    request: HttpRequest,
+    body: web::Bytes,
+) -> HttpResponse {
+    let rest_request = actix_request_to_rest_request(&request, body);
+    let node = node.get_ref().clone();
+    match web::block(move || node.handle_rest_request(rest_request)).await {
+        Ok(response) => rest_response_to_actix_response(response),
+        Err(error) => rest_response_to_actix_response(RestResponse::json(
+            500,
+            serde_json::json!({
+                "error": {
+                    "type": "actix_blocking_execution_exception",
+                    "reason": error.to_string()
+                },
+                "status": 500
+            }),
+        )),
+    }
+}
+
+fn actix_request_to_rest_request(request: &HttpRequest, body: web::Bytes) -> RestRequest {
+    let method = match *request.method() {
+        actix_web::http::Method::HEAD => RestMethod::Head,
+        actix_web::http::Method::PUT => RestMethod::Put,
+        actix_web::http::Method::POST => RestMethod::Post,
+        actix_web::http::Method::DELETE => RestMethod::Delete,
+        _ => RestMethod::Get,
+    };
+    let raw_target = if request.query_string().is_empty() {
+        request.uri().path().to_string()
+    } else {
+        format!("{}?{}", request.uri().path(), request.query_string())
+    };
+    let (path, query_params) = split_path_and_query(&raw_target);
+    let mut rest_request = RestRequest::new(method, path);
+    rest_request.query_params = query_params;
+    for (name, value) in request.headers() {
+        if let Ok(value) = value.to_str() {
+            rest_request = rest_request.with_header(name.as_str(), value);
         }
     }
-    Ok(())
+    rest_request.body = body.to_vec();
+    rest_request
+}
+
+fn rest_response_to_actix_response(response: RestResponse) -> HttpResponse {
+    let status =
+        StatusCode::from_u16(response.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut builder = HttpResponse::build(status);
+    for (name, value) in &response.headers {
+        builder.insert_header((name.as_str(), value.as_str()));
+    }
+    let body_bytes = if let Some(raw_body) = response.raw_body {
+        raw_body
+    } else if response
+        .headers
+        .get("content-type")
+        .is_some_and(|value| value.starts_with("text/plain"))
+    {
+        response.body.as_str().unwrap_or_default().as_bytes().to_vec()
+    } else if response.body.is_null() {
+        Vec::new()
+    } else {
+        serde_json::to_vec(&response.body).unwrap_or_else(|_| b"{}".to_vec())
+    };
+    builder.body(body_bytes)
 }
 
 fn handle_http_connection(node: &SteelNode, stream: &mut TcpStream) -> std::io::Result<()> {
@@ -1535,6 +1623,7 @@ pub struct SteelNode {
     pub metadata_manifest_state: Arc<Mutex<Value>>,
     pub task_queue_state: Arc<Mutex<Option<PersistedClusterManagerTaskQueueState>>>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
+    pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub shared_runtime_state_path: Option<PathBuf>,
     pub knn_operational_state: Arc<Mutex<Option<KnnOperationalState>>>,
@@ -1674,6 +1763,7 @@ impl SteelNode {
             metadata_manifest_state: Arc::new(Mutex::new(default_cluster_metadata_manifest())),
             task_queue_state: Arc::new(Mutex::new(None)),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
+            native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
             shared_runtime_state_path: None,
             knn_operational_state: Arc::new(Mutex::new(None)),
@@ -1799,7 +1889,7 @@ impl SteelNode {
     pub fn start_rest(&mut self) {}
 
     pub fn handle_rest_request(&self, request: RestRequest) -> RestResponse {
-        self.sync_shared_runtime_state_from_disk();
+        self.sync_shared_runtime_state_from_disk_if_enabled();
         let mut normalized_request = request.clone();
         if normalized_request.query_params.is_empty() && normalized_request.path.contains('?') {
             let (path, query_params) = split_path_and_query(&normalized_request.path);
@@ -3417,6 +3507,17 @@ impl SteelNode {
         if let Some(settings) = bounded_subset.get("settings").cloned() {
             bounded_subset["settings"] = stringify_leaf_scalars(&settings);
         }
+        let _ = self.native_engine.create_index(CreateIndexRequest {
+            index: index.to_string(),
+            settings: bounded_subset
+                .get("settings")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({})),
+            mappings: bounded_subset
+                .get("mappings")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({})),
+        });
         self.created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
@@ -5252,6 +5353,7 @@ impl SteelNode {
     }
 
     fn handle_global_refresh_route(&self) -> RestResponse {
+        let _ = self.native_engine.refresh(RefreshRequest { indices: Vec::new() });
         self.documents_state
             .lock()
             .expect("documents state lock poisoned")
@@ -5283,6 +5385,9 @@ impl SteelNode {
             .filter(|candidate| matches_index_selector(index, candidate))
             .cloned()
             .collect::<Vec<_>>();
+        let _ = self.native_engine.refresh(RefreshRequest {
+            indices: matched.clone(),
+        });
         self.documents_state
             .lock()
             .expect("documents state lock poisoned")
@@ -6710,42 +6815,64 @@ impl SteelNode {
         } else {
             std::collections::BTreeSet::new()
         };
-        let docs = self
-            .documents_state
-            .lock()
-            .expect("documents state lock poisoned");
+        if failed_indices.is_empty() && standalone_search_body_allows_native_engine(&body) {
+            if let Some(response) = self.try_native_engine_search_response(
+                &resolved_indices,
+                &body,
+            ) {
+                return response;
+            }
+        }
+        let needs_suggest_snapshot = body.get("suggest").is_some();
+        let (candidate_documents, docs_snapshot_for_suggest) = {
+            let docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            let docs_snapshot_for_suggest = needs_suggest_snapshot.then(|| docs.clone());
+            let candidate_documents = docs
+                .iter()
+                .filter_map(|(key, record)| {
+                    let (doc_index, doc_id, _) = split_document_key(key)?;
+                    if !resolved_indices.iter().any(|candidate| candidate == doc_index)
+                        || failed_indices.contains(doc_index)
+                    {
+                        return None;
+                    }
+                    if requested_routing
+                        .as_deref()
+                        .is_some_and(|routing| record.routing.as_deref() != Some(routing))
+                    {
+                        return None;
+                    }
+                    Some((
+                        doc_index.to_string(),
+                        doc_id.to_string(),
+                        record.source.clone(),
+                        record.seq_no,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            (candidate_documents, docs_snapshot_for_suggest)
+        };
         let mut hits = Vec::new();
-        for (key, record) in docs.iter() {
-            let Some((doc_index, doc_id, _)) = split_document_key(key) else {
-                continue;
-            };
-            if !resolved_indices.iter().any(|candidate| candidate == doc_index)
-                || failed_indices.contains(doc_index)
-            {
-                continue;
-            }
-            if requested_routing
-                .as_deref()
-                .is_some_and(|routing| record.routing.as_deref() != Some(routing))
-            {
-                continue;
-            }
-            let effective_source = apply_runtime_mappings_to_source(&record.source, body.get("runtime_mappings"));
+        for (doc_index, doc_id, source, seq_no) in candidate_documents {
+            let effective_source = apply_runtime_mappings_to_source(&source, body.get("runtime_mappings"));
             if let Some((matched, score)) = evaluate_search_query_source_with_mappings(
                 &effective_source,
-                doc_id,
+                &doc_id,
                 &body["query"],
-                index_mappings.get(doc_index).unwrap_or(&Value::Null),
+                index_mappings.get(&doc_index).unwrap_or(&Value::Null),
             ) {
                 if matched {
                     let mut hit = serde_json::json!({
                         "_index": doc_index,
                         "_id": doc_id,
-                        "_source": record.source,
+                        "_source": source,
                         "_score": score,
-                        "_seq_no": record.seq_no
+                        "_seq_no": seq_no
                     });
-                    if let Some(fields) = self.build_search_hit_fields(doc_index, &effective_source, &body) {
+                    if let Some(fields) = self.build_search_hit_fields(&doc_index, &effective_source, &body) {
                         hit["fields"] = fields;
                     }
                     hits.push(hit);
@@ -6780,7 +6907,7 @@ impl SteelNode {
                 return response;
             }
         }
-        let pure_knn_query = body["query"].get("knn").is_some();
+        let pure_knn_query = query_uses_pure_knn_candidate_path(&body["query"]);
         let total_matches_before_knn_limit = hits.len() as u64;
         if let Some(collapse) = body.get("collapse") {
             hits = apply_search_collapse(hits, collapse);
@@ -6916,46 +7043,38 @@ impl SteelNode {
             response.insert("aggregations".to_string(), aggregations);
         }
         if let Some(suggest) = body.get("suggest") {
+            let empty_docs_snapshot = BTreeMap::new();
+            let docs_snapshot = docs_snapshot_for_suggest
+                .as_ref()
+                .unwrap_or(&empty_docs_snapshot);
             response.insert(
                 "suggest".to_string(),
-                build_suggest_response_body(suggest, &resolved_indices, &docs),
+                build_suggest_response_body(suggest, &resolved_indices, docs_snapshot),
             );
         }
         if body.get("profile") == Some(&Value::Bool(true)) {
             response.insert(
                 "profile".to_string(),
-                serde_json::json!({
-                    "shards": [
-                        {
-                            "searches": [
-                                {
-                                    "query": [
-                                        {
-                                            "type": "bounded_query",
-                                            "description": "Steelsearch bounded search profile",
-                                            "time_in_nanos": 1
-                                        }
-                                    ],
-                                    "rewrite_time": 0,
-                                    "collector": [
-                                        {
-                                            "name": "simple_collector",
-                                            "reason": "search_top_hits",
-                                            "time_in_nanos": 1
-                                        }
-                                    ]
-                                }
-                            ],
-                            "aggregations": []
-                        }
-                    ]
-                }),
+                build_bounded_search_profile_body(&body, &resolved_indices),
             );
         }
         if let Some(scroll_id) = scroll_id {
             response.insert("_scroll_id".to_string(), Value::String(scroll_id));
         }
         RestResponse::json(200, Value::Object(response))
+    }
+
+    fn try_native_engine_search_response(
+        &self,
+        resolved_indices: &[String],
+        body: &Value,
+    ) -> Option<RestResponse> {
+        let request = standalone_native_search_request(resolved_indices, body).ok()?;
+        match self.native_engine.search(request) {
+            Ok(response) => Some(native_search_response_to_rest_response(response)),
+            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => None,
+            Err(error) => Some(engine_error_to_rest_response(error)),
+        }
     }
 
     fn handle_bulk_route(&self, default_index: Option<&str>, request: &RestRequest) -> RestResponse {
@@ -11066,6 +11185,7 @@ impl SteelNode {
             .query_params
             .get("refresh")
             .is_some_and(|value| value == "wait_for" || value == "true");
+        let native_source = source.clone();
         let record = StoredDocument {
             source,
             version,
@@ -11086,6 +11206,16 @@ impl SteelNode {
         docs.insert(key, record);
         drop(docs);
         drop(next_seq_no);
+        let _ = self.native_engine.index_document(IndexDocumentRequest {
+            index: resolved_index.clone(),
+            id: id.to_string(),
+            source: native_source,
+        });
+        if forced_refresh {
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: vec![resolved_index.clone()],
+            });
+        }
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(if doc_existed { 200 } else { 201 }, response)
     }
@@ -11141,6 +11271,7 @@ impl SteelNode {
             .query_params
             .get("refresh")
             .is_some_and(|value| value == "wait_for" || value == "true");
+        let native_source = source.clone();
         let record = StoredDocument {
             source,
             version: 1,
@@ -11161,6 +11292,16 @@ impl SteelNode {
         docs.insert(key, record);
         drop(docs);
         drop(next_seq_no);
+        let _ = self.native_engine.index_document(IndexDocumentRequest {
+            index: resolved_index.clone(),
+            id: id.to_string(),
+            source: native_source,
+        });
+        if forced_refresh {
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: vec![resolved_index.clone()],
+            });
+        }
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(201, response)
     }
@@ -14072,7 +14213,24 @@ impl SteelNode {
             .expect("next ml task id lock poisoned") = state.next_ml_task_id;
     }
 
+    fn sync_shared_runtime_state_from_disk_if_enabled(&self) {
+        if env::var("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            self.sync_shared_runtime_state_from_disk();
+        }
+    }
+
     fn persist_shared_runtime_state_to_disk(&self) {
+        if env::var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE")
+            .ok()
+            .as_deref()
+            != Some("1")
+        {
+            return;
+        }
         let Some(path) = self.shared_runtime_state_path.as_ref() else {
             return;
         };
@@ -14516,6 +14674,124 @@ fn build_unsupported_search_response(reason: &str) -> RestResponse {
     )
 }
 
+fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
+    ![
+        "collapse",
+        "profile",
+        "rescore",
+        "runtime_mappings",
+        "search_after",
+        "suggest",
+        "terminate_after",
+    ]
+    .iter()
+    .any(|key| body.get(*key).is_some())
+}
+
+fn standalone_native_search_request(
+    resolved_indices: &[String],
+    body: &Value,
+) -> Result<SearchRequest, String> {
+    Ok(SearchRequest {
+        indices: resolved_indices.to_vec(),
+        query: body
+            .get("query")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({ "match_all": {} })),
+        stored_fields: body.get("stored_fields").cloned(),
+        source_fields: body.get("fields").cloned(),
+        source_filter: body.get("_source").cloned(),
+        source_includes: body.get("_source_includes").cloned(),
+        source_include: body.get("_source_include").cloned(),
+        source_excludes: body.get("_source_excludes").cloned(),
+        source_exclude: body.get("_source_exclude").cloned(),
+        aggregations: body
+            .get("aggs")
+            .or_else(|| body.get("aggregations"))
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        highlight: body.get("highlight").cloned(),
+        sort: parse_native_sort_specs(body.get("sort"))?,
+        from: body.get("from").and_then(Value::as_u64).unwrap_or(0) as usize,
+        size: body.get("size").and_then(Value::as_u64).unwrap_or(10) as usize,
+        explain: body.get("explain") == Some(&Value::Bool(true)),
+    })
+}
+
+fn parse_native_sort_specs(sort: Option<&Value>) -> Result<Vec<SortSpec>, String> {
+    let Some(sort) = sort else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = sort.as_array() else {
+        return Err("native sort expects an array".to_string());
+    };
+    let mut specs = Vec::new();
+    for item in items {
+        if let Some(field) = item.as_str() {
+            specs.push(SortSpec {
+                field: field.to_string(),
+                order: if field == "_score" {
+                    SortOrder::Desc
+                } else {
+                    SortOrder::Asc
+                },
+                unmapped_type: None,
+                mode: None,
+                geo_origin: None,
+                script: None,
+            });
+            continue;
+        }
+        let Some(object) = item.as_object() else {
+            return Err("native sort item expects a field object".to_string());
+        };
+        for (field, options) in object {
+            let order = match options {
+                Value::String(value) if value == "desc" => SortOrder::Desc,
+                Value::String(_) => SortOrder::Asc,
+                Value::Object(options) => {
+                    if options
+                        .get("order")
+                        .and_then(Value::as_str)
+                        .is_some_and(|order| order == "desc")
+                    {
+                        SortOrder::Desc
+                    } else {
+                        SortOrder::Asc
+                    }
+                }
+                _ => SortOrder::Asc,
+            };
+            specs.push(SortSpec {
+                field: field.to_string(),
+                order,
+                unmapped_type: None,
+                mode: None,
+                geo_origin: None,
+                script: None,
+            });
+        }
+    }
+    Ok(specs)
+}
+
+fn native_search_response_to_rest_response(response: SearchResponse) -> RestResponse {
+    RestResponse::json(200, response.to_opensearch_body(1))
+}
+
+fn engine_error_to_rest_response(error: EngineError) -> RestResponse {
+    RestResponse::json(
+        error.status_code(),
+        serde_json::json!({
+            "error": {
+                "type": error.opensearch_error_type(),
+                "reason": error.opensearch_reason()
+            },
+            "status": error.status_code()
+        }),
+    )
+}
+
 fn build_x_content_parse_search_response(reason: &str) -> RestResponse {
     RestResponse::json(
         400,
@@ -14540,6 +14816,151 @@ fn build_parsing_search_response(reason: &str) -> RestResponse {
             "status": 400
         }),
     )
+}
+
+fn build_bounded_search_profile_body(body: &Value, resolved_indices: &[String]) -> Value {
+    let query = &body["query"];
+    let size = body.get("size").and_then(Value::as_u64).unwrap_or(10);
+    let has_aggs = body
+        .get("aggs")
+        .or_else(|| body.get("aggregations"))
+        .and_then(Value::as_object)
+        .is_some_and(|aggs| !aggs.is_empty());
+    let has_knn = value_contains_key(query, "knn");
+    let has_bool_must_not = query
+        .get("bool")
+        .and_then(Value::as_object)
+        .and_then(|bool_query| bool_query.get("must_not"))
+        .is_some();
+    let multi_index = resolved_indices.len() > 1;
+
+    let mut phase_descriptions = vec!["bounded native search evaluated refreshed documents".to_string()];
+    if size == 0 {
+        phase_descriptions.push("matched refreshed documents without hit fetch".to_string());
+        if !has_knn {
+            phase_descriptions
+                .push("size=0 compatibility path avoided top-level hit materialization".to_string());
+        }
+        if has_aggs {
+            phase_descriptions.push(
+                "size=0 compatibility aggregation path avoided top-level hit materialization"
+                    .to_string(),
+            );
+        }
+    }
+    if size > 0 && has_aggs {
+        phase_descriptions
+            .push("matched refreshed documents with native page+aggregation fetch".to_string());
+    }
+    if has_knn {
+        if size == 0 {
+            phase_descriptions
+                .push("vector-native page path skipped hit materialization because size=0".to_string());
+        } else {
+            phase_descriptions
+                .push("matched refreshed documents with vector-native page+aggregation fetch".to_string());
+        }
+    }
+    if multi_index {
+        phase_descriptions.push("native page reduce across resolved indices".to_string());
+        if has_knn {
+            phase_descriptions.push("vector-native page reduce across resolved indices".to_string());
+        }
+        if has_aggs {
+            phase_descriptions.push("aggregation reduce across resolved indices".to_string());
+        }
+    }
+
+    let mut invariants = serde_json::Map::new();
+    if has_knn || has_aggs || body.get("sort").is_some() {
+        invariants.insert("requires_reusable_context".to_string(), Value::Bool(true));
+    }
+    if has_bool_must_not || value_contains_any_key(query, &["term", "terms", "range", "nested"]) {
+        invariants.insert(
+            "requires_native_candidate_reduction".to_string(),
+            Value::Bool(true),
+        );
+        invariants.insert(
+            "requires_optional_all_documents_context".to_string(),
+            Value::Bool(true),
+        );
+    }
+    if has_aggs && value_contains_key(body.get("aggs").unwrap_or(&Value::Null), "top_hits") {
+        invariants.insert(
+            "requires_requested_window_preserved".to_string(),
+            Value::Bool(true),
+        );
+    }
+    if has_knn {
+        invariants.insert("requires_runtime_cache_by_field".to_string(), Value::Bool(true));
+        invariants.insert(
+            "requires_request_result_cache_counters".to_string(),
+            Value::Bool(true),
+        );
+        invariants.insert(
+            "requires_stale_invalidation_counter".to_string(),
+            Value::Bool(true),
+        );
+        invariants.insert(
+            "requires_capacity_eviction_counter".to_string(),
+            Value::Bool(true),
+        );
+    }
+    if has_aggs {
+        invariants.insert(
+            "requires_aggregation_shape_parity".to_string(),
+            Value::Bool(true),
+        );
+    }
+    if value_contains_key(body.get("sort").unwrap_or(&Value::Null), "_script") {
+        invariants.insert("requires_exact_hit_order".to_string(), Value::Bool(true));
+    }
+
+    serde_json::json!({
+        "steelsearch_native_invariants": Value::Object(invariants),
+        "shards": [
+            {
+                "searches": [
+                    {
+                        "query": phase_descriptions
+                            .iter()
+                            .map(|description| {
+                                serde_json::json!({
+                                    "type": "bounded_native_query",
+                                    "description": description,
+                                    "time_in_nanos": 1,
+                                    "breakdown": {}
+                                })
+                            })
+                            .collect::<Vec<_>>(),
+                        "rewrite_time": 0,
+                        "collector": [
+                            {
+                                "name": "bounded_native_collector",
+                                "reason": "search_top_hits",
+                                "time_in_nanos": 1
+                            }
+                        ]
+                    }
+                ],
+                "aggregations": []
+            }
+        ]
+    })
+}
+
+fn value_contains_any_key(value: &Value, keys: &[&str]) -> bool {
+    keys.iter().any(|key| value_contains_key(value, key))
+}
+
+fn value_contains_key(value: &Value, key: &str) -> bool {
+    match value {
+        Value::Object(object) => object
+            .iter()
+            .any(|(candidate, child)| candidate == key || value_contains_key(child, key)),
+        Value::Array(items) => items.iter().any(|item| value_contains_key(item, key)),
+        _ => false,
+    }
 }
 
 fn validate_search_request_body(body: &Value) -> Option<RestResponse> {
@@ -15101,7 +15522,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
         let mut knn_count = 0usize;
         for clause in queries {
-            if clause.get("knn").is_some() {
+            if query_uses_pure_knn_candidate_path(clause) {
                 knn_count += 1;
             }
             if let Some(response) = validate_search_query_body(clause) {
@@ -15129,6 +15550,13 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
         if let Some(should) = bool_query.get("should").and_then(Value::as_array) {
             for clause in should {
+                if let Some(response) = validate_search_query_body(clause) {
+                    return Some(response);
+                }
+            }
+        }
+        if let Some(must_not) = bool_query.get("must_not").and_then(Value::as_array) {
+            for clause in must_not {
                 if let Some(response) = validate_search_query_body(clause) {
                     return Some(response);
                 }
@@ -15578,6 +16006,13 @@ fn extract_knn_field_name(query: &Value) -> Option<&str> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
         return knn.keys().next().map(String::as_str);
     }
+    if let Some(nested_query) = query
+        .get("nested")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get("query"))
+    {
+        return extract_knn_field_name(nested_query);
+    }
     if let Some(queries) = query
         .get("hybrid")
         .and_then(Value::as_object)
@@ -15586,12 +16021,19 @@ fn extract_knn_field_name(query: &Value) -> Option<&str> {
     {
         return queries.iter().find_map(extract_knn_field_name);
     }
-    query
-        .get("bool")
-        .and_then(Value::as_object)
-        .and_then(|bool_query| bool_query.get("must"))
-        .and_then(Value::as_array)
-        .and_then(|clauses| clauses.iter().find_map(extract_knn_field_name))
+    let Some(bool_query) = query.get("bool").and_then(Value::as_object) else {
+        return None;
+    };
+    for clause_name in ["must", "should", "filter", "must_not"] {
+        if let Some(field_name) = bool_query
+            .get(clause_name)
+            .and_then(Value::as_array)
+            .and_then(|clauses| clauses.iter().find_map(extract_knn_field_name))
+        {
+            return Some(field_name);
+        }
+    }
+    None
 }
 
 fn apply_search_sort(hits: &mut [Value], sort: &Value) {
@@ -15875,6 +16317,13 @@ fn extract_knn_limit(query: &Value) -> Option<usize> {
         let (_, spec) = knn.iter().next()?;
         return spec.get("k").and_then(Value::as_u64).map(|value| value as usize);
     }
+    if let Some(nested_query) = query
+        .get("nested")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get("query"))
+    {
+        return extract_knn_limit(nested_query);
+    }
     if let Some(queries) = query
         .get("hybrid")
         .and_then(Value::as_object)
@@ -15888,15 +16337,99 @@ fn extract_knn_limit(query: &Value) -> Option<usize> {
         }
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
-        if let Some(must) = bool_query.get("must").and_then(Value::as_array) {
-            for clause in must {
-                if let Some(limit) = extract_knn_limit(clause) {
-                    return Some(limit);
+        if let Some(shoulds) = bool_query.get("should").and_then(Value::as_array) {
+            if bool_query.get("must").is_some() || bool_query.get("filter").is_some() {
+                return None;
+            }
+            let required = bool_query
+                .get("minimum_should_match")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize)
+                .unwrap_or(1);
+            if required == 0 {
+                return None;
+            }
+            let mut limits = Vec::new();
+            for clause in shoulds {
+                let Some(limit) = extract_knn_limit(clause) else {
+                    return None;
+                };
+                limits.push(limit);
+            }
+            return if limits.len() == 1 && limits.len() >= required {
+                limits.into_iter().next()
+            } else {
+                None
+            };
+        }
+        let mut limits = Vec::new();
+        for clause_name in ["must", "should", "filter"] {
+            if let Some(clauses) = bool_query.get(clause_name).and_then(Value::as_array) {
+                for clause in clauses {
+                    let Some(limit) = extract_knn_limit(clause) else {
+                        return None;
+                    };
+                    limits.push(limit);
                 }
             }
         }
+        return if limits.len() == 1 {
+            limits.into_iter().next()
+        } else {
+            None
+        };
     }
     None
+}
+
+fn query_uses_pure_knn_candidate_path(query: &Value) -> bool {
+    if query.get("knn").and_then(Value::as_object).is_some() {
+        return true;
+    }
+    if let Some(nested_query) = query
+        .get("nested")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get("query"))
+    {
+        return query_uses_pure_knn_candidate_path(nested_query);
+    }
+    let Some(bool_query) = query.get("bool").and_then(Value::as_object) else {
+        return false;
+    };
+    if let Some(shoulds) = bool_query.get("should").and_then(Value::as_array) {
+        if bool_query.get("must").is_some() || bool_query.get("filter").is_some() {
+            return false;
+        }
+        let required = bool_query
+            .get("minimum_should_match")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(1);
+        if required == 0 {
+            return false;
+        }
+        let pure_should_candidates = shoulds
+            .iter()
+            .filter(|clause| query_uses_pure_knn_candidate_path(clause))
+            .count();
+        return pure_should_candidates == 1
+            && pure_should_candidates == shoulds.len()
+            && pure_should_candidates >= required;
+    }
+    let mut positive_candidate_clauses = 0usize;
+    for clause_name in ["must", "filter"] {
+        let Some(clauses) = bool_query.get(clause_name).and_then(Value::as_array) else {
+            continue;
+        };
+        for clause in clauses {
+            if query_uses_pure_knn_candidate_path(clause) {
+                positive_candidate_clauses += 1;
+            } else {
+                return false;
+            }
+        }
+    }
+    positive_candidate_clauses == 1
 }
 
 fn extract_knn_ignore_unmapped(query: &Value) -> bool {
@@ -15907,6 +16440,13 @@ fn extract_knn_ignore_unmapped(query: &Value) -> bool {
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
         }
+    }
+    if let Some(nested_query) = query
+        .get("nested")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get("query"))
+    {
+        return extract_knn_ignore_unmapped(nested_query);
     }
     if let Some(queries) = query
         .get("hybrid")
@@ -15921,10 +16461,12 @@ fn extract_knn_ignore_unmapped(query: &Value) -> bool {
         }
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
-        if let Some(must) = bool_query.get("must").and_then(Value::as_array) {
-            for clause in must {
-                if extract_knn_ignore_unmapped(clause) {
-                    return true;
+        for clause_name in ["must", "should", "filter", "must_not"] {
+            if let Some(clauses) = bool_query.get(clause_name).and_then(Value::as_array) {
+                for clause in clauses {
+                    if extract_knn_ignore_unmapped(clause) {
+                        return true;
+                    }
                 }
             }
         }
@@ -16239,6 +16781,8 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
         let mut total_score = 0.0;
         let mut has_scoring_clause = false;
+        let mut has_filter_clause = false;
+        let mut bool_matched_without_score = false;
         if let Some(musts) = bool_query.get("must").and_then(Value::as_array) {
             for clause in musts {
                 let (matched, score) =
@@ -16251,6 +16795,7 @@ fn evaluate_search_query_source_with_mappings(
             }
         }
         if let Some(filters) = bool_query.get("filter").and_then(Value::as_array) {
+            has_filter_clause = true;
             let matched = filters.iter().all(|clause| {
                 evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)
                     .map(|(matched, _)| matched)
@@ -16259,6 +16804,17 @@ fn evaluate_search_query_source_with_mappings(
             if !matched {
                 return Some((false, 0.0));
             }
+            bool_matched_without_score = true;
+        }
+        if let Some(must_nots) = bool_query.get("must_not").and_then(Value::as_array) {
+            for clause in must_nots {
+                let (matched, _) =
+                    evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
+                if matched {
+                    return Some((false, 0.0));
+                }
+            }
+            bool_matched_without_score = true;
         }
         if let Some(shoulds) = bool_query.get("should").and_then(Value::as_array) {
             let mut matched_should = 0usize;
@@ -16279,11 +16835,14 @@ fn evaluate_search_query_source_with_mappings(
             if matched_should < required {
                 return Some((false, 0.0));
             }
+            if matched_should == 0 && required == 0 {
+                bool_matched_without_score = true;
+            }
         }
         if has_scoring_clause {
             return Some((true, total_score.max(1.0)));
         }
-        if bool_query.get("filter").is_some() {
+        if has_filter_clause || bool_matched_without_score {
             return Some((true, 1.0));
         }
     }
@@ -24179,6 +24738,98 @@ mod tests {
         );
         assert_eq!(filtered_nested_knn_no_match.status, 200);
         assert_eq!(filtered_nested_knn_no_match.body["hits"]["total"]["value"], 0);
+
+        let required_should_nested_knn = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/vectors-unit-nested-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {
+                                    "nested": {
+                                        "path": "segments",
+                                        "query": {
+                                            "knn": {
+                                                "embedding": {
+                                                    "vector": [1.0, 0.0, 0.0],
+                                                    "k": 1,
+                                                    "min_score": 0.5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            ],
+                            "minimum_should_match": 1
+                        }
+                    }
+                })),
+        );
+        assert_eq!(required_should_nested_knn.status, 200);
+        assert_eq!(required_should_nested_knn.body["hits"]["total"]["value"], 1);
+        assert_eq!(required_should_nested_knn.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let optional_should_nested_knn = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/vectors-unit-nested-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {
+                                    "nested": {
+                                        "path": "segments",
+                                        "query": {
+                                            "knn": {
+                                                "embedding": {
+                                                    "vector": [1.0, 0.0, 0.0],
+                                                    "k": 1,
+                                                    "min_score": 0.5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            ],
+                            "minimum_should_match": 0
+                        }
+                    }
+                })),
+        );
+        assert_eq!(optional_should_nested_knn.status, 200);
+        assert_eq!(optional_should_nested_knn.body["hits"]["total"]["value"], 2);
+        assert_eq!(
+            optional_should_nested_knn.body["hits"]["hits"].as_array().map(Vec::len),
+            Some(2)
+        );
+
+        let must_not_nested_knn = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/vectors-unit-nested-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "must_not": [
+                                {
+                                    "nested": {
+                                        "path": "segments",
+                                        "query": {
+                                            "knn": {
+                                                "embedding": {
+                                                    "vector": [1.0, 0.0, 0.0],
+                                                    "k": 1,
+                                                    "min_score": 0.5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                })),
+        );
+        assert_eq!(must_not_nested_knn.status, 200);
+        assert_eq!(must_not_nested_knn.body["hits"]["total"]["value"], 1);
+        assert_eq!(must_not_nested_knn.body["hits"]["hits"][0]["_id"], "doc-2");
     }
 
     #[test]
@@ -25045,6 +25696,41 @@ mod tests {
         );
         assert_eq!(nested.status, 200);
         assert_eq!(nested.body["hits"]["total"]["value"], 2);
+
+        let must_not_only = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "must_not": [
+                                {
+                                    "exists": { "field": "contact_email" }
+                                }
+                            ]
+                        }
+                    }
+                })),
+        );
+        assert_eq!(must_not_only.status, 200);
+        assert_eq!(must_not_only.body["hits"]["total"]["value"], 2);
+
+        let zero_minimum_should_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {
+                                    "term": { "code": "missing-code" }
+                                }
+                            ],
+                            "minimum_should_match": 0
+                        }
+                    }
+                })),
+        );
+        assert_eq!(zero_minimum_should_match.status, 200);
+        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 3);
     }
 
     #[test]

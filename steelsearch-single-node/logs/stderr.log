@@ -1,0 +1,1877 @@
+Steelsearch work dir: steelsearch-single-node/node-1
+Steelsearch bind URL: http://127.0.0.1:59615
+Steelsearch access URL: http://127.0.0.1:59615
+Steelsearch transport bind: 127.0.0.1:35209
+Steelsearch transport access: 127.0.0.1:35209
+Steelsearch cargo run launch epoch ms: 1781400164093
+Steelsearch split build/run: 0
+Steelsearch start command: steelsearch-single-node/node-1/start-command.txt
+Steelsearch direct cargo run exec epoch ms: 1781400164107
+warning: unused variable: `section`
+    --> crates/os-cluster-state/src/lib.rs:7455:5
+     |
+7455 |     section: &'static str,
+     |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_section`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `SearchMemoryReservation` and `SearchMemoryUsageCounters`
+  --> crates/os-engine-tantivy/src/lib.rs:14:5
+   |
+14 |     SearchMemoryReservation, SearchMemoryUsageCounters, SearchPhase, SearchPhaseResult,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tantivy::aggregation::agg_req::Aggregations as TantivyAggregations`
+  --> crates/os-engine-tantivy/src/lib.rs:36:5
+   |
+36 | use tantivy::aggregation::agg_req::Aggregations as TantivyAggregations;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tantivy::aggregation::AggregationCollector`
+  --> crates/os-engine-tantivy/src/lib.rs:37:5
+   |
+37 | use tantivy::aggregation::AggregationCollector;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11602:59
+      |
+11602 |           Query::Term { field, value } if field != "_id" => (
+      |  ___________________________________________________________^
+11603 | |             {
+      | |____________^
+...
+11611 |               }
+      |  ______________^
+11612 | |         ),
+      | |_________^
+      |
+      = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+      |
+11602 ~         Query::Term { field, value } if field != "_id" => {
+11603 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11609 |                 )
+11610 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11613:61
+      |
+11613 |           Query::Terms { field, values } if field != "_id" => (
+      |  _____________________________________________________________^
+11614 | |             {
+      | |____________^
+...
+11622 |               }
+      |  ______________^
+11623 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11613 ~         Query::Terms { field, values } if field != "_id" => {
+11614 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11620 |                 )
+11621 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11628:32
+      |
+11628 |           } if field != "_id" => (
+      |  ________________________________^
+11629 | |             {
+      | |____________^
+...
+11639 |               }
+      |  ______________^
+11640 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11628 ~         } if field != "_id" => {
+11629 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11637 |                 )
+11638 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11641:60
+      |
+11641 |           Query::Match { field, query } if field != "_id" => (
+      |  ____________________________________________________________^
+11642 | |             {
+      | |____________^
+...
+11652 |               }
+      |  ______________^
+11653 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11641 ~         Query::Match { field, query } if field != "_id" => {
+11642 |                 let field_match = matches_match_query(
+  ...
+11650 |                 )
+11651 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11654:66
+      |
+11654 |           Query::MatchPhrase { field, query } if field != "_id" => (
+      |  __________________________________________________________________^
+11655 | |             {
+      | |____________^
+...
+11665 |               }
+      |  ______________^
+11666 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11654 ~         Query::MatchPhrase { field, query } if field != "_id" => {
+11655 |                 let field_match = matches_match_phrase_query(
+  ...
+11663 |                 )
+11664 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11667:72
+      |
+11667 |           Query::MatchPhrasePrefix { field, query } if field != "_id" => (
+      |  ________________________________________________________________________^
+11668 | |             {
+      | |____________^
+...
+11678 |               }
+      |  ______________^
+11679 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11667 ~         Query::MatchPhrasePrefix { field, query } if field != "_id" => {
+11668 |                 let field_match = matches_match_phrase_prefix_query(
+  ...
+11676 |                 )
+11677 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11680:70
+      |
+11680 |           Query::MatchBoolPrefix { field, query } if field != "_id" => (
+      |  ______________________________________________________________________^
+11681 | |             {
+      | |____________^
+...
+11691 |               }
+      |  ______________^
+11692 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11680 ~         Query::MatchBoolPrefix { field, query } if field != "_id" => {
+11681 |                 let field_match = matches_match_bool_prefix_query(
+  ...
+11689 |                 )
+11690 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11851:61
+      |
+11851 |           Query::Range { field, bounds } if field != "_id" => (
+      |  _____________________________________________________________^
+11852 | |             {
+      | |____________^
+...
+11860 |               }
+      |  ______________^
+11861 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11851 ~         Query::Range { field, bounds } if field != "_id" => {
+11852 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11858 |                 )
+11859 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11935:32
+      |
+11935 |           } if field != "_id" => (
+      |  ________________________________^
+11936 | |             {
+      | |____________^
+...
+11946 |               }
+      |  ______________^
+11947 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11935 ~         } if field != "_id" => {
+11936 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11944 |                 )
+11945 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11952:32
+      |
+11952 |           } if field != "_id" => (
+      |  ________________________________^
+11953 | |             {
+      | |____________^
+...
+11963 |               }
+      |  ______________^
+11964 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11952 ~         } if field != "_id" => {
+11953 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11961 |                 )
+11962 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:11969:32
+      |
+11969 |           } if field != "_id" => (
+      |  ________________________________^
+11970 | |             {
+      | |____________^
+...
+11980 |               }
+      |  ______________^
+11981 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+11969 ~         } if field != "_id" => {
+11970 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+11978 |                 )
+11979 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:12008:32
+      |
+12008 |           } if field != "_id" => (
+      |  ________________________________^
+12009 | |             {
+      | |____________^
+...
+12025 |               }
+      |  ______________^
+12026 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+12008 ~         } if field != "_id" => {
+12009 |                 let field_match = source_value_for_highlight_field(&hit.source, field)
+  ...
+12023 |                 )
+12024 ~             },
+      |
+
+warning: unnecessary parentheses around match arm expression
+     --> crates/os-engine-tantivy/src/lib.rs:12027:58
+      |
+12027 |           Query::Exists { field, .. } if field != "_id" => (
+      |  __________________________________________________________^
+12028 | |             {
+      | |____________^
+...
+12038 |               }
+      |  ______________^
+12039 | |         ),
+      | |_________^
+      |
+help: remove these parentheses
+      |
+12027 ~         Query::Exists { field, .. } if field != "_id" => {
+12028 |                 let field_matched = source_value_for_highlight_field(&hit.source, field)
+  ...
+12036 |                 )
+12037 ~             },
+      |
+
+warning: variable does not need to be mutable
+    --> crates/os-engine-tantivy/src/lib.rs:1962:17
+     |
+1962 |             let mut options = NumericOptions::default().set_indexed().set_stored().set_fast();
+     |                 ----^^^^^^^
+     |                 |
+     |                 help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/os-engine-tantivy/src/lib.rs:4403:21
+     |
+4403 |                 let mut selected_hits = finalize_hits_for_requested_page(
+     |                     ----^^^^^^^^^^^^^
+     |                     |
+     |                     help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/os-engine-tantivy/src/lib.rs:4510:17
+     |
+4510 |             let mut selected_hits = finalize_hits_for_requested_page(
+     |                 ----^^^^^^^^^^^^^
+     |                 |
+     |                 help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/os-engine-tantivy/src/lib.rs:6543:9
+     |
+6543 |         mut hits: Vec<SearchHit>,
+     |         ----^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `origin`
+     --> crates/os-engine-tantivy/src/lib.rs:16579:17
+      |
+16579 |     if let Some(origin) = &sort_spec.geo_origin {
+      |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_origin`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `bucket`
+     --> crates/os-engine-tantivy/src/lib.rs:19237:45
+      |
+19237 |                     .map(|(index, (_metric, bucket))| {
+      |                                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_bucket`
+
+warning: value assigned to `ordered_hits_storage` is never read
+     --> crates/os-engine-tantivy/src/lib.rs:20185:36
+      |
+20185 |     let mut ordered_hits_storage = None;
+      |                                    ^^^^ this value is reassigned later and never used
+...
+20191 |         ordered_hits_storage = Some(ordered_hits);
+      |         -------------------- `ordered_hits_storage` is overwritten here before the previous value is read
+      |
+      = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `ordered_all_hits_storage` is never read
+     --> crates/os-engine-tantivy/src/lib.rs:20186:40
+      |
+20186 |     let mut ordered_all_hits_storage = None;
+      |                                        ^^^^ this value is reassigned later and never used
+...
+20192 |         ordered_all_hits_storage = Some(ordered_all_hits);
+      |         ------------------------ `ordered_all_hits_storage` is overwritten here before the previous value is read
+
+warning: unused variable: `after`
+     --> crates/os-engine-tantivy/src/lib.rs:26094:38
+      |
+26094 |             let Some((size, sources, after)) = plugin_composite_setup(plugin) else {
+      |                                      ^^^^^ help: if this is intentional, prefix it with an underscore: `_after`
+
+warning: variable does not need to be mutable
+     --> crates/os-engine-tantivy/src/lib.rs:27200:9
+      |
+27200 |     let mut object = object_value_with_field("doc_count", Value::from(doc_count))
+      |         ----^^^^^^
+      |         |
+      |         help: remove this `mut`
+
+warning: unreachable pattern
+     --> crates/os-engine-tantivy/src/lib.rs:28613:9
+      |
+28479 |         "date_range" => {
+      |         ------------ matches all the relevant values
+...
+28613 |         "date_range" => {
+      |         ^^^^^^^^^^^^ no value can reach this
+      |
+      = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+     --> crates/os-engine-tantivy/src/lib.rs:28678:9
+      |
+28544 |         "geo_distance" => {
+      |         -------------- matches all the relevant values
+...
+28678 |         "geo_distance" => {
+      |         ^^^^^^^^^^^^^^ no value can reach this
+
+warning: unreachable pattern
+     --> crates/os-engine-tantivy/src/lib.rs:29224:9
+      |
+28747 |         "date_histogram" => {
+      |         ---------------- matches all the relevant values
+...
+29224 |         "date_histogram" => {
+      |         ^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: variable does not need to be mutable
+     --> crates/os-engine-tantivy/src/lib.rs:29310:17
+      |
+29310 |             let mut value = collect_plugin_top_hits_aggregation_with_input_order(
+      |                 ----^^^^^
+      |                 |
+      |                 help: remove this `mut`
+
+warning: constant `MAX_KNN_CACHE_ENTRIES_PER_FIELD` is never used
+  --> crates/os-engine-tantivy/src/lib.rs:56:7
+   |
+56 | const MAX_KNN_CACHE_ENTRIES_PER_FIELD: usize = 16;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MAX_KNN_CACHE_BYTES_PER_FIELD` is never used
+  --> crates/os-engine-tantivy/src/lib.rs:57:7
+   |
+57 | const MAX_KNN_CACHE_BYTES_PER_FIELD: usize = 256 * 1024;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `IndexedField` is never used
+  --> crates/os-engine-tantivy/src/lib.rs:60:6
+   |
+60 | type IndexedField = TantivyIndexedField;
+   |      ^^^^^^^^^^^^
+
+warning: field `collector_telemetry` is never read
+   --> crates/os-engine-tantivy/src/lib.rs:128:5
+    |
+116 | struct StoredIndex {
+    |        ----------- field in this struct
+...
+128 |     collector_telemetry: SearchCollectorTelemetry,
+    |     ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `StoredIndex` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `total_hits` and `documents` are never read
+   --> crates/os-engine-tantivy/src/lib.rs:192:5
+    |
+191 | struct ReusableQueryContext<'a> {
+    |        -------------------- fields in this struct
+192 |     total_hits: Option<u64>,
+    |     ^^^^^^^^^^
+193 |     documents: Option<Vec<&'a StoredDocument>>,
+    |     ^^^^^^^^^
+    |
+    = note: `ReusableQueryContext` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: struct `SingleIndexPlainResponseRequestedPageHitsCarrier` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:197:8
+    |
+197 | struct SingleIndexPlainResponseRequestedPageHitsCarrier {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SingleIndexPlainResponseRequestedPageHitsCarrierRef` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:203:8
+    |
+203 | struct SingleIndexPlainResponseRequestedPageHitsCarrierRef<'a> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `NativeQueryContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:209:8
+    |
+209 | struct NativeQueryContext<'a> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: struct `VectorCandidateWindowContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:216:8
+    |
+216 | struct VectorCandidateWindowContext<'a> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `VectorCandidateWindowContextKind` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:225:6
+    |
+225 | enum VectorCandidateWindowContextKind {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `IndexAwareNativeHitContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:232:8
+    |
+232 | struct IndexAwareNativeHitContext {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexHitContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:237:8
+    |
+237 | struct MaterializedMultiIndexHitContext {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexScoredHitContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:243:8
+    |
+243 | struct MaterializedMultiIndexScoredHitContext {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexRefreshContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:249:8
+    |
+249 | struct MaterializedMultiIndexRefreshContext {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexPerIndexHitContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:256:8
+    |
+256 | struct MaterializedMultiIndexPerIndexHitContext {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexPerIndexScoredHitContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:262:8
+    |
+262 | struct MaterializedMultiIndexPerIndexScoredHitContext {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexPerIndexNativeQueryContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:267:8
+    |
+267 | struct MaterializedMultiIndexPerIndexNativeQueryContext<'a> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexPerIndexReusableQueryContext` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:272:8
+    |
+272 | struct MaterializedMultiIndexPerIndexReusableQueryContext<'a> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceCertification` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:284:6
+    |
+284 | enum MaterializedMultiIndexHitSliceCertification {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceOwnerOrderSource` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:291:6
+    |
+291 | enum MaterializedMultiIndexHitSliceOwnerOrderSource {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceOwnerOrderSignal` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:298:6
+    |
+298 | enum MaterializedMultiIndexHitSliceOwnerOrderSignal {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceDirectReturnEvidence` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:305:6
+    |
+305 | enum MaterializedMultiIndexHitSliceDirectReturnEvidence {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceNativeSourceMarker` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:311:6
+    |
+311 | enum MaterializedMultiIndexHitSliceNativeSourceMarker {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceNativeSignalMarker` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:318:6
+    |
+318 | enum MaterializedMultiIndexHitSliceNativeSignalMarker {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceNativeEmissionEvidence` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:325:6
+    |
+325 | enum MaterializedMultiIndexHitSliceNativeEmissionEvidence {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexHitSliceNativeWriteOwnerEvidence` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:331:6
+    |
+331 | enum MaterializedMultiIndexHitSliceNativeWriteOwnerEvidence {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedSingleIndexNativeHitReturn` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:336:8
+    |
+336 | struct MaterializedSingleIndexNativeHitReturn {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexRefreshedDocumentsFragment` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:347:8
+    |
+347 | struct MaterializedMultiIndexRefreshedDocumentsFragment {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexScoredHitsFragment` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:354:8
+    |
+354 | struct MaterializedMultiIndexScoredHitsFragment {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MaterializedMultiIndexRefreshPayload` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:361:6
+    |
+361 | enum MaterializedMultiIndexRefreshPayload {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MaterializedMultiIndexRefreshResult` is never constructed
+   --> crates/os-engine-tantivy/src/lib.rs:369:8
+    |
+369 | struct MaterializedMultiIndexRefreshResult {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `with_all_documents` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:420:8
+    |
+389 | impl<'a> ReusableQueryContext<'a> {
+    | --------------------------------- associated function in this implementation
+...
+420 |     fn with_all_documents(all_documents: Vec<&'a StoredDocument>) -> Self {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `with_total_hits`, `with_existing_total_hits`, `with_existing_total_hits_and_documents`, `with_optional_all_documents`, and `with_existing_total_hits_documents_and_optional_all_documents` are never used
+   --> crates/os-engine-tantivy/src/lib.rs:429:8
+    |
+428 | impl<'a> NativeQueryContext<'a> {
+    | ------------------------------- associated items in this implementation
+429 |     fn with_total_hits(total_hits: u64) -> Self {
+    |        ^^^^^^^^^^^^^^^
+...
+436 |     fn with_existing_total_hits(total_hits: u64) -> Self {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+440 |     fn with_existing_total_hits_and_documents(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+451 |     fn with_optional_all_documents(mut self, all_documents: Option<Vec<&'a StoredDocument>>) -> Self {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+456 |     fn with_existing_total_hits_documents_and_optional_all_documents(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `total_hits`, `documents`, `candidate_ids`, `hits`, and `with_optional_all_documents` are never used
+   --> crates/os-engine-tantivy/src/lib.rs:468:8
+    |
+467 | impl<'a> VectorCandidateWindowContext<'a> {
+    | ----------------------------------------- associated items in this implementation
+468 |     fn new(
+    |        ^^^
+...
+495 |     fn total_hits(&self) -> Option<u64> {
+    |        ^^^^^^^^^^
+...
+501 |     fn documents(&self) -> Option<Vec<&'a StoredDocument>> {
+    |        ^^^^^^^^^
+...
+505 |     fn candidate_ids(&self) -> Option<std::collections::BTreeSet<String>> {
+    |        ^^^^^^^^^^^^^
+...
+509 |     fn hits(&self) -> Option<Vec<SearchHit>> {
+    |        ^^^^
+...
+513 |     fn with_optional_all_documents(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `with_exact_hits_and_all_hits` is never used
+   --> crates/os-engine-tantivy/src/lib.rs:523:8
+    |
+522 | impl MaterializedMultiIndexHitContext {
+    | ------------------------------------- associated function in this implementation
+523 |     fn with_exact_hits_and_all_hits(hits: &[SearchHit], all_hits: &[SearchHit]) -> Self {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `hits_from_documents` are never used
+   --> crates/os-engine-tantivy/src/lib.rs:540:8
+    |
+539 | impl<'a> MaterializedMultiIndexPerIndexNativeQueryContext<'a> {
+    | ------------------------------------------------------------- associated items in this implementation
+540 |     fn new(index_name: &str, context: NativeQueryContext<'a>) -> Self {
+    |        ^^^
+...
+547 |     fn hits_from_documents(&self, documents: &[&StoredDocument]) -> Vec<SearchHit> {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `hits_from_documents` are never used
+   --> crates/os-engine-tantivy/src/lib.rs:565:8
+    |
+564 | impl<'a> MaterializedMultiIndexPerIndexReusableQueryContext<'a> {
+    | --------------------------------------------------------------- associated items in this implementation
+565 |     fn new(index_name: &str, context: ReusableQueryContext<'a>) -> Self {
+    |        ^^^
+...
+572 |     fn hits_from_documents(&self, documents: &[&StoredDocument]) -> Vec<SearchHit> {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: field `knn_collector_bytes_by_field` is never read
+   --> crates/os-engine-tantivy/src/lib.rs:596:5
+    |
+595 | struct SearchCollectorTelemetry {
+    |        ------------------------ field in this struct
+596 |     knn_collector_bytes_by_field: BTreeMap<String, usize>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `SearchCollectorTelemetry` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `refreshed_seq_no`, `query`, `hits`, and `resident_bytes` are never read
+   --> crates/os-engine-tantivy/src/lib.rs:627:5
+    |
+626 | struct CachedKnnSearchEntry {
+    |        -------------------- fields in this struct
+627 |     refreshed_seq_no: i64,
+    |     ^^^^^^^^^^^^^^^^
+628 |     query: KnnQuery,
+    |     ^^^^^
+629 |     hits: Vec<SearchHit>,
+    |     ^^^^
+630 |     resident_bytes: usize,
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `CachedKnnSearchEntry` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: methods `next_access_tick`, `insert_knn_entry`, `touch_vector_graph_cache`, and `touch_fast_field_cache` are never used
+   --> crates/os-engine-tantivy/src/lib.rs:668:8
+    |
+667 | impl SearchRuntimeCache {
+    | ----------------------- methods in this implementation
+668 |     fn next_access_tick(&mut self) -> u64 {
+    |        ^^^^^^^^^^^^^^^^
+...
+746 |     fn insert_knn_entry(
+    |        ^^^^^^^^^^^^^^^^
+...
+765 |     fn touch_vector_graph_cache(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+781 |     fn touch_fast_field_cache(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_tantivy_span_first_query` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:3187:4
+     |
+3187 | fn build_tantivy_span_first_query(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `query_shape_supports_span_ranges` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:3220:4
+     |
+3220 | fn query_shape_supports_span_ranges(query: &Query) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_tantivy_span_containing_query` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:3231:4
+     |
+3231 | fn build_tantivy_span_containing_query(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_tantivy_span_within_query` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:3242:4
+     |
+3242 | fn build_tantivy_span_within_query(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `standard_search_response_with_projected_hits_and_fetch_subphases`, `value_and_optional_reusable_query_context`, `collect_shard_local_native_reduce_aggregation_map_with_requested_window_top_hits`, `materialized_multi_index_hit_context_from_per_index_reusable_contexts`, and `optional_reusable_for_single_index_query_index_aware` are never used
+    --> crates/os-engine-tantivy/src/lib.rs:3588:8
+     |
+3477 | impl EngineStore {
+     | ---------------- associated items in this implementation
+...
+3588 |     fn standard_search_response_with_projected_hits_and_fetch_subphases(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3615 |     fn value_and_optional_reusable_query_context(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3773 |     fn collect_shard_local_native_reduce_aggregation_map_with_requested_window_top_hits(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3779 |     fn materialized_multi_index_hit_context_from_per_index_reusable_contexts(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3815 |     fn optional_reusable_for_single_index_query_index_aware<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `collect_materialized_single_index_plain_response_hits_with_query_vector_candidate_window_context_and_optional_total_hits_deterministic_stored_field_projection` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:4349:8
+     |
+4320 | impl StoredIndex {
+     | ---------------- method in this implementation
+...
+4349 |     fn collect_materialized_single_index_plain_response_hits_with_query_vector_candidate_window_context_and_optional_total_hits_deterministic_stored_field_projection(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `vector_candidate_window_context_for_query_native` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:4586:8
+     |
+4585 | impl StoredIndex {
+     | ---------------- method in this implementation
+4586 |     fn vector_candidate_window_context_for_query_native<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+    --> crates/os-engine-tantivy/src/lib.rs:5117:8
+     |
+4665 | impl StoredIndex {
+     | ---------------- associated items in this implementation
+...
+5117 |     fn search_hits_for_query_with_sort(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5730 |     fn search_candidate_ids_for_query_index_aware_with_context(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5744 |     fn reduced_candidates_for_field_value_predicate(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5762 |     fn candidate_reduction_field_support_status(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5773 |     fn reusable_query_context_for_match_all(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5789 |     fn search_candidate_ids_for_bool_query_reduced(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5929 |     fn search_hits_window_for_query_native(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+5989 |     fn search_hits_window_for_query_index_aware(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6014 |     fn search_documents_for_query_native(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6021 |     fn search_hits_context_for_query_native_index_aware(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6053 |     fn hits_for_vector_candidate_window_context_index_aware(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6116 | fn current_hybrid_bool_candidate_reduction_supports_id_lexical_leaf(query: &Query) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6154 | fn current_hybrid_bool_candidate_reduction_supports_scalar_lexical_leaf(query: &Query) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6158 | fn current_hybrid_bool_candidate_reduction_supports_geo_distance_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6164 | fn current_hybrid_bool_candidate_reduction_supports_match_all_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6170 | fn current_hybrid_bool_candidate_reduction_supports_match_none_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6176 | fn current_hybrid_bool_candidate_reduction_supports_scalar_exists_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6182 | fn current_hybrid_bool_candidate_reduction_supports_rank_feature_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6188 | fn current_hybrid_bool_candidate_reduction_supports_distance_feature_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6194 | fn current_hybrid_bool_candidate_reduction_supports_scalar_term_terms_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6205 | fn current_hybrid_bool_candidate_reduction_supports_text_match_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6217 | fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard_lexical_leaf(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6226 |     fn count_documents_for_query_native_index_aware(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6277 |     fn reusable_query_context_for_query_index_aware_with_optional_all_documents(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6335 |     fn documents_for_candidate_ids<'a, I>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6519 |     fn optional_reusable_query_context_for_multi_index_hits_with_total_hits(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6541 |     fn standard_requested_page_search_response(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6574 |     fn standard_search_response_with_projected_hits_and_fetch_subphases(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6601 |     fn multi_index_requested_page_reduce_aggregation_response_inputs(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6614 |     fn count_documents_for_query_with_context(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6631 |     fn count_documents_for_query_index_aware_with_context(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6649 |     fn count_documents_for_query_index_aware(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6660 |     fn search_documents_for_query_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6674 |     fn search_documents_for_query_index_aware_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6738 |     fn search_documents_for_query_native_index_aware(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6787 |     fn count_documents_for_tantivy_query(&self, query: &Query) -> EngineResult<Option<u64>> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6860 |     fn collect_document_backed_aggregations_with_reusable_documents(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6870 |     fn collect_document_backed_aggregation_response_with_reusable_documents(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6881 |     fn document_backed_query_context_index_aware<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6923 |     fn document_backed_query_context_index_aware_with_existing_reusable_seed<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+6941 |     fn document_backed_query_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7037 |     fn collect_aggregations_for_query_index_aware_with_context<'a>(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7109 |     fn collect_aggregations_native_from_window_with_context(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7122 |     fn collect_aggregations_vector_native_with_page_top_hits_from_window_and_context(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7142 |     fn collect_shard_local_native_reduce_aggregation_map_with_requested_window_top_hits(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7162 |     fn lookup_cached_knn_search(&mut self, knn: &KnnQuery) -> Option<Vec<SearchHit>> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7201 |     fn lookup_cached_knn_search_page(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7268 |     fn lookup_cached_knn_search_sorted_page(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+7334 |     fn cache_knn_search_result(&mut self, knn: &KnnQuery, hits: &[SearchHit]) {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^
+...
+7351 |     fn touch_search_runtime_caches(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `search_tantivy_top_docs` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8134:4
+     |
+8134 | fn search_tantivy_top_docs(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `search_tantivy_top_docs_with_offset` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8189:4
+     |
+8189 | fn search_tantivy_top_docs_with_offset(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `visible_field_value_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8410:4
+     |
+8410 | fn visible_field_value_bytes(index: &StoredIndex, field_name: &str) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `visible_vector_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8420:4
+     |
+8420 | fn visible_vector_bytes(index: &StoredIndex, field_name: &str) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `last_knn_collector_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8430:4
+     |
+8430 | fn last_knn_collector_bytes(index: &StoredIndex, field_name: &str) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `cached_knn_search_entry_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8439:4
+     |
+8439 | fn cached_knn_search_entry_bytes(query: &KnnQuery, hits: &[SearchHit]) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `evict_knn_cache_entries` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8451:4
+     |
+8451 | fn evict_knn_cache_entries(field_cache: &mut CachedKnnSearchFieldCache) {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `touch_resident_field_cache` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8470:4
+     |
+8470 | fn touch_resident_field_cache(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `cached_knn_search_key` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8509:4
+     |
+8509 | fn cached_knn_search_key(query: &KnnQuery) -> String {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `estimate_search_hit_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8533:4
+     |
+8533 | fn estimate_search_hit_bytes(hit: &SearchHit) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `estimate_value_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8541:4
+     |
+8541 | fn estimate_value_bytes(value: &Value) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_field_names` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8555:4
+     |
+8555 | fn aggregation_field_names(aggregations: &AggregationMap) -> Vec<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_aggregation_field_names` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8563:4
+     |
+8563 | fn collect_aggregation_field_names(aggregation: &Aggregation, fields: &mut Vec<String>) {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `knn_queries` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8595:4
+     |
+8595 | fn knn_queries<'a>(query: &'a Query) -> Vec<&'a KnnQuery> {
+     |    ^^^^^^^^^^^
+
+warning: function `collect_knn_queries` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:8601:4
+     |
+8601 | fn collect_knn_queries<'a>(query: &'a Query, queries: &mut Vec<&'a KnnQuery>) {
+     |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `source_projection_pattern_matches_bytes` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:9158:4
+     |
+9158 | fn source_projection_pattern_matches_bytes(pattern: &[u8], path: &[u8]) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `projected_selected_hits_with_source_projection` is never used
+    --> crates/os-engine-tantivy/src/lib.rs:9237:4
+     |
+9237 | fn projected_selected_hits_with_source_projection(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `query_contains_lexical_minimum_should_match_above_one_bool` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:14298:4
+      |
+14298 | fn query_contains_lexical_minimum_should_match_above_one_bool(query: &Query) -> bool {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `plugin_top_metrics_supports_native_document_collection` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:16986:4
+      |
+16986 | fn plugin_top_metrics_supports_native_document_collection(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `plugin_top_metrics_supports_native_hit_collection` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:16992:4
+      |
+16992 | fn plugin_top_metrics_supports_native_hit_collection(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compare_document_sources_by_sort_specs` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:17015:4
+      |
+17015 | fn compare_document_sources_by_sort_specs(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compare_top_metrics_document_candidates` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:17246:4
+      |
+17246 | fn compare_top_metrics_document_candidates(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compare_top_metrics_hit_candidates` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:17262:4
+      |
+17262 | fn compare_top_metrics_hit_candidates(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `retain_top_hits_for_requested_page` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:17353:4
+      |
+17353 | fn retain_top_hits_for_requested_page(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `finalize_hits_for_requested_page` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:17367:4
+      |
+17367 | fn finalize_hits_for_requested_page(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compare_optional_geo_distance` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:17968:4
+      |
+17968 | fn compare_optional_geo_distance(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_single_aggregation_native` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:18013:4
+      |
+18013 | fn collect_single_aggregation_native(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_direct_reduce_hit_materialization_exception` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21366:4
+      |
+21366 | fn aggregation_map_supports_direct_reduce_hit_materialization_exception(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_scored_direct_reduce_hit_materialization_exception_with_input_order` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21374:4
+      |
+21374 | fn aggregation_map_supports_scored_direct_reduce_hit_materialization_exception_with_input_order(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_supports_direct_reduce_hit_materialization_exception` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21386:4
+      |
+21386 | fn aggregation_supports_direct_reduce_hit_materialization_exception(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_supports_scored_direct_reduce_hit_materialization_exception_with_input_order` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21413:4
+      |
+21413 | fn aggregation_supports_scored_direct_reduce_hit_materialization_exception_with_input_order(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_nested_document_direct_reduce_hit_materialization_exception` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21444:4
+      |
+21444 | fn aggregation_map_supports_nested_document_direct_reduce_hit_materialization_exception(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_supports_nested_document_direct_reduce_hit_materialization_exception` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21452:4
+      |
+21452 | fn aggregation_supports_nested_document_direct_reduce_hit_materialization_exception(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_nested_scored_direct_reduce_hit_materialization_exception_with_input_order` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21473:4
+      |
+21473 | fn aggregation_map_supports_nested_scored_direct_reduce_hit_materialization_exception_with_input_order(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_supports_nested_scored_direct_reduce_hit_materialization_exception_with_input_order` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21485:4
+      |
+21485 | fn aggregation_supports_nested_scored_direct_reduce_hit_materialization_exception_with_input_order(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_top_hits_request_surface_carries_only_from_and_size` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21512:4
+      |
+21512 | fn aggregation_top_hits_request_surface_carries_only_from_and_size(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_top_hits_request_surface_still_has_no_sort_carrier` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21519:4
+      |
+21519 | fn aggregation_top_hits_request_surface_still_has_no_sort_carrier() -> bool {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_top_hits_request_surface_carries_from_and_size_window` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21524:4
+      |
+21524 | fn aggregation_top_hits_request_surface_carries_from_and_size_window(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_top_hits_request_surface_exposes_only_window_fields` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21531:4
+      |
+21531 | fn aggregation_top_hits_request_surface_exposes_only_window_fields() -> bool {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_top_hits_request_surface_has_no_sort_field_on_dsl_type` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21535:4
+      |
+21535 | fn aggregation_top_hits_request_surface_has_no_sort_field_on_dsl_type() -> bool {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_top_hits_request_surface_extracts_window_fields` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21539:4
+      |
+21539 | fn aggregation_top_hits_request_surface_extracts_window_fields(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `plugin_top_hits_request_surface_carries_from_and_size_window` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21545:4
+      |
+21545 | fn plugin_top_hits_request_surface_carries_from_and_size_window(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `plugin_top_hits_request_surface_carries_non_empty_sort_specs` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21554:4
+      |
+21554 | fn plugin_top_hits_request_surface_carries_non_empty_sort_specs(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `plugin_top_hits_request_surface_uses_score_sort` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21560:4
+      |
+21560 | fn plugin_top_hits_request_surface_uses_score_sort(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_only_default_rank_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21578:4
+      |
+21578 | fn aggregation_map_uses_only_default_rank_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_non_default_rank_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21584:4
+      |
+21584 | fn aggregation_map_uses_non_default_rank_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_key_order_candidate_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21593:4
+      |
+21593 | fn aggregation_map_uses_key_order_candidate_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_key_asc_order_candidate_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21602:4
+      |
+21602 | fn aggregation_map_uses_key_asc_order_candidate_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_key_desc_order_candidate_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21611:4
+      |
+21611 | fn aggregation_map_uses_key_desc_order_candidate_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_key_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21620:4
+      |
+21620 | fn aggregation_map_uses_key_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_key_asc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21627:4
+      |
+21627 | fn aggregation_map_uses_key_asc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_key_desc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21635:4
+      |
+21635 | fn aggregation_map_uses_key_desc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_key_order_live_admission_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21643:4
+      |
+21643 | fn aggregation_map_supports_key_order_live_admission_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_key_asc_order_live_admission_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21653:4
+      |
+21653 | fn aggregation_map_supports_key_asc_order_live_admission_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_key_desc_order_live_admission_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21665:4
+      |
+21665 | fn aggregation_map_supports_key_desc_order_live_admission_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_only_key_asc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21677:4
+      |
+21677 | fn aggregation_map_uses_only_key_asc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_non_default_count_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21685:4
+      |
+21685 | fn aggregation_map_uses_non_default_count_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_non_default_count_order_candidate_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21693:4
+      |
+21693 | fn aggregation_map_uses_non_default_count_order_candidate_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_uses_count_asc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21702:4
+      |
+21702 | fn aggregation_map_uses_count_asc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_count_asc_order_live_admission_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21710:4
+      |
+21710 | fn aggregation_map_supports_count_asc_order_live_admission_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_requires_no_extra_ranking_interpretation_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21722:4
+      |
+21722 | fn aggregation_map_requires_no_extra_ranking_interpretation_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_requires_no_extra_tie_break_semantics_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21730:4
+      |
+21730 | fn aggregation_map_requires_no_extra_tie_break_semantics_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_supports_deterministic_bucket_key_tie_break_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21738:4
+      |
+21738 | fn aggregation_map_supports_deterministic_bucket_key_tie_break_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_uses_key_asc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21746:4
+      |
+21746 | fn aggregation_uses_key_asc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_uses_key_desc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21761:4
+      |
+21761 | fn aggregation_uses_key_desc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_uses_only_key_asc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21776:4
+      |
+21776 | fn aggregation_uses_only_key_asc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_uses_count_asc_order_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21791:4
+      |
+21791 | fn aggregation_uses_count_asc_order_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_requires_no_extra_ranking_interpretation_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21806:4
+      |
+21806 | fn aggregation_requires_no_extra_ranking_interpretation_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_supports_deterministic_bucket_key_tie_break_for_significant_terms_family` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21824:4
+      |
+21824 | fn aggregation_supports_deterministic_bucket_key_tie_break_for_significant_terms_family(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_top_hits_window` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21843:4
+      |
+21843 | fn aggregation_map_top_hits_window(aggregation_map: &AggregationMap) -> Option<usize> {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `aggregation_map_for_shard_local_native_reduce` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21863:4
+      |
+21863 | fn aggregation_map_for_shard_local_native_reduce(aggregation_map: &AggregationMap) -> AggregationMap {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rewrite_top_hits_reduce_windows` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:21973:4
+      |
+21973 | fn rewrite_top_hits_reduce_windows(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_object_bucket_array_visible_and_carrier` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22683:4
+      |
+22683 | fn set_object_bucket_array_visible_and_carrier(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_object_bucket_object_visible_and_carrier` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22765:4
+      |
+22765 | fn set_object_bucket_object_visible_and_carrier(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_object_merge_and_visible_array_fields` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22794:4
+      |
+22794 | fn set_object_merge_and_visible_array_fields(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_object_top_metrics_visible_and_carrier` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22805:4
+      |
+22805 | fn set_object_top_metrics_visible_and_carrier(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_object_top_hits_visible_and_carrier` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22836:4
+      |
+22836 | fn set_object_top_hits_visible_and_carrier(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `empty_top_metrics_aggregation_value` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22930:4
+      |
+22930 | fn empty_top_metrics_aggregation_value() -> Value {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `sort_plugin_terms_buckets` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:22958:4
+      |
+22958 | fn sort_plugin_terms_buckets(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `sort_plugin_rare_terms_buckets` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:23017:4
+      |
+23017 | fn sort_plugin_rare_terms_buckets(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_plugin_adjacency_matrix_buckets` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:23154:4
+      |
+23154 | fn collect_plugin_adjacency_matrix_buckets(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `plugin_ranges_param` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:27582:4
+      |
+27582 | fn plugin_ranges_param(plugin: &os_query_dsl::PluginAggregation) -> Option<&Vec<Value>> {
+      |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `composite_key` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:31770:4
+      |
+31770 | fn composite_key(source: &Value, sources: &[os_query_dsl::CompositeTermsSource]) -> Option<Value> {
+      |    ^^^^^^^^^^^^^
+
+warning: function `collect_top_hits_aggregation` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:32102:4
+      |
+32102 | fn collect_top_hits_aggregation(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_top_hits_aggregation_from_window` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:32336:4
+      |
+32336 | fn collect_top_hits_aggregation_from_window(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_plugin_top_hits_aggregation_from_window_with_input_order` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:32377:4
+      |
+32377 | fn collect_plugin_top_hits_aggregation_from_window_with_input_order(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geo_point_source_value` is never used
+     --> crates/os-engine-tantivy/src/lib.rs:32834:4
+      |
+32834 | fn geo_point_source_value(source: &Value, field: &str) -> Option<(f64, f64)> {
+      |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `os-cluster-state` (lib) generated 1 warning (run `cargo fix --lib -p os-cluster-state` to apply 1 suggestion)
+warning: `os-engine-tantivy` (lib) generated 165 warnings (run `cargo fix --lib -p os-engine-tantivy` to apply 25 suggestions)
+   Compiling os-node v0.1.0 (/home/ubuntu/steelsearch/crates/os-node)
+warning: unused import: `crate::data_stream_route_registration`
+ --> crates/os-node/src/standalone_runtime.rs:8:5
+  |
+8 | use crate::data_stream_route_registration;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::rollover_route_registration`
+  --> crates/os-node/src/standalone_runtime.rs:14:5
+   |
+14 | use crate::rollover_route_registration;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::single_doc_post_route_registration`
+  --> crates/os-node/src/standalone_runtime.rs:18:5
+   |
+18 | use crate::single_doc_post_route_registration;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::single_doc_put_route_registration`
+  --> crates/os-node/src/standalone_runtime.rs:19:5
+   |
+19 | use crate::single_doc_put_route_registration;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::single_doc_update_route_registration`
+  --> crates/os-node/src/standalone_runtime.rs:20:5
+   |
+20 | use crate::single_doc_update_route_registration;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SocketAddr`
+  --> crates/os-node/src/standalone_runtime.rs:38:16
+   |
+38 | use std::net::{SocketAddr, TcpListener, TcpStream};
+   |                ^^^^^^^^^^
+
+warning: unused import: `OnceLock`
+  --> crates/os-node/src/standalone_runtime.rs:40:29
+   |
+40 | use std::sync::{Arc, Mutex, OnceLock};
+   |                             ^^^^^^^^
+
+warning: unused import: `RestMethod`
+ --> crates/os-node/src/delete_index_route_registration.rs:3:30
+  |
+3 | use os_rest::{RestErrorKind, RestMethod, RestResponse};
+  |                              ^^^^^^^^^^
+
+warning: value assigned to `header_end` is never read
+   --> crates/os-node/src/standalone_runtime.rs:207:26
+    |
+207 |     let mut header_end = None;
+    |                          ^^^^ this value is reassigned later and never used
+...
+215 |                     header_end = Some(position);
+    |                     --------------------------- `header_end` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+    --> crates/os-node/src/standalone_runtime.rs:2421:17
+     |
+2421 |                 _ => None,
+     |                 ^ no value can reach this
+     |
+note: multiple earlier patterns match some of the same values
+    --> crates/os-node/src/standalone_runtime.rs:2421:17
+     |
+2415 |                 RestMethod::Get => Some(self.handle_component_template_get_route(Some(name))),
+     |                 --------------- matches some of the same values
+2416 |                 RestMethod::Head => Some(self.handle_component_template_head_route(name)),
+     |                 ---------------- matches some of the same values
+2417 |                 RestMethod::Put | RestMethod::Post => {
+     |                 ---------------------------------- matches some of the same values
+...
+2420 |                 RestMethod::Delete => Some(self.handle_component_template_delete_route(name)),
+     |                 ------------------ matches some of the same values
+2421 |                 _ => None,
+     |                 ^ collectively making this unreachable
+     = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+    --> crates/os-node/src/standalone_runtime.rs:2449:17
+     |
+2449 |                 _ => None,
+     |                 ^ no value can reach this
+     |
+note: multiple earlier patterns match some of the same values
+    --> crates/os-node/src/standalone_runtime.rs:2449:17
+     |
+2443 |                 RestMethod::Get => Some(self.handle_index_template_get_route(Some(name))),
+     |                 --------------- matches some of the same values
+2444 |                 RestMethod::Head => Some(self.handle_index_template_head_route(name)),
+     |                 ---------------- matches some of the same values
+2445 |                 RestMethod::Put | RestMethod::Post => {
+     |                 ---------------------------------- matches some of the same values
+...
+2448 |                 RestMethod::Delete => Some(self.handle_index_template_delete_route(name)),
+     |                 ------------------ matches some of the same values
+2449 |                 _ => None,
+     |                 ^ collectively making this unreachable
+
+warning: unreachable pattern
+    --> crates/os-node/src/standalone_runtime.rs:2461:17
+     |
+2461 |                 _ => None,
+     |                 ^ no value can reach this
+     |
+note: multiple earlier patterns match some of the same values
+    --> crates/os-node/src/standalone_runtime.rs:2461:17
+     |
+2455 |                 RestMethod::Get => Some(self.handle_legacy_template_get_route(Some(name))),
+     |                 --------------- matches some of the same values
+2456 |                 RestMethod::Head => Some(self.handle_legacy_template_head_route(name)),
+     |                 ---------------- matches some of the same values
+2457 |                 RestMethod::Put | RestMethod::Post => {
+     |                 ---------------------------------- matches some of the same values
+...
+2460 |                 RestMethod::Delete => Some(self.handle_legacy_template_delete_route(name)),
+     |                 ------------------ matches some of the same values
+2461 |                 _ => None,
+     |                 ^ collectively making this unreachable
+
+warning: unreachable pattern
+    --> crates/os-node/src/standalone_runtime.rs:3250:17
+     |
+3250 |                 _ => None,
+     |                 ^ no value can reach this
+     |
+note: multiple earlier patterns match some of the same values
+    --> crates/os-node/src/standalone_runtime.rs:3250:17
+     |
+3244 |                 RestMethod::Get => Some(self.handle_alias_read_route(Some(index), Some(alias))),
+     |                 --------------- matches some of the same values
+3245 |                 RestMethod::Head => Some(self.handle_index_alias_named_head_route(index, alias)),
+     |                 ---------------- matches some of the same values
+3246 |                 RestMethod::Put | RestMethod::Post => {
+     |                 ---------------------------------- matches some of the same values
+...
+3249 |                 RestMethod::Delete => Some(self.handle_alias_delete_route(index, alias)),
+     |                 ------------------ matches some of the same values
+3250 |                 _ => None,
+     |                 ^ collectively making this unreachable
+
+warning: variable does not need to be mutable
+    --> crates/os-node/src/standalone_runtime.rs:5791:13
+     |
+5791 |         let mut body = match serde_json::from_slice::<Value>(&request.body) {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/os-node/src/standalone_runtime.rs:5882:13
+     |
+5882 |         let mut body = match serde_json::from_slice::<Value>(&request.body) {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unreachable pattern
+    --> crates/os-node/src/standalone_runtime.rs:7609:21
+     |
+7604 |                     (_, Some(kind)) => format!("unsupported bulk version_type [{kind}]"),
+     |                     --------------- matches all the relevant values
+...
+7609 |                     (None, Some(kind)) => format!("unsupported bulk version_type [{kind}]"),
+     |                     ^^^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: value assigned to `deleted` is never read
+    --> crates/os-node/src/standalone_runtime.rs:8986:27
+     |
+8986 |         let mut deleted = 0_u64;
+     |                           ^^^^^ this value is reassigned later and never used
+...
+9007 |             deleted = keys.len() as u64;
+     |             --------------------------- `deleted` is overwritten here before the previous value is read
+
+warning: function `handle_http_connection` is never used
+   --> crates/os-node/src/standalone_runtime.rs:194:4
+    |
+194 | fn handle_http_connection(node: &SteelNode, stream: &mut TcpStream) -> std::io::Result<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `read_http_request` is never used
+   --> crates/os-node/src/standalone_runtime.rs:203:4
+    |
+203 | fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Option<RestRequest>> {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `write_http_response` is never used
+   --> crates/os-node/src/standalone_runtime.rs:259:4
+    |
+259 | fn write_http_response(stream: &mut TcpStream, response: RestResponse) -> std::io::Result<()> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_rest_method` is never used
+   --> crates/os-node/src/standalone_runtime.rs:285:4
+    |
+285 | fn parse_rest_method(value: &str) -> RestMethod {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `find_header_end` is never used
+   --> crates/os-node/src/standalone_runtime.rs:310:4
+    |
+310 | fn find_header_end(buffer: &[u8]) -> Option<usize> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `reason_phrase` is never used
+   --> crates/os-node/src/standalone_runtime.rs:492:4
+    |
+492 | fn reason_phrase(status: u16) -> &'static str {
+    |    ^^^^^^^^^^^^^
+
+warning: methods `unknown_task_cancel_body` and `resolve_write_index_or_alias` are never used
+     --> crates/os-node/src/standalone_runtime.rs:11034:8
+      |
+ 1746 | impl SteelNode {
+      | -------------- methods in this implementation
+...
+11034 |     fn unknown_task_cancel_body(&self, task_id: &str) -> Value {
+      |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+14262 |     fn resolve_write_index_or_alias(&self, target: &str) -> String {
+      |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_search_timeout_millis` is never used
+     --> crates/os-node/src/standalone_runtime.rs:16098:4
+      |
+16098 | fn parse_search_timeout_millis(timeout: &str) -> Option<u64> {
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/allocation_explain_route_registration.rs:64:5
+   |
+59 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+64 |     pub hook: AllocationExplainRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   = note: `#[warn(unpredictable_function_pointer_comparisons)]` on by default
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/cluster_state_route_registration.rs:19:5
+   |
+15 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+19 |     pub hook: ClusterStateRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/cluster_settings_route_registration.rs:34:5
+   |
+29 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+34 |     pub hook: ClusterSettingsRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/head_index_route_registration.rs:16:5
+   |
+11 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+16 |     pub hook: HeadIndexRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/pending_tasks_route_registration.rs:36:5
+   |
+31 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+36 |     pub hook: PendingTasksRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/stats_route_registration.rs:25:5
+   |
+20 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+25 |     pub hook: StatsRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> crates/os-node/src/tasks_route_registration.rs:49:5
+   |
+44 | #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+   |                                  --------- in this derive macro expansion
+...
+49 |     pub hook: TasksRouteInvokeFn,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+
+warning: `os-node` (lib) generated 32 warnings (run `cargo fix --lib -p os-node` to apply 10 suggestions)
+warning: unused import: `ShardRoutingStatePrefix`
+ --> crates/os-node/src/main.rs:7:5
+  |
+7 |     ShardRoutingStatePrefix,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `decode_publish_state_request_info` is never used
+    --> crates/os-node/src/main.rs:2813:4
+     |
+2813 | fn decode_publish_state_request_info(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `send_transport_frame` is never used
+    --> crates/os-node/src/main.rs:3978:4
+     |
+3978 | fn send_transport_frame(target_transport_address: SocketAddr, frame: &[u8]) -> std::io::Result<()> {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `seed_peer_identity` is never used
+    --> crates/os-node/src/main.rs:4325:8
+     |
+4317 | trait DevelopmentClusterViewConfig {
+     |       ---------------------------- method in this trait
+...
+4325 |     fn seed_peer_identity(&self) -> Option<&InteropSeedPeerIdentityManifest> {
+     |        ^^^^^^^^^^^^^^^^^^
+
+warning: `os-node` (bin "steelsearch") generated 4 warnings (run `cargo fix --bin "steelsearch" -p os-node` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 1m 17s
+     Running `target/release/steelsearch --http.host 127.0.0.1 --http.port 59615 --transport.host 127.0.0.1 --transport.port 35209 --node.id steelsearch-dev-node --node.name steelsearch-dev-node --node.roles cluster_manager,data,ingest,remote_cluster_client --cluster.name steelsearch-dev --path.data steelsearch-single-node/node-1/data`
+Steelsearch transport listener bound epoch_ms=1781400241920 addr=127.0.0.1:35209
+Error: "gateway manifest transport address [127.0.0.1:55871] does not match configured transport address [127.0.0.1:35209]"

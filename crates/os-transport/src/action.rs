@@ -1,6 +1,6 @@
 use bytes::{Bytes, BytesMut};
 use os_core::Version;
-use os_engine::{SearchRequest, SearchShardSearchResult, SearchShardTarget};
+use os_engine::{SearchHit, SearchRequest, SearchShardSearchResult, SearchShardTarget};
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
 use os_wire::TransportStatus;
@@ -457,6 +457,46 @@ pub struct SteelsearchShardSearchResponseWire {
 impl SteelsearchShardSearchResponseWire {
     pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
         write_json_value(output, &self.result)
+    }
+
+    pub fn first_hit(&self) -> Option<&SearchHit> {
+        self.result.first_hit()
+    }
+
+    pub fn last_hit(&self) -> Option<&SearchHit> {
+        self.result.last_hit()
+    }
+
+    pub fn hit_at(&self, index: usize) -> Option<&SearchHit> {
+        self.result.hit_at(index)
+    }
+
+    pub fn hits(&self) -> Option<&[SearchHit]> {
+        self.result.hits()
+    }
+
+    pub fn iter_hits(&self) -> Option<std::slice::Iter<'_, SearchHit>> {
+        self.result.iter_hits()
+    }
+
+    pub fn into_hits(self) -> Option<Vec<SearchHit>> {
+        self.result.into_hits()
+    }
+
+    pub fn into_iter_hits(self) -> Option<std::vec::IntoIter<SearchHit>> {
+        self.result.into_iter_hits()
+    }
+
+    pub fn hit_count(&self) -> usize {
+        self.result.hit_count()
+    }
+
+    pub fn has_hits(&self) -> bool {
+        self.result.has_hits()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.result.is_empty()
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
@@ -1062,6 +1102,15 @@ mod tests {
                 sort: Vec::<SortSpec>::new(),
                 from: 0,
                 size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
             },
         };
         let mut output = StreamOutput::new();
@@ -1085,6 +1134,10 @@ mod tests {
                     },
                     score: 1.0,
                     source: json!({ "message": "hello" }),
+                    fields: None,
+                    highlight: None,
+                    explanation: None,
+                sort: None,
                 }],
                 json!({}),
             )
@@ -1124,6 +1177,15 @@ mod tests {
                 sort: Vec::<SortSpec>::new(),
                 from: 0,
                 size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
             },
         };
         let mut frame = build_steelsearch_shard_search_request_message(

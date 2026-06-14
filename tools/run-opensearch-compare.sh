@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPARE_DIR="${COMPARE_DIR:-${ROOT}/target/opensearch-compare}"
 REPORT_PATH="${SEARCH_COMPAT_REPORT:-${COMPARE_DIR}/search-compat-report.json}"
 LOAD_COMPARISON_REPORT="${STEELSEARCH_LOAD_COMPARISON_REPORT:-${COMPARE_DIR}/http-load-comparison.json}"
+NATIVE_ROUTE_COVERAGE_REPORT="${NATIVE_ROUTE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-coverage-report.json}"
+NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT="${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-fixture-coverage-report.json}"
 
 usage() {
   cat <<'USAGE'
@@ -23,6 +25,15 @@ Environment:
   RUN_HTTP_LOAD_COMPARISON=1       Also run tools/run-http-load-comparison.py.
   STEELSEARCH_LOAD_COMPARISON_REPORT
                                     Load comparison report path.
+  RUN_NATIVE_ROUTE_COVERAGE=1      Also generate the Steelsearch native-route
+                                    coverage report. This fails closed unless
+                                    native observations satisfy the coverage plan.
+  STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS
+                                    Optional JSON observations consumed by
+                                    tools/generate-native-route-coverage-report.py.
+  NATIVE_ROUTE_COVERAGE_REPORT     Native route coverage report path.
+  NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT
+                                    Native route fixture preflight report path.
   RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON=1
                                     Include the alias/template persistence
                                     live parity report.
@@ -43,6 +54,13 @@ mkdir -p "${COMPARE_DIR}"
 export REHEARSAL_DIR="${REHEARSAL_DIR:-${COMPARE_DIR}/rehearsal}"
 export SEARCH_COMPAT_REPORT="${REPORT_PATH}"
 export REQUIRE_OPENSEARCH_COMPARISON=1
+
+if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
+  native_route_fixture="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-strict-compat.json}"
+  python3 "${ROOT}/tools/check-native-route-fixture-coverage.py" \
+    --fixture "${native_route_fixture}" \
+    --output "${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT}"
+fi
 
 "${ROOT}/tools/run-development-replacement-rehearsal.sh" "$@"
 
@@ -68,6 +86,21 @@ if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
     --output "${COMPARE_DIR}/alias-template-persistence-report.json"
 fi
 
+if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
+  if [[ -z "${STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS:-}" ]]; then
+    STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS="${COMPARE_DIR}/native-route-observations.json"
+    python3 "${ROOT}/tools/extract-native-route-observations.py" \
+      --search-compat-report "${REPORT_PATH}" \
+      --output "${STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS}"
+  fi
+  native_route_args=(
+    --search-compat-report "${REPORT_PATH}"
+    --output "${NATIVE_ROUTE_COVERAGE_REPORT}"
+  )
+  native_route_args+=(--native-observations "${STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS}")
+  python3 "${ROOT}/tools/generate-native-route-coverage-report.py" "${native_route_args[@]}"
+fi
+
 echo "OpenSearch comparison completed"
 echo "search compatibility report: ${REPORT_PATH}"
 if [[ "${RUN_HTTP_LOAD_COMPARISON:-0}" == "1" ]]; then
@@ -75,4 +108,8 @@ if [[ "${RUN_HTTP_LOAD_COMPARISON:-0}" == "1" ]]; then
 fi
 if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
   echo "alias/template persistence report: ${COMPARE_DIR}/alias-template-persistence-report.json"
+fi
+if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
+  echo "native route fixture coverage report: ${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT}"
+  echo "native route coverage report: ${NATIVE_ROUTE_COVERAGE_REPORT}"
 fi

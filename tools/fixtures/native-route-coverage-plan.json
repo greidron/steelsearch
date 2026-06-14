@@ -1,0 +1,335 @@
+{
+  "schema_version": 1,
+  "name": "native-route-coverage-plan",
+  "description": "Planned Steelsearch native-route coverage cases required before claiming product-ready fallback-free native support.",
+  "readiness_gate": {
+    "requires_opensearch_visible_parity": true,
+    "requires_steelsearch_native_route_evidence": true,
+    "requires_no_compatibility_fallback": true,
+    "requires_no_top_level_hit_materialization_when_size_zero": true
+  },
+  "case_groups": [
+    {
+      "name": "single_index_text_case_insensitive_wildcard_size_zero",
+      "failure_families": [
+        "single_index_text_case"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-logs"
+        ],
+        "query_families": [
+          "wildcard.case_insensitive"
+        ],
+        "variants": [
+          "size_zero",
+          "size_zero_sorted",
+          "size_zero_script_sorted",
+          "size_zero_aggregation",
+          "size_zero_significant_terms"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "required_phase_descriptions": [
+          "matched refreshed documents without hit fetch",
+          "size=0 compatibility path avoided top-level hit materialization",
+          "size=0 compatibility aggregation path avoided top-level hit materialization"
+        ],
+        "forbidden_phase_description_substrings": [
+          "fallback",
+          "materialized top-level hits"
+        ]
+      }
+    },
+    {
+      "name": "multi_index_text_case_insensitive_wildcard_size_zero",
+      "failure_families": [
+        "multi_index_text_case"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-logs-v1",
+          "comparison-logs-v2"
+        ],
+        "query_families": [
+          "wildcard.case_insensitive"
+        ],
+        "variants": [
+          "size_zero",
+          "size_zero_sorted",
+          "size_zero_script_sorted",
+          "size_zero_aggregation",
+          "size_zero_significant_terms"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "required_phase_descriptions": [
+          "size=0 compatibility path avoided top-level hit materialization",
+          "size=0 compatibility aggregation path avoided top-level hit materialization"
+        ],
+        "forbidden_phase_description_substrings": [
+          "fallback",
+          "materialized top-level hits"
+        ]
+      }
+    },
+    {
+      "name": "single_index_native_page_and_vector_page",
+      "failure_families": [
+        "single_index_native_page",
+        "single_index_knn_uses",
+        "single_index_vector_native",
+        "single_index_hybrid_script",
+        "single_index_plain_requested",
+        "single_index_plain_size",
+        "single_index_materialized_final",
+        "non_index_aware_search"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-logs",
+          "comparison-vectors"
+        ],
+        "query_families": [
+          "match",
+          "bool.filter.range",
+          "knn",
+          "hybrid.bool.must.match_knn"
+        ],
+        "variants": [
+          "page",
+          "page_score_desc",
+          "page_fast_field_sort",
+          "page_script_sort",
+          "page_and_terms_aggregation",
+          "size_zero_aggregation"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "required_phase_descriptions": [
+          "matched refreshed documents with native page+aggregation fetch",
+          "matched refreshed documents with vector-native page+aggregation fetch"
+        ],
+        "requires_reusable_context": true,
+        "forbidden_phase_description_substrings": [
+          "fallback"
+        ]
+      }
+    },
+    {
+      "name": "multi_index_native_knn_hybrid_reduce",
+      "failure_families": [
+        "multi_index_native_page",
+        "multi_index_native_size",
+        "multi_index_knn_uses",
+        "multi_index_hybrid_uses",
+        "multi_index_hybrid_script",
+        "multi_index_vector_native"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-vectors-v1",
+          "comparison-vectors-v2"
+        ],
+        "query_families": [
+          "match",
+          "knn",
+          "hybrid.bool.must.match_knn"
+        ],
+        "variants": [
+          "page",
+          "page_score_desc",
+          "page_id_sort",
+          "page_fast_field_sort",
+          "page_script_sort",
+          "page_and_aggregation"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "required_phase_description_substrings": [
+          "native page reduce",
+          "vector-native page reduce",
+          "aggregation reduce"
+        ],
+        "requires_reusable_context": true,
+        "forbidden_phase_description_substrings": [
+          "fallback",
+          "materialized more than requested page"
+        ]
+      }
+    },
+    {
+      "name": "hybrid_compatibility_leaf_size_zero",
+      "failure_families": [
+        "hybrid_query_compatibility_leaf",
+        "hybrid_query_nested_lexical",
+        "hybrid_query_sorted_compatibility",
+        "hybrid_query_script_sorted",
+        "multi_index_hybrid_compatibility",
+        "multi_index_hybrid_sorted",
+        "multi_index_hybrid_nested"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-vectors"
+        ],
+        "query_families": [
+          "hybrid.compatibility_lexical_leaf_knn",
+          "hybrid.nested_lexical_must_not_knn"
+        ],
+        "variants": [
+          "size_zero",
+          "size_zero_sorted",
+          "size_zero_script_sorted",
+          "size_zero_aggregation",
+          "size_zero_significant_terms"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "required_phase_descriptions": [
+          "matched refreshed documents without hit fetch",
+          "vector-native page path skipped hit materialization because size=0"
+        ],
+        "forbidden_phase_description_substrings": [
+          "fallback",
+          "top-level hit materialization"
+        ]
+      }
+    },
+    {
+      "name": "bool_must_not_and_scalar_candidate_compatibility",
+      "failure_families": [
+        "lexical_must_not_only",
+        "lexical_mixed_bool_with",
+        "hybrid_query_supports_alternating",
+        "hybrid_query_supports_scalar",
+        "hybrid_query_supports_nested"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-logs",
+          "comparison-nested"
+        ],
+        "query_families": [
+          "bool.must_not_only",
+          "bool.must_must_not",
+          "term.scalar",
+          "terms.scalar",
+          "range.scalar",
+          "nested.term.scalar"
+        ],
+        "variants": [
+          "lexical_only",
+          "with_knn_sibling",
+          "size_zero_top_hits"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "requires_native_candidate_reduction": true,
+        "requires_optional_all_documents_context": true,
+        "forbidden_phase_description_substrings": [
+          "document scan fallback"
+        ]
+      }
+    },
+    {
+      "name": "top_hits_window_preservation",
+      "failure_families": [
+        "bool_query_top_hits",
+        "nested_bool_query_top",
+        "single_index_grouped_hybrid",
+        "grouped_hybrid_bool_index",
+        "grouped_hybrid_bool_native",
+        "grouped_hybrid_bool_page",
+        "multi_index_top_hits",
+        "multi_index_plugin_top"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-logs",
+          "comparison-vectors"
+        ],
+        "query_families": [
+          "terms.top_hits",
+          "date_histogram.top_hits",
+          "terms.plugin_top_hits",
+          "grouped_hybrid.top_hits"
+        ],
+        "variants": [
+          "single_index",
+          "multi_index",
+          "from_size_window",
+          "sorted_window"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "requires_requested_window_preserved": true,
+        "forbidden_phase_description_substrings": [
+          "fallback"
+        ]
+      }
+    },
+    {
+      "name": "cache_and_telemetry",
+      "failure_families": [
+        "engine_bounds_and_invalidates",
+        "knn_result_cache_is",
+        "search_cache_telemetry_tracks",
+        "search_populates_distinct_runtime",
+        "stale_knn_cache_drops"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-vectors"
+        ],
+        "query_families": [
+          "knn.repeated",
+          "hybrid.repeated",
+          "knn.after_refresh",
+          "knn.capacity_pressure"
+        ],
+        "variants": [
+          "same_request_twice",
+          "refresh_invalidates",
+          "stale_invalidates",
+          "capacity_evicts"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "requires_runtime_cache_by_field": true,
+        "requires_request_result_cache_counters": true,
+        "requires_stale_invalidation_counter": true,
+        "requires_capacity_eviction_counter": true
+      }
+    },
+    {
+      "name": "aggregation_shape_and_script_sort",
+      "failure_families": [
+        "native_tantivy_terms_and",
+        "script_sort_orders_hits"
+      ],
+      "opensearch_parity": {
+        "indices": [
+          "comparison-logs"
+        ],
+        "query_families": [
+          "terms.metric_sub_aggregations",
+          "script_sort.numeric_expression"
+        ],
+        "variants": [
+          "avg_sum_min_max",
+          "stats_extended_stats",
+          "script_sort_asc",
+          "script_sort_desc"
+        ]
+      },
+      "steelsearch_native_requirements": {
+        "requires_aggregation_shape_parity": true,
+        "requires_exact_hit_order": true,
+        "forbidden_phase_description_substrings": [
+          "fallback"
+        ]
+      }
+    }
+  ]
+}

@@ -40,7 +40,16 @@
           "_id": "doc-1",
           "_source": {
             "message": "log doc",
-            "tenant": "tenant-a"
+            "tenant": "tenant-a",
+            "contact_email": "alpha@example.com"
+          }
+        },
+        {
+          "_id": "doc-3",
+          "_source": {
+            "message": "null contact doc",
+            "tenant": "tenant-a",
+            "contact_email": null
           }
         }
       ]
@@ -102,6 +111,87 @@
       "extract": "cluster_health",
       "family": "admin-cat",
       "description": "[admin-cat] cluster health targeted wildcard semantic"
+    },
+    {
+      "name": "search_exists_present_field_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "contact_email"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": ["doc-1"],
+      "description": "[lexical] search exists present field semantic"
+    },
+    {
+      "name": "search_exists_null_field_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "contact_email"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": ["doc-1"],
+      "description": "[lexical] search exists null field semantic"
+    },
+    {
+      "name": "search_bool_must_not_only_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must_not": [
+              {
+                "term": {
+                  "tenant": "tenant-b"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": ["doc-1", "doc-3"],
+      "description": "[lexical] search bool must_not only semantic"
+    },
+    {
+      "name": "search_bool_zero_minimum_should_match_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "term": {
+                  "tenant": "tenant-b"
+                }
+              }
+            ],
+            "minimum_should_match": 0
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": ["doc-1", "doc-3"],
+      "description": "[lexical] search bool zero minimum_should_match semantic"
     },
     {
       "name": "count_root_term_semantic",
@@ -214,6 +304,22 @@
       "expected_steelsearch_status": 400,
       "family": "failure-path",
       "description": "[failure-path] count unsupported query type error"
+    },
+    {
+      "name": "search_exists_unsupported_shape_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "exists": {}
+        }
+      },
+      "extract": "search_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "family": "failure-path",
+      "description": "[failure-path] search exists unsupported shape error"
     },
     {
       "name": "count_malformed_payload_error",

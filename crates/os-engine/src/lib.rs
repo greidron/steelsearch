@@ -1,6 +1,6 @@
 //! Engine abstraction for Lucene-compatible and Rust-native backends.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -416,10 +416,28 @@ pub struct RefreshResponse {
 pub struct SearchRequest {
     pub indices: Vec<String>,
     pub query: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stored_fields: Option<Value>,
+    #[serde(rename = "_source_fields", default, skip_serializing_if = "Option::is_none")]
+    pub source_fields: Option<Value>,
+    #[serde(rename = "_source", default, skip_serializing_if = "Option::is_none")]
+    pub source_filter: Option<Value>,
+    #[serde(rename = "_source_includes", default, skip_serializing_if = "Option::is_none")]
+    pub source_includes: Option<Value>,
+    #[serde(rename = "_source_include", default, skip_serializing_if = "Option::is_none")]
+    pub source_include: Option<Value>,
+    #[serde(rename = "_source_excludes", default, skip_serializing_if = "Option::is_none")]
+    pub source_excludes: Option<Value>,
+    #[serde(rename = "_source_exclude", default, skip_serializing_if = "Option::is_none")]
+    pub source_exclude: Option<Value>,
     pub aggregations: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<Value>,
     pub sort: Vec<SortSpec>,
     pub from: usize,
     pub size: usize,
+    #[serde(default)]
+    pub explain: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -564,11 +582,19 @@ pub struct SearchCacheTelemetryDetails {
     pub indices: BTreeMap<String, SearchCacheIndexTelemetrySnapshot>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SortSpec {
     pub field: String,
     #[serde(default)]
     pub order: SortOrder,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmapped_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<SortMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo_origin: Option<GeoSortOrigin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<SortScript>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -577,6 +603,68 @@ pub enum SortOrder {
     #[default]
     Asc,
     Desc,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortMode {
+    Min,
+    Max,
+    Avg,
+    Sum,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct GeoSortOrigin {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+impl<'de> Deserialize<'de> for GeoSortOrigin {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        parse_geo_sort_origin(&value).ok_or_else(|| {
+            serde::de::Error::custom(
+                "geo origin must be {lat,lon}, \"lat,lon\", or [lon, lat]",
+            )
+        })
+    }
+}
+
+fn parse_geo_sort_origin(value: &Value) -> Option<GeoSortOrigin> {
+    match value {
+        Value::Object(point) => Some(GeoSortOrigin {
+            lat: point.get("lat")?.as_f64()?,
+            lon: point.get("lon")?.as_f64()?,
+        }),
+        Value::Array(values) => {
+            let [lon, lat] = values.as_slice() else {
+                return None;
+            };
+            Some(GeoSortOrigin {
+                lat: lat.as_f64()?,
+                lon: lon.as_f64()?,
+            })
+        }
+        Value::String(point) => {
+            let (lat, lon) = point.split_once(',')?;
+            Some(GeoSortOrigin {
+                lat: lat.trim().parse().ok()?,
+                lon: lon.trim().parse().ok()?,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SortScript {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -596,9 +684,17 @@ pub struct SearchResponse {
 
 impl SearchResponse {
     pub fn new(total_hits: u64, hits: Vec<SearchHit>, aggregations: Value) -> Self {
+        Self::from_hits_iter(total_hits, hits, aggregations)
+    }
+
+    pub fn from_hits_iter(
+        total_hits: u64,
+        hits: impl IntoIterator<Item = SearchHit>,
+        aggregations: Value,
+    ) -> Self {
         Self {
             total_hits,
-            hits,
+            hits: hits.into_iter().collect(),
             aggregations,
             shards: SearchShardStats::single_success(),
             phase_results: Vec::new(),
@@ -617,6 +713,70 @@ impl SearchResponse {
         self
     }
 
+    pub fn hits(&self) -> &[SearchHit] {
+        &self.hits
+    }
+
+    pub fn iter_hits(&self) -> std::slice::Iter<'_, SearchHit> {
+        self.hits.iter()
+    }
+
+    pub fn first_hit(&self) -> Option<&SearchHit> {
+        self.hits.first()
+    }
+
+    pub fn last_hit(&self) -> Option<&SearchHit> {
+        self.hits.last()
+    }
+
+    pub fn hit_at(&self, index: usize) -> Option<&SearchHit> {
+        self.hits.get(index)
+    }
+
+    pub fn hit_count(&self) -> usize {
+        self.hits.len()
+    }
+
+    pub fn has_hits(&self) -> bool {
+        !self.hits.is_empty()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.hits.is_empty()
+    }
+
+    pub fn transform_hits(
+        &mut self,
+        transform: impl FnMut(SearchHit) -> SearchHit,
+    ) -> &mut Self {
+        self.hits = self.hits.drain(..).map(transform).collect();
+        self
+    }
+
+    pub fn into_hits(self) -> Vec<SearchHit> {
+        self.hits
+    }
+
+    pub fn into_iter_hits(self) -> std::vec::IntoIter<SearchHit> {
+        self.hits.into_iter()
+    }
+
+    pub fn into_merge_inputs(
+        self,
+    ) -> (
+        u64,
+        Vec<SearchHit>,
+        Vec<SearchPhaseResult>,
+        Vec<SearchFetchSubphaseResult>,
+    ) {
+        (
+            self.total_hits,
+            self.hits,
+            self.phase_results,
+            self.fetch_subphases,
+        )
+    }
+
     pub fn with_shards(mut self, shards: SearchShardStats) -> Self {
         self.shards = shards;
         self
@@ -627,33 +787,40 @@ impl SearchResponse {
         self
     }
 
-    pub fn to_opensearch_body(&self, took_millis: u64) -> Value {
-        let max_score = self
-            .hits
+    fn max_score_value(&self) -> Value {
+        self.hits
             .iter()
             .map(|hit| hit.score)
             .reduce(f32::max)
             .map(Value::from)
-            .unwrap_or(Value::Null);
+            .unwrap_or(Value::Null)
+    }
 
-        let mut body = serde_json::json!({
+    fn hits_opensearch_body(&self) -> Vec<Value> {
+        SearchHit::opensearch_body_batch(self.iter_hits())
+    }
+
+    fn hits_opensearch_section(&self) -> Value {
+        serde_json::json!({
+            "total": {
+                "value": self.total_hits,
+                "relation": "eq"
+            },
+            "max_score": self.max_score_value(),
+            "hits": self.hits_opensearch_body()
+        })
+    }
+
+    fn opensearch_body_without_optional_sections(&self, took_millis: u64) -> Value {
+        serde_json::json!({
             "took": took_millis,
             "timed_out": false,
             "_shards": self.shards.to_opensearch_body(),
-            "hits": {
-                "total": {
-                    "value": self.total_hits,
-                    "relation": "eq"
-                },
-                "max_score": max_score,
-                "hits": self
-                    .hits
-                    .iter()
-                    .map(SearchHit::to_opensearch_body)
-                    .collect::<Vec<_>>()
-            }
-        });
+            "hits": self.hits_opensearch_section()
+        })
+    }
 
+    fn opensearch_body_with_optional_sections_applied(&self, mut body: Value) -> Value {
         if self
             .aggregations
             .as_object()
@@ -667,6 +834,12 @@ impl SearchResponse {
         }
 
         body
+    }
+
+    pub fn to_opensearch_body(&self, took_millis: u64) -> Value {
+        self.opensearch_body_with_optional_sections_applied(
+            self.opensearch_body_without_optional_sections(took_millis),
+        )
     }
 }
 
@@ -930,6 +1103,50 @@ impl SearchShardSearchResult {
             failure: Some(failure),
         }
     }
+
+    pub fn response_ref(&self) -> Option<&SearchResponse> {
+        self.response.as_ref()
+    }
+
+    pub fn hits(&self) -> Option<&[SearchHit]> {
+        self.response_ref().map(SearchResponse::hits)
+    }
+
+    pub fn iter_hits(&self) -> Option<std::slice::Iter<'_, SearchHit>> {
+        self.response_ref().map(SearchResponse::iter_hits)
+    }
+
+    pub fn into_hits(self) -> Option<Vec<SearchHit>> {
+        self.response.map(SearchResponse::into_hits)
+    }
+
+    pub fn into_iter_hits(self) -> Option<std::vec::IntoIter<SearchHit>> {
+        self.response.map(SearchResponse::into_iter_hits)
+    }
+
+    pub fn first_hit(&self) -> Option<&SearchHit> {
+        self.response_ref().and_then(SearchResponse::first_hit)
+    }
+
+    pub fn last_hit(&self) -> Option<&SearchHit> {
+        self.response_ref().and_then(SearchResponse::last_hit)
+    }
+
+    pub fn hit_at(&self, index: usize) -> Option<&SearchHit> {
+        self.response_ref().and_then(|response| response.hit_at(index))
+    }
+
+    pub fn hit_count(&self) -> usize {
+        self.response_ref().map_or(0, SearchResponse::hit_count)
+    }
+
+    pub fn has_hits(&self) -> bool {
+        self.response_ref().is_some_and(SearchResponse::has_hits)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.response_ref().map_or(true, SearchResponse::is_empty)
+    }
 }
 
 pub fn merge_shard_search_results(
@@ -948,10 +1165,16 @@ pub fn merge_shard_search_results(
     for shard_result in shard_results {
         if let Some(response) = shard_result.response {
             successful += 1;
-            total_hits += response.total_hits;
-            hits.extend(response.hits);
-            phase_results.extend(response.phase_results);
-            fetch_subphases.extend(response.fetch_subphases);
+            let (
+                response_total_hits,
+                response_hits,
+                response_phase_results,
+                response_fetch_subphases,
+            ) = response.into_merge_inputs();
+            total_hits += response_total_hits;
+            hits.extend(response_hits);
+            phase_results.extend(response_phase_results);
+            fetch_subphases.extend(response_fetch_subphases);
         } else if let Some(failure) = shard_result.failure {
             failures.push(failure);
         }
@@ -965,10 +1188,13 @@ pub fn merge_shard_search_results(
             .then_with(|| left.index.cmp(&right.index))
             .then_with(|| left.metadata.id.cmp(&right.metadata.id))
     });
-    let hits = hits.into_iter().skip(from).take(size).collect();
     let failed = failures.len() as u64;
 
-    SearchResponse::new(total_hits, hits, serde_json::json!({}))
+    SearchResponse::from_hits_iter(
+        total_hits,
+        hits.into_iter().skip(from).take(size),
+        serde_json::json!({}),
+    )
         .with_shards(SearchShardStats {
             total,
             successful,
@@ -987,10 +1213,18 @@ pub struct SearchHit {
     pub score: f32,
     #[serde(rename = "_source")]
     pub source: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<Value>,
 }
 
 impl SearchHit {
-    pub fn to_opensearch_body(&self) -> Value {
+    fn base_opensearch_body(&self) -> Value {
         serde_json::json!({
             "_index": self.index,
             "_id": self.metadata.id,
@@ -1000,6 +1234,32 @@ impl SearchHit {
             "_seq_no": self.metadata.seq_no,
             "_primary_term": self.metadata.primary_term
         })
+    }
+
+    fn opensearch_body_with_optional_sections_applied(&self, mut body: Value) -> Value {
+        if let Some(sort) = &self.sort {
+            body["sort"] = sort.clone();
+        }
+        if let Some(fields) = &self.fields {
+            body["fields"] = fields.clone();
+        }
+        if let Some(highlight) = &self.highlight {
+            body["highlight"] = highlight.clone();
+        }
+        if let Some(explanation) = &self.explanation {
+            body["_explanation"] = explanation.clone();
+        }
+        body
+    }
+
+    pub fn to_opensearch_body(&self) -> Value {
+        self.opensearch_body_with_optional_sections_applied(self.base_opensearch_body())
+    }
+
+    fn opensearch_body_batch<'a>(
+        hits: impl IntoIterator<Item = &'a Self>,
+    ) -> Vec<Value> {
+        hits.into_iter().map(SearchHit::to_opensearch_body).collect()
     }
 }
 
@@ -1383,6 +1643,15 @@ mod tests {
                 sort: Vec::new(),
                 from: 0,
                 size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
             })
             .unwrap();
 
@@ -1521,6 +1790,10 @@ mod tests {
                 },
                 score: 1.0,
                 source: serde_json::json!({
+                fields: None,
+                highlight: None,
+                explanation: None,
+                sort: None,
                     "message": "hello"
                 }),
             }],
@@ -1648,6 +1921,10 @@ mod tests {
                             },
                             score: 0.4,
                             source: serde_json::json!({ "message": "left" }),
+                            fields: None,
+                            highlight: None,
+                            explanation: None,
+                sort: None,
                         }],
                         serde_json::json!({}),
                     )
@@ -1676,6 +1953,10 @@ mod tests {
                             },
                             score: 0.9,
                             source: serde_json::json!({ "message": "right" }),
+                            fields: None,
+                            highlight: None,
+                            explanation: None,
+                sort: None,
                         }],
                         serde_json::json!({}),
                     )

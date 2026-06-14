@@ -1,0 +1,689 @@
+{
+  "manifest": {
+    "name": "search-native-route-coverage",
+    "description": "Steelsearch native-route observation fixture. This fixture is intended for RUN_NATIVE_ROUTE_COVERAGE readiness runs and must be paired with OpenSearch-visible parity coverage plus Steelsearch profile extraction.",
+    "schema_version": 1
+  },
+  "indices": [
+    {
+      "name": "comparison-logs",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "bytes": {
+              "type": "long"
+            },
+            "level": {
+              "type": "keyword"
+            },
+            "message": {
+              "type": "text"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "ts": {
+              "type": "date"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparison-logs-v1",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "bytes": {
+              "type": "long"
+            },
+            "message": {
+              "type": "text"
+            },
+            "service": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparison-logs-v2",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "bytes": {
+              "type": "long"
+            },
+            "message": {
+              "type": "text"
+            },
+            "service": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparison-vectors",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "body_vector": {
+              "type": "knn_vector",
+              "dimension": 4,
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "l2"
+              }
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "rank": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparison-vectors-v1",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "body_vector": {
+              "type": "knn_vector",
+              "dimension": 4,
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "l2"
+              }
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "rank": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparison-vectors-v2",
+      "body": {
+        "settings": {
+          "index": {
+            "knn": true,
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "body_vector": {
+              "type": "knn_vector",
+              "dimension": 4,
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "l2"
+              }
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "rank": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "comparison-logs",
+      "documents": [
+        {
+          "_id": "log-1",
+          "_source": {
+            "bytes": 120,
+            "level": "info",
+            "message": "checkout service accepted payment",
+            "service": "checkout",
+            "ts": "2026-04-22T00:00:00Z"
+          }
+        },
+        {
+          "_id": "log-2",
+          "_source": {
+            "bytes": 300,
+            "level": "warn",
+            "message": "checkout service payment timeout",
+            "service": "checkout",
+            "ts": "2026-04-22T00:01:00Z"
+          }
+        },
+        {
+          "_id": "log-3",
+          "_source": {
+            "bytes": 80,
+            "level": "info",
+            "message": "catalog service refreshed product cache",
+            "service": "catalog",
+            "ts": "2026-04-22T00:02:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "index": "comparison-logs-v1",
+      "documents": [
+        {
+          "_id": "log-v1-1",
+          "_source": {
+            "bytes": 120,
+            "message": "checkout service accepted payment",
+            "service": "checkout"
+          }
+        }
+      ]
+    },
+    {
+      "index": "comparison-logs-v2",
+      "documents": [
+        {
+          "_id": "log-v2-1",
+          "_source": {
+            "bytes": 300,
+            "message": "checkout service payment timeout",
+            "service": "checkout"
+          }
+        }
+      ]
+    },
+    {
+      "index": "comparison-vectors",
+      "documents": [
+        {
+          "_id": "vec-rust",
+          "_source": {
+            "body": "rust vector search engine",
+            "body_vector": [
+              0.98,
+              0.02,
+              0.0,
+              0.0
+            ],
+            "category": "search",
+            "rank": 1
+          }
+        },
+        {
+          "_id": "vec-ml",
+          "_source": {
+            "body": "neural rerank embedding model",
+            "body_vector": [
+              0.75,
+              0.15,
+              0.1,
+              0.0
+            ],
+            "category": "ml",
+            "rank": 3
+          }
+        }
+      ]
+    },
+    {
+      "index": "comparison-vectors-v1",
+      "documents": [
+        {
+          "_id": "vec-v1-rust",
+          "_source": {
+            "body": "rust vector search engine",
+            "body_vector": [
+              0.98,
+              0.02,
+              0.0,
+              0.0
+            ],
+            "category": "search",
+            "rank": 1
+          }
+        }
+      ]
+    },
+    {
+      "index": "comparison-vectors-v2",
+      "documents": [
+        {
+          "_id": "vec-v2-ml",
+          "_source": {
+            "body": "neural rerank embedding model",
+            "body_vector": [
+              0.75,
+              0.15,
+              0.1,
+              0.0
+            ],
+            "category": "ml",
+            "rank": 3
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "native_single_index_text_case_insensitive_wildcard_size_zero",
+      "area": "native-route",
+      "family": "single-index-text-size-zero",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+      "query": {
+        "wildcard": {
+          "message": {
+            "value": "*PAYMENT*"
+          }
+        }
+      },
+      "aggs": {
+        "by_service": {
+          "terms": {
+            "field": "service",
+            "size": 10
+          }
+        }
+      },
+      "size": 0,
+      "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "single_index_text_case_insensitive_wildcard_size_zero",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_multi_index_text_case_insensitive_wildcard_size_zero",
+      "area": "native-route",
+      "family": "multi-index-text-size-zero",
+      "method": "POST",
+      "path": "/comparison-logs-v1,comparison-logs-v2/_search",
+      "body": {
+      "query": {
+        "wildcard": {
+          "message": {
+            "value": "*PAYMENT*"
+          }
+        }
+      },
+      "aggs": {
+        "by_service": {
+          "terms": {
+            "field": "service",
+            "size": 10
+          }
+        }
+      },
+      "size": 0,
+      "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "multi_index_text_case_insensitive_wildcard_size_zero",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_single_index_page_and_vector_page",
+      "area": "native-route",
+      "family": "single-index-native-page-vector",
+      "method": "POST",
+      "path": "/comparison-vectors/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "body": "rust search"
+                }
+              },
+              {
+                "knn": {
+                  "body_vector": {
+                    "k": 3,
+                    "vector": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                }
+              }
+            ]
+        }
+      },
+      "aggs": {
+        "by_category": {
+          "terms": {
+            "field": "category",
+            "size": 10
+          }
+        }
+      },
+      "size": 3,
+      "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "single_index_native_page_and_vector_page",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_multi_index_knn_hybrid_reduce",
+      "area": "native-route",
+      "family": "multi-index-knn-hybrid-reduce",
+      "method": "POST",
+      "path": "/comparison-vectors-v1,comparison-vectors-v2/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "body": "search"
+                }
+              },
+              {
+                "knn": {
+                  "body_vector": {
+                    "k": 3,
+                    "vector": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                }
+              }
+            ]
+        }
+      },
+      "aggs": {
+        "by_category": {
+          "terms": {
+            "field": "category",
+            "size": 10
+          }
+        }
+      },
+      "size": 3,
+      "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "multi_index_native_knn_hybrid_reduce",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_hybrid_compatibility_leaf_size_zero",
+      "area": "native-route",
+      "family": "hybrid-compatibility-size-zero",
+      "method": "POST",
+      "path": "/comparison-vectors/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "query_string": {
+                  "query": "body:rust"
+                }
+              },
+              {
+                "knn": {
+                  "body_vector": {
+                    "k": 3,
+                    "vector": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "size": 0,
+        "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "hybrid_compatibility_leaf_size_zero",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_bool_must_not_and_scalar_candidate_compatibility",
+      "area": "native-route",
+      "family": "bool-must-not-scalar-candidates",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              }
+            ],
+            "must_not": [
+              {
+                "range": {
+                  "bytes": {
+                    "lt": 100
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "size": 10,
+        "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "bool_must_not_and_scalar_candidate_compatibility",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_top_hits_window_preservation",
+      "area": "native-route",
+      "family": "top-hits-window",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "size": 10
+            },
+            "aggs": {
+              "sample": {
+                "top_hits": {
+                  "from": 1,
+                  "size": 2,
+                  "sort": [
+                    {
+                      "bytes": {
+                        "order": "desc"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "size": 0,
+        "profile": true
+      },
+      "extract": "aggregations",
+      "comparison": "steelsearch_only",
+      "native_route_group": "top_hits_window_preservation",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_cache_and_telemetry",
+      "area": "native-route",
+      "family": "cache-telemetry",
+      "method": "POST",
+      "path": "/comparison-vectors/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "body_vector": {
+              "k": 2,
+              "vector": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          }
+        },
+        "size": 2,
+        "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "cache_and_telemetry",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    },
+    {
+      "name": "native_aggregation_shape_and_script_sort",
+      "area": "native-route",
+      "family": "aggregation-shape-script-sort",
+      "method": "POST",
+      "path": "/comparison-logs/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "_script": {
+              "type": "number",
+              "order": "desc",
+              "script": {
+                "source": "doc['bytes'].value * 2"
+              }
+            }
+          }
+        ],
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "size": 10
+            },
+            "aggs": {
+              "avg_bytes": {
+                "avg": {
+                  "field": "bytes"
+                }
+              },
+              "stats_bytes": {
+                "stats": {
+                  "field": "bytes"
+                }
+              }
+            }
+          }
+        },
+        "size": 3,
+        "profile": true
+      },
+      "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "native_route_group": "aggregation_shape_and_script_sort",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "native-route-steelsearch-observation",
+      "reason": "Steelsearch-only native route observation case; OpenSearch-visible parity is covered by the separate search compatibility suite."
+    }
+  ]
+}

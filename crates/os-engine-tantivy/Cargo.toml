@@ -9,6 +9,7 @@ rust-version.workspace = true
 os-engine = { path = "../os-engine" }
 os-plugin-knn = { path = "../os-plugin-knn" }
 os-query-dsl = { path = "../os-query-dsl" }
+regex = "1"
 serde = { workspace = true }
 serde_json.workspace = true
 tantivy = "=0.21.1"

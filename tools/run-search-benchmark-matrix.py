@@ -23,7 +23,23 @@ STEELSEARCH_SINGLE = ROOT / "tools" / "run-steelsearch-dev.sh"
 STEELSEARCH_CLUSTER = ROOT / "tools" / "run-steelsearch-cluster-dev.sh"
 OPENSEARCH_SINGLE = ROOT / "tools" / "run-opensearch-vector-dev.sh"
 OPENSEARCH_CLUSTER = ROOT / "tools" / "run-opensearch-cluster-dev.sh"
-DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,vector=15,hybrid=10,refresh=5"
+DEFAULT_PROFILE = "minilm-knn"
+PROFILES = {
+    "minilm-knn": {
+        "corpus_size": 5000,
+        "vector_dimension": 384,
+        "duration_seconds": 30.0,
+        "clients": 4,
+        "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5",
+    },
+    "quick-minilm-knn": {
+        "corpus_size": 1500,
+        "vector_dimension": 384,
+        "duration_seconds": 8.0,
+        "clients": 4,
+        "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -67,18 +83,50 @@ class ClusterHandle:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=sorted(PROFILES), default=DEFAULT_PROFILE)
     parser.add_argument("--output-dir", default=str(ROOT / "target" / "search-benchmark-matrix"))
-    parser.add_argument("--corpus-size", type=positive_int, default=5000)
-    parser.add_argument("--vector-dimension", type=positive_int, default=16)
-    parser.add_argument("--duration-seconds", type=positive_float, default=30.0)
-    parser.add_argument("--clients", type=positive_int, default=4)
+    parser.add_argument(
+        "--scenarios",
+        default=",".join(scenario.key for scenario in SCENARIOS),
+        help="comma-separated scenario keys to run; use one or more of: "
+        + ", ".join(scenario.key for scenario in SCENARIOS),
+    )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="reuse an existing per-scenario baseline.json instead of rerunning that scenario",
+    )
+    parser.add_argument(
+        "--aggregate-only",
+        action="store_true",
+        help="only aggregate existing per-scenario baseline.json files into summary/report",
+    )
+    parser.add_argument("--corpus-size", type=positive_int)
+    parser.add_argument("--vector-dimension", type=positive_int)
+    parser.add_argument("--duration-seconds", type=positive_float)
+    parser.add_argument("--clients", type=positive_int)
     parser.add_argument("--number-of-shards", type=positive_int, default=3)
     parser.add_argument("--number-of-replicas", type=non_negative_int, default=1)
     parser.add_argument("--timeout-seconds", type=positive_float, default=10.0)
-    parser.add_argument("--query-mix", default=DEFAULT_QUERY_MIX)
+    parser.add_argument("--query-mix")
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    profile = PROFILES[args.profile]
+    if args.corpus_size is None:
+        args.corpus_size = profile["corpus_size"]
+    if args.vector_dimension is None:
+        args.vector_dimension = profile["vector_dimension"]
+    if args.duration_seconds is None:
+        args.duration_seconds = profile["duration_seconds"]
+    if args.clients is None:
+        args.clients = profile["clients"]
+    if args.query_mix is None:
+        args.query_mix = profile["query_mix"]
+    try:
+        scenarios = selected_scenarios(args.scenarios)
+    except argparse.ArgumentTypeError as error:
+        parser.error(str(error))
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +145,7 @@ def main() -> int:
             "timeout_seconds": args.timeout_seconds,
             "query_mix": args.query_mix,
             "seed": args.seed,
+            "profile": args.profile,
         },
         "scenarios": [
             {
@@ -106,7 +155,7 @@ def main() -> int:
                 "topology": scenario.topology,
                 "node_count": scenario.node_count,
             }
-            for scenario in SCENARIOS
+            for scenario in scenarios
         ],
     }
     if args.dry_run:
@@ -119,20 +168,32 @@ def main() -> int:
     results: dict[str, Any] = {
         "generated_at_epoch_seconds": int(time.time()),
         "config": plan["config"],
+        "scenario_plan": plan["scenarios"],
         "scenarios": {},
     }
     handles: list[ClusterHandle] = []
     try:
-        for scenario in SCENARIOS:
+        for scenario in scenarios:
             scenario_dir = output_dir / scenario.key
             scenario_dir.mkdir(parents=True, exist_ok=True)
+            baseline_output = scenario_dir / "baseline.json"
+            if args.aggregate_only or (args.skip_existing and baseline_output.exists()):
+                if not baseline_output.exists():
+                    raise RuntimeError(f"{scenario.label} baseline does not exist: {baseline_output}")
+                result = json.loads(baseline_output.read_text(encoding="utf-8"))
+                result["base_url"] = result.get("base_url")
+                result["manifest_path"] = result.get("manifest_path")
+                results["scenarios"][scenario.key] = result
+                continue
+            if args.aggregate_only:
+                continue
             handle = start_cluster(scenario, scenario_dir)
             handles.append(handle)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
-            baseline_output = scenario_dir / "baseline.json"
             result = run_baseline(scenario, handle.base_url, baseline_output, args)
             result["base_url"] = handle.base_url
             result["manifest_path"] = str(handle.manifest_path) if handle.manifest_path else None
+            baseline_output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
             results["scenarios"][scenario.key] = result
             handle.stop()
             handles.pop()
@@ -152,6 +213,28 @@ def positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be greater than zero")
     return parsed
+
+
+def selected_scenarios(value: str) -> tuple[Scenario, ...]:
+    by_key = {scenario.key: scenario for scenario in SCENARIOS}
+    keys = [key.strip() for key in value.split(",") if key.strip()]
+    if not keys:
+        raise argparse.ArgumentTypeError("--scenarios must include at least one scenario key")
+    unknown = [key for key in keys if key not in by_key]
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            "unknown scenario key(s): "
+            + ", ".join(unknown)
+            + "; valid keys: "
+            + ", ".join(by_key)
+        )
+    deduped = []
+    seen = set()
+    for key in keys:
+        if key not in seen:
+            deduped.append(by_key[key])
+            seen.add(key)
+    return tuple(deduped)
 
 
 def non_negative_int(value: str) -> int:
@@ -250,7 +333,7 @@ def free_port(host: str = "127.0.0.1") -> int:
 
 def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
     deadline = time.time() + 180.0
-    health_url = f"{base_url}/_cluster/health?wait_for_nodes=>={scenario.node_count}&timeout=1s"
+    health_url = f"{base_url}/_cluster/health?wait_for_nodes=%3E={scenario.node_count}&timeout=1s"
     while time.time() < deadline:
         try:
             payload = http_json(health_url, timeout_seconds)
@@ -324,6 +407,10 @@ def build_comparisons(scenarios: dict[str, Any]) -> dict[str, Any]:
             ),
             "operations": {
                 operation: {
+                    "p50_ms": compare_number(
+                        steel["operations"][operation]["latency_ms"].get("p50"),
+                        open_["operations"][operation]["latency_ms"].get("p50"),
+                    ),
                     "p95_ms": compare_number(
                         steel["operations"][operation]["latency_ms"].get("p95"),
                         open_["operations"][operation]["latency_ms"].get("p95"),
@@ -332,10 +419,17 @@ def build_comparisons(scenarios: dict[str, Any]) -> dict[str, Any]:
                         steel["operations"][operation]["latency_ms"].get("p99"),
                         open_["operations"][operation]["latency_ms"].get("p99"),
                     ),
+                    "mean_ms": compare_number(
+                        steel["operations"][operation]["latency_ms"].get("mean"),
+                        open_["operations"][operation]["latency_ms"].get("mean"),
+                    ),
                 }
                 for operation in sorted(set(steel["operations"]) & set(open_["operations"]))
             },
         }
+        comparisons[topology]["steelsearch_slower_than_opensearch"] = slower_than_opensearch(
+            comparisons[topology]
+        )
     return comparisons
 
 
@@ -352,6 +446,37 @@ def compare_number(steel_value: Any, open_value: Any) -> dict[str, Any]:
         "delta": delta,
         "ratio": ratio,
     }
+
+
+def slower_than_opensearch(comparison: dict[str, Any]) -> list[dict[str, Any]]:
+    slower: list[dict[str, Any]] = []
+    throughput = comparison["throughput_ops_per_second"]
+    if isinstance(throughput.get("ratio"), (int, float)) and throughput["ratio"] < 1.0:
+        slower.append(
+            {
+                "operation": "overall",
+                "metric": "throughput_ops_per_second",
+                "steelsearch": throughput["steelsearch"],
+                "opensearch": throughput["opensearch"],
+                "ratio": throughput["ratio"],
+                "direction": "lower_is_worse",
+            }
+        )
+    for operation, operation_comparison in comparison["operations"].items():
+        for metric in ("p50_ms", "p95_ms", "p99_ms", "mean_ms"):
+            values = operation_comparison[metric]
+            if isinstance(values.get("ratio"), (int, float)) and values["ratio"] > 1.0:
+                slower.append(
+                    {
+                        "operation": operation,
+                        "metric": metric,
+                        "steelsearch": values["steelsearch"],
+                        "opensearch": values["opensearch"],
+                        "ratio": values["ratio"],
+                        "direction": "higher_is_worse",
+                    }
+                )
+    return slower
 
 
 def render_report(results: dict[str, Any]) -> str:
@@ -392,13 +517,17 @@ def render_report(results: dict[str, Any]) -> str:
         "| --- | ---: | ---: |",
     ]
     for scenario in SCENARIOS:
-        payload = results["scenarios"][scenario.key]
+        payload = results["scenarios"].get(scenario.key)
+        if not payload:
+            continue
         lines.append(
             f"| {scenario.label} | {payload['summary']['throughput_ops_per_second']:.2f} | {payload['summary']['error_rate']:.4f} |"
         )
 
     for scenario in SCENARIOS:
-        payload = results["scenarios"][scenario.key]
+        payload = results["scenarios"].get(scenario.key)
+        if not payload:
+            continue
         lines.extend(
             [
                 "",
@@ -440,15 +569,32 @@ def render_report(results: dict[str, Any]) -> str:
                 f"- Throughput ratio (Steelsearch/OpenSearch): `{safe_ratio(payload['throughput_ops_per_second']['ratio'])}`",
                 f"- Error rate delta (Steelsearch-OpenSearch): `{safe_number(payload['error_rate']['delta'])}`",
                 "",
-                "| Operation | Steelsearch p95 ms | OpenSearch p95 ms | Steelsearch p99 ms | OpenSearch p99 ms |",
-                "| --- | ---: | ---: | ---: | ---: |",
+                "| Operation | Steelsearch p50 ms | OpenSearch p50 ms | Steelsearch p95 ms | OpenSearch p95 ms | Steelsearch p99 ms | OpenSearch p99 ms | Steelsearch mean ms | OpenSearch mean ms |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for operation, op_payload in payload["operations"].items():
             lines.append(
-                f"| {operation} | {safe_number(op_payload['p95_ms']['steelsearch'])} | {safe_number(op_payload['p95_ms']['opensearch'])} | {safe_number(op_payload['p99_ms']['steelsearch'])} | {safe_number(op_payload['p99_ms']['opensearch'])} |"
+                f"| {operation} | {safe_number(op_payload['p50_ms']['steelsearch'])} | {safe_number(op_payload['p50_ms']['opensearch'])} | {safe_number(op_payload['p95_ms']['steelsearch'])} | {safe_number(op_payload['p95_ms']['opensearch'])} | {safe_number(op_payload['p99_ms']['steelsearch'])} | {safe_number(op_payload['p99_ms']['opensearch'])} | {safe_number(op_payload['mean_ms']['steelsearch'])} | {safe_number(op_payload['mean_ms']['opensearch'])} |"
             )
         lines.append("")
+        slower = payload.get("steelsearch_slower_than_opensearch", [])
+        if slower:
+            lines.extend(
+                [
+                    "#### Steelsearch slower than OpenSearch",
+                    "",
+                    "| Operation | Metric | Steelsearch | OpenSearch | Ratio |",
+                    "| --- | --- | ---: | ---: | ---: |",
+                ]
+            )
+            for item in slower:
+                lines.append(
+                    f"| {item['operation']} | {item['metric']} | {safe_number(item['steelsearch'])} | {safe_number(item['opensearch'])} | {safe_ratio(item['ratio'])} |"
+                )
+            lines.append("")
+        else:
+            lines.extend(["#### Steelsearch slower than OpenSearch", "", "No slower metrics recorded for this topology.", ""])
 
     lines.extend(
         [

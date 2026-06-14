@@ -116,7 +116,8 @@
         "ids": [
           "log-1",
           "log-2",
-          "log-3"
+          "log-3",
+          "log-4"
         ]
       },
       {
@@ -152,7 +153,8 @@
         "document_ids": [
           "log-1",
           "log-2",
-          "log-3"
+          "log-3",
+          "log-4"
         ]
       },
       {
@@ -190,6 +192,8 @@
       "bulk_match_search",
       "bool_filter_range",
       "multi_match_best_fields_search",
+      "nested_query_search",
+      "nested_tuple_semantics_search",
       "match_phrase_search",
       "match_phrase_prefix_search",
       "dis_max_search",
@@ -570,6 +574,37 @@
             "location": {
               "lat": 37.77,
               "lon": -122.42
+            }
+          }
+        },
+        {
+          "_id": "log-4",
+          "_source": {
+            "message": "checkout split nested tuple guard",
+            "events": [
+              {
+                "kind": "payment",
+                "status": "accepted"
+              },
+              {
+                "kind": "cache",
+                "status": "timeout"
+              }
+            ],
+            "labels": [
+              "payment",
+              "timeout",
+              "tuple-guard"
+            ],
+            "service_suggest": "checkout",
+            "service": "checkout",
+            "level": "warn",
+            "tag": "tuple-guard",
+            "bytes": 260,
+            "ts": "2026-04-22T00:03:00Z",
+            "location": {
+              "lat": 37.785,
+              "lon": -122.405
             }
           }
         }
@@ -1784,6 +1819,38 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] nested query search"
+    },
+    {
+      "name": "nested_tuple_semantics_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "events",
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "term": {
+                      "events.kind": "payment"
+                    }
+                  },
+                  {
+                    "term": {
+                      "events.status": "timeout"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] nested query preserves tuple semantics across child objects"
     },
     {
       "name": "pit_clear_search",

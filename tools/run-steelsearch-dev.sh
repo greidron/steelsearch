@@ -54,6 +54,7 @@ import time
 print(int(time.time() * 1000))
 PY
 )" >&2
+echo "Steelsearch split build/run: ${SPLIT_BUILD_RUN}" >&2
 
 if [[ -n "${STEELSEARCH_NODE_ROLES:-}" ]]; then
   NODE_ROLES="${STEELSEARCH_NODE_ROLES}"
@@ -63,8 +64,13 @@ else
   NODE_ROLES="cluster_manager,data,ingest,remote_cluster_client"
 fi
 
+release_args=()
+if [[ "${BUILD_PROFILE}" == "release" ]]; then
+  release_args+=(--release)
+fi
+
 args=(
-  "${cargo_cmd[@]}" run $([[ "${BUILD_PROFILE}" == "release" ]] && printf '%s' '--release') -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" --
+  "${cargo_cmd[@]}" run "${release_args[@]}" -p os-node --features standalone-runtime --bin steelsearch --manifest-path "${ROOT}/Cargo.toml" --
   --http.host "${HOST}"
   --http.port "${PORT}"
   --transport.host "${TRANSPORT_HOST}"
@@ -98,6 +104,12 @@ if [[ "${STEELSEARCH_DEV_DRY_RUN:-0}" == "1" ]]; then
   exit 0
 fi
 
+{
+  printf '%q ' "${args[@]}"
+  printf '\n'
+} >"${WORK_DIR}/start-command.txt"
+echo "Steelsearch start command: ${WORK_DIR}/start-command.txt" >&2
+
 if [[ "${SPLIT_BUILD_RUN}" == "1" ]]; then
   echo "Steelsearch cargo build start epoch ms: $(python3 - <<'PY'
 import time
@@ -118,9 +130,14 @@ PY
 import time
 print(int(time.time() * 1000))
 PY
-)" >&2
+  )" >&2
   binary_path="${ROOT}/target/${BUILD_PROFILE}/steelsearch"
-  exec "${binary_path}" "${args[@]:11}"
+  exec "${binary_path}" "${args[@]:12}"
 fi
 
+echo "Steelsearch direct cargo run exec epoch ms: $(python3 - <<'PY'
+import time
+print(int(time.time() * 1000))
+PY
+)" >&2
 exec "${args[@]}"

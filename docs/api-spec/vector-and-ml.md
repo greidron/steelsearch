@@ -102,6 +102,18 @@ Current standalone query/runtime contract is:
   - bounded `expand_nested` acceptance
   - bounded radial search via `max_distance` / `min_score`
   - bounded `method_parameters` numeric acceptance on the Steelsearch live route
+  - wrapped `knn` candidate-path acceptance across the current bounded
+    `bool` / `nested` surface, including bounded required
+    `should(knn)` candidate paths
+  - bounded `must_not(knn)` and zero-`minimum_should_match` bool semantics on
+    the Steelsearch live route
+  - bounded top-level `k`-limit application only for the current pure
+    candidate-path subset, rather than for optional or mixed positive bool
+    shapes
+  - route-level runtime test pinning for the same bounded required
+    `should(knn)`, optional `should(knn)`, `must_not`, and
+    zero-`minimum_should_match` bool semantics, including nested
+    `must_not(knn)` exclusion behavior
 
 Current strict-profile shared subset note:
 

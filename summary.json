@@ -1,0 +1,217 @@
+{
+  "generated_at_epoch_seconds": 1781400156,
+  "config": {
+    "corpus_size": 1000,
+    "vector_dimension": 384,
+    "duration_seconds": 8.0,
+    "clients": 4,
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "timeout_seconds": 10.0,
+    "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5",
+    "seed": 13,
+    "profile": "quick-minilm-knn"
+  },
+  "scenario_plan": [
+    {
+      "key": "steelsearch-single-node",
+      "label": "Steelsearch 1-node",
+      "engine": "steelsearch",
+      "topology": "single-node",
+      "node_count": 1
+    }
+  ],
+  "scenarios": {
+    "steelsearch-single-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:44715",
+        "clients": 4,
+        "corpus_size": 1000,
+        "duration_seconds": 8.0,
+        "expected_node_count": 1,
+        "index": "search-benchmark-steelsearch-single-node",
+        "number_of_replicas": 0,
+        "number_of_shards": 3,
+        "query_mix": {
+          "facet": 15,
+          "hybrid": 10,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 15,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 134,
+            "max": 73.76916600333061,
+            "mean": 42.21888129864259,
+            "min": 20.386629999848083,
+            "p50": 42.46159549984441,
+            "p90": 53.82468100178812,
+            "p95": 56.89009334982984,
+            "p99": 69.59094049969269
+          },
+          "success_count": 134
+        },
+        "hybrid": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 54,
+            "max": 61.87149600009434,
+            "mean": 37.19216985222442,
+            "min": 25.139714001852553,
+            "p50": 36.94430400173587,
+            "p90": 44.81618110003183,
+            "p95": 47.64711730131237,
+            "p99": 57.68331251052585
+          },
+          "success_count": 54
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 127,
+            "max": 57.89645799814025,
+            "mean": 34.16844905538216,
+            "min": 20.48975100115058,
+            "p50": 33.30030999859446,
+            "p90": 42.984000402793754,
+            "p95": 46.24009839790233,
+            "p99": 55.421300141388194
+          },
+          "success_count": 127
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 78,
+            "max": 99.56084599980386,
+            "mean": 48.72377094873697,
+            "min": 20.9281950010336,
+            "p50": 49.218977999771596,
+            "p90": 62.8432729987253,
+            "p95": 69.40164784791699,
+            "p99": 88.46735281975276
+          },
+          "success_count": 78
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 127,
+            "max": 51.900603000831325,
+            "mean": 34.38418555138408,
+            "min": 18.928575998870656,
+            "p50": 34.01367699916591,
+            "p90": 43.08982500078855,
+            "p95": 47.24672770207687,
+            "p99": 49.07151962070202
+          },
+          "success_count": 127
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 39,
+            "max": 18.42261099955067,
+            "mean": 9.7708662561229,
+            "min": 0.9934890003933106,
+            "p50": 9.51636800164124,
+            "p90": 17.01459020114271,
+            "p95": 17.64203959974111,
+            "p99": 18.31298784003593
+          },
+          "success_count": 39
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 89,
+            "max": 66.02013500014436,
+            "mean": 35.21948286513353,
+            "min": 21.623321001243312,
+            "p50": 34.86984499977552,
+            "p90": 43.46609219937818,
+            "p95": 46.42022400003043,
+            "p99": 53.41253868173232
+          },
+          "success_count": 89
+        },
+        "vector": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 128,
+            "max": 86.61292599936132,
+            "mean": 52.95041784364685,
+            "min": 37.96003299794393,
+            "p50": 51.12253550214518,
+            "p90": 64.40202689809666,
+            "p95": 70.15052490096423,
+            "p99": 78.8344931196116
+          },
+          "success_count": 128
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 125,
+            "max": 29.370592998020584,
+            "mean": 12.684897583763814,
+            "min": 1.3085319988022093,
+            "p50": 12.91548099834472,
+            "p90": 20.02233799867099,
+            "p95": 20.91863439854933,
+            "p99": 28.354169678932525
+          },
+          "success_count": 125
+        }
+      },
+      "resource_usage": {
+        "memory_rss_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null
+        },
+        "operation_log_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null
+        },
+        "vector_cache_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 8.031370231001347,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 901,
+        "success_count": 901,
+        "throughput_ops_per_second": 112.18509097266006
+      },
+      "base_url": "http://127.0.0.1:44715",
+      "manifest_path": null
+    }
+  },
+  "comparisons": {}
+}

@@ -1,0 +1,20 @@
+{
+  "cluster_name": "steelsearch-dev",
+  "cluster_uuid": "steelsearch-dev-cluster-uuid",
+  "local_node_id": "steelsearch-dev-node",
+  "members": {
+    "steelsearch-dev-node": {
+      "node_id": "steelsearch-dev-node",
+      "node_name": "steelsearch-dev-node",
+      "roles": [
+        "cluster_manager",
+        "data",
+        "ingest",
+        "remote_cluster_client"
+      ],
+      "cluster_uuid": "steelsearch-dev-cluster-uuid",
+      "membership_epoch": 1,
+      "version": 0
+    }
+  }
+}
