@@ -538,6 +538,10 @@ def build_comparisons(scenarios: dict[str, Any]) -> dict[str, Any]:
             ),
             "operations": {
                 operation: {
+                    "throughput_ops_per_second": compare_number(
+                        operation_throughput_ops_per_second(steel, operation),
+                        operation_throughput_ops_per_second(open_, operation),
+                    ),
                     "p50_ms": compare_number(
                         steel["operations"][operation]["latency_ms"].get("p50"),
                         open_["operations"][operation]["latency_ms"].get("p50"),
@@ -562,6 +566,19 @@ def build_comparisons(scenarios: dict[str, Any]) -> dict[str, Any]:
             comparisons[topology]
         )
     return comparisons
+
+
+def operation_throughput_ops_per_second(
+    scenario_result: dict[str, Any],
+    operation: str,
+) -> float | None:
+    elapsed = scenario_result.get("summary", {}).get("elapsed_seconds")
+    success_count = scenario_result.get("operations", {}).get(operation, {}).get("success_count")
+    if not isinstance(elapsed, (int, float)) or elapsed <= 0:
+        return None
+    if not isinstance(success_count, (int, float)):
+        return None
+    return success_count / elapsed
 
 
 def compare_number(steel_value: Any, open_value: Any) -> dict[str, Any]:
@@ -609,6 +626,18 @@ def slower_than_opensearch(comparison: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     for operation, operation_comparison in comparison["operations"].items():
+        throughput = operation_comparison["throughput_ops_per_second"]
+        if isinstance(throughput.get("ratio"), (int, float)) and throughput["ratio"] < 1.0:
+            slower.append(
+                {
+                    "operation": operation,
+                    "metric": "throughput_ops_per_second",
+                    "steelsearch": throughput["steelsearch"],
+                    "opensearch": throughput["opensearch"],
+                    "ratio": throughput["ratio"],
+                    "direction": "lower_is_worse",
+                }
+            )
         for metric in ("p50_ms", "p95_ms", "p99_ms", "mean_ms"):
             values = operation_comparison[metric]
             if isinstance(values.get("ratio"), (int, float)) and values["ratio"] > 1.0:
@@ -720,6 +749,18 @@ def render_report(results: dict[str, Any]) -> str:
                 f"- Throughput ratio (Steelsearch/OpenSearch): `{safe_ratio(payload['throughput_ops_per_second']['ratio'])}`",
                 f"- Error rate delta (Steelsearch-OpenSearch): `{safe_number(payload['error_rate']['delta'])}`",
                 f"- RSS peak ratio (Steelsearch/OpenSearch): `{safe_ratio(payload.get('resource_usage', {}).get('memory_rss_bytes', {}).get('peak', {}).get('ratio'))}`",
+                "",
+                "| Operation | Steelsearch ops/s | OpenSearch ops/s | Throughput ratio |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for operation, op_payload in payload["operations"].items():
+            throughput = op_payload["throughput_ops_per_second"]
+            lines.append(
+                f"| {operation} | {safe_number(throughput['steelsearch'])} | {safe_number(throughput['opensearch'])} | {safe_ratio(throughput['ratio'])} |"
+            )
+        lines.extend(
+            [
                 "",
                 "| Operation | Steelsearch p50 ms | OpenSearch p50 ms | Steelsearch p95 ms | OpenSearch p95 ms | Steelsearch p99 ms | OpenSearch p99 ms | Steelsearch mean ms | OpenSearch mean ms |",
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",

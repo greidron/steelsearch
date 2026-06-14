@@ -7,32 +7,62 @@ Workspace: `/home/ubuntu/steelsearch`
 
 The search benchmark optimization pass is complete for the current scope.
 
-Final verified benchmark artifact:
+Final verified RSS-instrumented benchmark artifact:
 
-- `target/search-benchmark-matrix-minilm-knn-final-current/summary.json`
+- `target/search-benchmark-matrix-minilm-knn-rss-current/summary.json`
 
-Final current-state OpenSearch comparison:
+Final RSS-instrumented OpenSearch comparison:
 
 | Topology | SteelSearch throughput | OpenSearch throughput | Ratio |
 | --- | ---: | ---: | ---: |
-| 1-node | 336.39 ops/s | 223.27 ops/s | 1.51x |
-| 3-node | 336.24 ops/s | 98.01 ops/s | 3.43x |
+| 1-node | 278.07 ops/s | 130.10 ops/s | 2.14x |
+| 3-node | 284.81 ops/s | 51.61 ops/s | 5.52x |
 
-Remaining slower-than-OpenSearch points in the final current-state run:
+RSS peak comparison from the same run:
+
+| Topology | SteelSearch RSS peak | OpenSearch RSS peak | Ratio |
+| --- | ---: | ---: | ---: |
+| 1-node | 735.74 MiB | 928.38 MiB | 0.79x |
+| 3-node | 779.57 MiB | 2682.63 MiB | 0.29x |
+
+Per-operation throughput ratios from the same run:
+
+| Operation | 1-node ratio | 3-node ratio |
+| --- | ---: | ---: |
+| facet | 2.03x | 5.41x |
+| hybrid | 2.15x | 5.92x |
+| lexical | 2.25x | 6.13x |
+| nested | 2.21x | 5.53x |
+| ranking | 2.04x | 5.17x |
+| refresh | 2.25x | 5.68x |
+| sort_filter | 2.10x | 5.32x |
+| vector | 2.10x | 5.22x |
+| write | 2.21x | 5.57x |
+
+Remaining slower-than-OpenSearch points in the final RSS-instrumented run:
 
 | Topology | Operation | Metric | SteelSearch | OpenSearch | Ratio |
 | --- | --- | --- | ---: | ---: | ---: |
-| 1-node | facet | p50 | 13.94 ms | 13.14 ms | 1.06x |
-| 1-node | refresh | p95 | 162.22 ms | 131.56 ms | 1.23x |
-| 1-node | refresh | p99 | 233.96 ms | 221.77 ms | 1.05x |
+| 1-node | none | none | - | - | - |
 | 3-node | none | none | - | - | - |
 
 Interpretation:
 
-- Search critical paths are materially faster than OpenSearch in the final retained state.
-- The only remaining search-path gap is a small 1-node facet median gap.
-- Refresh tail remains variable in mixed workloads and should be treated as a separate NRT architecture task.
+- Search critical paths are materially faster than OpenSearch in the final RSS-instrumented retained state.
+- No slower-than-OpenSearch throughput or latency metric was recorded in the final RSS-instrumented run.
+- SteelSearch RSS peak is smaller than OpenSearch in both measured topologies.
+- Refresh tail remains variable across runs and should still be treated as a separate NRT architecture task.
 - Local 3-node results show SteelSearch faster than OpenSearch on all measured metrics, but SteelSearch 3-node throughput is close to 1-node throughput. Treat this as local OpenSearch comparison evidence, not proof of horizontal scaling.
+
+Functional OpenSearch E2E comparison status:
+
+- Current unified report: `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
+- Route parity: `ok`
+- Durability parity: `ok`
+- Semantic parity: `blocked`
+- Current coverage summary: `canonical_equal=332`, `strict_equal=123`, `failed=53`, `missing=47`, `known_gap_or_skipped=11`, `steelsearch_fail_closed=1`, `steelsearch_only=15`
+- Remaining semantic failures are in `search-compat` and `search-strict`.
+- The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and highlights the remaining mismatches.
 
 ## Main files changed
 
@@ -167,11 +197,11 @@ python3 tools/run-search-benchmark-matrix.py --profile minilm-knn \
   --timeout-seconds 900 --query-mix facet=100
 ```
 
-Final full matrix:
+Final full matrix with RSS sampling:
 
 ```bash
 python3 tools/run-search-benchmark-matrix.py --profile minilm-knn \
-  --output-dir target/search-benchmark-matrix-minilm-knn-final-current \
+  --output-dir target/search-benchmark-matrix-minilm-knn-rss-current \
   --scenarios steelsearch-single-node,opensearch-single-node,steelsearch-three-node,opensearch-three-node \
   --corpus-size 5000 --duration-seconds 30 --clients 4 --timeout-seconds 900
 ```
@@ -184,6 +214,7 @@ docker ps --format '{{.Names}}' | rg '^steelsearch-bench-opensearch-three-node-'
 
 ## Current best retained benchmark artifacts
 
+- `target/search-benchmark-matrix-minilm-knn-rss-current/summary.json`
 - `target/search-benchmark-matrix-minilm-knn-final-current/summary.json`
 - `target/search-benchmark-matrix-minilm-knn-typed-scalar-cache/summary.json`
 - `target/search-benchmark-facet-typed-scalar-cache-5000/summary.json`
