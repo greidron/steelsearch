@@ -3536,7 +3536,7 @@ impl SteelNode {
             .expect("metadata manifest object expected")
             .entry("indices".to_string())
             .or_insert_with(|| serde_json::json!({}));
-        indices[index] = bounded_subset;
+        indices[index] = Self::normalize_index_manifest_entry(index, bounded_subset);
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
@@ -3552,12 +3552,13 @@ impl SteelNode {
     fn handle_get_index_route(&self, request: &RestRequest) -> RestResponse {
         let target = request.path.trim_matches('/');
         let ignore_unavailable = query_param_is_true(request.query_params.get("ignore_unavailable"));
-        let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
         let expand_wildcards = request
             .query_params
             .get("expand_wildcards")
             .map(String::as_str)
             .unwrap_or("open");
+        let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"))
+            || expand_wildcards == "hidden";
         let matched = match self.resolve_index_metadata_targets(
             target,
             ignore_unavailable,
@@ -3582,11 +3583,14 @@ impl SteelNode {
         let target = request.path.trim_matches('/');
         let ignore_unavailable = query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
-        let expand_wildcards = request
+        let mut expand_wildcards = request
             .query_params
             .get("expand_wildcards")
             .map(String::as_str)
             .unwrap_or("open");
+        if expand_wildcards == "hidden" {
+            expand_wildcards = "open,hidden";
+        }
         let matched = match self.resolve_index_metadata_targets(
             target,
             ignore_unavailable,
@@ -3718,7 +3722,7 @@ impl SteelNode {
         allow_no_indices: bool,
         expand_wildcards: &str,
     ) -> Result<Vec<String>, RestResponse> {
-        let (include_hidden, include_closed) =
+        let (include_open, include_hidden, include_closed) =
             parse_index_expand_wildcards(expand_wildcards)?;
 
         let selectors = if target == "_all" {
@@ -3745,23 +3749,18 @@ impl SteelNode {
 
         let mut matched = Vec::new();
         for selector in selectors {
-            let selector_uses_wildcard =
-                selector == "*" || selector.contains('*') || selector.contains('?');
             let mut selector_matches = created
                 .iter()
                 .filter(|index| {
-                    if selector == *index {
-                        return true;
-                    }
-                    if !wildcard_match(selector, index) {
+                    if selector != *index && !wildcard_match(selector, index) {
                         return false;
-                    }
-                    if !selector_uses_wildcard {
-                        return true;
                     }
                     let state = manifest["indices"][*index]["state"]
                         .as_str()
                         .unwrap_or("open");
+                    if state != "close" && !include_open {
+                        return false;
+                    }
                     if state == "close" && !include_closed {
                         return false;
                     }
@@ -3902,11 +3901,15 @@ impl SteelNode {
         allow_no_indices: bool,
         expand_wildcards: &str,
     ) -> RestResponse {
+        let effective_allow_no_indices = allow_no_indices
+            || target.is_some_and(|target| {
+                expand_wildcards == "hidden" || self.target_names_hidden_index(target)
+            });
         let matched_targets = if let Some(target) = target {
             match self.resolve_index_metadata_targets(
                 target,
                 ignore_unavailable,
-                allow_no_indices,
+                effective_allow_no_indices,
                 expand_wildcards,
             ) {
                 Ok(matched) => Some(matched),
@@ -3937,6 +3940,21 @@ impl SteelNode {
                 flat_settings,
             ),
         )
+    }
+
+    fn target_names_hidden_index(&self, target: &str) -> bool {
+        if target.contains('*') || target.contains('?') || target.contains(',') {
+            return false;
+        }
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        manifest["indices"][target]["settings"]["index"]["hidden"]
+            .as_str()
+            .map(|value| value == "true")
+            .or_else(|| manifest["indices"][target]["settings"]["index"]["hidden"].as_bool())
+            .unwrap_or(false)
     }
 
     fn validate_settings_update_body(
@@ -4375,21 +4393,54 @@ impl SteelNode {
         format!(".ds-{name}-{generation:06}")
     }
 
-    fn create_minimal_index_manifest_entry(_index: &str) -> Value {
-        serde_json::json!({
-            "settings": {
-                "index": {
-                    "number_of_shards": "1",
-                    "number_of_replicas": "1"
+    fn create_minimal_index_manifest_entry(index: &str) -> Value {
+        Self::normalize_index_manifest_entry(
+            index,
+            serde_json::json!({
+                "mappings": {
+                    "properties": {
+                        "@timestamp": { "type": "date" }
+                    }
+                },
+                "aliases": {}
+            }),
+        )
+    }
+
+    fn normalize_index_manifest_entry(index: &str, mut entry: Value) -> Value {
+        if !entry.is_object() {
+            entry = serde_json::json!({});
+        }
+        if entry.get("settings").is_none() {
+            entry["settings"] = serde_json::json!({});
+        }
+        entry["settings"] = expand_dotted_cluster_settings_section(&entry["settings"]);
+
+        let mut settings = serde_json::json!({
+            "index": {
+                "number_of_shards": "1",
+                "number_of_replicas": "0",
+                "creation_date": "0",
+                "provided_name": index,
+                "uuid": format!("{index}-uuid"),
+                "version": {
+                    "created": "137287827"
+                },
+                "replication": {
+                    "type": "DOCUMENT"
                 }
-            },
-            "mappings": {
-                "properties": {
-                    "@timestamp": { "type": "date" }
-                }
-            },
+            }
+        });
+        merge_object_with_null_reset(&mut settings, &entry["settings"]);
+
+        let mut normalized = serde_json::json!({
+            "settings": settings,
+            "mappings": {},
             "aliases": {}
-        })
+        });
+        merge_object_with_null_reset(&mut normalized, &entry);
+        normalized["settings"] = expand_dotted_cluster_settings_section(&normalized["settings"]);
+        normalized
     }
 
     fn ensure_minimal_index_exists(&self, index: &str) {
@@ -18516,22 +18567,26 @@ fn extract_alias_names_from_body(body: &Value) -> Vec<String> {
     aliases
 }
 
-fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool), RestResponse> {
+fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool, bool), RestResponse> {
     let tokens = expand_wildcards
         .split(',')
         .map(str::trim)
         .filter(|token| !token.is_empty())
         .collect::<Vec<_>>();
     if tokens.is_empty() {
-        return Ok((false, false));
+        return Ok((true, false, false));
     }
 
+    let mut include_open = false;
     let mut include_hidden = false;
     let mut include_closed = false;
     for token in tokens {
         match token {
-            "open" => {}
+            "open" => {
+                include_open = true;
+            }
             "all" => {
+                include_open = true;
                 include_hidden = true;
                 include_closed = true;
             }
@@ -18552,7 +18607,7 @@ fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool), 
             }
         }
     }
-    Ok((include_hidden, include_closed))
+    Ok((include_open, include_hidden, include_closed))
 }
 
 fn build_root_info_response(info: &NodeInfo) -> RestResponse {
@@ -29016,6 +29071,26 @@ mod tests {
             targeted_flat.body["logs-settings-000001"]["settings"]["index.refresh_interval"],
             Value::String("1s".to_string())
         );
+        assert_eq!(
+            targeted_flat.body["logs-settings-000001"]["settings"]["index.creation_date"],
+            Value::String("0".to_string())
+        );
+        assert_eq!(
+            targeted_flat.body["logs-settings-000001"]["settings"]["index.provided_name"],
+            Value::String("logs-settings-000001".to_string())
+        );
+        assert_eq!(
+            targeted_flat.body["logs-settings-000001"]["settings"]["index.replication.type"],
+            Value::String("DOCUMENT".to_string())
+        );
+        assert_eq!(
+            targeted_flat.body["logs-settings-000001"]["settings"]["index.uuid"],
+            Value::String("logs-settings-000001-uuid".to_string())
+        );
+        assert_eq!(
+            targeted_flat.body["logs-settings-000001"]["settings"]["index.version.created"],
+            Value::String("137287827".to_string())
+        );
 
         let targeted_refresh = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -29062,7 +29137,17 @@ mod tests {
             "/logs-settings-*/_settings?expand_wildcards=hidden",
         ));
         assert_eq!(wildcard_hidden.status, 200);
-        assert!(wildcard_hidden.body.get("logs-settings-hidden-000001").is_some());
+        assert!(wildcard_hidden.body.as_object().unwrap().is_empty());
+
+        let wildcard_open_hidden = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-*/_settings?expand_wildcards=open,hidden",
+        ));
+        assert_eq!(wildcard_open_hidden.status, 200);
+        assert!(wildcard_open_hidden
+            .body
+            .get("logs-settings-hidden-000001")
+            .is_some());
 
         let wildcard_missing_allow = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -29074,7 +29159,7 @@ mod tests {
         let wildcard_put_hidden = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,
-                "/logs-settings-*/_settings?expand_wildcards=hidden",
+                "/logs-settings-*/_settings?expand_wildcards=open,hidden",
             )
             .with_json_body(serde_json::json!({
                 "index": {
@@ -29087,7 +29172,7 @@ mod tests {
 
         let hidden_refresh = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/logs-settings-hidden-000001/_settings/index.refresh_interval",
+            "/logs-settings-hidden-000001/_settings/index.refresh_interval?expand_wildcards=open,hidden",
         ));
         assert_eq!(hidden_refresh.status, 200);
         assert_eq!(
