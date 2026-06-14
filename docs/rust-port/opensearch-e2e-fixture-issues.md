@@ -15,8 +15,10 @@ semantic gaps in the search compatibility suites.
   6 failed cases remain.
 - After the cluster-state shape pass:
   4 failed cases remain.
+- After the significant-terms pass:
+  0 failed cases remain.
 - Latest live run:
-  `target/opensearch-e2e-search-compat-cluster-state-fix/report/unified-opensearch-e2e-report.json`
+  `target/opensearch-e2e-search-compat-significant-terms-fix-2/report/unified-opensearch-e2e-report.json`
 - Latest command profile: `search-compat` plus `search-strict` against live
   local SteelSearch and OpenSearch endpoints.
 
@@ -55,14 +57,17 @@ with `expand_wildcards=hidden` no longer removes visible indices.
 The cluster-state pass fixed another real SteelSearch shape gap: metadata
 aliases now use OpenSearch's alias-name array shape, and started routing shards
 no longer include `recovery_source`.
+The significant-terms pass fixed the remaining aggregation gap in the fallback
+search route: bounded `significant_terms` buckets are now emitted, including the
+`background_filter: match_all` case covered by the search fixtures.
 
 ## Result
 
-The failed count moved from 53 to 4:
+The failed count moved from 53 to 0:
 
-- `search-compat`: 149 passed, 2 failed, 16 skipped.
-- `search-strict`: 143 passed, 2 failed, 6 skipped.
-- Remaining failed rows: 4, from 2 unique cases repeated across both suites.
+- `search-compat`: 151 passed, 0 failed, 16 skipped.
+- `search-strict`: 145 passed, 0 failed, 6 skipped.
+- Remaining failed rows: 0.
 
-The remaining 4 failures are not explained by the fixed setup issues. They are
-tracked in `opensearch-e2e-gap-inventory.md`.
+No failed cases remain in the latest live `search-compat` plus `search-strict`
+comparison profile. Skips are tracked by explicit skip scopes in the reports.

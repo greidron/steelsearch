@@ -2,27 +2,26 @@
 
 This inventory covers the remaining live OpenSearch comparison failures after
 the fixture cleanup, composable-template create-index support, search semantics
-gap pass, index-visibility/count/stats pass, and cluster-state shape pass.
+gap pass, index-visibility/count/stats pass, cluster-state shape pass, and
+significant-terms pass.
 
 Latest report:
-`target/opensearch-e2e-search-compat-cluster-state-fix/report/unified-opensearch-e2e-report.json`
+`target/opensearch-e2e-search-compat-significant-terms-fix-2/report/unified-opensearch-e2e-report.json`
 
 ## Summary
 
-- Total remaining failed rows: 4.
-- Unique remaining case names: 2.
-- Repeated in both `search-compat` and `search-strict`: 2 cases.
+- Total remaining failed rows: 0.
+- Unique remaining case names: 0.
+- Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 149 passed, 2 failed, 16 skipped.
-- `search-strict`: 143 passed, 2 failed, 6 skipped.
+- `search-compat`: 151 passed, 0 failed, 16 skipped.
+- `search-strict`: 145 passed, 0 failed, 6 skipped.
 
 ## Remaining Gaps
 
-| Case | Suites | Classification | Evidence |
-| --- | --- | --- | --- |
-| `significant_terms_aggregation` | basic, strict | Real aggregation gap | Significant terms output does not match OpenSearch. |
-| `significant_terms_background_filter_aggregation` | basic, strict | Real aggregation gap | Significant terms with background filter does not match OpenSearch. |
+No failed cases remain in the live `search-compat` plus `search-strict`
+comparison profile.
 
 ## Fixed In This Pass
 
@@ -39,7 +38,8 @@ Latest report:
 | `cat_count_json` / `cat_count_text` | Cat count now excludes hidden-index documents by default. |
 | `index_stats_shape` | Global stats now excludes hidden indices, SteelSearch-only case-created indices are cleaned up, and delete wildcard handling keeps visible indices when `expand_wildcards=hidden`. |
 | `cluster_state_readback` | Cluster-state metadata aliases now match OpenSearch's alias-name array shape, and started routing shards no longer emit `recovery_source`. |
+| `significant_terms_aggregation` / `significant_terms_background_filter_aggregation` | Fallback search aggregation now emits bounded significant terms buckets and honors OpenSearch's default `min_doc_count` threshold for this profile. |
 
 ## Next Fix Order
 
-1. Significant terms and significant terms with background filter parity.
+No remaining failed search-compat/search-strict cases in the latest live run.
