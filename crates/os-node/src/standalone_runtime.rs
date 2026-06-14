@@ -11002,6 +11002,9 @@ impl SteelNode {
                 })
             })
             .map(|(local_node_id, coordination)| {
+                if coordination.publication_committed {
+                    return Vec::new();
+                }
                 coordination
                     .publication_round_versions
                     .iter()
@@ -12625,9 +12628,7 @@ impl SteelNode {
                 "docs.count": doc_count.to_string(),
                 "docs.deleted": "0",
                 "store.size": "0b",
-                "pri.store.size": "0b",
-                "dataset.size": "0b",
-                "creation.date.string": "2026-05-02T00:00:00Z"
+                "pri.store.size": "0b"
             }));
         }
         rows.sort_by(|left, right| {
@@ -12642,11 +12643,11 @@ impl SteelNode {
         let verbose = request.query_params.get("v").is_some_and(|value| value == "true");
         let mut lines = Vec::new();
         if verbose {
-            lines.push("health status index uuid pri rep docs.count docs.deleted store.size pri.store.size dataset.size creation.date.string".to_string());
+            lines.push("health status index uuid pri rep docs.count docs.deleted store.size pri.store.size".to_string());
         }
         for row in &rows {
             lines.push(format!(
-                "{} {} {} {} {} {} {} {} {} {} {} {}",
+                "{} {} {} {} {} {} {} {} {} {}",
                 row["health"].as_str().unwrap_or("yellow"),
                 row["status"].as_str().unwrap_or("open"),
                 row["index"].as_str().unwrap_or(""),
@@ -12657,10 +12658,6 @@ impl SteelNode {
                 row["docs.deleted"].as_str().unwrap_or("0"),
                 row["store.size"].as_str().unwrap_or("0b"),
                 row["pri.store.size"].as_str().unwrap_or("0b"),
-                row["dataset.size"].as_str().unwrap_or("0b"),
-                row["creation.date.string"]
-                    .as_str()
-                    .unwrap_or("2026-05-02T00:00:00Z"),
             ));
         }
         RestResponse::text(200, lines.join("\n") + "\n")
@@ -20256,6 +20253,8 @@ mod tests {
         let indices_text = indices_text_response.body.as_str().expect("cat indices text body");
         assert!(indices_text.contains("uuid"));
         assert!(indices_text.contains("docs.deleted"));
+        assert!(!indices_text.contains("dataset.size"));
+        assert!(!indices_text.contains("creation.date.string"));
         assert!(indices_text.contains("logs-000001"));
         assert!(!indices_text.contains("metrics-000001"));
 
@@ -20269,6 +20268,8 @@ mod tests {
         assert_eq!(indices_json_response.body[0]["uuid"], "_na_");
         assert_eq!(indices_json_response.body[0]["docs.deleted"], "0");
         assert_eq!(indices_json_response.body[0]["pri.store.size"], "0b");
+        assert!(indices_json_response.body[0].get("dataset.size").is_none());
+        assert!(indices_json_response.body[0].get("creation.date.string").is_none());
     }
 
     #[test]
@@ -29412,6 +29413,58 @@ mod tests {
         assert_eq!(tasks[0]["time_in_queue_millis"], 0);
         assert_eq!(tasks[0]["executing"], false);
         assert_eq!(tasks[1]["executing"], true);
+    }
+
+    #[test]
+    fn committed_publication_rounds_do_not_surface_as_pending_tasks() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: Some(DevelopmentCoordinationStatus {
+                publication_committed: true,
+                publication_round_versions: vec![1, 2],
+                ..Default::default()
+            }),
+        });
+
+        let response =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.body["tasks"]
+                .as_array()
+                .expect("pending tasks array")
+                .len(),
+            0
+        );
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_response = node.handle_rest_request(cat_request);
+        assert_eq!(cat_response.status, 200);
+        assert_eq!(
+            cat_response
+                .body
+                .as_array()
+                .expect("cat pending tasks array")
+                .len(),
+            0
+        );
     }
 
     #[test]
