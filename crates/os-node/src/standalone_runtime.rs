@@ -4571,6 +4571,26 @@ impl SteelNode {
             .is_some()
     }
 
+    fn request_uses_create_op_type(request: &RestRequest) -> bool {
+        request
+            .query_params
+            .get("op_type")
+            .is_some_and(|value| value == "create")
+    }
+
+    fn data_stream_requires_create_op_response(target: &str) -> RestResponse {
+        RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": format!("only write ops with an op_type of create are allowed in data streams, got op_type [index] for data stream [{target}]")
+                },
+                "status": 400
+            }),
+        )
+    }
+
     fn target_is_alias(&self, target: &str) -> bool {
         self.metadata_manifest_state
             .lock()
@@ -11148,6 +11168,13 @@ impl SteelNode {
     }
 
     fn handle_put_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if self.target_is_data_stream(index) {
+            if Self::request_uses_create_op_type(request) {
+                return self.handle_create_doc_route(index, id, request);
+            }
+            return Self::data_stream_requires_create_op_response(index);
+        }
+
         let resolved_index = match self.resolve_write_target(index, true) {
             Ok(resolved_index) => resolved_index,
             Err(reason) => {
@@ -11276,6 +11303,10 @@ impl SteelNode {
     }
 
     fn handle_post_doc_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        if self.target_is_data_stream(index) && !Self::request_uses_create_op_type(request) {
+            return Self::data_stream_requires_create_op_response(index);
+        }
+
         let generated_id = format!(
             "generated-{}",
             *self.next_seq_no.lock().expect("seq_no lock poisoned") + 1
@@ -19316,6 +19347,69 @@ mod tests {
         assert_eq!(stats_after_delete.status, 200);
         assert_eq!(stats_after_delete.body["data_stream_count"], Value::from(0));
         assert_eq!(stats_after_delete.body["backing_indices"], Value::from(0));
+    }
+
+    #[test]
+    fn data_stream_document_routes_require_create_op_type() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let template_put = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/probe-data-stream-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-ds-*"],
+                    "data_stream": {}
+                })),
+        );
+        assert_eq!(template_put.status, 200);
+
+        let put_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_data_stream/logs-ds-prod",
+        ));
+        assert_eq!(put_response.status, 200);
+
+        let index_write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-ds-prod/_doc/doc-1?refresh=true")
+                .with_json_body(serde_json::json!({
+                    "@timestamp": "2024-01-01T00:00:00Z",
+                    "message": "stream event"
+                })),
+        );
+        assert_eq!(index_write.status, 400);
+        assert_eq!(
+            index_write.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+        assert!(
+            index_write.body["error"]["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("only write ops with an op_type of create"))
+        );
+
+        let create_write = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ds-prod/_doc/doc-1?op_type=create&refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "@timestamp": "2024-01-01T00:00:01Z",
+                "message": "created stream event"
+            })),
+        );
+        assert_eq!(create_write.status, 201);
+        assert_eq!(create_write.body["result"], Value::String("created".to_string()));
+
+        let duplicate_create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-ds-prod/_doc/doc-1?op_type=create")
+                .with_json_body(serde_json::json!({
+                    "@timestamp": "2024-01-01T00:00:02Z",
+                    "message": "duplicate stream event"
+                })),
+        );
+        assert_eq!(duplicate_create.status, 409);
     }
 
     #[test]
