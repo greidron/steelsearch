@@ -6937,7 +6937,10 @@ impl SteelNode {
         } else {
             std::collections::BTreeSet::new()
         };
-        if failed_indices.is_empty() && standalone_search_body_allows_native_engine(&body) {
+        if !resolved_indices.is_empty()
+            && failed_indices.is_empty()
+            && standalone_search_body_allows_native_engine(&body)
+        {
             if let Some(response) = self.try_native_engine_search_response(
                 &resolved_indices,
                 &body,
@@ -7193,7 +7196,7 @@ impl SteelNode {
     ) -> Option<RestResponse> {
         let request = standalone_native_search_request(resolved_indices, body).ok()?;
         match self.native_engine.search(request) {
-            Ok(response) => Some(native_search_response_to_rest_response(response)),
+            Ok(response) => Some(native_search_response_to_rest_response(response, body)),
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => None,
             Err(error) => Some(engine_error_to_rest_response(error)),
         }
@@ -14832,6 +14835,9 @@ fn build_unsupported_search_response(reason: &str) -> RestResponse {
 }
 
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
+    if value_contains_any_key(&body["query"], &["query_string", "simple_query_string"]) {
+        return false;
+    }
     ![
         "collapse",
         "profile",
@@ -14932,8 +14938,15 @@ fn parse_native_sort_specs(sort: Option<&Value>) -> Result<Vec<SortSpec>, String
     Ok(specs)
 }
 
-fn native_search_response_to_rest_response(response: SearchResponse) -> RestResponse {
-    RestResponse::json(200, response.to_opensearch_body(1))
+fn native_search_response_to_rest_response(response: SearchResponse, body: &Value) -> RestResponse {
+    let mut response_body = response.to_opensearch_body(1);
+    if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
+        if response.total_hits > threshold {
+            response_body["hits"]["total"] =
+                serde_json::json!({ "value": threshold, "relation": "gte" });
+        }
+    }
+    RestResponse::json(200, response_body)
 }
 
 fn engine_error_to_rest_response(error: EngineError) -> RestResponse {
@@ -15175,6 +15188,24 @@ fn validate_search_request_body(body: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(rescore) = body.get("rescore") {
+        if body.get("sort").is_some() {
+            return Some(RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "search_phase_execution_exception",
+                        "reason": "all shards failed",
+                        "root_cause": [
+                            {
+                                "type": "illegal_argument_exception",
+                                "reason": "Cannot use [sort] option in conjunction with [rescore]."
+                            }
+                        ]
+                    },
+                    "status": 400
+                }),
+            ));
+        }
         if let Some(response) = validate_rescore_request_body(rescore) {
             return Some(response);
         }
@@ -15718,14 +15749,6 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     return Some(response);
                 }
             }
-        }
-        if bool_query
-            .get("minimum_should_match")
-            .is_some_and(|value| value.as_u64().unwrap_or(0) == 0)
-        {
-            return Some(build_unsupported_search_response(
-                "unsupported bool parameter [minimum_should_match]",
-            ));
         }
     }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
@@ -17505,15 +17528,19 @@ fn collect_searchable_field_values(source: &Value, fields: Option<&[&str]>) -> V
         return fields
             .iter()
             .filter_map(|field| lookup_query_field_value(source, field))
-            .filter_map(Value::as_str)
-            .map(str::to_string)
+            .flat_map(collect_string_leaf_values)
             .collect();
     }
-    source_object
-        .values()
-        .filter_map(Value::as_str)
-        .map(str::to_string)
-        .collect()
+    source_object.values().flat_map(collect_string_leaf_values).collect()
+}
+
+fn collect_string_leaf_values(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(text) => vec![text.to_string()],
+        Value::Array(items) => items.iter().flat_map(collect_string_leaf_values).collect(),
+        Value::Object(object) => object.values().flat_map(collect_string_leaf_values).collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn evaluate_text_query_strings(
@@ -24244,7 +24271,6 @@ mod tests {
             RestRequest::new(RestMethod::Post, "/logs-search-rescore-000001/_search")
                 .with_json_body(serde_json::json!({
                     "query": { "match_all": {} },
-                    "sort": [{ "ts": { "order": "asc" } }],
                     "rescore": {
                         "window_size": 2,
                         "query": {
@@ -24261,6 +24287,26 @@ mod tests {
         assert_eq!(rescore.body["hits"]["total"]["value"], 3);
         assert_eq!(rescore.body["hits"]["hits"][0]["_id"], "doc-2");
         assert_eq!(rescore.body["hits"]["hits"][1]["_id"], "doc-1");
+
+        let sorted_rescore = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-rescore-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "ts": { "order": "asc" } }],
+                    "rescore": {
+                        "window_size": 2,
+                        "query": {
+                            "rescore_query": {
+                                "match": { "message": "timeout" }
+                            },
+                            "query_weight": 1.0,
+                            "rescore_query_weight": 10.0
+                        }
+                    }
+                })),
+        );
+        assert_eq!(sorted_rescore.status, 400);
+        assert_eq!(sorted_rescore.body["status"], 400);
     }
 
     #[test]
@@ -25867,7 +25913,26 @@ mod tests {
         });
 
         assert_eq!(
-            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-search-dsl-000001"))
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-search-dsl-000001")
+                    .with_json_body(serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" },
+                                "code": { "type": "keyword" },
+                                "tags": { "type": "keyword" },
+                                "contact_email": { "type": "keyword" },
+                                "comments": {
+                                    "type": "nested",
+                                    "properties": {
+                                        "author": { "type": "keyword" },
+                                        "text": { "type": "text" }
+                                    }
+                                }
+                            }
+                        }
+                    })),
+            )
                 .status,
             200
         );
@@ -25917,6 +25982,46 @@ mod tests {
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
+
+        let query_string_default_fields = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta AND green"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(query_string_default_fields.status, 200);
+        assert_eq!(query_string_default_fields.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            query_string_default_fields.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let simple_query_string_default_fields = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "simple_query_string": {
+                            "query": "beta green",
+                            "default_operator": "and"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(simple_query_string_default_fields.status, 200);
+        assert_eq!(simple_query_string_default_fields.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            simple_query_string_default_fields.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
 
         let query_string = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
@@ -26102,6 +26207,11 @@ mod tests {
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let sorted_window = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(

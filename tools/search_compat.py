@@ -1335,6 +1335,19 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "ids": [hit.get("_id") for hit in hits],
             "sources": [hit.get("_source") for hit in hits],
         }
+    if kind == "search_total":
+        total = (body.get("hits") or {}).get("total")
+        if isinstance(total, dict):
+            total_value = total.get("value")
+            total_relation = total.get("relation")
+        else:
+            total_value = total
+            total_relation = None
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "relation": total_relation,
+        }
     if kind == "search_summary":
         hits = ((body.get("hits") or {}).get("hits") or [])
         total = (body.get("hits") or {}).get("total")

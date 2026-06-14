@@ -1515,7 +1515,7 @@
         },
         "size": 2
       },
-      "extract": "search_hits",
+      "extract": "search_total",
       "family": "lexical",
       "description": "[lexical] expand wildcards open search"
     },
@@ -3048,6 +3048,11 @@
               "sort": [
                 {
                   "ts": {
+                    "order": "desc"
+                  }
+                },
+                {
+                  "bytes": {
                     "order": "desc"
                   }
                 }

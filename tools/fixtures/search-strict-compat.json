@@ -1293,7 +1293,7 @@
         },
         "size": 2
       },
-      "extract": "search_hits",
+      "extract": "search_total",
       "family": "lexical",
       "description": "[lexical] expand wildcards open search",
       "strict_source_parity_required": true
@@ -2888,6 +2888,11 @@
               "sort": [
                 {
                   "ts": {
+                    "order": "desc"
+                  }
+                },
+                {
+                  "bytes": {
                     "order": "desc"
                   }
                 }

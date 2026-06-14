@@ -3176,10 +3176,27 @@ fn build_tantivy_tokenized_field_set_query(
     fields: Option<&[String]>,
     query: &str,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
-    let Some(fields) = fields else {
-        return Ok(None);
+    let default_fields;
+    let fields = if let Some(fields) = fields {
+        fields
+    } else {
+        default_fields = search_state
+            .fields
+            .iter()
+            .filter_map(|(field_name, indexed_field)| {
+                matches!(
+                    indexed_field.field_type,
+                    TantivyFieldType::Text | TantivyFieldType::Keyword
+                )
+                .then(|| field_name.clone())
+            })
+            .collect::<Vec<_>>();
+        default_fields.as_slice()
     };
-    let query_tokens = tokenize_phrase_text(query);
+    if fields.is_empty() {
+        return Ok(None);
+    }
+    let query_tokens = tokenize_query_string_required_terms(query);
     if query_tokens.is_empty() {
         return Ok(None);
     }
@@ -15113,9 +15130,20 @@ fn match_query_matching_value_count(field_value: Option<&Value>, query: &Value) 
             .iter()
             .map(|item| match_query_matching_value_count(Some(item), query))
             .sum(),
+        (Value::Object(object), query) => object
+            .values()
+            .map(|value| match_query_matching_value_count(Some(value), query))
+            .sum(),
         (Value::String(field_value), Value::String(query)) => usize::from(field_value.contains(query)),
         _ => usize::from(field_value == query),
     }
+}
+
+fn tokenize_query_string_required_terms(query: &str) -> Vec<String> {
+    tokenize_phrase_text(query)
+        .into_iter()
+        .filter(|token| token != "and" && token != "or")
+        .collect()
 }
 
 fn match_query_token_count(query: &Value) -> usize {
@@ -15284,7 +15312,7 @@ fn matched_query_token_count_across_fields(
     fields: &[String],
     query: &str,
 ) -> usize {
-    let query_tokens = tokenize_phrase_text(query);
+    let query_tokens = tokenize_query_string_required_terms(query);
     if query_tokens.is_empty() {
         return 0;
     }
