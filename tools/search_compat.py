@@ -640,7 +640,10 @@ def cleanup_target(
                 delete_template,
             )
         )
-    for index in request_created_indices(fixture):
+    cleanup_indices = set(request_created_indices(fixture))
+    for case in fixture.get("cases", []):
+        cleanup_indices.update(case_step_created_indices(case))
+    for index in sorted(cleanup_indices):
         delete_index = http_json(
             base_url,
             "DELETE",
@@ -673,6 +676,51 @@ def request_created_indices(fixture: dict[str, Any]) -> list[str]:
     return sorted(set(indices))
 
 
+def case_step_created_indices(case: dict[str, Any]) -> list[str]:
+    indices: list[str] = []
+    for step in case.get("steps") or []:
+        if step.get("method") != "PUT":
+            continue
+        path = str(step.get("path") or "")
+        stripped = path.strip("/")
+        if not stripped or "/" in stripped or "*" in stripped or "," in stripped or stripped.startswith("_"):
+            continue
+        indices.append(stripped)
+    return sorted(set(indices))
+
+
+def cleanup_case_step_indices(
+    base_url: str,
+    fixture: dict[str, Any],
+    case: dict[str, Any],
+    timeout: float,
+) -> list[dict[str, Any]]:
+    setup_headers = resolve_request_headers(
+        fixture,
+        {"credential_set": fixture.get("setup_credential_set")},
+    )
+    steps: list[dict[str, Any]] = []
+    for index in case_step_created_indices(case):
+        delete_index = http_json(
+            base_url,
+            "DELETE",
+            f"/{index}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            {
+                "name": f"cleanup:{index}",
+                "status": delete_index["status"],
+                "expected_status": None,
+                "passed": delete_index["status"] in (200, 202, 404),
+                "extract": extract("status_only", delete_index),
+            }
+        )
+    return steps
+
+
 def resolve_fixture_placeholders(value: Any) -> Any:
     if isinstance(value, str):
         return os.path.expandvars(value)
@@ -697,6 +745,8 @@ def run_case(
 
     for name, url in selected_targets.items():
         response, steps = run_case_request(url, fixture, case, timeout)
+        if comparison_mode == "steelsearch_only" and name == "steelsearch":
+            steps.extend(cleanup_case_step_indices(url, fixture, case, timeout))
         target_results[name] = {
             "status": response["status"],
             "extract": extract(case["extract"], response),

@@ -11,8 +11,10 @@ semantic gaps in the search compatibility suites.
   25 failed cases remain.
 - After the first search semantics gap pass:
   11 failed cases remain.
+- After the index visibility/count/stats pass:
+  6 failed cases remain.
 - Latest live run:
-  `target/opensearch-e2e-search-compat-gap-fix-current-2/report/unified-opensearch-e2e-report.json`
+  `target/opensearch-e2e-search-compat-visibility-fix-final-2/report/unified-opensearch-e2e-report.json`
 - Latest command profile: `search-compat` plus `search-strict` against live
   local SteelSearch and OpenSearch endpoints.
 
@@ -29,6 +31,7 @@ semantic gaps in the search compatibility suites.
 | Field/highlight search cases depended on hit order only | The compared values were otherwise equal, but order could differ without semantic significance for those extractors. | Sort extracted ids for `search_fields` and `highlight_hits`. |
 | `top_hits_sorted_aggregation` had tied primary sort values | OpenSearch returned `log-4` and SteelSearch returned `log-alias` for the same `ts` sort value; both were valid without a tie-breaker. | Add secondary `bytes desc` sort to make the expected top hit deterministic. |
 | `expand_wildcards_open_search` compared unsorted top-N hits | Both engines returned total 8, but the first two hits differed because the request had no sort across expanded indices. | Compare status/total only for this target-expansion fixture. |
+| SteelSearch-only k-NN case indices leaked into later stats/settings checks | Unsupported-option cases intentionally run only against SteelSearch, so their case-local `PUT /{index}` steps left indices that OpenSearch never created. | Cleanup now deletes case-step-created indices before fixture setup and after SteelSearch-only cases. |
 
 ## Confirmed SteelSearch Fix From This Audit
 
@@ -38,17 +41,23 @@ composable index templates and component templates. SteelSearch now merges
 matching component template and index template `template` blocks into the index
 manifest before creating the native index.
 
-The focused regression test is
-`create_index_applies_matching_composable_and_component_templates`.
+The focused regression tests include
+`create_index_applies_matching_composable_and_component_templates`,
+`delete_index_hidden_wildcard_only_removes_hidden_targets`,
+`index_stats_routes_serve_global_metric_and_targeted_shapes`, and
+`named_settings_routes_filter_global_and_targeted_setting_keys`.
+
+This pass also fixed real SteelSearch visibility gaps: global settings, cat
+count, and global stats now omit hidden indices by default, and wildcard delete
+with `expand_wildcards=hidden` no longer removes visible indices.
 
 ## Result
 
-The failed count moved from 53 to 11:
+The failed count moved from 53 to 6:
 
-- `search-compat`: 146 passed, 5 failed, 16 skipped.
-- `search-strict`: 139 passed, 6 failed, 6 skipped.
-- Unified classification: 146 canonical equal, 139 strict equal,
-  22 known gap or skipped, 11 failed.
+- `search-compat`: 148 passed, 3 failed, 16 skipped.
+- `search-strict`: 142 passed, 3 failed, 6 skipped.
+- Remaining failed rows: 6, from 3 unique cases repeated across both suites.
 
-The remaining 11 failures are not explained by the fixed setup issues. They are
+The remaining 6 failures are not explained by the fixed setup issues. They are
 tracked in `opensearch-e2e-gap-inventory.md`.

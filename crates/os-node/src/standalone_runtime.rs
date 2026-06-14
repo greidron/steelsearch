@@ -3585,23 +3585,33 @@ impl SteelNode {
         let target = request.path.trim_matches('/');
         let ignore_unavailable = query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
-        let mut expand_wildcards = request
+        let requested_expand_wildcards = request
             .query_params
             .get("expand_wildcards")
             .map(String::as_str)
             .unwrap_or("open");
-        if expand_wildcards == "hidden" {
-            expand_wildcards = "open,hidden";
-        }
-        let matched = match self.resolve_index_metadata_targets(
+        let hidden_only = requested_expand_wildcards == "hidden";
+        let resolver_expand_wildcards = if hidden_only {
+            "open,hidden"
+        } else {
+            requested_expand_wildcards
+        };
+        let mut matched = match self.resolve_index_metadata_targets(
             target,
             ignore_unavailable,
             allow_no_indices,
-            expand_wildcards,
+            resolver_expand_wildcards,
         ) {
             Ok(matched) => matched,
             Err(response) => return response,
         };
+        if hidden_only {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            matched.retain(|index| index_metadata_is_hidden(&manifest["indices"][index]));
+        }
         if matched.is_empty() {
             return delete_index_route_registration::build_delete_index_success_response();
         }
@@ -3766,15 +3776,7 @@ impl SteelNode {
                     if state == "close" && !include_closed {
                         return false;
                     }
-                    let hidden = manifest["indices"][*index]["settings"]["index"]["hidden"]
-                        .as_str()
-                        .map(|value| value == "true")
-                        .or_else(|| {
-                            manifest["indices"][*index]["settings"]["index"]["hidden"]
-                                .as_bool()
-                        })
-                        .unwrap_or(false);
-                    if hidden && !include_hidden {
+                    if index_metadata_is_hidden(&manifest["indices"][*index]) && !include_hidden {
                         return false;
                     }
                     true
@@ -3931,7 +3933,13 @@ impl SteelNode {
             }
             Value::Object(subset)
         } else {
-            manifest["indices"].clone()
+            let mut subset = serde_json::Map::new();
+            for (index, body) in manifest["indices"].as_object().into_iter().flatten() {
+                if !index_metadata_is_hidden(body) {
+                    subset.insert(index.clone(), body.clone());
+                }
+            }
+            Value::Object(subset)
         };
         RestResponse::json(
             200,
@@ -3952,11 +3960,7 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        manifest["indices"][target]["settings"]["index"]["hidden"]
-            .as_str()
-            .map(|value| value == "true")
-            .or_else(|| manifest["indices"][target]["settings"]["index"]["hidden"].as_bool())
-            .unwrap_or(false)
+        index_metadata_is_hidden(&manifest["indices"][target])
     }
 
     fn validate_settings_update_body(
@@ -10655,6 +10659,14 @@ impl SteelNode {
             .lock()
             .expect("created indices state lock poisoned")
             .clone();
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let created_indices = created_indices
+            .into_iter()
+            .filter(|index| !index_metadata_is_hidden(&manifest["indices"][index]))
+            .collect::<Vec<_>>();
         let created_index_count = created_indices.len();
         let mut indices = serde_json::Map::new();
         for index in created_indices {
@@ -12943,6 +12955,10 @@ impl SteelNode {
     }
 
     fn handle_cat_count_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
         let docs = self
             .documents_state
             .lock()
@@ -12950,13 +12966,13 @@ impl SteelNode {
         let count = docs
             .keys()
             .filter(|key| {
-                target
-                    .map(|pattern| {
-                        key.split_once(':')
-                            .map(|(index, _)| wildcard_match(pattern, index))
-                            .unwrap_or(false)
-                    })
-                    .unwrap_or(true)
+                let Some((index, _)) = key.split_once(':') else {
+                    return false;
+                };
+                if index_metadata_is_hidden(&manifest["indices"][index]) {
+                    return false;
+                }
+                target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true)
             })
             .count()
             .to_string();
@@ -19101,6 +19117,14 @@ fn matches_index_selector(selector: &str, index: &str) -> bool {
     selector.split(',').any(|pattern| wildcard_match(pattern, index))
 }
 
+fn index_metadata_is_hidden(index_body: &Value) -> bool {
+    index_body["settings"]["index"]["hidden"]
+        .as_str()
+        .map(|value| value == "true")
+        .or_else(|| index_body["settings"]["index"]["hidden"].as_bool())
+        .unwrap_or(false)
+}
+
 fn decode_url_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut decoded = String::with_capacity(value.len());
@@ -19894,6 +19918,52 @@ mod tests {
     }
 
     #[test]
+    fn delete_index_hidden_wildcard_only_removes_hidden_targets() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_visible = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-delete-visible-000001",
+        ));
+        assert_eq!(create_visible.status, 200);
+
+        let create_hidden = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-delete-hidden-000001").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "hidden": true
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_hidden.status, 200);
+
+        let delete_hidden = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-delete-*?expand_wildcards=hidden",
+        ));
+        assert_eq!(delete_hidden.status, 200);
+        assert_eq!(delete_hidden.body["acknowledged"], Value::Bool(true));
+
+        let visible_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-delete-visible-000001",
+        ));
+        assert_eq!(visible_head.status, 200);
+
+        let hidden_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-delete-hidden-000001",
+        ));
+        assert_eq!(hidden_head.status, 404);
+    }
+
+    #[test]
     fn index_block_route_marks_targeted_block_state() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -20562,7 +20632,21 @@ mod tests {
                 .lock()
                 .expect("created indices state lock poisoned");
             created_indices.insert("logs-000001".to_string());
+            created_indices.insert("logs-hidden-000001".to_string());
             created_indices.insert("metrics-000001".to_string());
+        }
+        {
+            let mut manifest = node
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            manifest["indices"]["logs-hidden-000001"] = serde_json::json!({
+                "settings": {
+                    "index": {
+                        "hidden": true
+                    }
+                }
+            });
         }
         {
             let mut documents = node
@@ -20573,6 +20657,17 @@ mod tests {
                 "logs-000001:doc-1".to_string(),
                 StoredDocument {
                     source: serde_json::json!({"message": "log doc"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "logs-hidden-000001:doc-1".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message": "hidden log doc"}),
                     version: 1,
                     seq_no: 0,
                     primary_term: 1,
@@ -20600,6 +20695,14 @@ mod tests {
         let count_json_response = node.handle_rest_request(count_json_request);
         assert_eq!(count_json_response.status, 200);
         assert_eq!(count_json_response.body[0]["count"], "1");
+
+        let mut global_count_json_request = RestRequest::new(RestMethod::Get, "/_cat/count");
+        global_count_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let global_count_json_response = node.handle_rest_request(global_count_json_request);
+        assert_eq!(global_count_json_response.status, 200);
+        assert_eq!(global_count_json_response.body[0]["count"], "2");
 
         let mut indices_text_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
         indices_text_request
@@ -28048,6 +28151,17 @@ mod tests {
             RestRequest::new(RestMethod::Put, "/metrics-stats-000001")
                 .with_json_body(serde_json::json!({})),
         );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-stats-hidden-000001").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "hidden": true
+                        }
+                    }
+                }),
+            ),
+        );
 
         let global_metric =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_stats/docs"));
@@ -28055,6 +28169,8 @@ mod tests {
         assert!(global_metric.body["_shards"].is_object());
         assert!(global_metric.body["indices"]["logs-stats-000001"].is_object());
         assert!(global_metric.body["indices"]["metrics-stats-000001"].is_object());
+        assert!(global_metric.body["indices"]["logs-stats-hidden-000001"].is_null());
+        assert_eq!(global_metric.body["_shards"]["total"], 2);
 
         let targeted = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -28062,6 +28178,7 @@ mod tests {
         ));
         assert_eq!(targeted.status, 200);
         assert!(targeted.body["indices"]["logs-stats-000001"].is_object());
+        assert!(targeted.body["indices"]["logs-stats-hidden-000001"].is_null());
         assert!(targeted.body["indices"]["metrics-stats-000001"].is_null());
 
         let targeted_metric = node.handle_rest_request(RestRequest::new(
@@ -29429,6 +29546,7 @@ mod tests {
             "/_settings",
         ));
         assert_eq!(global.status, 200);
+        assert!(global.body.get("logs-settings-hidden-000001").is_none());
         assert_eq!(
             global.body["logs-settings-000001"]["settings"]["index"]["number_of_replicas"],
             Value::String("0".to_string())
@@ -29441,6 +29559,7 @@ mod tests {
         assert_eq!(global_named.status, 200);
         assert!(global_named.body["logs-settings-000001"]["settings"].is_object());
         assert!(global_named.body["metrics-settings-000001"]["settings"].is_object());
+        assert!(global_named.body.get("logs-settings-hidden-000001").is_none());
 
         let global_replicas = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -29465,6 +29584,7 @@ mod tests {
             global_flat.body["logs-settings-000001"]["settings"]["index.number_of_replicas"],
             Value::String("0".to_string())
         );
+        assert!(global_flat.body.get("logs-settings-hidden-000001").is_none());
 
         let targeted_put = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-settings-000001/_settings").with_json_body(

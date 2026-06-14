@@ -1,21 +1,21 @@
 # OpenSearch E2E Gap Inventory
 
 This inventory covers the remaining live OpenSearch comparison failures after
-the fixture cleanup, composable-template create-index support, and the first
-search semantics gap pass.
+the fixture cleanup, composable-template create-index support, search semantics
+gap pass, and index-visibility/count/stats pass.
 
 Latest report:
-`target/opensearch-e2e-search-compat-gap-fix-current-2/report/unified-opensearch-e2e-report.json`
+`target/opensearch-e2e-search-compat-visibility-fix-final-2/report/unified-opensearch-e2e-report.json`
 
 ## Summary
 
-- Total remaining failed rows: 11.
-- Unique remaining case names: 7.
-- Repeated in both `search-compat` and `search-strict`: 4 cases.
-- Strict-only: `cat_count_json`, `cat_count_text`.
-- Basic-only: `index_stats_shape`.
-- `search-compat`: 146 passed, 5 failed, 16 skipped.
-- `search-strict`: 139 passed, 6 failed, 6 skipped.
+- Total remaining failed rows: 6.
+- Unique remaining case names: 3.
+- Repeated in both `search-compat` and `search-strict`: 3 cases.
+- Strict-only: none.
+- Basic-only: none.
+- `search-compat`: 148 passed, 3 failed, 16 skipped.
+- `search-strict`: 142 passed, 3 failed, 6 skipped.
 
 ## Remaining Gaps
 
@@ -23,11 +23,7 @@ Latest report:
 | --- | --- | --- | --- |
 | `significant_terms_aggregation` | basic, strict | Real aggregation gap | Significant terms output does not match OpenSearch. |
 | `significant_terms_background_filter_aggregation` | basic, strict | Real aggregation gap | Significant terms with background filter does not match OpenSearch. |
-| `settings_global_named_readback` | basic, strict | Index visibility/settings gap | SteelSearch includes hidden target/delete indices that OpenSearch omits for this request shape. |
 | `cluster_state_readback` | basic, strict | Cluster-state shape gap | SteelSearch reports alias and recovery-source presence where OpenSearch omits them for this request. |
-| `cat_count_json` | strict only | Visibility/count gap | Strict count is 20 in SteelSearch versus 17 in OpenSearch, matching extra hidden/unsupported indices leaking into count scope. |
-| `cat_count_text` | strict only | Visibility/count gap | Same as `cat_count_json`. |
-| `index_stats_shape` | basic only | Operational stats shape gap | SteelSearch includes hidden and unsupported vector indices; OpenSearch omits them and reports 12 shards versus SteelSearch 15. |
 
 ## Fixed In This Pass
 
@@ -40,10 +36,11 @@ Latest report:
 | `expand_wildcards_none_empty_search` | Same empty-target native-path guard. |
 | `top_hits_sorted_aggregation` | Fixture now adds a deterministic secondary sort for tied `ts` values. |
 | `expand_wildcards_open_search` | Fixture now compares total/status only because unsorted top-N hit order across expanded indices is not a stable semantic check. |
+| `settings_global_named_readback` | Global settings readback now excludes hidden indices by default. |
+| `cat_count_json` / `cat_count_text` | Cat count now excludes hidden-index documents by default. |
+| `index_stats_shape` | Global stats now excludes hidden indices, SteelSearch-only case-created indices are cleaned up, and delete wildcard handling keeps visible indices when `expand_wildcards=hidden`. |
 
 ## Next Fix Order
 
-1. Hidden/deleted/unsupported index visibility in settings, cat count, and
-   stats APIs.
-2. Cluster-state response shape normalization for aliases and recovery source.
-3. Significant terms and significant terms with background filter parity.
+1. Cluster-state response shape normalization for aliases and recovery source.
+2. Significant terms and significant terms with background filter parity.
