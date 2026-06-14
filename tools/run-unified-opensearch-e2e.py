@@ -159,47 +159,75 @@ def collect_suite(
 ) -> dict[str, Any]:
     fixture_path = ROOT / suite.fixture
     fixture = load_json(fixture_path)
-    report_path = output_dir / suite.report
-    source = "output-dir"
-    if not report_path.exists():
-        target_report = ROOT / "target" / suite.report
-        if target_report.exists():
-            report_path = target_report
-            source = "target"
-    if not report_path.exists() and recursive_target_scan:
-        recursive_report = newest_target_report(suite.report)
-        if recursive_report is not None:
-            report_path = recursive_report
-            source = "target-recursive"
-    report = load_json(report_path) if report_path.exists() else None
-    if report is not None and report_has_no_reachable_targets(report):
-        result = summarize_suite(suite, fixture, None)
-        result["fixture_path"] = str(fixture_path)
-        result["report_path"] = str(report_path)
-        result["report_source"] = "missing"
-        result["note"] = "ignored existing report because every recorded target request failed before receiving an HTTP status"
-        return result
+    report_path, source, report, unusable_path = load_best_report(
+        suite.report,
+        fixture_path,
+        output_dir,
+        recursive_target_scan,
+    )
     result = summarize_suite(suite, fixture, report)
     result["fixture_path"] = str(fixture_path)
-    result["report_path"] = str(report_path) if report_path.exists() else str(output_dir / suite.report)
+    result["report_path"] = str(report_path) if report_path is not None else str(output_dir / suite.report)
     result["report_source"] = source if report is not None else "missing"
+    if report is None and unusable_path is not None:
+        result["note"] = f"ignored existing report because every recorded target request failed before receiving an HTTP status: {unusable_path}"
     if note:
         result["note"] = note
     return result
 
 
-def newest_target_report(report_name: str) -> Path | None:
-    candidates = [
-        path for path in (ROOT / "target").glob(f"**/{report_name}")
-        if path.is_file()
-    ]
+def load_best_report(
+    report_name: str,
+    fixture_path: Path,
+    output_dir: Path,
+    recursive_target_scan: bool,
+) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
+    candidates: list[tuple[Path, str]] = []
+    output_report = output_dir / report_name
+    if output_report.exists():
+        candidates.append((output_report, "output-dir"))
+    target_report = ROOT / "target" / report_name
+    if target_report.exists():
+        candidates.append((target_report, "target"))
+    if recursive_target_scan:
+        candidates.extend(
+            (path, "target-recursive")
+            for path in (ROOT / "target").glob(f"**/{report_name}")
+            if path.is_file()
+        )
     if not candidates:
-        return None
-    return max(candidates, key=lambda path: path.stat().st_mtime)
+        return None, None, None, None
+
+    seen: set[Path] = set()
+    unique_candidates = []
+    for path, source in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_candidates.append((path, source))
+
+    unusable_path = None
+    for path, source in sorted(unique_candidates, key=lambda item: item[0].stat().st_mtime, reverse=True):
+        report = load_json(path)
+        if report_fixture_mismatch(report, fixture_path):
+            continue
+        if report_has_no_reachable_targets(report):
+            unusable_path = path
+            continue
+        return path, source, report, unusable_path
+    return unusable_path, None, None, unusable_path
 
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def report_fixture_mismatch(report: dict[str, Any], expected_fixture: Path) -> bool:
+    fixture = report.get("fixture")
+    if not isinstance(fixture, str) or not fixture:
+        return False
+    return Path(fixture).resolve() != expected_fixture.resolve()
 
 
 def report_has_no_reachable_targets(report: dict[str, Any]) -> bool:
@@ -214,9 +242,24 @@ def report_has_no_reachable_targets(report: dict[str, Any]) -> bool:
         opensearch = case.get("opensearch")
         if isinstance(steelsearch, dict) and isinstance(opensearch, dict):
             target_pairs.append((steelsearch, opensearch))
+            continue
+        targets = case.get("targets")
+        if isinstance(targets, dict):
+            steelsearch = targets.get("steelsearch")
+            opensearch = targets.get("opensearch")
+            if isinstance(steelsearch, dict) and isinstance(opensearch, dict):
+                target_pairs.append((steelsearch, opensearch))
     if not target_pairs:
         return False
-    return all(left.get("status") is None and right.get("status") is None for left, right in target_pairs)
+    return all(unreachable_response(left) and unreachable_response(right) for left, right in target_pairs)
+
+
+def unreachable_response(response: dict[str, Any]) -> bool:
+    status = response.get("status")
+    raw_response = response.get("raw_response")
+    if isinstance(raw_response, dict):
+        status = raw_response.get("status", status)
+    return status in (None, 0)
 
 
 def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any] | None) -> dict[str, Any]:
