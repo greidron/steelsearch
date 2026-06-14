@@ -26,6 +26,8 @@ class Suite:
     fixture: str
     report: str
     required: bool = True
+    output_arg: str = "--output"
+    needs_opensearch: bool = True
 
 
 SUITES: tuple[Suite, ...] = (
@@ -45,11 +47,11 @@ SUITES: tuple[Suite, ...] = (
     Suite("refresh", "document-write", "semantic_parity", "tools/refresh_compat.py", "tools/fixtures/refresh-compat.json", "refresh-compat-report.json"),
     Suite("routing", "document-write", "semantic_parity", "tools/routing_compat.py", "tools/fixtures/routing-compat.json", "routing-compat-report.json"),
     Suite("bulk", "document-write", "semantic_parity", "tools/bulk_compat.py", "tools/fixtures/bulk-compat.json", "bulk-compat-report.json"),
-    Suite("search-compat", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-compat.json", "search-compat-report.json"),
-    Suite("search-strict", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-strict-compat.json", "search-strict-compat-report.json"),
-    Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json"),
+    Suite("search-compat", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-compat.json", "search-compat-report.json", output_arg="--report"),
+    Suite("search-strict", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-strict-compat.json", "search-strict-compat-report.json", output_arg="--report"),
+    Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json", output_arg="--report"),
     Suite("vector-search", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-compat-report.json"),
-    Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json"),
+    Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json", needs_opensearch=False),
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
     Suite("security-authz", "security", "security_parity", None, "tools/fixtures/security-authz-compat.json", "security-authz-compat-report.json", required=False),
@@ -121,15 +123,19 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
         str(ROOT / suite.runner),
         "--steelsearch-url",
         args.steelsearch_url.rstrip("/"),
-        "--opensearch-url",
-        args.opensearch_url.rstrip("/"),
-        "--fixture",
-        str(ROOT / suite.fixture),
-        "--output",
-        str(report_path),
-        "--timeout",
-        str(args.timeout),
     ]
+    if suite.needs_opensearch:
+        command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
+    command.extend(
+        [
+            "--fixture",
+            str(ROOT / suite.fixture),
+            suite.output_arg,
+            str(report_path),
+            "--timeout",
+            str(args.timeout),
+        ]
+    )
     started = time.time()
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     result = collect_suite(suite, output_dir)
