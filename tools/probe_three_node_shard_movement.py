@@ -121,6 +121,24 @@ def current_node_count(client: HttpJson) -> int:
     return int(value)
 
 
+def clear_opensearch_cluster_blocks(client: HttpJson) -> None:
+    client.request(
+        "PUT",
+        "/_cluster/settings",
+        {
+            "persistent": {
+                "cluster.blocks.create_index": False,
+                "cluster.routing.allocation.disk.threshold_enabled": False,
+            },
+            "transient": {
+                "cluster.blocks.create_index": False,
+                "cluster.routing.allocation.disk.threshold_enabled": False,
+            },
+        },
+        expected={200},
+    )
+
+
 def safe_request(client: HttpJson, method: str, path: str, body: Any | None = None) -> dict[str, Any]:
     try:
         status, data = client.request(method, path, body=body, expected={200})
@@ -168,6 +186,58 @@ def get_search_count(client: HttpJson, index: str) -> int:
     if isinstance(total, int):
         return total
     return 0
+
+
+def collect_checkpoint_observed(client: HttpJson, index: str) -> list[dict[str, Any]]:
+    _, stats = client.request(
+        "GET",
+        f"/{urllib.parse.quote(index, safe='')}/_stats?level=shards",
+        expected={200},
+    )
+    indices = stats.get("indices", {}) if isinstance(stats, dict) else {}
+    index_data = indices.get(index, {}) if isinstance(indices, dict) else {}
+    shards = index_data.get("shards", {}) if isinstance(index_data, dict) else {}
+    observed: list[dict[str, Any]] = []
+    for shard_id, copies in shards.items():
+        if not isinstance(copies, list):
+            continue
+        for copy in copies:
+            if not isinstance(copy, dict):
+                continue
+            routing = copy.get("routing", {}) if isinstance(copy.get("routing"), dict) else {}
+            seq_no = copy.get("seq_no", {}) if isinstance(copy.get("seq_no"), dict) else {}
+            observed.append(
+                {
+                    "index": index,
+                    "shard": int(shard_id),
+                    "role": "primary" if routing.get("primary") else "replica",
+                    "node": routing.get("node"),
+                    "max_seq_no": seq_no.get("max_seq_no"),
+                    "local_checkpoint": seq_no.get("local_checkpoint"),
+                    "global_checkpoint": seq_no.get("global_checkpoint"),
+                }
+            )
+    return observed
+
+
+def checkpoint_drift(observed: list[dict[str, Any]]) -> dict[str, int]:
+    drift: dict[str, int] = {}
+    for report_field, source_field in (
+        ("seq_no_drift", "max_seq_no"),
+        ("local_checkpoint_drift", "local_checkpoint"),
+        ("global_checkpoint_drift", "global_checkpoint"),
+    ):
+        values = [entry[source_field] for entry in observed if isinstance(entry.get(source_field), int)]
+        drift[report_field] = max(values) - min(values) if values else 0
+    return drift
+
+
+def checkpoint_report(client: HttpJson, index: str) -> dict[str, Any]:
+    observed = collect_checkpoint_observed(client, index)
+    return {
+        "checkpoint_observed": observed,
+        "checkpoint_drift": checkpoint_drift(observed),
+    }
 
 
 def update_index_settings(client: HttpJson, index: str, settings: dict[str, Any]) -> None:
@@ -378,6 +448,7 @@ def main() -> int:
 
         if not wait_for_node_count(java1_client, expected_count=3, attempts=45, sleep_seconds=1.0):
             raise RuntimeError(f"three-node mixed cluster did not form; java_view_node_count={current_node_count(java1_client)}")
+        clear_opensearch_cluster_blocks(java1_client)
         report["phases"].append(phase_result("cluster_formed", node_count=current_node_count(java1_client)))
 
         java1_client.request("DELETE", f"/{args.index}?ignore_unavailable=true", expected={200, 404})
@@ -441,6 +512,7 @@ def main() -> int:
                 shards=java_to_rust_ready,
                 placement=placement(java_to_rust_ready),
                 search_count=get_search_count(java1_client, args.index),
+                **checkpoint_report(java1_client, args.index),
             )
         )
 
@@ -459,6 +531,7 @@ def main() -> int:
                 shards=failover_to_rust,
                 placement=placement(failover_to_rust),
                 search_count=rust_primary_count,
+                **checkpoint_report(java2_client, args.index),
                 passed=rust_primary_count == args.doc_count,
             )
         )
@@ -498,6 +571,7 @@ def main() -> int:
                 shards=rust_primary_java_replica,
                 placement=placement(rust_primary_java_replica),
                 search_count=get_search_count(java2_client, args.index),
+                **checkpoint_report(java2_client, args.index),
             )
         )
 
@@ -516,16 +590,27 @@ def main() -> int:
                 shards=failover_to_java,
                 placement=placement(failover_to_java),
                 search_count=java_primary_count,
+                **checkpoint_report(java2_client, args.index),
                 passed=java_primary_count == args.doc_count,
             )
         )
 
         opensearch_to_steelsearch_passed = bool(report["phases"][-3].get("passed"))
         steelsearch_to_opensearch_passed = bool(report["phases"][-1].get("passed"))
+        checkpoint_phases = [
+            phase
+            for phase in report["phases"]
+            if isinstance(phase.get("checkpoint_drift"), dict)
+        ]
+        checkpoint_drift_ok = all(
+            all(value == 0 for value in phase["checkpoint_drift"].values())
+            for phase in checkpoint_phases
+        )
         report["summary"] = {
-            "passed": opensearch_to_steelsearch_passed and steelsearch_to_opensearch_passed,
+            "passed": opensearch_to_steelsearch_passed and steelsearch_to_opensearch_passed and checkpoint_drift_ok,
             "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
             "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
+            "checkpoint_drift_ok": checkpoint_drift_ok,
         }
     except Exception as exc:
         report["failure_context"] = {
