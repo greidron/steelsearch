@@ -3711,7 +3711,16 @@ impl SteelNode {
         if request.path == "/_plugins/_knn/settings" {
             return match request.method {
                 RestMethod::Get => Some(self.handle_knn_settings_get_route()),
-                RestMethod::Put => Some(self.handle_knn_settings_put_route(request)),
+                RestMethod::Put => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "k-NN",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_knn_settings_put_route(request))
+                }
                 _ => None,
             };
         }
@@ -3725,10 +3734,24 @@ impl SteelNode {
         }
         if let Some(index) = request.path.strip_prefix("/_plugins/_knn/clear_cache/") {
             if request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "k-NN",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_knn_clear_cache_route(index));
             }
         }
         if request.path == "/_plugins/_knn/models/_train" && request.method == RestMethod::Post {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "k-NN",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_knn_model_train_route(request));
         }
         if request.path == "/_plugins/_knn/models/_search"
@@ -3739,12 +3762,28 @@ impl SteelNode {
         if let Some(model_id) = request.path.strip_prefix("/_plugins/_knn/models/") {
             if let Some(model_id) = model_id.strip_suffix("/_train") {
                 if request.method == RestMethod::Post && !model_id.is_empty() {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "k-NN",
+                    ) {
+                        return Some(response);
+                    }
                     return Some(self.handle_knn_model_train_with_id_route(model_id, request));
                 }
             }
             return match request.method {
                 RestMethod::Get => Some(self.handle_knn_model_get_route(model_id)),
-                RestMethod::Delete => Some(self.handle_knn_model_delete_route(model_id)),
+                RestMethod::Delete => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "k-NN",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_knn_model_delete_route(model_id))
+                }
                 _ => None,
             };
         }
@@ -25075,6 +25114,80 @@ mod tests {
             );
             assert_eq!(admin.status, 200, "path {path}");
             assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_knn_operational_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let cases = [
+            (
+                RestRequest::new(RestMethod::Put, "/_plugins/_knn/settings")
+                    .with_json_body(serde_json::json!({"knn.model.cache.size": 4})),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_plugins/_knn/clear_cache/sec-knn-index"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_train")
+                    .with_json_body(serde_json::json!({"training_index": "sec-knn-index", "training_field": "vector"})),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/sec-knn-model/_train")
+                    .with_json_body(serde_json::json!({"training_index": "sec-knn-index", "training_field": "vector"})),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Delete, "/_plugins/_knn/models/sec-knn-model"),
+                200,
+            ),
+        ];
+
+        for (request, admin_status) in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("k-NN"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, admin_status, "path {path}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
