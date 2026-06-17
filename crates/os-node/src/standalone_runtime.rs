@@ -8988,6 +8988,10 @@ impl SteelNode {
     }
 
     fn handle_cluster_reroute_route(&self, request: &RestRequest) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("cluster_manager", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let state = self.cluster_state_body();
         let mut response = serde_json::Map::new();
         response.insert("acknowledged".to_string(), Value::Bool(true));
@@ -11392,6 +11396,7 @@ impl SteelNode {
 
     fn thread_pool_stats_body(&self) -> Value {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
+        let cluster_manager = self.runtime_thread_pool_counters("cluster_manager");
         let maintenance = self.runtime_thread_pool_counters("maintenance");
         let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
@@ -11403,6 +11408,13 @@ impl SteelNode {
                 "active": management_active,
                 "rejected": 0,
                 "completed": 0
+            },
+            "cluster_manager": {
+                "threads": 1,
+                "queue": cluster_manager.queue,
+                "active": cluster_manager.active,
+                "rejected": cluster_manager.rejected,
+                "completed": cluster_manager.completed
             },
             "maintenance": {
                 "threads": 1,
@@ -14179,6 +14191,7 @@ impl SteelNode {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
         let management_active = management_active.to_string();
         let management_queue = management_queue.to_string();
+        let cluster_manager = self.runtime_thread_pool_counters("cluster_manager");
         let maintenance = self.runtime_thread_pool_counters("maintenance");
         let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
@@ -14206,6 +14219,30 @@ impl SteelNode {
                 "max": "1",
                 "size": "1",
                 "keep_alive": "5m",
+                "parallelism": ""
+            }),
+            serde_json::json!({
+                "node_name": self.info.name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "cluster_manager",
+                "type": "fixed",
+                "active": cluster_manager.active.to_string(),
+                "pool_size": "1",
+                "queue": cluster_manager.queue.to_string(),
+                "queue_size": "1000",
+                "rejected": cluster_manager.rejected.to_string(),
+                "largest": "1",
+                "completed": cluster_manager.completed.to_string(),
+                "total_wait_time": "0ms",
+                "core": "",
+                "max": "",
+                "size": "1",
+                "keep_alive": "",
                 "parallelism": ""
             }),
             serde_json::json!({
@@ -21707,7 +21744,7 @@ mod tests {
                 .as_array()
                 .expect("cat thread_pool array")
                 .len(),
-            5
+            6
         );
 
         let mut thread_pool_text_request =
@@ -31427,6 +31464,117 @@ mod tests {
         assert_eq!(first_node["thread_pool"]["snapshot"]["queue"], 1000);
         assert_eq!(first_node["thread_pool"]["snapshot"]["rejected"], 1);
         assert_eq!(first_node["thread_pool"]["snapshot"]["completed"], 1);
+    }
+
+    #[test]
+    fn cluster_reroute_waits_drains_and_rejects_when_runtime_pool_is_saturated() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "cluster_manager".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_reroute_node = node.clone();
+        let queued_reroute = std::thread::spawn(move || {
+            queued_reroute_node
+                .handle_rest_request(RestRequest::new(RestMethod::Post, "/_cluster/reroute"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "cluster_manager", 1);
+
+        let stats_while_queued =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_queued.status, 200);
+        let first_node = stats_while_queued.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["completed"], 0);
+
+        release_runtime_thread_pool_active_slot(&node, "cluster_manager");
+        let reroute = queued_reroute
+            .join()
+            .expect("queued cluster reroute request thread should not panic");
+        assert_eq!(reroute.status, 200);
+        assert_eq!(reroute.body["acknowledged"], Value::Bool(true));
+
+        let mut cat_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/cluster_manager");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "cluster_manager");
+        assert_eq!(rows[0]["active"], "0");
+        assert_eq!(rows[0]["queue"], "0");
+        assert_eq!(rows[0]["completed"], "1");
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "cluster_manager".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let rejected =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_cluster/reroute"));
+        assert_eq!(rejected.status, 429);
+        assert_eq!(
+            rejected.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let stats_after_reject =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_reject.status, 200);
+        let first_node = stats_after_reject.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["queue"], 1000);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["completed"], 1);
     }
 
     #[test]

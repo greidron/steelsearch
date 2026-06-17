@@ -186,7 +186,7 @@ Current Steelsearch evidence:
   cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
   thread-pool routes;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 6/6 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 7/7 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
@@ -194,7 +194,8 @@ Current Steelsearch evidence:
   bounded queue-full rejection for search/write pools, plus maintenance
   refresh/flush/cache-clear/forcemerge admission through the same runtime-owned
   waiting and rejection model, and snapshot create/restore/cleanup admission
-  through the same runtime-owned waiting and rejection model;
+  plus cluster reroute admission through the same runtime-owned waiting and
+  rejection model;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 1/1 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates plus follow-up task
@@ -225,7 +226,7 @@ Required tests:
   header, and same-node child grouping probes into broader multi-level and
   cross-node child-task propagation coverage;
 - extend queue/backpressure smoke tests from search/write and maintenance
-  active-slot queueing plus snapshot admission into cluster-manager and
+  active-slot queueing plus snapshot and cluster reroute admission into
   task-submission scheduling behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 

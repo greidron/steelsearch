@@ -295,6 +295,13 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "cluster_reroute_waits_drains_and_rejects_when_runtime_pool_is_saturated",
+        "route-backpressure-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
