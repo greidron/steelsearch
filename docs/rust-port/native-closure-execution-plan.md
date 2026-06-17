@@ -180,11 +180,12 @@ Out of scope:
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
-  with 12/12 tests and `zero_tests=0`, covering by-query rethrottle state
+  with 13/13 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
   mutating rate state, repeated last-write-wins rethrottle sequencing,
-  follow-up `/_tasks` list/get readback, shared-runtime restart readback for
+  explicit last-requested-rate visibility through rethrottle response plus
+  `/_tasks` list/get readback, shared-runtime restart readback for
   requested throttle rates, and rejection for cancelled or terminal tasks
   without mutating rate state, plus shutdown/partial-recovery rethrottle
   refusal without mutating rate state, same-node, cross-node, spawned

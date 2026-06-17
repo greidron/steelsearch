@@ -26471,6 +26471,90 @@ mod tests {
     }
 
     #[test]
+    fn rethrottle_last_requested_rate_is_operator_visible_across_task_surfaces() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 122,
+                task: ClusterManagerTask {
+                    source: "operator visible rethrottle probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let before =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:122"));
+        assert_eq!(before.status, 200);
+        assert_eq!(
+            before.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(-1.0)
+        );
+
+        let mut first =
+            RestRequest::new(RestMethod::Post, "/_delete_by_query/node-a:122/_rethrottle");
+        first
+            .query_params
+            .insert("requests_per_second".to_string(), "3.25".to_string());
+        let first = node.handle_rest_request(first);
+        assert_eq!(first.status, 200);
+        assert_eq!(
+            first.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(3.25)
+        );
+
+        let mut second =
+            RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:122/_rethrottle");
+        second.body = br#"{"requests_per_second":8.5}"#.to_vec();
+        let second = node.handle_rest_request(second);
+        assert_eq!(second.status, 200);
+        assert_eq!(
+            second.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(8.5)
+        );
+
+        let get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:122"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(8.5)
+        );
+
+        let list = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(list.status, 200);
+        assert_eq!(
+            list.body["nodes"]["node-a"]["tasks"]["node-a:122"]["status"]["requests_per_second"],
+            serde_json::json!(8.5)
+        );
+    }
+
+    #[test]
     fn rethrottle_rate_persists_across_shared_runtime_restart() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");

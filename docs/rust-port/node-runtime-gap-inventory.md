@@ -257,11 +257,12 @@ Current Steelsearch evidence:
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
-  2026-06-17 with 12/12 tests and `zero_tests=0`, covering by-query rethrottle
+  2026-06-17 with 13/13 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
-  mutating rate state, repeated last-write-wins rethrottle sequencing, follow-up
-  task readback, and shared-runtime restart readback for requested throttle
+  mutating rate state, repeated last-write-wins rethrottle sequencing, explicit
+  last-requested-rate visibility through rethrottle response plus task readback,
+  and shared-runtime restart readback for requested throttle
   rates, plus rejection for cancelled or terminal tasks without mutating rate
   state, shutdown/partial-recovery refusal without mutating rate state,
   same-node, cross-node, spawned background-worker child, and multi-level

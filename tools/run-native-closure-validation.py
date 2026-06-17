@@ -1000,6 +1000,13 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "rethrottle_last_requested_rate_is_operator_visible_across_task_surfaces",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "rethrottle_rate_persists_across_shared_runtime_restart",
         "task-throttle-runtime-state",
         package="os-node",
