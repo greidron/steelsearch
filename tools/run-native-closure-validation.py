@@ -269,6 +269,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "cancelled_task_terminal_completion_preserves_marker_until_eviction",
+        "task-terminal-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "task_queue_state_and_cancelled_ids_persist_across_shared_runtime_restart",
         "task-restart-runtime-state",
         package="os-node",
