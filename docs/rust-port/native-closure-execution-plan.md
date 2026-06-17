@@ -63,6 +63,10 @@ Current narrowed families:
 - `terms_set` exact scalar leaves: Tantivy minimum-should-match query builders
   and native candidate helpers cover scalar keyword/tag-style terms before
   source fallback is needed.
+- `rank_feature` positive numeric/bool leaves and `distance_feature`
+  numeric/date field-presence leaves: Tantivy native builders and hybrid
+  candidate helpers cover the filter-like narrowing subset, while richer
+  scoring/parity shapes remain fallback-visible.
 
 Exit evidence:
 
