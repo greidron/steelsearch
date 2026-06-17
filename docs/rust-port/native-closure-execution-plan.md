@@ -142,7 +142,7 @@ Out of scope:
   pollution, and multi-node queued/in-flight task visibility with remote node
   metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
-  2026-06-17 with 22/22 tests and `zero_tests=0`, covering administrative
+  2026-06-17 with 23/23 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state including empty, non-empty, and terminal-drained queue visibility
   transitions, plus search/write thread-pool completion counters derived from real
@@ -150,6 +150,7 @@ Out of scope:
   active-slot queue waiting/drain under concurrent search/write requests,
   burst maintenance/control-plane backlog growth visibility and drain,
   overlapping maintenance accepted-pending versus completed-effect readback,
+  tier transition restart-smoke readback/cancel,
   immediately executed versus queued cluster-reroute/maintenance work telemetry
   distinction, accepted-but-pending versus overload-refusal telemetry distinction,
   independent mixed search/maintenance and write/maintenance backlog drain,

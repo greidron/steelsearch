@@ -284,9 +284,9 @@ internal subsystems, especially:
 | Worker ownership | there is no authoritative background worker owner for accepted maintenance work once the REST route returns |
 | Retry and failure policy | current evidence does not prove whether failed maintenance work is retried, abandoned, or surfaced through an observable task/error channel |
 | Progress visibility | overlapping refresh/flush requests on the same target now distinguish accepted-but-pending queue telemetry from completed refresh readback, but there is still no daemon-level operator-visible contract for partially-applied maintenance state |
-| Cross-surface coordination | bounded overlapping refresh/flush on the same target is fixture-covered; there is still no contract for how tier changes, close/open, and snapshot restore interact when they overlap on the same index or data stream |
+| Cross-surface coordination | bounded overlapping refresh/flush on the same target is fixture-covered and tier transition readback/cancel survives shared-runtime restart-smoke; there is still no contract for how close/open and snapshot restore interact when they overlap on the same index or data stream |
 | Cleanup guarantees | there is no evidence for whether accepted maintenance work guarantees cleanup of temporary state, leases, or intermediate markers after failure |
-| Restart interaction | there is no evidence for whether maintenance work is resumed, rolled back, or forgotten across shutdown and restart |
+| Restart interaction | tier transition readback and cancel survive shared-runtime restart-smoke; maintenance work accepted before shutdown and snapshot cleanup/restore interruption semantics remain open |
 
 ### Required tests
 
@@ -294,7 +294,6 @@ internal subsystems, especially:
   bounded maintenance profile.
 - add restart-smoke coverage for:
   - maintenance work accepted before shutdown;
-  - tier transition interrupted by restart;
   - snapshot cleanup/restore interrupted by restart.
 - add operator-visible evidence for:
   - post-operation readback showing completion or rollback;

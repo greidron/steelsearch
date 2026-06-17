@@ -30070,6 +30070,91 @@ mod tests {
     }
 
     #[test]
+    fn tier_transition_restart_smoke_preserves_readback_and_cancel() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-tier-transition-restart-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut writer = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        writer.shared_runtime_state_path = Some(shared_state_path.clone());
+        let create_index = writer.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/tier-restart-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let transition = writer.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/tier-restart-000001/_tier/warm",
+        ));
+        assert_eq!(transition.status, 200);
+        assert_eq!(transition.body["acknowledged"], Value::Bool(true));
+        assert_eq!(transition.body["indices"], serde_json::json!(["tier-restart-000001"]));
+        assert_eq!(transition.body["target_tier"], "warm");
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let tier_after_restart = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/tier-restart-000001/_tier",
+        ));
+        assert_eq!(tier_after_restart.status, 200);
+        assert_eq!(tier_after_restart.body["index"], "tier-restart-000001");
+        assert_eq!(tier_after_restart.body["tiers"][0], "warm");
+
+        let cancel_after_restart = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tier/_cancel/tier-restart-000001",
+        ));
+        assert_eq!(cancel_after_restart.status, 200);
+        assert_eq!(cancel_after_restart.body["acknowledged"], Value::Bool(true));
+        assert_eq!(
+            cancel_after_restart.body["indices"],
+            serde_json::json!(["tier-restart-000001"])
+        );
+
+        let tier_after_cancel = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/tier-restart-000001/_tier",
+        ));
+        assert_eq!(tier_after_cancel.status, 200);
+        assert_eq!(tier_after_cancel.body["tiers"][0], "hot");
+
+        let mut restarted_again = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted_again.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted_again.sync_shared_runtime_state_from_disk();
+        let tier_after_cancel_restart = restarted_again.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/tier-restart-000001/_tier",
+        ));
+        assert_eq!(tier_after_cancel_restart.status, 200);
+        assert_eq!(tier_after_cancel_restart.body["tiers"][0], "hot");
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn search_session_routes_support_point_in_time_all_and_scroll_variants() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
