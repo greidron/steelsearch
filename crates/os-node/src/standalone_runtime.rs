@@ -86,11 +86,24 @@ pub struct ExtensionBoundaryRegistry {
     pub ml_commons_enabled: bool,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExtensionBoundaryManifest {
+    #[serde(default)]
+    knn_plugin_enabled: bool,
+    #[serde(default)]
+    ml_commons_enabled: bool,
+    #[serde(default)]
+    java_plugin_abi: Option<Value>,
+    #[serde(default)]
+    java_plugins: Vec<Value>,
+}
+
 impl ExtensionBoundaryRegistry {
     pub fn load_manifest(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref();
         let bytes = fs::read(path)?;
-        let mut registry: Self = serde_json::from_slice(&bytes).map_err(|error| {
+        let manifest: ExtensionBoundaryManifest = serde_json::from_slice(&bytes).map_err(|error| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -99,8 +112,20 @@ impl ExtensionBoundaryRegistry {
                 ),
             )
         })?;
-        registry.manifest_path = Some(path.to_path_buf());
-        Ok(registry)
+        if manifest.java_plugin_abi.is_some() || !manifest.java_plugins.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported Java plugin ABI manifest [{}]: Java plugin descriptors cannot be loaded by the Rust-native extension registry",
+                    path.display()
+                ),
+            ));
+        }
+        Ok(Self {
+            manifest_path: Some(path.to_path_buf()),
+            knn_plugin_enabled: manifest.knn_plugin_enabled,
+            ml_commons_enabled: manifest.ml_commons_enabled,
+        })
     }
 
     pub fn registered_components(&self) -> Vec<&'static str> {
@@ -22635,6 +22660,45 @@ mod tests {
         assert!(plugins_text.contains("name component version description classname"));
         assert!(plugins_text.contains("opensearch-knn"));
         assert!(plugins_text.contains("opensearch-ml-commons"));
+    }
+
+    #[test]
+    fn cat_plugins_route_omits_disabled_extension_modules() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        })
+        .with_extension_registry(ExtensionBoundaryRegistry::default());
+
+        let mut plugins_json_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
+        plugins_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let plugins_json_response = node.handle_rest_request(plugins_json_request);
+        assert_eq!(plugins_json_response.status, 200);
+        let rows = plugins_json_response
+            .body
+            .as_array()
+            .expect("cat plugins array");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["component"], "steelsearch-runtime");
+        assert!(!rows.iter().any(|row| row["component"] == "opensearch-knn"));
+        assert!(!rows
+            .iter()
+            .any(|row| row["component"] == "opensearch-ml-commons"));
+
+        let mut plugins_text_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
+        plugins_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let plugins_text_response = node.handle_rest_request(plugins_text_request);
+        let plugins_text = plugins_text_response
+            .body
+            .as_str()
+            .expect("cat plugins text body");
+        assert!(plugins_text.contains("steelsearch-runtime"));
+        assert!(!plugins_text.contains("opensearch-knn"));
+        assert!(!plugins_text.contains("opensearch-ml-commons"));
     }
 
     #[test]

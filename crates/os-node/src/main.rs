@@ -6410,6 +6410,39 @@ mod tests {
     }
 
     #[test]
+    fn extension_manifest_rejects_java_plugin_abi_fail_closed() {
+        let manifest_path = std::env::temp_dir().join(format!(
+            "steelsearch-extension-java-abi-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &manifest_path,
+            br#"{"java_plugins":[{"name":"analysis-icu","classname":"org.opensearch.plugin.analysis.icu.AnalysisICUPlugin"}]}"#,
+        )
+        .unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--path.data",
+                "/tmp/steelsearch-extension-java-abi",
+                "--extensions.manifest",
+                manifest_path.to_str().unwrap(),
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        let error = effective_extension_registry(&config).unwrap_err().to_string();
+        assert!(error.contains("unsupported Java plugin ABI manifest"));
+        assert!(error.contains(manifest_path.to_str().unwrap()));
+
+        let _ = fs::remove_file(manifest_path);
+    }
+
+    #[test]
     fn extension_manifest_merge_policy_applies_manifest_then_flag_overrides() {
         let manifest_path = std::env::temp_dir().join(format!(
             "steelsearch-extension-merge-{}.json",
