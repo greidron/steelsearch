@@ -80,7 +80,7 @@ Out of scope:
   including queued cancellation state versus in-flight execution visibility and
   multi-node queued/in-flight task visibility with remote node metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
-  2026-06-17 with 10/10 tests and `zero_tests=0`, covering administrative
+  2026-06-17 with 11/11 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths,
@@ -91,8 +91,9 @@ Out of scope:
   admission plus cluster reroute admission through the same runtime-owned
   waiting and rejection model, and by-query/reindex task-submission admission
   through the same runtime-owned waiting and rejection model, accepted queued
-  task-submission no-replay across shared-runtime restart, plus restart reset
-  evidence for runtime thread-pool queue/counter state.
+  task-submission no-replay across shared-runtime restart and partial
+  shared-state recovery errors, plus restart reset evidence for runtime
+  thread-pool queue/counter state.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, repeated
@@ -230,7 +231,8 @@ Validation runner:
   active-slot queue waiting/drain, queue-full rejection, and maintenance route
   plus snapshot/cluster-manager/task-submission route admission as
   runtime-control evidence, including accepted queued task-submission no-replay
-  and runtime thread-pool queue/counter reset after shared-runtime restart.
+  across shared-runtime restart and partial shared-state recovery errors, and
+  runtime thread-pool queue/counter reset after shared-runtime restart.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, repeated last-write-wins sequencing, and readback as
@@ -303,6 +305,8 @@ Initial targets:
    and request-error paths; active-slot queue waiting/drain and queue-full
    overload rejection are now guarded for search/write, maintenance, and
    snapshot pools, plus cluster reroute and task-submission admission, with
+   accepted queued task-submission no-replay covered across shared-runtime
+   restart and partial shared-state recovery errors, and with
    local overload counters isolated from remote task metadata in multi-node
    task visibility;
 4. telemetry rows that are derived from runtime state rather than static route
