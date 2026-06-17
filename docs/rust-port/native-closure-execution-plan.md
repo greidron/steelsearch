@@ -68,11 +68,11 @@ Out of scope:
   vector-native page plus aggregation reduce, and `_id`, `_score`, and
   fast-field sort reduce variants.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-17 with 17/17 tests and `zero_tests=0`, covering native execution
-  and hybrid candidate reduction for the current source-backed query families:
-  nested child ordinals, `geo_distance`, `distance_feature`, `rank_feature`,
-  `more_like_this`, `terms_set`, `query_string`, `simple_query_string`, and
-  `combined_fields`.
+  2026-06-17 with 18/18 tests and `zero_tests=0`, covering native execution,
+  fallback-boundary source validation, and hybrid candidate reduction for the
+  current source-backed query families: nested child ordinals,
+  `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
+  `terms_set`, `query_string`, `simple_query_string`, and `combined_fields`.
 - The same runner now has a `benchmark-telemetry` batch. It passed on
   2026-06-17 with 1/1 external validation and `zero_tests=0`, covering
   benchmark/load JSON and Markdown exposure for materialized response fetches,
@@ -255,8 +255,8 @@ Validation runner:
   runtime evidence.
 - `tools/run-native-closure-validation.py --batch source-backed-query` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
-  source-backed query native execution and hybrid candidate-reduction surfaces
-  as closure evidence.
+  source-backed query native execution, explicit fallback-boundary source
+  validation, and hybrid candidate-reduction surfaces as closure evidence.
 - `tools/run-native-closure-validation.py --batch benchmark-telemetry` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   materialized response and request-result cache bypass counters as benchmark
