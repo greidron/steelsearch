@@ -143,8 +143,9 @@ Out of scope:
   search and bulk route execution across success and request-error paths,
   active-slot queue waiting/drain under concurrent search/write requests,
   independent mixed search/maintenance and write/maintenance backlog drain,
-  remote task backlog not blocking local task-submission admission or local
-  search/write admission, and bounded queue-full rejection for saturated
+  remote task backlog not blocking local task-submission admission, local
+  search/write admission, or local maintenance/snapshot/cluster-manager
+  control-plane admission, and bounded queue-full rejection for saturated
   search/write pools, plus
   maintenance refresh/flush/cache-clear/forcemerge admission through the same
   runtime-owned waiting and rejection model, and snapshot create/restore/cleanup
@@ -156,11 +157,12 @@ Out of scope:
   live-shutdown task-submission refusal, plus restart reset evidence for
   runtime thread-pool queue/counter state.
 - The same runner now has a `runtime-fairness` batch. It passed on
-  2026-06-17 with 5/5 tests and `zero_tests=0`, covering multi-node remote
+  2026-06-17 with 6/6 tests and `zero_tests=0`, covering multi-node remote
   task metadata visibility including node-specific cat thread-pool management
-  telemetry, local task-submission/search/write admission under remote backlog,
-  local overload counter isolation from remote task metadata, and independent
-  search/write versus maintenance drain behavior.
+  telemetry, local task-submission/search/write and local
+  maintenance/snapshot/cluster-manager control-plane admission under remote
+  backlog, local overload counter isolation from remote task metadata, and
+  independent search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -346,7 +348,8 @@ Validation runner:
   administrative and search/write workload thread-pool telemetry plus
   active-slot queue waiting/drain, independent mixed search/maintenance and
   write/maintenance backlog drain, remote task backlog admission isolation for
-  task-submission and local search/write routes, queue-full rejection, and
+  task-submission, local search/write routes, and local
+  maintenance/snapshot/cluster-manager control-plane routes, queue-full rejection, and
   maintenance route plus snapshot/cluster-manager/task-submission route admission as
   runtime-control evidence, including accepted queued task-submission no-replay
   across shared-runtime restart and partial shared-state recovery errors, and
@@ -355,9 +358,10 @@ Validation runner:
   restart.
 - `tools/run-native-closure-validation.py --batch runtime-fairness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
-  simulated multi-node remote task metadata isolation, local admission under
-  remote backlog, node-specific cat thread-pool management telemetry, and
-  independent local workload drain as runtime fairness evidence.
+  simulated multi-node remote task metadata isolation, local
+  task-submission/search/write and maintenance/snapshot/cluster-manager
+  admission under remote backlog, node-specific cat thread-pool management
+  telemetry, and independent local workload drain as runtime fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,

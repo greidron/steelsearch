@@ -221,8 +221,9 @@ Current Steelsearch evidence:
   search and bulk route execution across success and request-error paths, plus
   active-slot queue waiting/drain under concurrent search/write requests,
   independent mixed search/maintenance and write/maintenance backlog drain,
-  remote task backlog not blocking local task-submission admission or local
-  search/write admission, and bounded queue-full rejection for search/write pools, plus maintenance
+  remote task backlog not blocking local task-submission admission, local
+  search/write admission, or local maintenance/snapshot/cluster-manager
+  control-plane admission, and bounded queue-full rejection for search/write pools, plus maintenance
   refresh/flush/cache-clear/forcemerge admission through the same runtime-owned
   waiting and rejection model, and snapshot create/restore/cleanup admission
   plus cluster reroute admission through the same runtime-owned waiting and
@@ -233,11 +234,12 @@ Current Steelsearch evidence:
   task-submission refusal, plus restart reset evidence for runtime thread-pool
   queue/counter state;
 - `tools/run-native-closure-validation.py --batch runtime-fairness` passed on
-  2026-06-17 with 5/5 tests and `zero_tests=0`, covering simulated multi-node
+  2026-06-17 with 6/6 tests and `zero_tests=0`, covering simulated multi-node
   remote task metadata visibility including node-specific cat thread-pool
-  management telemetry, local task-submission/search/write admission under
-  remote backlog, local overload counter isolation from remote task metadata,
-  and independent search/write versus maintenance drain behavior;
+  management telemetry, local task-submission/search/write and local
+  maintenance/snapshot/cluster-manager control-plane admission under remote
+  backlog, local overload counter isolation from remote task metadata, and
+  independent search/write versus maintenance drain behavior;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 7/7 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, `-1` unlimited

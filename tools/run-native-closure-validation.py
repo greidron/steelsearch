@@ -857,6 +857,13 @@ RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "remote_task_backlog_does_not_block_local_control_plane_admission",
+        "runtime-fairness-local-admission",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "runtime_thread_pool_classes_drain_independently_under_mixed_backlog",
         "runtime-fairness-independent-drain",
         package="os-node",
