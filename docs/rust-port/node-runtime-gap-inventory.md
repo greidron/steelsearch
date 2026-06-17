@@ -210,9 +210,10 @@ Current Steelsearch evidence:
   2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
   cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
-  thread-pool routes, including queued cancellation state versus in-flight
-  execution visibility and multi-node queued/in-flight task visibility with
-  remote node metadata;
+  thread-pool routes, including cat thread-pool node rows derived from
+  node-specific queued/in-flight runtime task state, queued cancellation state
+  versus in-flight execution visibility, and multi-node queued/in-flight task
+  visibility with remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
   on 2026-06-17 with 16/16 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
@@ -233,9 +234,10 @@ Current Steelsearch evidence:
   queue/counter state;
 - `tools/run-native-closure-validation.py --batch runtime-fairness` passed on
   2026-06-17 with 5/5 tests and `zero_tests=0`, covering simulated multi-node
-  remote task metadata visibility, local task-submission/search/write admission
-  under remote backlog, local overload counter isolation from remote task
-  metadata, and independent search/write versus maintenance drain behavior;
+  remote task metadata visibility including node-specific cat thread-pool
+  management telemetry, local task-submission/search/write admission under
+  remote backlog, local overload counter isolation from remote task metadata,
+  and independent search/write versus maintenance drain behavior;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 7/7 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, `-1` unlimited

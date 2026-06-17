@@ -131,8 +131,10 @@ Out of scope:
   with 4/4 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
   tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes,
-  including queued cancellation state versus in-flight execution visibility and
-  multi-node queued/in-flight task visibility with remote node metadata.
+  including cat thread-pool node rows derived from node-specific queued/in-flight
+  runtime task state, queued cancellation state versus in-flight execution
+  visibility, and multi-node queued/in-flight task visibility with remote node
+  metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
   2026-06-17 with 16/16 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
@@ -154,9 +156,10 @@ Out of scope:
   runtime thread-pool queue/counter state.
 - The same runner now has a `runtime-fairness` batch. It passed on
   2026-06-17 with 5/5 tests and `zero_tests=0`, covering multi-node remote
-  task metadata visibility, local task-submission/search/write admission under
-  remote backlog, local overload counter isolation from remote task metadata,
-  and independent search/write versus maintenance drain behavior.
+  task metadata visibility including node-specific cat thread-pool management
+  telemetry, local task-submission/search/write admission under remote backlog,
+  local overload counter isolation from remote task metadata, and independent
+  search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -320,8 +323,9 @@ Validation runner:
   per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
-  depth, pending-task metadata, pending-task cancellation visibility, and
-  multi-node remote task metadata visibility as runtime-control evidence.
+  depth, pending-task metadata, pending-task cancellation visibility,
+  node-specific cat thread-pool management telemetry, and multi-node remote task
+  metadata visibility as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   administrative and search/write workload thread-pool telemetry plus
@@ -337,8 +341,8 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-fairness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   simulated multi-node remote task metadata isolation, local admission under
-  remote backlog, and independent local workload drain as runtime fairness
-  evidence.
+  remote backlog, node-specific cat thread-pool management telemetry, and
+  independent local workload drain as runtime fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,
@@ -435,7 +439,8 @@ Initial targets:
    task-submission refusal and live-shutdown task-submission refusal covered,
    and with
    local overload counters and local search/write admission isolated from
-   remote task metadata in multi-node task visibility;
+   remote task metadata in multi-node task visibility, including node-specific
+   cat thread-pool management telemetry;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 

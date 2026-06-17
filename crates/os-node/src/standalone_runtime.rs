@@ -11721,16 +11721,6 @@ impl SteelNode {
         self.active_task_records().len() as u64
     }
 
-    fn task_queue_runtime_counts(&self) -> (u64, u64) {
-        let records = self.active_task_records();
-        let active = records
-            .iter()
-            .filter(|task| task.get("executing").and_then(Value::as_bool).unwrap_or(false))
-            .count() as u64;
-        let queue = records.len() as u64 - active;
-        (active, queue)
-    }
-
     fn task_queue_runtime_counts_for_node(&self, node_id: &str) -> (u64, u64) {
         let records: Vec<_> = self
             .active_task_records()
@@ -14727,30 +14717,69 @@ impl SteelNode {
         request: &RestRequest,
         target: Option<&str>,
     ) -> RestResponse {
-        let node_name = self.info.name.clone();
-        let (management_active, management_queue) = self.task_queue_runtime_counts();
-        let management_active = management_active.to_string();
-        let management_queue = management_queue.to_string();
-        let cluster_manager = self.runtime_thread_pool_counters("cluster_manager");
-        let maintenance = self.runtime_thread_pool_counters("maintenance");
-        let snapshot = self.runtime_thread_pool_counters("snapshot");
-        let search = self.runtime_thread_pool_counters("search");
-        let task_submission = self.runtime_thread_pool_counters("task_submission");
-        let write = self.runtime_thread_pool_counters("write");
-        let mut rows = vec![
-            serde_json::json!({
+        let default_node = DevelopmentClusterNode {
+            node_id: "steelsearch-dev-node".to_string(),
+            node_name: self.info.name.clone(),
+            http_address: Some("127.0.0.1:9200".to_string()),
+            transport_address: "127.0.0.1:9300".to_string(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            local: true,
+        };
+        let view = self.cluster_view.clone().unwrap_or_default();
+        let nodes = if view.nodes.is_empty() {
+            vec![default_node]
+        } else {
+            view.nodes.clone()
+        };
+        let local_node_id = if view.local_node_id.is_empty() {
+            nodes
+                .iter()
+                .find(|node| node.local)
+                .map(|node| node.node_id.clone())
+                .unwrap_or_else(|| nodes[0].node_id.clone())
+        } else {
+            view.local_node_id.clone()
+        };
+        let local_counters = BTreeMap::from([
+            (
+                "cluster_manager",
+                self.runtime_thread_pool_counters("cluster_manager"),
+            ),
+            ("maintenance", self.runtime_thread_pool_counters("maintenance")),
+            ("snapshot", self.runtime_thread_pool_counters("snapshot")),
+            ("search", self.runtime_thread_pool_counters("search")),
+            (
+                "task_submission",
+                self.runtime_thread_pool_counters("task_submission"),
+            ),
+            ("write", self.runtime_thread_pool_counters("write")),
+        ]);
+        let zero_counters = RuntimeThreadPoolCounters::default();
+        let mut rows = Vec::new();
+        for node in nodes {
+            let node_id = node.node_id.clone();
+            let node_name = node.node_name.clone();
+            let is_local = node.local || node_id == local_node_id;
+            let (host, port) = node
+                .transport_address
+                .rsplit_once(':')
+                .map(|(host, port)| (host.to_string(), port.to_string()))
+                .unwrap_or_else(|| (node.transport_address.clone(), "0".to_string()));
+            let (management_active, management_queue) =
+                self.task_queue_runtime_counts_for_node(&node_id);
+            rows.push(serde_json::json!({
                 "node_name": node_name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "node_id": node_id,
+                "ephemeral_node_id": format!("{}-ephemeral", node_id),
                 "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
+                "host": host,
+                "ip": host,
+                "port": port,
                 "name": "management",
                 "type": "scaling",
-                "active": management_active,
+                "active": management_active.to_string(),
                 "pool_size": "1",
-                "queue": management_queue,
+                "queue": management_queue.to_string(),
                 "queue_size": "1000",
                 "rejected": "0",
                 "largest": "1",
@@ -14761,152 +14790,46 @@ impl SteelNode {
                 "size": "1",
                 "keep_alive": "5m",
                 "parallelism": ""
-            }),
-            serde_json::json!({
-                "node_name": self.info.name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
-                "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
-                "name": "cluster_manager",
-                "type": "fixed",
-                "active": cluster_manager.active.to_string(),
-                "pool_size": "1",
-                "queue": cluster_manager.queue.to_string(),
-                "queue_size": "1000",
-                "rejected": cluster_manager.rejected.to_string(),
-                "largest": "1",
-                "completed": cluster_manager.completed.to_string(),
-                "total_wait_time": "0ms",
-                "core": "",
-                "max": "",
-                "size": "1",
-                "keep_alive": "",
-                "parallelism": ""
-            }),
-            serde_json::json!({
-                "node_name": self.info.name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
-                "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
-                "name": "task_submission",
-                "type": "fixed",
-                "active": task_submission.active.to_string(),
-                "pool_size": "1",
-                "queue": task_submission.queue.to_string(),
-                "queue_size": "1000",
-                "rejected": task_submission.rejected.to_string(),
-                "largest": "1",
-                "completed": task_submission.completed.to_string(),
-                "total_wait_time": "0ms",
-                "core": "",
-                "max": "",
-                "size": "1",
-                "keep_alive": "",
-                "parallelism": ""
-            }),
-            serde_json::json!({
-                "node_name": self.info.name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
-                "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
-                "name": "maintenance",
-                "type": "fixed",
-                "active": maintenance.active.to_string(),
-                "pool_size": "1",
-                "queue": maintenance.queue.to_string(),
-                "queue_size": "1000",
-                "rejected": maintenance.rejected.to_string(),
-                "largest": "1",
-                "completed": maintenance.completed.to_string(),
-                "total_wait_time": "0ms",
-                "core": "",
-                "max": "",
-                "size": "1",
-                "keep_alive": "",
-                "parallelism": ""
-            }),
-            serde_json::json!({
-                "node_name": self.info.name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
-                "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
-                "name": "snapshot",
-                "type": "fixed",
-                "active": snapshot.active.to_string(),
-                "pool_size": "1",
-                "queue": snapshot.queue.to_string(),
-                "queue_size": "1000",
-                "rejected": snapshot.rejected.to_string(),
-                "largest": "1",
-                "completed": snapshot.completed.to_string(),
-                "total_wait_time": "0ms",
-                "core": "",
-                "max": "",
-                "size": "1",
-                "keep_alive": "",
-                "parallelism": ""
-            }),
-            serde_json::json!({
-                "node_name": self.info.name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
-                "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
-                "name": "search",
-                "type": "fixed",
-                "active": search.active.to_string(),
-                "pool_size": "1",
-                "queue": search.queue.to_string(),
-                "queue_size": "1000",
-                "rejected": search.rejected.to_string(),
-                "largest": "1",
-                "completed": search.completed.to_string(),
-                "total_wait_time": "0ms",
-                "core": "",
-                "max": "",
-                "size": "1",
-                "keep_alive": "",
-                "parallelism": ""
-            }),
-            serde_json::json!({
-                "node_name": self.info.name,
-                "node_id": "steelsearch-dev-node",
-                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
-                "pid": "0",
-                "host": "127.0.0.1",
-                "ip": "127.0.0.1",
-                "port": "19300",
-                "name": "write",
-                "type": "fixed",
-                "active": write.active.to_string(),
-                "pool_size": "1",
-                "queue": write.queue.to_string(),
-                "queue_size": "10000",
-                "rejected": write.rejected.to_string(),
-                "largest": "1",
-                "completed": write.completed.to_string(),
-                "total_wait_time": "0ms",
-                "core": "",
-                "max": "",
-                "size": "1",
-                "keep_alive": "",
-                "parallelism": ""
-            }),
-        ];
+            }));
+            for (name, pool_type, queue_size) in [
+                ("cluster_manager", "fixed", "1000"),
+                ("task_submission", "fixed", "1000"),
+                ("maintenance", "fixed", "1000"),
+                ("snapshot", "fixed", "1000"),
+                ("search", "fixed", "1000"),
+                ("write", "fixed", "10000"),
+            ] {
+                let counters = if is_local {
+                    local_counters.get(name).unwrap_or(&zero_counters)
+                } else {
+                    &zero_counters
+                };
+                rows.push(serde_json::json!({
+                    "node_name": node_name,
+                    "node_id": node_id,
+                    "ephemeral_node_id": format!("{}-ephemeral", node_id),
+                    "pid": "0",
+                    "host": host,
+                    "ip": host,
+                    "port": port,
+                    "name": name,
+                    "type": pool_type,
+                    "active": counters.active.to_string(),
+                    "pool_size": "1",
+                    "queue": counters.queue.to_string(),
+                    "queue_size": queue_size,
+                    "rejected": counters.rejected.to_string(),
+                    "largest": "1",
+                    "completed": counters.completed.to_string(),
+                    "total_wait_time": "0ms",
+                    "core": "",
+                    "max": "",
+                    "size": "1",
+                    "keep_alive": "",
+                    "parallelism": ""
+                }));
+            }
+        }
         if let Some(patterns) = target {
             rows.retain(|row| {
                 wildcard_match(patterns, row["name"].as_str().unwrap_or_default())
@@ -14920,6 +14843,12 @@ impl SteelNode {
                 .as_str()
                 .unwrap_or_default()
                 .cmp(right["name"].as_str().unwrap_or_default())
+                .then_with(|| {
+                    left["node_name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .cmp(right["node_name"].as_str().unwrap_or_default())
+                })
         });
         if request.query_params.get("format").is_some_and(|value| value == "json") {
             return RestResponse::json(200, Value::Array(rows.clone()));
@@ -35089,8 +35018,25 @@ mod tests {
             .insert("format".to_string(), "json".to_string());
         let cat_thread_pool = node.handle_rest_request(cat_thread_pool);
         assert_eq!(cat_thread_pool.status, 200);
-        assert_eq!(cat_thread_pool.body[0]["active"], "1");
-        assert_eq!(cat_thread_pool.body[0]["queue"], "2");
+        let thread_pool_rows = cat_thread_pool
+            .body
+            .as_array()
+            .expect("cat thread pool rows");
+        assert_eq!(thread_pool_rows.len(), 2);
+        let local_row = thread_pool_rows
+            .iter()
+            .find(|row| row["node_id"] == "node-a")
+            .expect("local management row");
+        let remote_row = thread_pool_rows
+            .iter()
+            .find(|row| row["node_id"] == "node-b")
+            .expect("remote management row");
+        assert_eq!(local_row["node_name"], "steel-node-a");
+        assert_eq!(local_row["active"], "0");
+        assert_eq!(local_row["queue"], "1");
+        assert_eq!(remote_row["node_name"], "steel-node-b");
+        assert_eq!(remote_row["active"], "1");
+        assert_eq!(remote_row["queue"], "1");
 
         for index in ["multi-node-submit-source", "multi-node-submit-dest"] {
             let create = node.handle_rest_request(
