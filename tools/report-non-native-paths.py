@@ -120,7 +120,7 @@ PROBES: tuple[Probe, ...] = (
             r"request_result_cache_hybrid_vector_bypasses",
             r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
         ),
-        risk="request-result cache is wired for pure single-index KNN and single-index hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing; unsupported vector surfaces are counted",
+        risk="request-result cache is wired for pure single-index KNN and single-index hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing and same-request refresh correctness; unsupported vector surfaces are counted",
     ),
     Probe(
         name="production runtime controls",
@@ -249,7 +249,7 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="runtime search cache hooks",
         category="runtime",
-        status="wired for pure single-index KNN and hybrid bool vector requests plus native aggregation/sort/highlight/explain",
+        status="wired for pure single-index KNN and hybrid bool vector requests plus native aggregation/sort/highlight/explain and refresh-correct cache invalidation",
         next_action="extend request-result cache coverage beyond the current single-index KNN/hybrid bool vector surface using unsupported-vector bypass telemetry",
         evidence_path=ENGINE_SOURCE,
         evidence_pattern=r"request_result_cache_unsupported_vector_bypasses",

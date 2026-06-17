@@ -121699,6 +121699,36 @@ mod tests {
             assert!(!field_cache.entries.is_empty());
         }
 
+        let refresh_boundary_request = SearchRequest {
+            indices: vec!["vectors".to_string()],
+            query: serde_json::json!({
+                "knn": {
+                    "embedding": {
+                        "vector": [0.0, 0.0, 1.0],
+                        "k": 1
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: Vec::new(),
+            from: 0,
+            size: 1,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_include: None,
+            source_excludes: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+        let cached_before_refresh = engine.search(refresh_boundary_request.clone()).unwrap();
+        assert_ne!(
+            search_hit_ids(&cached_before_refresh.hits),
+            vec!["refresh-boundary"]
+        );
+
         engine
             .index_document(IndexDocumentRequest {
                 index: "vectors".to_string(),
@@ -121715,14 +121745,17 @@ mod tests {
             })
             .unwrap();
 
+        let refreshed_response = engine.search(refresh_boundary_request).unwrap();
+        assert_eq!(search_hit_ids(&refreshed_response.hits), vec!["refresh-boundary"]);
+
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.request_result_cache_entries, 0);
+        assert_eq!(telemetry.request_result_cache_entries, 1);
         assert!(telemetry.request_result_cache_resets > 0);
         assert!(telemetry.request_result_cache_invalidated_entries > 0);
         assert!(telemetry.request_result_cache_capacity_evictions > 0);
         assert!(telemetry.request_result_cache_refresh_invalidations > 0);
         assert_eq!(telemetry.request_result_cache_stale_invalidations, 0);
-        assert_eq!(telemetry.vector_graph_cache_entries, 0);
+        assert_eq!(telemetry.vector_graph_cache_entries, 1);
         assert!(telemetry.vector_graph_cache_resets > 0);
         assert!(telemetry.vector_graph_cache_invalidated_entries > 0);
         assert_eq!(
@@ -121737,12 +121770,12 @@ mod tests {
         assert_eq!(telemetry.fast_field_cache_stale_invalidations, 0);
 
         let mut store = engine
-                .store
-                .write()
-                .expect("tantivy engine store rwlock poisoned");
-            let index = store.indices.get_mut("vectors").unwrap();
+            .store
+            .write()
+            .expect("tantivy engine store rwlock poisoned");
+        let index = store.indices.get_mut("vectors").unwrap();
         let field_cache = index.runtime_cache.knn_search_by_field.get("embedding").unwrap();
-        assert!(field_cache.entries.is_empty());
+        assert_eq!(field_cache.entries.len(), 1);
         assert!(field_cache.refresh_invalidations > 0);
     }
 

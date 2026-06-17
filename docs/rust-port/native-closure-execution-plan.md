@@ -46,9 +46,10 @@ Out of scope:
   `variable_width_histogram` multi-index rebucketing seats.
 - The guarded runner also has a `vector-knn` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering filtered KNN scoring, runtime
-  cache bounds/invalidation, single-index vector-native page plus aggregation
-  fetch, multi-index vector-native page plus aggregation reduce, and `_id`,
-  `_score`, and fast-field sort reduce variants.
+  cache bounds/invalidation including same-request refresh correctness,
+  single-index vector-native page plus aggregation fetch, multi-index
+  vector-native page plus aggregation reduce, and `_id`, `_score`, and
+  fast-field sort reduce variants.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
   with 14/14 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, role/bootstrap, structured production
@@ -207,7 +208,8 @@ Validation runner:
   rebucketing-wrapper slice as runtime evidence.
 - `tools/run-native-closure-validation.py --batch vector-knn` must report
   `failed_count == 0` and `zero_test_count == 0` before treating the direct
-  vector/KNN page, aggregation, cache, and sort slices as runtime evidence.
+  vector/KNN page, aggregation, cache, refresh-correctness, and sort slices as
+  runtime evidence.
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release
