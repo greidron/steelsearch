@@ -5042,6 +5042,8 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
                 "[daemon] --path.data must be creatable ({}): {error}",
                 config.data_path.display()
             ));
+        } else if let Err(error) = validate_data_path_unlocked(&config.data_path) {
+            blockers.push(format!("[daemon] {error}"));
         } else if let Err(error) = validate_data_path_writable(&config.data_path) {
             blockers.push(format!("[daemon] {error}"));
         }
@@ -5244,6 +5246,18 @@ fn validate_data_path_writable(path: &std::path::Path) -> Result<(), Box<dyn std
     })?;
     drop(file);
     let _ = fs::remove_file(probe);
+    Ok(())
+}
+
+fn validate_data_path_unlocked(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let lock = path.join(".steelsearch-data.lock");
+    if lock.exists() {
+        return Err(format!(
+            "--path.data appears locked by an existing Steelsearch process or stale lock file: {}",
+            lock.display()
+        )
+        .into());
+    }
     Ok(())
 }
 
@@ -6655,6 +6669,45 @@ mod tests {
 
         let _ = fs::remove_file(path);
         assert!(error.contains("--path.data must be a directory"));
+    }
+
+    #[test]
+    fn daemon_config_creates_missing_data_path_during_preflight() {
+        let vars = BTreeMap::new();
+        let path = unique_test_path("steelsearch-missing-data-dir");
+        let _ = fs::remove_dir_all(&path);
+
+        let config = daemon_config_from_sources(
+            &vars,
+            ["--path.data", path.to_str().unwrap()]
+                .into_iter()
+                .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        assert_eq!(config.data_path, path);
+        assert!(config.data_path.is_dir());
+        let _ = fs::remove_dir_all(config.data_path);
+    }
+
+    #[test]
+    fn daemon_config_rejects_locked_data_path() {
+        let vars = BTreeMap::new();
+        let path = unique_test_path("steelsearch-locked-data-dir");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join(".steelsearch-data.lock"), b"locked").unwrap();
+
+        let error = daemon_config_from_sources(
+            &vars,
+            ["--path.data", path.to_str().unwrap()]
+                .into_iter()
+                .map(ToOwned::to_owned),
+        )
+        .unwrap_err()
+        .to_string();
+
+        let _ = fs::remove_dir_all(path);
+        assert!(error.contains("--path.data appears locked"));
     }
 
     #[test]
