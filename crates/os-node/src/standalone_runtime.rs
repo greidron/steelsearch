@@ -86,6 +86,14 @@ pub struct ExtensionBoundaryRegistry {
     pub ml_commons_enabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExtensionRegistrationEntry {
+    pub module: &'static str,
+    pub feature: &'static str,
+    pub rest_routes: &'static [&'static str],
+    pub transport_actions: &'static [&'static str],
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExtensionBoundaryManifest {
@@ -137,6 +145,41 @@ impl ExtensionBoundaryRegistry {
             components.push("opensearch-ml-commons");
         }
         components
+    }
+
+    pub fn registration_table(&self) -> Vec<ExtensionRegistrationEntry> {
+        let mut entries = vec![ExtensionRegistrationEntry {
+            module: "steelsearch-runtime",
+            feature: "runtime-observability",
+            rest_routes: &["/_cat/plugins"],
+            transport_actions: &[],
+        }];
+        if self.knn_plugin_enabled {
+            entries.push(ExtensionRegistrationEntry {
+                module: "opensearch-knn",
+                feature: "knn-rest-compatibility",
+                rest_routes: &[
+                    "/_plugins/_knn/stats",
+                    "/_plugins/_knn/settings",
+                    "/_plugins/_knn/warmup",
+                    "/_plugins/_knn/models",
+                ],
+                transport_actions: &[],
+            });
+        }
+        if self.ml_commons_enabled {
+            entries.push(ExtensionRegistrationEntry {
+                module: "opensearch-ml-commons",
+                feature: "ml-commons-rest-compatibility",
+                rest_routes: &[
+                    "/_plugins/_ml/models",
+                    "/_plugins/_ml/tasks",
+                    "/_plugins/_ml/connectors",
+                ],
+                transport_actions: &[],
+            });
+        }
+        entries
     }
 
     fn registered_plugin_specs(&self) -> Vec<ExtensionPluginSpec> {
@@ -22699,6 +22742,32 @@ mod tests {
         assert!(plugins_text.contains("steelsearch-runtime"));
         assert!(!plugins_text.contains("opensearch-knn"));
         assert!(!plugins_text.contains("opensearch-ml-commons"));
+    }
+
+    #[test]
+    fn extension_registry_registration_table_lists_enabled_routes_and_actions() {
+        let registry = ExtensionBoundaryRegistry {
+            manifest_path: Some(PathBuf::from("/tmp/steelsearch-extensions.json")),
+            knn_plugin_enabled: true,
+            ml_commons_enabled: false,
+        };
+        let entries = registry.registration_table();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|entry| {
+            entry.module == "steelsearch-runtime"
+                && entry.feature == "runtime-observability"
+                && entry.rest_routes == &["/_cat/plugins"]
+                && entry.transport_actions.is_empty()
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.module == "opensearch-knn"
+                && entry.feature == "knn-rest-compatibility"
+                && entry.rest_routes.contains(&"/_plugins/_knn/models")
+                && entry.transport_actions.is_empty()
+        }));
+        assert!(!entries
+            .iter()
+            .any(|entry| entry.module == "opensearch-ml-commons"));
     }
 
     #[test]

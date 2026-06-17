@@ -4275,11 +4275,29 @@ fn startup_extension_registry_transcript(
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "inline/default".to_string());
     format!(
-        "extension registry startup transcript: profile={}, manifest={}, registered_components={}",
+        "extension registry startup transcript: profile={}, manifest={}, registered_components={}, registration_table={}",
         config.mode.as_str(),
         manifest,
-        registry.registered_components().join(",")
+        registry.registered_components().join(","),
+        startup_extension_registration_table(registry)
     )
+}
+
+fn startup_extension_registration_table(registry: &ExtensionBoundaryRegistry) -> String {
+    registry
+        .registration_table()
+        .into_iter()
+        .map(|entry| {
+            format!(
+                "{}:{}:rest=[{}]:transport=[{}]",
+                entry.module,
+                entry.feature,
+                entry.rest_routes.join("|"),
+                entry.transport_actions.join("|")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 #[cfg(unix)]
@@ -6492,6 +6510,12 @@ mod tests {
         assert!(development_transcript.contains(
             "registered_components=steelsearch-runtime,opensearch-knn,opensearch-ml-commons"
         ));
+        assert!(development_transcript.contains(
+            "opensearch-knn:knn-rest-compatibility:rest=[/_plugins/_knn/stats|/_plugins/_knn/settings|/_plugins/_knn/warmup|/_plugins/_knn/models]:transport=[]"
+        ));
+        assert!(development_transcript.contains(
+            "opensearch-ml-commons:ml-commons-rest-compatibility:rest=[/_plugins/_ml/models|/_plugins/_ml/tasks|/_plugins/_ml/connectors]:transport=[]"
+        ));
 
         config.mode = DaemonMode::Production;
         let production_transcript = startup_extension_registry_transcript(
@@ -6501,6 +6525,9 @@ mod tests {
         assert!(production_transcript.contains("profile=production"));
         assert!(production_transcript.contains("manifest=inline/default"));
         assert!(production_transcript.contains("registered_components=steelsearch-runtime"));
+        assert!(production_transcript.contains(
+            "steelsearch-runtime:runtime-observability:rest=[/_cat/plugins]:transport=[]"
+        ));
         assert!(!production_transcript.contains("opensearch-knn"));
         assert!(!production_transcript.contains("opensearch-ml-commons"));
     }

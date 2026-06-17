@@ -300,12 +300,13 @@ Current Steelsearch evidence:
 - the workspace already has crate-level decomposition (`os-rest`, `os-engine`,
   `os-plugin-knn`, etc.);
 - `tools/run-native-closure-validation.py --batch module-registration` passed
-  on 2026-06-17 with 6/6 tests and `zero_tests=0`, covering extension manifest
+  on 2026-06-17 with 7/7 tests and `zero_tests=0`, covering extension manifest
   booleans feeding the effective runtime registry, malformed manifest
   fail-closed rejection, unsupported Java plugin ABI manifest rejection,
-  startup transcript output listing registry-derived components per profile,
-  plus `_cat/plugins` reporting registry-enabled Steelsearch runtime, k-NN,
-  and ML Commons module rows while omitting disabled modules;
+  startup transcript output listing registry-derived route/action/module
+  registration tables per profile, plus `_cat/plugins` reporting
+  registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while
+  omitting disabled modules;
 - Rust-native feature registration is now visible through startup transcript
   and `_cat/plugins` output, while Java plugin ABI descriptors are rejected
   before daemon runtime assembly;
@@ -319,8 +320,9 @@ Required next implementation direction:
 
 Required tests:
 
-- explicit route/action/module registration table tests beyond the current
-  boolean feature gates.
+- none for the current registry-visible module registration boundary; the next
+  gap is a formal Rust-native extension API rather than more boolean-gate
+  evidence.
 
 ## Gap Class 4: User-Facing Runtime Identity And Config Hygiene
 
