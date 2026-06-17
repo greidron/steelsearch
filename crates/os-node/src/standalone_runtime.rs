@@ -29828,6 +29828,20 @@ mod tests {
             "/_plugins/_security/api/account",
         ));
         assert_eq!(fail_closed.status, 501);
+        let fail_closed_internal_user = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_plugins/_security/api/internalusers/alice")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({"password": "steelsearch-secret"})),
+        );
+        assert_eq!(fail_closed_internal_user.status, 501);
+        let fail_closed_reload_certs = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_plugins/_security/api/ssl/transport/reloadcerts",
+            )
+            .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+        );
+        assert_eq!(fail_closed_reload_certs.status, 501);
 
         let writer_search_denied = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-security-audit-000001/_search")
@@ -29856,7 +29870,7 @@ mod tests {
             .lock()
             .expect("security audit event lock poisoned")
             .clone();
-        assert_eq!(events.len(), 6);
+        assert_eq!(events.len(), 8);
         assert_eq!(events[0].path, "/");
         assert_eq!(events[0].subject, "anonymous");
         assert_eq!(events[0].outcome, "denied");
@@ -29876,16 +29890,29 @@ mod tests {
         assert_eq!(events[3].outcome, "denied");
         assert_eq!(events[3].status, 501);
         assert_eq!(events[3].reason_type.as_deref(), Some("security_exception"));
-        assert_eq!(events[4].path, "/logs-security-audit-000001/_search");
-        assert_eq!(events[4].subject, "writer");
+        assert_eq!(events[4].path, "/_plugins/_security/api/internalusers/alice");
+        assert_eq!(events[4].subject, "admin");
         assert_eq!(events[4].outcome, "denied");
-        assert_eq!(events[4].status, 403);
+        assert_eq!(events[4].status, 501);
         assert_eq!(events[4].reason_type.as_deref(), Some("security_exception"));
-        assert_eq!(events[5].path, "/_bulk");
-        assert_eq!(events[5].subject, "reader");
+        assert_eq!(
+            events[5].path,
+            "/_plugins/_security/api/ssl/transport/reloadcerts"
+        );
+        assert_eq!(events[5].subject, "writer");
         assert_eq!(events[5].outcome, "denied");
-        assert_eq!(events[5].status, 403);
+        assert_eq!(events[5].status, 501);
         assert_eq!(events[5].reason_type.as_deref(), Some("security_exception"));
+        assert_eq!(events[6].path, "/logs-security-audit-000001/_search");
+        assert_eq!(events[6].subject, "writer");
+        assert_eq!(events[6].outcome, "denied");
+        assert_eq!(events[6].status, 403);
+        assert_eq!(events[6].reason_type.as_deref(), Some("security_exception"));
+        assert_eq!(events[7].path, "/_bulk");
+        assert_eq!(events[7].subject, "reader");
+        assert_eq!(events[7].outcome, "denied");
+        assert_eq!(events[7].status, 403);
+        assert_eq!(events[7].reason_type.as_deref(), Some("security_exception"));
 
         let persisted_text =
             std::fs::read_to_string(&shared_state_path).expect("shared runtime state persisted");
@@ -29899,6 +29926,7 @@ mod tests {
         assert!(!persisted_text.contains("d3JpdGVyOndyaXRlcg=="));
         assert!(!persisted_text.contains("YWRtaW46YWRtaW4="));
         assert!(!persisted_text.contains("cmVhZGVyOnJlYWRlcg=="));
+        assert!(!persisted_text.contains("steelsearch-secret"));
 
         let mut restarted = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

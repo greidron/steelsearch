@@ -158,9 +158,11 @@ plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.
 It now also proves that representative authentication failures, authorization
 denials, permission-evaluator read/write denials, allowed admin operations, and
-fail-closed Security API decisions are persisted as bounded security audit events
-without storing password material or Authorization header values. This is
-baseline audit evidence, not full OpenSearch audit-log parity.
+fail-closed Security API decisions across account, internal-user mutation, and
+transport certificate reload route shapes are persisted as bounded security
+security audit events without storing password material, request-body secrets,
+or Authorization header values. This is baseline audit evidence, not full
+OpenSearch audit-log parity.
 
 ## Operator Evidence
 

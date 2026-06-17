@@ -117,8 +117,10 @@ Out of scope:
   shared runtime persistence, authn/authz/fail-closed decisions including
   shared permission-evaluator read/write denials persisted as bounded security
   audit events, bulk/search/session allow/deny checks, service-account writer
-  authz, and explicit fail-closed OpenSearch Security plugin API responses with
-  documented `security_exception` bodies instead of 404-only ambiguity.
+  authz, and explicit fail-closed OpenSearch Security plugin API responses
+  across account, internal-user mutation, and transport-cert reload route
+  shapes with documented `security_exception` bodies and persisted audit
+  events instead of 404-only ambiguity or secret leakage.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
   with 22/22 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
@@ -358,8 +360,8 @@ Validation runner:
   admin/reader/writer permission evaluator, service-account writer authz,
   bounded security audit event persistence for authn/authz/fail-closed and
   shared permission-evaluator read/write denials, ML connector secret redaction,
-  and OpenSearch Security plugin API fail-closed responses as
-  production-security evidence.
+  and OpenSearch Security plugin API fail-closed responses plus persisted audit
+  events without request password material as production-security evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
@@ -575,7 +577,8 @@ Initial targets:
 Current narrowed fail-closed evidence:
 
 - unsupported OpenSearch Security plugin API routes return documented
-  `security_exception` responses instead of ambiguous 404-only fallthrough.
+  `security_exception` responses and persisted audit events instead of
+  ambiguous 404-only fallthrough or request-secret persistence.
 
 Exit evidence:
 
@@ -583,7 +586,7 @@ Exit evidence:
 - production mode starts only when every required security boundary is
   `Enforced`;
 - unsupported OpenSearch Security plugin APIs fail closed with documented
-  errors.
+  errors and bounded audit readback.
 
 ## Immediate Execution Order
 
