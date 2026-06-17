@@ -2584,15 +2584,37 @@ impl SteelNode {
                 os_rest::RestErrorKind::IllegalArgument,
                 "unsupported broad selector",
             )),
-            (RestMethod::Get, "/_cluster/health") => Some(self.handle_cluster_health_route(request)),
+            (RestMethod::Get, "/_cluster/health") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
+                Some(self.handle_cluster_health_route(request))
+            }
             (RestMethod::Get, "/_cluster/state") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_state_route(request))
             }
             (RestMethod::Get, "/_cluster/allocation/explain")
             | (RestMethod::Post, "/_cluster/allocation/explain") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_allocation_explain_route(request))
             }
             (RestMethod::Get, "/_cluster/settings") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_settings_get_route(request))
             }
             (RestMethod::Put, "/_cluster/settings") => {
@@ -2625,13 +2647,27 @@ impl SteelNode {
                 }
                 Some(self.handle_cluster_reroute_route(request))
             }
-            (RestMethod::Get, "/_cluster/pending_tasks") => Some(RestResponse::json(
-                200,
-                pending_tasks_route_registration::invoke_pending_tasks_live_route(
-                    &self.pending_tasks_body(),
-                ),
-            )),
-            (RestMethod::Get, "/_tasks") => Some(self.handle_tasks_list_route(request)),
+            (RestMethod::Get, "/_cluster/pending_tasks") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
+                Some(RestResponse::json(
+                    200,
+                    pending_tasks_route_registration::invoke_pending_tasks_live_route(
+                        &self.pending_tasks_body(),
+                    ),
+                ))
+            }
+            (RestMethod::Get, "/_tasks") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
+                Some(self.handle_tasks_list_route(request))
+            }
             (RestMethod::Post, "/_tasks/_cancel") => {
                 if let Err(response) = require_security_permission(
                     request,
@@ -2642,16 +2678,30 @@ impl SteelNode {
                 }
                 Some(self.handle_tasks_cancel_route(request))
             }
-            (RestMethod::Get, "/_nodes/stats") => Some(RestResponse::json(
-                200,
-                stats_route_registration::invoke_nodes_stats_live_route(&self.nodes_stats_body()),
-            )),
-            (RestMethod::Get, "/_cluster/stats") => Some(RestResponse::json(
-                200,
-                stats_route_registration::invoke_cluster_stats_live_route(
-                    &self.cluster_stats_body(),
-                ),
-            )),
+            (RestMethod::Get, "/_nodes/stats") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
+                Some(RestResponse::json(
+                    200,
+                    stats_route_registration::invoke_nodes_stats_live_route(&self.nodes_stats_body()),
+                ))
+            }
+            (RestMethod::Get, "/_cluster/stats") => {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                {
+                    return Some(response);
+                }
+                Some(RestResponse::json(
+                    200,
+                    stats_route_registration::invoke_cluster_stats_live_route(
+                        &self.cluster_stats_body(),
+                    ),
+                ))
+            }
             (RestMethod::Get, "/_refresh") | (RestMethod::Post, "/_refresh") => {
                 Some(self.handle_global_refresh_route())
             }
@@ -3878,6 +3928,11 @@ impl SteelNode {
             }
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_cluster/state/") {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_cluster_state_route(request));
         }
         if let Some(index) = request.path.strip_suffix("/_mapping") {
@@ -24703,6 +24758,87 @@ mod tests {
         env::remove_var("SECURITY_ADMIN_PASSWORD");
         env::remove_var("SECURITY_READER_USERNAME");
         env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_cluster_observability_routes_require_reader_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let cases = [
+            (RestRequest::new(RestMethod::Get, "/_cluster/health"), 200),
+            (RestRequest::new(RestMethod::Get, "/_cluster/state"), 200),
+            (
+                RestRequest::new(RestMethod::Get, "/_cluster/state/metadata"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Get, "/_cluster/allocation/explain"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_cluster/allocation/explain")
+                    .with_json_body(serde_json::json!({})),
+                400,
+            ),
+            (RestRequest::new(RestMethod::Get, "/_cluster/settings"), 200),
+            (RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"), 200),
+            (RestRequest::new(RestMethod::Get, "/_tasks"), 200),
+            (RestRequest::new(RestMethod::Get, "/_nodes/stats"), 200),
+            (RestRequest::new(RestMethod::Get, "/_cluster/stats"), 200),
+        ];
+
+        for (request, reader_status) in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let writer = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, 403, "path {path}");
+            assert_eq!(writer.body["error"]["type"], "security_exception");
+            assert!(writer.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("cluster read"));
+
+            let reader = node.handle_rest_request(
+                request.with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            if path == "/_cluster/allocation/explain" {
+                assert_ne!(
+                    reader.body["error"]["type"],
+                    "security_exception",
+                    "path {path}"
+                );
+            } else {
+                assert_eq!(reader.status, reader_status, "path {path}");
+            }
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
     }
 
     #[test]

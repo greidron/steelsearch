@@ -120,7 +120,7 @@ Out of scope:
   security/release gate refusal, and readiness blocker terminology that keeps
   user-facing Steelsearch runtime categories distinct from internal crate names.
 - The same runner now has a `production-security` batch. It passed on
-  2026-06-17 with 29/29 tests and `zero_tests=0`, covering runtime env user,
+  2026-06-17 with 30/30 tests and `zero_tests=0`, covering runtime env user,
   authentication-users-file user, and service-account credentials loaded
   through the shared subject model, root route Basic auth, the shared
   admin/reader/writer permission evaluator, ML
@@ -131,9 +131,10 @@ Out of scope:
   read/write role checks, multi-document/document-analysis read role checks,
   reindex, delete-by-query, and update-by-query writer-route checks,
   service-account writer authz,
-  secure-settings reload admin-role enforcement, cluster-admin control
-  route enforcement for settings/reroute/decommission, weighted routing,
-  voting config exclusions, snapshot mutation/control routes, template
+  secure-settings reload admin-role enforcement, cluster observability
+  reader-route checks, cluster-admin control route enforcement for
+  settings/reroute/decommission, weighted routing, voting config exclusions,
+  snapshot mutation/control routes, template
   management mutation routes, search/ingest pipeline management routes, and
   stored script management routes, data stream management and rollover routes,
   alias metadata mutation routes, index settings/mapping mutation routes, and
