@@ -37794,6 +37794,121 @@ mod tests {
     }
 
     #[test]
+    fn accepted_pending_and_overload_refusal_have_distinct_runtime_telemetry() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_refresh_node = node.clone();
+        let queued_refresh = std::thread::spawn(move || {
+            queued_refresh_node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 1);
+
+        let stats_while_pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_pending.status, 200);
+        let first_node = stats_while_pending.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["rejected"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 0);
+
+        let mut cat_pending = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/maintenance");
+        cat_pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_pending = node.handle_rest_request(cat_pending);
+        assert_eq!(cat_pending.status, 200);
+        let rows = cat_pending.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows[0]["queue"], "1");
+        assert_eq!(rows[0]["rejected"], "0");
+
+        release_runtime_thread_pool_active_slot(&node, "maintenance");
+        let refresh = queued_refresh
+            .join()
+            .expect("queued refresh request thread should not panic");
+        assert_eq!(refresh.status, 200);
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let flush = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_flush"));
+        assert_eq!(flush.status, 429);
+        assert_eq!(
+            flush.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let stats_after_refusal =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_refusal.status, 200);
+        let first_node = stats_after_refusal.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1000);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 1);
+
+        let mut cat_refusal = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/maintenance");
+        cat_refusal
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_refusal = node.handle_rest_request(cat_refusal);
+        assert_eq!(cat_refusal.status, 200);
+        let rows = cat_refusal.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows[0]["queue"], "1000");
+        assert_eq!(rows[0]["rejected"], "1");
+    }
+
+    #[test]
     fn snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

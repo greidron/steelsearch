@@ -219,12 +219,13 @@ Current Steelsearch evidence:
   terminal readback without pending-depth pollution, and multi-node
   queued/in-flight task visibility with remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 18/18 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 19/19 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state, including empty, non-empty, and terminal-drained queue visibility
   transitions, plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
   active-slot queue waiting/drain under concurrent search/write requests,
+  accepted-but-pending versus overload-refusal telemetry distinction,
   independent mixed search/maintenance and write/maintenance backlog drain,
   remote task backlog not blocking local task-submission admission, local
   search/write admission, or local maintenance/snapshot/cluster-manager

@@ -141,12 +141,13 @@ Out of scope:
   pollution, and multi-node queued/in-flight task visibility with remote node
   metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
-  2026-06-17 with 18/18 tests and `zero_tests=0`, covering administrative
+  2026-06-17 with 19/19 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state including empty, non-empty, and terminal-drained queue visibility
   transitions, plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths,
   active-slot queue waiting/drain under concurrent search/write requests,
+  accepted-but-pending versus overload-refusal telemetry distinction,
   independent mixed search/maintenance and write/maintenance backlog drain,
   remote task backlog not blocking local task-submission admission, local
   search/write admission, or local maintenance/snapshot/cluster-manager
@@ -361,7 +362,8 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating
   administrative and search/write workload thread-pool telemetry plus
   empty/non-empty/terminal-drained queue visibility transitions, active-slot
-  queue waiting/drain, independent mixed search/maintenance and
+  queue waiting/drain, accepted-but-pending versus overload-refusal telemetry
+  distinction, independent mixed search/maintenance and
   write/maintenance backlog drain, remote task backlog admission isolation for
   task-submission, local search/write routes, and local
   maintenance/snapshot/cluster-manager control-plane routes, queue-full rejection, and
