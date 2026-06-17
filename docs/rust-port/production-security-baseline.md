@@ -162,13 +162,13 @@ mutation/control routes, template management mutation routes, search/ingest
 pipeline management routes, stored script management routes, data stream
 management/rollover routes, alias metadata mutation routes, and task
 cancel/rethrottle surfaces, plus index settings/mapping mutation routes and
-index maintenance open/close/cache controls, and now verifies that alias
-bulk/named metadata mutation does not re-enter the metadata lock while resolving
-target indices, empty index mapping updates do not panic, closed indices can be
-resolved for reopen, and ML connector credential/action secret material is not
-returned through connector REST responses or persisted in shared runtime state.
-These are baseline tests, not proof that TLS/authn/authz enforcement has been
-fully implemented.
+index maintenance open/close/cache controls plus index structure delete/block
+and resize controls, and now verifies that alias bulk/named metadata mutation
+does not re-enter the metadata lock while resolving target indices, empty index
+mapping updates do not panic, closed indices can be resolved for reopen, and ML
+connector credential/action secret material is not returned through connector
+REST responses or persisted in shared runtime state. These are baseline tests,
+not proof that TLS/authn/authz enforcement has been fully implemented.
 The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.

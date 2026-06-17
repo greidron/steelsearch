@@ -4380,26 +4380,61 @@ impl SteelNode {
         }
         if let Some((index, block)) = request.path.trim_matches('/').split_once("/_block/") {
             if request.method == RestMethod::Put {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index structure",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_block_route(index, block));
             }
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_clone/") {
             if request.method == RestMethod::Put || request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index structure",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_resize_route(source, target, "clone"));
             }
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_shrink/") {
             if request.method == RestMethod::Put || request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index structure",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_resize_route(source, target, "shrink"));
             }
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_split/") {
             if request.method == RestMethod::Put || request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index structure",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_resize_route(source, target, "split"));
             }
         }
         if let Some(source) = request.path.trim_matches('/').strip_suffix("/_scale") {
             if request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index structure",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_scale_route(source, request));
             }
         }
@@ -4440,6 +4475,13 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index structure",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_delete_index_route(request));
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_tasks/") {
@@ -24965,6 +25007,74 @@ mod tests {
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
             );
             assert_eq!(admin.status, 200, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_index_structure_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for index in ["sec-structure-source", "sec-structure-delete"] {
+            let create_index = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                    .with_json_body(serde_json::json!({})),
+            );
+            assert_eq!(create_index.status, 200, "index {index}");
+        }
+
+        let cases = [
+            RestRequest::new(RestMethod::Put, "/sec-structure-source/_block/write"),
+            RestRequest::new(RestMethod::Put, "/sec-structure-source/_clone/sec-structure-clone"),
+            RestRequest::new(RestMethod::Post, "/sec-structure-source/_shrink/sec-structure-shrink"),
+            RestRequest::new(RestMethod::Put, "/sec-structure-source/_split/sec-structure-split"),
+            RestRequest::new(RestMethod::Post, "/sec-structure-source/_scale")
+                .with_json_body(serde_json::json!({"target": "sec-structure-scale"})),
+            RestRequest::new(RestMethod::Delete, "/sec-structure-delete"),
+        ];
+
+        for request in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("index structure"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, 200, "path {path}");
+            assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
