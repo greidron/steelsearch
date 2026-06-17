@@ -718,7 +718,7 @@ struct CachedKnnSearchFieldCache {
 #[derive(Clone, Debug)]
 struct CachedKnnSearchEntry {
     refreshed_seq_no: i64,
-    query: KnnQuery,
+    query_key: String,
     hits: Vec<SearchHit>,
     resident_bytes: usize,
     last_access_tick: u64,
@@ -1950,14 +1950,14 @@ impl IndexEngine for TantivyEngine {
             .write()
             .expect("tantivy engine store rwlock poisoned");
         let request_result_cache_supported =
-            single_index_name.is_some() && matches!(query, Query::Knn(_));
+            single_index_name.is_some() && vector_request_result_cache_supported(&query);
         store.record_request_result_cache_bypasses_for_search(
             &query,
             request.highlight.is_some(),
             request.explain,
             request_result_cache_supported,
         );
-        let cached_response = store.search_cached_single_index_knn_response(
+        let cached_response = store.search_cached_single_index_vector_response(
             single_index_name.as_deref(),
             &query,
             &request.sort,
@@ -3915,7 +3915,7 @@ impl EngineStore {
             .collect()
     }
 
-    fn search_cached_single_index_knn_response(
+    fn search_cached_single_index_vector_response(
         &mut self,
         single_index_name: Option<&str>,
         query: &Query,
@@ -3929,17 +3929,21 @@ impl EngineStore {
         let Some(index_name) = single_index_name else {
             return Ok(None);
         };
-        let Query::Knn(knn) = query else {
-            return Ok(None);
-        };
         let Some(index) = self.indices.get_mut(index_name) else {
             return Err(EngineError::IndexNotFound {
                 index: index_name.to_string(),
             });
         };
-        let Some((total_hits, page_hits)) =
-            index.search_hits_page_for_knn_query_cached(index_name, knn, sort_specs, from, size)?
-        else {
+        let Some((total_hits, page_hits)) = (match query {
+            Query::Knn(knn) => index.search_hits_page_for_knn_query_cached(
+                index_name, knn, sort_specs, from, size,
+            )?,
+            Query::Bool { clauses } if query_contains_knn(query) => index
+                .search_hits_page_for_hybrid_bool_query_cached(
+                    index_name, clauses, sort_specs, from, size,
+                )?,
+            _ => None,
+        }) else {
             return Ok(None);
         };
         let Some(aggregations) = index.collect_aggregations_native(query, aggregation_map)? else {
@@ -5818,6 +5822,98 @@ impl StoredIndex {
             total_hits,
             top_hits.into_iter().skip(from).take(size).collect::<Vec<_>>(),
         )))
+    }
+
+    fn search_hits_page_for_hybrid_bool_query_cached(
+        &mut self,
+        index_name: &str,
+        clauses: &BoolQuery,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        let query = Query::Bool {
+            clauses: clauses.clone(),
+        };
+        if !Self::query_contains_knn(&query) {
+            return Ok(None);
+        }
+        let Some(cache_field) = vector_query_cache_field(&query) else {
+            return Ok(None);
+        };
+        let cache_key = cached_vector_query_search_key(&query);
+        let query_vector_bytes = query_vector_bytes(&query);
+        if sort_uses_default_relevance_order(sort) {
+            if let Some(cached) = self.lookup_cached_vector_search_page(
+                cache_field,
+                &cache_key,
+                query_vector_bytes,
+                from,
+                size,
+            ) {
+                return Ok(Some(cached));
+            }
+            let Some(candidate_ids) = self.search_candidate_ids_for_query_reduced(index_name, &query)? else {
+                return Ok(None);
+            };
+            let (_, mut hits) = self.search_hits_for_hybrid_bool_candidate_ids(
+                index_name,
+                &query,
+                candidate_ids,
+                &[],
+                None,
+            )?;
+            hits.sort_by(compare_relevance_hits);
+            let total_hits = hits.len() as u64;
+            self.cache_vector_search_result(cache_field, cache_key, query_vector_bytes, &hits);
+            let page_hits = if size == 0 {
+                Vec::new()
+            } else {
+                hits.into_iter().skip(from).take(size).collect::<Vec<_>>()
+            };
+            return Ok(Some((total_hits, page_hits)));
+        }
+        if let Some((_, hits)) = self.lookup_cached_vector_search_page(
+            cache_field,
+            &cache_key,
+            query_vector_bytes,
+            0,
+            usize::MAX,
+        ) {
+            let total_hits = hits.len() as u64;
+            let page_limit = from.saturating_add(size);
+            let mut page_hits = Vec::new();
+            if page_limit > 0 {
+                for hit in hits {
+                    Self::insert_bounded_page_hit(&mut page_hits, hit, sort, page_limit);
+                }
+                page_hits = page_hits.into_iter().skip(from).take(size).collect();
+                materialize_search_hit_sort_values_in_place(&mut page_hits, sort);
+            }
+            return Ok(Some((total_hits, page_hits)));
+        }
+        let Some(candidate_ids) = self.search_candidate_ids_for_query_reduced(index_name, &query)? else {
+            return Ok(None);
+        };
+        let (_, hits) = self.search_hits_for_hybrid_bool_candidate_ids(
+            index_name,
+            &query,
+            candidate_ids,
+            &[],
+            None,
+        )?;
+        let total_hits = hits.len() as u64;
+        self.cache_vector_search_result(cache_field, cache_key, query_vector_bytes, &hits);
+        let page_limit = from.saturating_add(size);
+        let mut page_hits = Vec::new();
+        if page_limit > 0 {
+            for hit in hits {
+                Self::insert_bounded_page_hit(&mut page_hits, hit, sort, page_limit);
+            }
+            page_hits = page_hits.into_iter().skip(from).take(size).collect();
+            materialize_search_hit_sort_values_in_place(&mut page_hits, sort);
+        }
+        Ok(Some((total_hits, page_hits)))
     }
 
     fn search_hits_for_hybrid_bool_candidate_ids(
@@ -7838,7 +7934,10 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             .entry(knn.field.clone())
             .or_default();
         let should_invalidate = match field_cache.entries.get(&cache_key) {
-            Some(cached) => cached.refreshed_seq_no != self.refreshed_seq_no || cached.query != *knn,
+            Some(cached) => {
+                cached.refreshed_seq_no != self.refreshed_seq_no
+                    || cached.query_key != cache_key
+            }
             None => {
                 field_cache.misses = field_cache.misses.saturating_add(1);
                 return None;
@@ -7875,21 +7974,43 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
         size: usize,
     ) -> Option<(u64, Vec<SearchHit>)> {
         let cache_key = cached_knn_search_key(knn);
+        self.lookup_cached_vector_search_page(
+            &knn.field,
+            &cache_key,
+            knn.vector
+                .len()
+                .saturating_mul(std::mem::size_of::<VectorValue>()),
+            from,
+            size,
+        )
+    }
+
+    fn lookup_cached_vector_search_page(
+        &mut self,
+        cache_field: &str,
+        cache_key: &str,
+        query_vector_bytes: usize,
+        from: usize,
+        size: usize,
+    ) -> Option<(u64, Vec<SearchHit>)> {
         let access_tick = self.runtime_cache.next_access_tick();
         let field_cache = self
             .runtime_cache
             .knn_search_by_field
-            .entry(knn.field.clone())
+            .entry(cache_field.to_string())
             .or_default();
-        let should_invalidate = match field_cache.entries.get(&cache_key) {
-            Some(cached) => cached.refreshed_seq_no != self.refreshed_seq_no || cached.query != *knn,
+        let should_invalidate = match field_cache.entries.get(cache_key) {
+            Some(cached) => {
+                cached.refreshed_seq_no != self.refreshed_seq_no
+                    || cached.query_key != cache_key
+            }
             None => {
                 field_cache.misses = field_cache.misses.saturating_add(1);
                 return None;
             }
         };
         if should_invalidate {
-            let cached = field_cache.entries.remove(&cache_key)?;
+            let cached = field_cache.entries.remove(cache_key)?;
             field_cache.resident_bytes = field_cache
                 .resident_bytes
                 .saturating_sub(cached.resident_bytes);
@@ -7906,7 +8027,7 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
                 .saturating_add(1);
             return None;
         }
-        let cached = field_cache.entries.get_mut(&cache_key)?;
+        let cached = field_cache.entries.get_mut(cache_key)?;
         cached.last_access_tick = access_tick;
         field_cache.hits = field_cache.hits.saturating_add(1);
         let total_hits = cached.hits.len() as u64;
@@ -7922,15 +8043,11 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
                 .collect::<Vec<_>>()
         };
         self.collector_telemetry.knn_collector_bytes_by_field.insert(
-            knn.field.clone(),
+            cache_field.to_string(),
             page_hits
                 .len()
                 .saturating_mul(std::mem::size_of::<SearchHit>())
-                .saturating_add(
-                    knn.vector
-                        .len()
-                        .saturating_mul(std::mem::size_of::<VectorValue>()),
-                ),
+                .saturating_add(query_vector_bytes),
         );
         Some((total_hits, page_hits))
     }
@@ -7950,7 +8067,10 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             .entry(knn.field.clone())
             .or_default();
         let should_invalidate = match field_cache.entries.get(&cache_key) {
-            Some(cached) => cached.refreshed_seq_no != self.refreshed_seq_no || cached.query != *knn,
+            Some(cached) => {
+                cached.refreshed_seq_no != self.refreshed_seq_no
+                    || cached.query_key != cache_key
+            }
             None => {
                 field_cache.misses = field_cache.misses.saturating_add(1);
                 return None;
@@ -8003,14 +8123,28 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
 
     fn cache_knn_search_result(&mut self, knn: &KnnQuery, hits: &[SearchHit]) {
         let cache_key = cached_knn_search_key(knn);
+        let query_vector_bytes = knn
+            .vector
+            .len()
+            .saturating_mul(std::mem::size_of::<VectorValue>());
+        self.cache_vector_search_result(&knn.field, cache_key, query_vector_bytes, hits);
+    }
+
+    fn cache_vector_search_result(
+        &mut self,
+        cache_field: &str,
+        cache_key: String,
+        query_vector_bytes: usize,
+        hits: &[SearchHit],
+    ) {
         let access_tick = self.runtime_cache.next_access_tick();
-        let resident_bytes = cached_knn_search_entry_bytes(knn, hits);
+        let resident_bytes = cached_vector_search_entry_bytes(query_vector_bytes, hits);
         self.runtime_cache.insert_knn_entry(
-            knn.field.clone(),
-            cache_key,
+            cache_field.to_string(),
+            cache_key.clone(),
             CachedKnnSearchEntry {
                 refreshed_seq_no: self.refreshed_seq_no,
-                query: knn.clone(),
+                query_key: cache_key,
                 hits: hits.to_vec(),
                 resident_bytes,
                 last_access_tick: access_tick,
@@ -9171,11 +9305,7 @@ fn last_knn_collector_bytes(index: &StoredIndex, field_name: &str) -> usize {
         .unwrap_or(0)
 }
 
-fn cached_knn_search_entry_bytes(query: &KnnQuery, hits: &[SearchHit]) -> usize {
-    let query_bytes = query
-        .vector
-        .len()
-        .saturating_mul(std::mem::size_of::<VectorValue>());
+fn cached_vector_search_entry_bytes(query_bytes: usize, hits: &[SearchHit]) -> usize {
     let hit_bytes = hits
         .iter()
         .map(estimate_search_hit_bytes)
@@ -9243,6 +9373,37 @@ fn touch_resident_field_cache(
 
 fn cached_knn_search_key(query: &KnnQuery) -> String {
     serde_json::to_string(query).unwrap_or_else(|_| format!("{query:?}"))
+}
+
+fn cached_vector_query_search_key(query: &Query) -> String {
+    match query {
+        Query::Knn(knn) => cached_knn_search_key(knn),
+        _ => serde_json::to_string(query).unwrap_or_else(|_| format!("{query:?}")),
+    }
+}
+
+fn query_contains_knn(query: &Query) -> bool {
+    !knn_queries(query).is_empty()
+}
+
+fn vector_request_result_cache_supported(query: &Query) -> bool {
+    matches!(query, Query::Knn(_))
+        || matches!(query, Query::Bool { .. } if query_contains_knn(query))
+}
+
+fn vector_query_cache_field(query: &Query) -> Option<&str> {
+    knn_queries(query).first().map(|knn| knn.field.as_str())
+}
+
+fn query_vector_bytes(query: &Query) -> usize {
+    knn_queries(query)
+        .iter()
+        .map(|knn| {
+            knn.vector
+                .len()
+                .saturating_mul(std::mem::size_of::<VectorValue>())
+        })
+        .sum()
 }
 
 fn resident_entry_age_bounds<I>(current_tick: u64, entry_ticks: I) -> (u64, u64)
@@ -135260,6 +135421,7 @@ mod tests {
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
+        let request_result_cache_hits_before_hybrid = telemetry.request_result_cache_hits;
 
         let hybrid_request = || SearchRequest {
             indices: vec!["vectors".to_string()],
@@ -135307,7 +135469,8 @@ mod tests {
         assert_eq!(search_hit_ids(&first_hybrid_response.hits), vec!["1"]);
         assert_eq!(search_hit_ids(&second_hybrid_response.hits), vec!["1"]);
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 2);
+        assert!(telemetry.request_result_cache_hits > request_result_cache_hits_before_hybrid);
+        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
     }
