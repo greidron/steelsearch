@@ -70,15 +70,16 @@ Out of scope:
   vector request-result cache bypasses with empty per-index request-result
   cache details.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-17 with 29/29 tests and `zero_tests=0`, covering native execution,
+  2026-06-17 with 30/30 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
   current source-backed query families: nested child ordinals,
   `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
   `terms_set`, phrase/prefix/bool-prefix text queries, `multi_match`,
   `query_string`, `simple_query_string`, and `combined_fields`, including
-  telemetry-visible `distance_feature`, `rank_feature`, and `terms_set`
-  materialization when a mapped field cannot produce Tantivy numeric/date,
-  feature, or term queries.
+  exact-circle `geo_distance` source validation for native bounding-box
+  candidates and telemetry-visible `distance_feature`, `rank_feature`, and
+  `terms_set` materialization when a mapped field cannot produce Tantivy
+  numeric/date, feature, or term queries.
 - The same runner now has a `benchmark-telemetry` batch. It passed on
   2026-06-17 with 1/1 external validation and `zero_tests=0`, covering
   benchmark/load JSON and Markdown exposure for materialized response fetches,

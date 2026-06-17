@@ -179,6 +179,10 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
+        "native_geo_distance_bbox_candidates_are_source_validated_against_circle",
+        "source-backed-fallback-boundary",
+    ),
+    ValidationTest(
         "native_tantivy_path_executes_distance_feature_query",
         "source-backed-native-query",
     ),

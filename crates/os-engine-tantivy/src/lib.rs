@@ -136402,6 +136402,57 @@ mod tests {
     }
 
     #[test]
+    fn native_geo_distance_bbox_candidates_are_source_validated_against_circle() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "location": { "type": "geo_point" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, location) in [
+            ("1", serde_json::json!({ "lat": 0.0, "lon": 0.0 })),
+            ("2", serde_json::json!({ "lat": 0.8, "lon": 0.8 })),
+            ("3", serde_json::json!({ "lat": 2.0, "lon": 2.0 })),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "location": location }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "geo_distance": {
+                "distance": "100km",
+                "location": { "lat": 0.0, "lon": 0.0 }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native geo distance hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
     fn native_tantivy_path_executes_regexp_query() {
         let engine = TantivyEngine::default();
         engine
