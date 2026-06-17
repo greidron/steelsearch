@@ -38621,6 +38621,173 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_restore_and_cleanup_restart_smoke_preserves_metadata_without_queue_replay() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-snapshot-restart-smoke-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        let repository = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-snapshot-restart").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-snapshot-restart"}
+                }),
+            ),
+        );
+        assert_eq!(repository.status, 200);
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/snapshot-restart-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+        let snapshot = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-snapshot-restart/snap-source")
+                .with_json_body(serde_json::json!({
+                    "indices": "snapshot-restart-000001",
+                    "include_global_state": false
+                })),
+        );
+        assert_eq!(snapshot.status, 200);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "snapshot".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_restore_node = node.clone();
+        let queued_restore = std::thread::spawn(move || {
+            queued_restore_node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_snapshot/repo-snapshot-restart/snap-source/_restore",
+                )
+                .with_json_body(serde_json::json!({
+                    "indices": "snapshot-restart-000001",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "restored-$1"
+                })),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "snapshot", 1);
+
+        let mut restarted_during_restore = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted_during_restore.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted_during_restore.sync_shared_runtime_state_from_disk();
+        let restored_readback = restarted_during_restore.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/indices/restored-snapshot-restart-000001",
+        ));
+        assert_eq!(restored_readback.status, 200);
+        assert_eq!(
+            restored_readback.body["indices"][0]["index"],
+            "restored-snapshot-restart-000001"
+        );
+        assert_eq!(restored_readback.body["indices"][0]["state"], "open");
+        assert_eq!(
+            restarted_during_restore
+                .runtime_thread_pool_counters("snapshot")
+                .queue,
+            0
+        );
+
+        release_runtime_thread_pool_active_slot(&node, "snapshot");
+        let restore = queued_restore
+            .join()
+            .expect("queued snapshot restore request thread should not panic");
+        assert_eq!(restore.status, 200);
+        assert_eq!(restore.body["accepted"], Value::Bool(true));
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "snapshot".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let queued_cleanup_node = node.clone();
+        let queued_cleanup = std::thread::spawn(move || {
+            queued_cleanup_node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-snapshot-restart/_cleanup",
+            ))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "snapshot", 1);
+
+        let mut restarted_during_cleanup = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted_during_cleanup.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted_during_cleanup.sync_shared_runtime_state_from_disk();
+        let repository_readback = restarted_during_cleanup.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-snapshot-restart",
+        ));
+        assert_eq!(repository_readback.status, 200);
+        assert!(repository_readback.body["repo-snapshot-restart"].is_object());
+        let snapshot_readback = restarted_during_cleanup.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-snapshot-restart/snap-source",
+        ));
+        assert_eq!(snapshot_readback.status, 200);
+        assert_eq!(
+            snapshot_readback.body["snapshots"][0]["snapshot"],
+            "snap-source"
+        );
+        assert_eq!(
+            restarted_during_cleanup
+                .runtime_thread_pool_counters("snapshot")
+                .queue,
+            0
+        );
+
+        release_runtime_thread_pool_active_slot(&node, "snapshot");
+        let cleanup = queued_cleanup
+            .join()
+            .expect("queued snapshot cleanup request thread should not panic");
+        assert_eq!(cleanup.status, 200);
+        assert_eq!(cleanup.body["results"]["deleted_blobs"], 0);
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
