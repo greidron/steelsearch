@@ -4724,18 +4724,35 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index structure",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_create_index_route(request));
         }
         if request.method == RestMethod::Get
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index metadata")
+            {
+                return Some(response);
+            }
             return Some(self.handle_get_index_route(request));
         }
         if request.method == RestMethod::Head
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index metadata")
+            {
+                return Some(response);
+            }
             return Some(self.handle_head_index_route(request));
         }
         if request.method == RestMethod::Delete
@@ -25355,6 +25372,83 @@ mod tests {
     }
 
     #[test]
+    fn secure_index_root_routes_require_admin_or_reader_roles() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_request = RestRequest::new(RestMethod::Put, "/sec-index-root")
+            .with_json_body(serde_json::json!({}));
+        let missing_create = node.handle_rest_request(create_request.clone());
+        assert_eq!(missing_create.status, 401);
+        assert_eq!(missing_create.body["error"]["type"], "security_exception");
+
+        let writer_create = node.handle_rest_request(
+            create_request
+                .clone()
+                .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+        );
+        assert_eq!(writer_create.status, 403);
+        assert_eq!(writer_create.body["error"]["type"], "security_exception");
+        assert!(writer_create.body["error"]["reason"]
+            .as_str()
+            .expect("security reason")
+            .contains("index structure"));
+
+        let admin_create = node.handle_rest_request(
+            create_request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(admin_create.status, 200);
+        assert_eq!(admin_create.body["acknowledged"], Value::Bool(true));
+
+        for request in [
+            RestRequest::new(RestMethod::Get, "/sec-index-root"),
+            RestRequest::new(RestMethod::Head, "/sec-index-root"),
+        ] {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let writer = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, 403, "path {path}");
+            assert_eq!(writer.body["error"]["type"], "security_exception");
+            assert!(writer.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("index metadata"));
+
+            let reader = node.handle_rest_request(
+                request.with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 200, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+    }
+
+    #[test]
     fn secure_knn_operational_routes_require_admin_role() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
@@ -38195,6 +38289,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-security-bulk-000001")
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
                     .with_json_body(serde_json::json!({})),
             )
             .status,
@@ -38203,6 +38298,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/.opensearch-security-bulk-000001")
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
                     .with_json_body(serde_json::json!({})),
             )
             .status,
@@ -38686,8 +38782,8 @@ mod tests {
     fn secure_service_account_subject_can_authorize_writer_route() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
-        env::remove_var("SECURITY_ADMIN_USERNAME");
-        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
         env::remove_var("SECURITY_READER_USERNAME");
         env::remove_var("SECURITY_READER_PASSWORD");
         env::remove_var("SECURITY_WRITER_USERNAME");
@@ -38704,6 +38800,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-service-account-bulk-000001")
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
                     .with_json_body(serde_json::json!({})),
             )
             .status,
@@ -38736,6 +38833,8 @@ mod tests {
         assert_eq!(wrong_token.body["error"]["type"], "security_exception");
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
@@ -38762,6 +38861,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-security-search-000001")
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
                     .with_json_body(serde_json::json!({})),
             )
             .status,
