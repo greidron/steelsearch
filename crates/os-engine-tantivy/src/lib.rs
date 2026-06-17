@@ -157,6 +157,7 @@ struct NestedChildIndex {
 struct NestedPathChildIndex {
     children: Vec<NestedChildDocument>,
     field_terms: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
+    field_string_terms: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
     field_exists: BTreeMap<String, std::collections::BTreeSet<usize>>,
 }
 
@@ -209,6 +210,7 @@ impl NestedPathChildIndex {
             &child.source,
             ordinal,
             &mut self.field_terms,
+            &mut self.field_string_terms,
             &mut self.field_exists,
         );
         self.children.push(child);
@@ -14638,6 +14640,7 @@ fn index_nested_child_terms(
     value: &Value,
     ordinal: usize,
     field_terms: &mut BTreeMap<String, BTreeMap<String, Vec<usize>>>,
+    field_string_terms: &mut BTreeMap<String, BTreeMap<String, Vec<usize>>>,
     field_exists: &mut BTreeMap<String, std::collections::BTreeSet<usize>>,
 ) {
     if !field_prefix.is_empty() && value_matches_exists_query(value) {
@@ -14659,13 +14662,21 @@ fn index_nested_child_terms(
                     child,
                     ordinal,
                     field_terms,
+                    field_string_terms,
                     field_exists,
                 );
             }
         }
         Value::Array(items) => {
             for item in items {
-                index_nested_child_terms(field_prefix, item, ordinal, field_terms, field_exists);
+                index_nested_child_terms(
+                    field_prefix,
+                    item,
+                    ordinal,
+                    field_terms,
+                    field_string_terms,
+                    field_exists,
+                );
             }
         }
         _ => {
@@ -14674,6 +14685,14 @@ fn index_nested_child_terms(
                     .entry(field_prefix.to_string())
                     .or_default()
                     .entry(term)
+                    .or_default()
+                    .push(ordinal);
+            }
+            if let Value::String(term) = value {
+                field_string_terms
+                    .entry(field_prefix.to_string())
+                    .or_default()
+                    .entry(term.clone())
                     .or_default()
                     .push(ordinal);
             }
@@ -16381,6 +16400,11 @@ fn native_nested_child_ordinals_for_query(
     match query {
         Query::Term { field, value } => nested_child_term_ordinals(path_index, path, field, value),
         Query::Exists { field } => nested_child_exists_ordinals(path_index, path, field),
+        Query::Prefix {
+            field,
+            value,
+            case_insensitive,
+        } => nested_child_prefix_ordinals(path_index, path, field, value, *case_insensitive),
         Query::Terms { field, values } => {
             let mut ordinals = std::collections::BTreeSet::new();
             for value in values {
@@ -16437,6 +16461,45 @@ fn nested_child_term_ordinals(
             .copied()
             .collect(),
     )
+}
+
+fn nested_child_prefix_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    field: &str,
+    prefix: &str,
+    case_insensitive: bool,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let mut ordinals = std::collections::BTreeSet::new();
+    if field == "_id" {
+        let prefix_lowercase = case_insensitive.then(|| prefix.to_lowercase());
+        for (ordinal, child) in path_index.children.iter().enumerate() {
+            let matched = if let Some(prefix) = &prefix_lowercase {
+                child.parent_id.to_lowercase().starts_with(prefix)
+            } else {
+                child.parent_id.starts_with(prefix)
+            };
+            if matched {
+                ordinals.insert(ordinal);
+            }
+        }
+        return Some(ordinals);
+    }
+
+    let field = nested_child_local_field_name(path, field);
+    let field_terms = path_index.field_string_terms.get(&field)?;
+    let prefix_lowercase = case_insensitive.then(|| prefix.to_lowercase());
+    for (term, term_ordinals) in field_terms {
+        let matched = if let Some(prefix) = &prefix_lowercase {
+            term.to_lowercase().starts_with(prefix)
+        } else {
+            term.starts_with(prefix)
+        };
+        if matched {
+            ordinals.extend(term_ordinals.iter().copied());
+        }
+    }
+    Some(ordinals)
 }
 
 fn nested_child_exists_ordinals(
@@ -137581,6 +137644,86 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native nested exists hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_string_prefix_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "author": "Alice", "tag": "x" },
+                { "author": "bob", "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "author": "alice", "tag": "y" }
+            ])),
+            ("3", serde_json::json!([
+                { "author": "ALfred", "tag": "y" },
+                { "author": "carol", "tag": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "author": 123, "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "prefix": {
+                                    "comments.author": {
+                                        "value": "AL",
+                                        "case_insensitive": true
+                                    }
+                                }
+                            },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native nested prefix hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
