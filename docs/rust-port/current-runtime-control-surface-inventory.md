@@ -87,7 +87,7 @@ internal subsystems, especially:
 | --- | --- |
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
 | Propagation model | same-node `parent_task_id` child cancellation visibility exists, but current route evidence does not prove multi-level, cross-node, or background-worker propagation |
-| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, but retention/eviction and partial-progress contracts are still bounded |
+| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction and persisted restart readback; cancelled-terminal and partial-progress contracts remain bounded |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, but shutdown-window and partial-recovery behavior remain open |
 | Error classification | route-level `404`, bounded repeated-cancel success, and terminal non-cancellable refusal exist, but not a full matrix for race-with-completion states |
@@ -102,17 +102,18 @@ internal subsystems, especially:
   - cancel-during-restart;
   - post-restart partial-recovery/error-path task listing continuity.
 - add operator-visible evidence for terminal-state retention:
-  - how long cancelled tasks remain listable;
+  - how long cancelled terminal tasks remain listable;
   - whether partial progress fields are stable;
-  - whether restart preserves or evicts terminal task visibility.
+  - whether restart preserves or evicts cancelled-terminal task visibility.
 
 ### Required implementation
 
 - introduce an explicit cancellation coordinator or equivalent runtime owner for
   task state transitions.
 - tie queued-task cancellation into in-flight worker ownership and drain ordering.
-- define terminal task retention/eviction and partial-progress contracts for
-  `GET /_tasks*`.
+- define cancelled-terminal task retention and partial-progress contracts for
+  `GET /_tasks*` beyond the current acknowledged/failed terminal eviction
+  bound.
 - tie cancellation state into shutdown-window and partial-recovery handling
   rather than treating those paths as stateless route-level responses.
 

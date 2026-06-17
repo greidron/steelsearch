@@ -51,6 +51,7 @@ const SWAGGER_UI_CSS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui.css");
 const SWAGGER_UI_BUNDLE_JS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui-bundle.js");
+const TERMINAL_TASK_RETENTION_LIMIT: usize = 1024;
 const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -687,6 +688,27 @@ impl PersistedClusterManagerTaskQueueState {
     pub fn has_interrupted_tasks(&self) -> bool {
         !(self.in_flight.is_empty() && self.failed.is_empty())
     }
+
+    pub fn prune_terminal_records(&mut self, limit: usize) {
+        prune_terminal_record_bucket(&mut self.acknowledged, limit);
+        prune_terminal_record_bucket(&mut self.failed, limit);
+    }
+}
+
+fn prune_terminal_record_bucket(records: &mut Vec<ClusterManagerTaskRecord>, limit: usize) {
+    if records.len() <= limit {
+        return;
+    }
+    records.sort_by(|left, right| right.task_id.cmp(&left.task_id));
+    records.truncate(limit);
+    records.sort_by_key(|record| record.task_id);
+}
+
+fn pruned_task_queue_state(
+    mut state: PersistedClusterManagerTaskQueueState,
+) -> PersistedClusterManagerTaskQueueState {
+    state.prune_terminal_records(TERMINAL_TASK_RETENTION_LIMIT);
+    state
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -1889,7 +1911,9 @@ impl SteelNode {
             *self
                 .task_queue_state
                 .lock()
-                .expect("task queue state lock poisoned") = persisted.task_queue_state;
+                .expect("task queue state lock poisoned") = persisted
+                .task_queue_state
+                .map(pruned_task_queue_state);
         }
         Ok(self)
     }
@@ -1925,7 +1949,8 @@ impl SteelNode {
             *self
                 .task_queue_state
                 .lock()
-                .expect("task queue state lock poisoned") = Some(task_queue_state);
+                .expect("task queue state lock poisoned") =
+                Some(pruned_task_queue_state(task_queue_state));
         }
         self.cluster_view = Some(cluster_view);
     }
@@ -11309,6 +11334,7 @@ impl SteelNode {
             .lock()
             .expect("task queue state lock poisoned")
             .clone()
+            .map(pruned_task_queue_state)
         {
             let mut records = queue.pending;
             records.extend(queue.in_flight);
@@ -14955,7 +14981,8 @@ impl SteelNode {
         *self
             .task_queue_state
             .lock()
-            .expect("task queue state lock poisoned") = state.task_queue_state;
+            .expect("task queue state lock poisoned") =
+            state.task_queue_state.map(pruned_task_queue_state);
         *self
             .cancelled_task_ids
             .lock()
@@ -15012,7 +15039,8 @@ impl SteelNode {
                 .task_queue_state
                 .lock()
                 .expect("task queue state lock poisoned")
-                .clone(),
+                .clone()
+                .map(pruned_task_queue_state),
             cancelled_task_ids: self
                 .cancelled_task_ids
                 .lock()
@@ -22879,6 +22907,151 @@ mod tests {
         assert_eq!(rows.len(), 3);
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:31"));
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:41"));
+    }
+
+    #[test]
+    fn terminal_task_retention_eviction_is_bounded_and_persisted() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-terminal-task-retention-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let acknowledged: Vec<ClusterManagerTaskRecord> = (0..TERMINAL_TASK_RETENTION_LIMIT + 2)
+            .map(|offset| ClusterManagerTaskRecord {
+                task_id: 1000 + offset as u64,
+                task: ClusterManagerTask {
+                    source: format!("acknowledged retention probe {offset}"),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Acknowledged,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            })
+            .collect();
+        let failed: Vec<ClusterManagerTaskRecord> = (0..TERMINAL_TASK_RETENTION_LIMIT + 2)
+            .map(|offset| ClusterManagerTaskRecord {
+                task_id: 3000 + offset as u64,
+                task: ClusterManagerTask {
+                    source: format!("failed retention probe {offset}"),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Failed,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: Some(format!("terminal failure {offset}")),
+            })
+            .collect();
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 11,
+                task: ClusterManagerTask {
+                    source: "queued retention probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            acknowledged,
+            failed,
+            ..Default::default()
+        });
+        node.persist_shared_runtime_state_to_disk();
+
+        let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks.status, 200);
+        let node_tasks = tasks.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("node task map");
+        assert_eq!(node_tasks.len(), 1 + (TERMINAL_TASK_RETENTION_LIMIT * 2));
+        assert!(node_tasks.get("node-a:1000").is_none());
+        assert!(node_tasks.get("node-a:1001").is_none());
+        assert!(node_tasks.get("node-a:3000").is_none());
+        assert!(node_tasks.get("node-a:3001").is_none());
+        assert_eq!(node_tasks["node-a:1002"]["id"], 1002);
+        assert_eq!(node_tasks["node-a:2025"]["id"], 2025);
+        assert_eq!(node_tasks["node-a:3002"]["id"], 3002);
+        assert_eq!(node_tasks["node-a:4025"]["id"], 4025);
+
+        let oldest_ack =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:1000"));
+        assert_eq!(oldest_ack.status, 404);
+        let newest_failed =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:4025"));
+        assert_eq!(newest_failed.status, 200);
+        assert_eq!(newest_failed.body["task"]["id"], 4025);
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 1);
+        assert_eq!(pending_tasks[0]["id"], 11);
+
+        let persisted = std::fs::read(&shared_state_path).expect("read shared runtime state");
+        let persisted: SharedRuntimeState =
+            serde_json::from_slice(&persisted).expect("parse shared runtime state");
+        let persisted_queue = persisted
+            .task_queue_state
+            .expect("persisted task queue state");
+        assert_eq!(
+            persisted_queue.acknowledged.len(),
+            TERMINAL_TASK_RETENTION_LIMIT
+        );
+        assert_eq!(persisted_queue.failed.len(), TERMINAL_TASK_RETENTION_LIMIT);
+        assert_eq!(persisted_queue.acknowledged.first().unwrap().task_id, 1002);
+        assert_eq!(persisted_queue.failed.first().unwrap().task_id, 3002);
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let restarted_oldest =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:1000"));
+        assert_eq!(restarted_oldest.status, 404);
+        let restarted_newest =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:4025"));
+        assert_eq!(restarted_newest.status, 200);
+        assert_eq!(restarted_newest.body["task"]["id"], 4025);
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
