@@ -62,6 +62,13 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
 
         self.assertTrue(args.require_interruption)
 
+    def test_exercise_interruption_cli_is_explicit(self):
+        default_args = self.probe.build_arg_parser().parse_args([])
+        enabled_args = self.probe.build_arg_parser().parse_args(["--exercise-interruption"])
+
+        self.assertFalse(default_args.exercise_interruption)
+        self.assertTrue(enabled_args.exercise_interruption)
+
     def test_required_interruption_fails_without_interrupted_resume_phases(self):
         summary = self.probe.summarize_movement_report(
             self.representative_report(), require_interruption=True
@@ -70,6 +77,24 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
         self.assertFalse(summary["passed"])
         self.assertFalse(summary["interruption_evidence_ok"])
         self.assertTrue(summary["interruption_evidence_required"])
+
+    def test_required_interruption_still_fails_with_one_direction_only(self):
+        report = self.representative_report()
+        report["phases"].extend(
+            {"phase": phase}
+            for phase in [
+                "interrupt_java_to_steelsearch_recovery",
+                "resume_or_restart_java_to_steelsearch_recovery",
+                "finalize_java_to_steelsearch_recovery",
+            ]
+        )
+
+        summary = self.probe.summarize_movement_report(
+            report, require_interruption=True
+        )
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["interruption_evidence_ok"])
 
     def test_required_interruption_passes_with_both_direction_phase_contract(self):
         report = self.representative_report()

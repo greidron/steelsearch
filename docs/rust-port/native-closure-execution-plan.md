@@ -35,9 +35,11 @@ Out of scope:
   replica rejoin, and failback to Java. The probe now records shard checkpoint
   drift and requires zero drift. Its summary contract now also reports whether
   both-direction interrupted, resumed-or-restarted, and finalized recovery
-  phases are present, and `--require-interruption` can fail the mixed-cluster
-  gate unless those phases are recorded once live interruption execution is
-  enabled.
+  phases are present. `--exercise-interruption` now restarts the SteelSearch
+  recovery target during Java-to-SteelSearch recovery and records interrupted,
+  resumed-or-restarted, and finalized phases for that direction, while
+  `--require-interruption` can fail the mixed-cluster gate unless both
+  directions are recorded.
 - Native-closure runtime validation now has a guarded compact runner,
   `tools/run-native-closure-validation.py --batch compact`, that rejects
   zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
@@ -290,18 +292,19 @@ Already evidenced:
 - zero observed shard checkpoint drift in the representative probe.
 - summary-level interruption evidence contract and `--require-interruption`
   gate option for both movement directions.
+- `--exercise-interruption` coverage to interrupt Java to SteelSearch recovery
+  with target restart, resume-or-restart observation, and finalized recovery
+  phase recording.
 
 Remaining tests:
 
-1. interrupt Java to SteelSearch recovery before finalize by adding live phase
-   execution;
-2. interrupt SteelSearch primary to Java replica recovery before finalize by
+1. interrupt SteelSearch primary to Java replica recovery before finalize by
    adding live phase execution;
-3. restart the recovering target and verify explicit resume or bounded restart;
-4. run the final mixed-cluster gate with `--require-interruption` after live
-   interruption phases are added;
-5. verify retention-lease and checkpoint monotonicity during interruption;
-6. capture allocation explanation for unsupported movement shapes.
+2. run the final mixed-cluster gate with
+   `--exercise-interruption --require-interruption` after both live
+   interruption directions are added;
+3. verify retention-lease and checkpoint monotonicity during interruption;
+4. capture allocation explanation for unsupported movement shapes.
 
 Exit evidence:
 

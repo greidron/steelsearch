@@ -188,6 +188,14 @@ def get_search_count(client: HttpJson, index: str) -> int:
     return 0
 
 
+def recovery_report(client: HttpJson, index: str) -> dict[str, Any]:
+    return safe_request(
+        client,
+        "GET",
+        f"/{urllib.parse.quote(index, safe='')}/_recovery",
+    )
+
+
 def collect_checkpoint_observed(client: HttpJson, index: str) -> list[dict[str, Any]]:
     _, stats = client.request(
         "GET",
@@ -393,6 +401,37 @@ def make_env(extra: dict[str, str]) -> dict[str, str]:
     return env
 
 
+def steelsearch_dev_env(
+    *,
+    rust_http: int,
+    rust_transport: int,
+    seeds: str,
+    rust_dir: Path,
+    seed_identities: list[Path],
+) -> dict[str, str]:
+    return make_env(
+        {
+            "STEELSEARCH_HTTP_HOST": "127.0.0.1",
+            "STEELSEARCH_TRANSPORT_HOST": "127.0.0.1",
+            "STEELSEARCH_HTTP_ACCESS_HOST": "127.0.0.1",
+            "STEELSEARCH_TRANSPORT_ACCESS_HOST": "127.0.0.1",
+            "STEELSEARCH_HTTP_PORT": str(rust_http),
+            "STEELSEARCH_TRANSPORT_PORT": str(rust_transport),
+            "STEELSEARCH_CLUSTER_NAME": "mixed-three-node-dev",
+            "STEELSEARCH_NODE_NAME": "rust-replica-1",
+            "STEELSEARCH_NODE_ID": "rust-replica-1",
+            "STEELSEARCH_DISCOVERY_SEED_HOSTS": seeds,
+            "STEELSEARCH_WORK_DIR": str(rust_dir),
+            "STEELSEARCH_NODE_ROLES": "cluster_manager,data,ingest,remote_cluster_client",
+            "STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED": "true",
+            "STEELSEARCH_SPLIT_BUILD_RUN": "1",
+            "STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST": ",".join(
+                str(path) for path in seed_identities
+            ),
+        }
+    )
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", default="/tmp/three-node-shard-movement.latest")
@@ -402,6 +441,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--require-interruption",
         action="store_true",
         help="fail the final summary unless both-direction interruption/resume/finalize phases are recorded",
+    )
+    parser.add_argument(
+        "--exercise-interruption",
+        action="store_true",
+        help="restart recovery targets while shard movement is in progress and record interruption phases",
     )
     return parser
 
@@ -493,26 +537,12 @@ def main() -> int:
 
         rust_proc = start_process(
             "bash tools/run-steelsearch-dev.sh",
-            make_env(
-                {
-                    "STEELSEARCH_HTTP_HOST": "127.0.0.1",
-                    "STEELSEARCH_TRANSPORT_HOST": "127.0.0.1",
-                    "STEELSEARCH_HTTP_ACCESS_HOST": "127.0.0.1",
-                    "STEELSEARCH_TRANSPORT_ACCESS_HOST": "127.0.0.1",
-                    "STEELSEARCH_HTTP_PORT": str(rust_http),
-                    "STEELSEARCH_TRANSPORT_PORT": str(rust_transport),
-                    "STEELSEARCH_CLUSTER_NAME": "mixed-three-node-dev",
-                    "STEELSEARCH_NODE_NAME": "rust-replica-1",
-                    "STEELSEARCH_NODE_ID": "rust-replica-1",
-                    "STEELSEARCH_DISCOVERY_SEED_HOSTS": seeds,
-                    "STEELSEARCH_WORK_DIR": str(rust_dir),
-                    "STEELSEARCH_NODE_ROLES": "cluster_manager,data,ingest,remote_cluster_client",
-                    "STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED": "true",
-                    "STEELSEARCH_SPLIT_BUILD_RUN": "1",
-                    "STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST": ",".join(
-                        str(path) for path in seed_identities
-                    ),
-                }
+            steelsearch_dev_env(
+                rust_http=rust_http,
+                rust_transport=rust_transport,
+                seeds=seeds,
+                rust_dir=rust_dir,
+                seed_identities=seed_identities,
             ),
             rust_dir / "stdout.log",
             rust_dir / "stderr.log",
@@ -574,6 +604,55 @@ def main() -> int:
                 "routing.allocation.include._name": "java-primary-1,rust-replica-1",
             },
         )
+        if args.exercise_interruption:
+            interrupted_shards = wait_for_shard_condition(
+                java1_client,
+                args.index,
+                lambda rows: placement(rows)["primary_node"] == "java-primary-1"
+                and placement(rows)["replica_node"] in {"rust-replica-1", None},
+            )
+            report["phases"].append(
+                phase_result(
+                    "interrupt_java_to_steelsearch_recovery",
+                    shards=interrupted_shards,
+                    placement=placement(interrupted_shards),
+                    recovery=recovery_report(java1_client, args.index),
+                    **checkpoint_report(java1_client, args.index),
+                )
+            )
+            terminate_process(rust_proc)
+            rust_proc = None
+
+            rust_proc = start_process(
+                "bash tools/run-steelsearch-dev.sh",
+                steelsearch_dev_env(
+                    rust_http=rust_http,
+                    rust_transport=rust_transport,
+                    seeds=seeds,
+                    rust_dir=rust_dir,
+                    seed_identities=seed_identities,
+                ),
+                rust_dir / "stdout.log",
+                rust_dir / "stderr.log",
+            )
+            if not wait_for_http(f"http://127.0.0.1:{rust_http}", attempts=120, sleep_seconds=1.0):
+                raise RuntimeError("rust-replica-1 did not restart after interrupted recovery")
+            if not wait_for_node_count(java1_client, expected_count=3, attempts=45, sleep_seconds=1.0):
+                raise RuntimeError(
+                    "three-node cluster did not reform after interrupted Java-to-SteelSearch recovery"
+                )
+            resumed_shards = get_shards(java1_client, args.index)
+            report["phases"].append(
+                phase_result(
+                    "resume_or_restart_java_to_steelsearch_recovery",
+                    shards=resumed_shards,
+                    placement=placement(resumed_shards),
+                    recovery=recovery_report(java1_client, args.index),
+                    search_count=get_search_count(java1_client, args.index),
+                    **checkpoint_report(java1_client, args.index),
+                )
+            )
+
         green_on_java_rust = wait_for_index_health(java1_client, args.index, expected_status="green", attempts=180, sleep_seconds=1.0)
         java_to_rust_ready = wait_for_shard_condition(
             java1_client,
@@ -592,6 +671,18 @@ def main() -> int:
                 **checkpoint_report(java1_client, args.index),
             )
         )
+        if args.exercise_interruption:
+            report["phases"].append(
+                phase_result(
+                    "finalize_java_to_steelsearch_recovery",
+                    cluster_health=green_on_java_rust,
+                    shards=java_to_rust_ready,
+                    placement=placement(java_to_rust_ready),
+                    recovery=recovery_report(java1_client, args.index),
+                    search_count=get_search_count(java1_client, args.index),
+                    **checkpoint_report(java1_client, args.index),
+                )
+            )
 
         terminate_process(java1_proc)
         java1_proc = None
