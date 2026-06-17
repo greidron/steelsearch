@@ -33523,6 +33523,114 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_restore_to_renamed_index_preserves_source_close_state_readback() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-close-restore").with_json_body(
+                    serde_json::json!({
+                        "type": "fs",
+                        "settings": {"location": "/tmp/repo-close-restore"}
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-close-restore-000001").with_json_body(
+                    serde_json::json!({
+                        "settings": {"index": {"number_of_shards": 1}},
+                        "mappings": {"properties": {"message": {"type": "text"}}}
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        let snapshot_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-close-restore/snap-close-restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-close-restore-000001"
+            })),
+        );
+        assert_eq!(snapshot_response.status, 200);
+
+        let close_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-close-restore-000001/_close",
+        ));
+        assert_eq!(close_response.status, 200);
+        let closed_default_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-close-restore-000001",
+        ));
+        assert_eq!(closed_default_readback.status, 404);
+        let closed_explicit_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-close-restore-000001?expand_wildcards=all",
+        ));
+        assert_eq!(closed_explicit_readback.status, 200);
+
+        let restore_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-close-restore/snap-close-restore/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-close-restore-000001",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "$1-restored"
+            })),
+        );
+        assert_eq!(restore_response.status, 200);
+        assert_eq!(restore_response.body["accepted"], Value::Bool(true));
+
+        let restored_default_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-close-restore-000001-restored",
+        ));
+        assert_eq!(restored_default_readback.status, 200);
+        assert!(restored_default_readback
+            .body
+            .get("logs-close-restore-000001-restored")
+            .is_some());
+        let source_after_restore_default = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-close-restore-000001",
+        ));
+        assert_eq!(source_after_restore_default.status, 404);
+        let source_after_restore_closed = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-close-restore-000001?expand_wildcards=all",
+        ));
+        assert_eq!(source_after_restore_closed.status, 200);
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-close-restore-000001"]["state"],
+            "close"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-close-restore-000001-restored"]["state"]
+                .as_str()
+                .unwrap_or("open"),
+            "open"
+        );
+    }
+
+    #[test]
     fn snapshot_create_routes_surface_incremental_second_snapshot_stats() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

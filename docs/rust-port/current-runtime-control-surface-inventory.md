@@ -284,7 +284,7 @@ internal subsystems, especially:
 | Worker ownership | there is no authoritative background worker owner for accepted maintenance work once the REST route returns |
 | Retry and failure policy | current evidence does not prove whether failed maintenance work is retried, abandoned, or surfaced through an observable task/error channel |
 | Progress visibility | overlapping refresh/flush requests on the same target now distinguish accepted-but-pending queue telemetry from completed refresh readback, but there is still no daemon-level operator-visible contract for partially-applied maintenance state |
-| Cross-surface coordination | bounded overlapping refresh/flush on the same target is fixture-covered, tier transition readback/cancel survives shared-runtime restart-smoke, and snapshot restore/cleanup restart-smoke preserves metadata without queue replay; there is still no contract for how close/open and snapshot restore interact when they overlap on the same index or data stream |
+| Cross-surface coordination | bounded overlapping refresh/flush on the same target is fixture-covered, tier transition readback/cancel survives shared-runtime restart-smoke, snapshot restore/cleanup restart-smoke preserves metadata without queue replay, and renamed snapshot restore preserves operator-visible source close-state readback while creating an open restored index; broader daemon-level close/open and restore overlap orchestration remains open |
 | Cleanup guarantees | there is no evidence for whether accepted maintenance work guarantees cleanup of temporary state, leases, or intermediate markers after failure |
 | Restart interaction | tier transition readback/cancel, snapshot restore/cleanup metadata readback, and maintenance work accepted before shutdown survive shared-runtime restart-smoke without replaying queued runtime work; daemon-level resume/rollback policy remains open |
 
@@ -297,7 +297,8 @@ internal subsystems, especially:
 - add operator-visible evidence for:
   - post-operation readback showing completion or rollback;
   - failure-path visibility when cleanup is partial;
-  - interaction between close/open state and other maintenance routes.
+  - broader daemon-level interaction between close/open state and other
+    maintenance routes beyond renamed snapshot restore readback.
 
 ### Required implementation
 

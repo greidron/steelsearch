@@ -220,7 +220,7 @@ Current Steelsearch evidence:
   terminal readback without pending-depth pollution, and multi-node
   queued/in-flight task visibility with remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 25/25 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 26/26 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state, including empty, non-empty, and terminal-drained queue visibility
   transitions, plus search/write thread-pool completion counters derived from real
@@ -231,6 +231,7 @@ Current Steelsearch evidence:
   tier transition restart-smoke readback/cancel,
   snapshot restore/cleanup restart-smoke metadata readback without queue replay,
   maintenance accepted-before-shutdown restart-smoke without queue replay,
+  close-state source readback versus open renamed snapshot-restore target readback,
   immediately executed versus queued cluster-reroute/maintenance work telemetry
   distinction, accepted-but-pending versus overload-refusal telemetry distinction,
   independent mixed search/maintenance and write/maintenance backlog drain,
