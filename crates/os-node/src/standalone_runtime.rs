@@ -9077,6 +9077,44 @@ impl SteelNode {
     }
 
     fn handle_tasks_cancel_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(parent_task_id) = request.query_params.get("parent_task_id") {
+            let tasks = self.tasks_matching_parent_task_id(parent_task_id);
+            if tasks.is_empty() {
+                return RestResponse::json(
+                    200,
+                    serde_json::json!({
+                        "nodes": {},
+                        "task_failures": [],
+                        "node_failures": []
+                    }),
+                );
+            }
+            for task in &tasks {
+                let cancellable = task
+                    .get("cancellable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if !cancellable {
+                    let task_id = self.task_value_id(task);
+                    return RestResponse::json(
+                        400,
+                        tasks_route_registration::build_non_cancellable_task_error(&task_id),
+                    );
+                }
+            }
+            {
+                let mut cancelled_task_ids = self
+                    .cancelled_task_ids
+                    .lock()
+                    .expect("cancelled task ids lock poisoned");
+                for task in &tasks {
+                    cancelled_task_ids.insert(self.task_value_id(task));
+                }
+            }
+            self.persist_shared_runtime_state_to_disk();
+            let tasks = self.tasks_matching_parent_task_id(parent_task_id);
+            return RestResponse::json(200, self.tasks_cancel_response_for_tasks(tasks));
+        }
         let Some(task_id) = self.task_id_from_cancel_request(request) else {
             return RestResponse::json(
                 200,
@@ -11492,6 +11530,23 @@ impl SteelNode {
         })
     }
 
+    fn tasks_matching_parent_task_id(&self, parent_task_id: &str) -> Vec<Value> {
+        self.task_records()
+            .into_iter()
+            .filter(|task| {
+                task.get("parent_task_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value == parent_task_id)
+            })
+            .collect()
+    }
+
+    fn task_value_id(&self, task: &Value) -> String {
+        let node = task.get("node").and_then(Value::as_str).unwrap_or_default();
+        let id = task.get("id").and_then(Value::as_u64).unwrap_or_default();
+        format!("{node}:{id}")
+    }
+
     fn task_id_from_cancel_request<'a>(&self, request: &'a RestRequest) -> Option<&'a str> {
         if let Some(task_id) = request
             .path
@@ -11551,6 +11606,43 @@ impl SteelNode {
                     }
                 }
             ]
+        })
+    }
+
+    fn tasks_cancel_response_for_tasks(&self, tasks: Vec<Value>) -> Value {
+        let node = self
+            .tasks_body()
+            .get("node")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let mut nodes = serde_json::Map::new();
+        for task in tasks {
+            let response =
+                tasks_route_registration::invoke_tasks_cancel_live_route(&serde_json::json!({
+                    "node": node.clone(),
+                    "task": task
+                }));
+            let Some(response_nodes) = response.get("nodes").and_then(Value::as_object) else {
+                continue;
+            };
+            for (node_id, node_body) in response_nodes {
+                let node_entry = nodes.entry(node_id.clone()).or_insert_with(|| {
+                    let mut seeded = node_body.clone();
+                    seeded["tasks"] = serde_json::json!({});
+                    seeded
+                });
+                let Some(task_rows) = node_body.get("tasks").and_then(Value::as_object) else {
+                    continue;
+                };
+                for (task_id, task_body) in task_rows {
+                    node_entry["tasks"][task_id] = task_body.clone();
+                }
+            }
+        }
+        serde_json::json!({
+            "nodes": nodes,
+            "task_failures": [],
+            "node_failures": []
         })
     }
 
@@ -22413,6 +22505,104 @@ mod tests {
         let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
         assert_eq!(pending_tasks.len(), 1);
         assert_eq!(pending_tasks[0]["id"], 81);
+    }
+
+    #[test]
+    fn tasks_cancel_by_parent_task_id_preserves_parent_child_visibility() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![
+                ClusterManagerTaskRecord {
+                    task_id: 91,
+                    task: ClusterManagerTask {
+                        source: "parent cancel selector probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 92,
+                    task: ClusterManagerTask {
+                        source: "child cancel selector probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: Some("node-a:91".to_string()),
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+            ],
+            ..Default::default()
+        });
+
+        let mut cancel = RestRequest::new(RestMethod::Post, "/_tasks/_cancel");
+        cancel
+            .query_params
+            .insert("parent_task_id".to_string(), "node-a:91".to_string());
+        let cancel = node.handle_rest_request(cancel);
+        assert_eq!(cancel.status, 200);
+        let cancelled_tasks = cancel.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("cancelled task map");
+        assert_eq!(cancelled_tasks.len(), 1);
+        assert!(cancelled_tasks.get("node-a:92").is_some());
+        assert_eq!(cancelled_tasks["node-a:92"]["cancelled"], Value::Bool(true));
+
+        let parent_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:91"));
+        assert_eq!(parent_get.status, 200);
+        assert_eq!(parent_get.body["task"]["cancelled"], Value::Bool(false));
+
+        let child_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:92"));
+        assert_eq!(child_get.status, 200);
+        assert_eq!(child_get.body["task"]["parent_task_id"], "node-a:91");
+        assert_eq!(child_get.body["task"]["cancelled"], Value::Bool(true));
+
+        let grouped =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks?group_by=parents"));
+        assert_eq!(grouped.status, 200);
+        let parent = &grouped.body["tasks"]["node-a:91"];
+        assert_eq!(parent["cancelled"], Value::Bool(false));
+        let children = parent["children"].as_array().expect("parent children");
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0]["id"], 92);
+        assert_eq!(children[0]["parent_task_id"], "node-a:91");
+        assert_eq!(children[0]["cancelled"], Value::Bool(true));
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        assert_eq!(
+            pending.body["tasks"]
+                .as_array()
+                .expect("pending tasks array")
+                .len(),
+            2
+        );
     }
 
     #[test]

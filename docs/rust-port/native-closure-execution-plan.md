@@ -57,12 +57,13 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 5/5 tests and `zero_tests=0`, covering task cancellation through
+  with 6/6 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
-  post-cancel readback, and acknowledged/failed terminal task readback without
-  polluting pending-task queue depth, plus shared-runtime restart readback for
-  task queue state and cancelled task ids.
+  post-cancel readback, parent-task-id child cancellation visibility, and
+  acknowledged/failed terminal task readback without polluting pending-task
+  queue depth, plus shared-runtime restart readback for task queue state and
+  cancelled task ids.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
   with 2/2 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
@@ -92,8 +93,9 @@ Out of scope:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows.
 - The same runner now has a `runtime-task-children` batch. It passed on
-  2026-06-17 with 2/2 tests and `zero_tests=0`, covering same-node
-  `/_tasks?group_by=parents` child nesting from runtime task state.
+  2026-06-17 with 3/3 tests and `zero_tests=0`, covering same-node
+  `/_tasks?group_by=parents` child nesting from runtime task state plus
+  parent-task-id child cancellation visibility.
 
 ## Workstreams
 
@@ -184,9 +186,10 @@ Validation runner:
   startup/readiness blocker reasons as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
-  cancellation, repeated cancel idempotency, terminal-state task readback, and
-  pending-depth separation as runtime-control evidence, including
-  shared-runtime restart readback for task queue state and cancelled ids.
+  cancellation, repeated cancel idempotency, parent-task-id child cancellation,
+  terminal-state task readback, and pending-depth separation as runtime-control
+  evidence, including shared-runtime restart readback for task queue state and
+  cancelled ids.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
   depth and pending-task metadata as runtime-control evidence.
@@ -207,7 +210,8 @@ Validation runner:
   request-header readback as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-task-children` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
-  same-node parent/child task grouping as runtime-control evidence.
+  same-node parent/child task grouping and parent-task-id child cancellation
+  visibility as runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 

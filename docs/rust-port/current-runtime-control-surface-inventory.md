@@ -86,7 +86,7 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
-| Propagation model | current route evidence does not prove cancellation reaches all task kinds, child work, or background workers in a deterministic order |
+| Propagation model | same-node `parent_task_id` child cancellation visibility exists, but current route evidence does not prove multi-level, cross-node, or background-worker propagation |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, but retention/eviction and partial-progress contracts are still bounded |
 | Queue interaction | there is no explicit distinction between cancelling queued work versus cancelling already-running work, and no refusal/backpressure interaction is documented |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, but shutdown-window and partial-recovery behavior remain open |
@@ -96,7 +96,7 @@ internal subsystems, especially:
 
 - add fixture-backed distinction for:
   - queued-versus-running cancellation;
-  - parent task cancel versus child task visibility;
+  - multi-level and cross-node parent task cancel versus child task visibility;
   - race-with-completion cancellation behavior.
 - add restart-smoke coverage for:
   - cancel-during-restart;

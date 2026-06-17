@@ -177,12 +177,12 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 5/5 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 6/6 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
-  task readback, repeated cancel idempotency with post-cancel readback, plus
-  acknowledged/failed terminal task readback without polluting pending-task
-  queue depth and shared-runtime restart readback for task queue state plus
-  cancelled task ids;
+  task readback, repeated cancel idempotency with post-cancel readback,
+  parent-task-id child cancellation visibility, plus acknowledged/failed
+  terminal task readback without polluting pending-task queue depth and
+  shared-runtime restart readback for task queue state plus cancelled task ids;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
@@ -213,8 +213,9 @@ Current Steelsearch evidence:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows;
 - `tools/run-native-closure-validation.py --batch runtime-task-children` passed
-  on 2026-06-17 with 2/2 tests and `zero_tests=0`, covering same-node
-  `/_tasks?group_by=parents` child nesting from runtime task state;
+  on 2026-06-17 with 3/3 tests and `zero_tests=0`, covering same-node
+  `/_tasks?group_by=parents` child nesting from runtime task state plus
+  parent-task-id child cancellation visibility;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 
@@ -227,8 +228,8 @@ Required next implementation direction:
 Required tests:
 
 - extend the current task cancellation, throttling, parent metadata, task
-  header, and same-node child grouping probes into broader multi-level and
-  cross-node child-task propagation coverage;
+  header, and same-node child grouping/cancellation probes into broader
+  multi-level and cross-node child-task propagation coverage;
 - extend queue/backpressure smoke tests beyond bounded route admission into
   terminal task retention/eviction and broader multi-node propagation behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
