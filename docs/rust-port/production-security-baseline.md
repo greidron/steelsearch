@@ -158,10 +158,11 @@ admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, secure-settings reload admin-role
 enforcement, cluster-admin control route enforcement for settings, reroute,
 decommission, weighted routing, voting config exclusions, snapshot
-mutation/control routes, and task cancel/rethrottle surfaces, and now verifies that ML connector
-credential/action secret material is not returned through connector REST
-responses or persisted in shared runtime state. These are baseline tests, not
-proof that TLS/authn/authz enforcement has been fully implemented.
+mutation/control routes, template management mutation routes, and task
+cancel/rethrottle surfaces, and now verifies that ML connector credential/action
+secret material is not returned through connector REST responses or persisted in
+shared runtime state. These are baseline tests, not proof that TLS/authn/authz
+enforcement has been fully implemented.
 The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.
