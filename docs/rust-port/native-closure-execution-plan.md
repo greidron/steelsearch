@@ -70,7 +70,7 @@ Out of scope:
   vector request-result cache bypasses with empty per-index request-result
   cache details.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-17 with 38/38 tests and `zero_tests=0`, covering native execution,
+  2026-06-17 with 39/39 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
   current source-backed query families: nested child ordinals,
   `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
@@ -258,11 +258,11 @@ Initial targets:
 
 Current narrowed families:
 
-- `nested` exact scalar, range, exists, and string prefix/wildcard/regexp
+- `nested` exact scalar, range, exists, and string prefix/wildcard/regexp/fuzzy
   leaves: child ordinal indexes now narrow
-  term/terms/range/exists/prefix/wildcard/regexp and supported bool nested
-  leaves before parent document lookup. Unsupported nested shapes still use the
-  explicit source-validation fallback.
+  term/terms/range/exists/prefix/wildcard/regexp/fuzzy and supported bool
+  nested leaves before parent document lookup. Unsupported nested shapes still
+  use the explicit source-validation fallback.
 - `terms_set` exact scalar leaves: Tantivy minimum-should-match query builders
   and native candidate helpers cover scalar keyword/tag-style terms before
   source fallback is needed.
