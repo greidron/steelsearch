@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class ValidationTest:
     name: str
     group: str
+    package: str = "os-engine-tantivy"
+    target: tuple[str, ...] = ("--lib",)
+    features: tuple[str, ...] = ()
 
 
 COMPACT_BATCH: tuple[ValidationTest, ...] = (
@@ -139,10 +142,77 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "daemon_config_rejects_data_path_that_is_not_directory",
+        "data-path-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_config_rejects_same_http_and_transport_socket",
+        "bind-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_config_rejects_duplicate_development_node_ids",
+        "identity-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_config_rejects_invalid_addresses",
+        "config-parse-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_config_rejects_invalid_ports",
+        "config-parse-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_config_rejects_non_cluster_manager_without_seed_hosts",
+        "role-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_config_rejects_production_mode_without_required_gates",
+        "production-gate-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_rejects_data_path_that_is_not_a_directory",
+        "daemon-data-path-preflight",
+        package="os-node",
+        target=("--test", "dev_cluster_daemons"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "daemon_exits_when_http_port_is_occupied",
+        "daemon-bind-preflight",
+        package="os-node",
+        target=("--test", "dev_cluster_daemons"),
+        features=("standalone-runtime",),
+    ),
+)
+
 BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
+    "startup-preflight": STARTUP_PREFLIGHT_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")
@@ -178,10 +248,14 @@ def run_test(test: ValidationTest) -> dict[str, Any]:
         "cargo",
         "test",
         "-p",
-        "os-engine-tantivy",
-        "--lib",
-        test.name,
+        test.package,
     ]
+    if test.features:
+        command.extend(["--features", ",".join(test.features)])
+    command.extend([
+        *test.target,
+        test.name,
+    ])
     completed = subprocess.run(
         command,
         cwd=ROOT,

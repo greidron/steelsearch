@@ -49,6 +49,10 @@ Out of scope:
   cache bounds/invalidation, single-index vector-native page plus aggregation
   fetch, multi-index vector-native page plus aggregation reduce, and `_id`,
   `_score`, and fast-field sort reduce variants.
+- The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
+  with 9/9 tests and `zero_tests=0`, covering data-path, bind, duplicate
+  node-id, invalid address/port, role/bootstrap, production-mode gate, and
+  daemon-level data-path / occupied-port refusal cases.
 
 ## Workstreams
 
@@ -131,6 +135,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch vector-knn` must report
   `failed_count == 0` and `zero_test_count == 0` before treating the direct
   vector/KNN page, aggregation, cache, and sort slices as runtime evidence.
+- `tools/run-native-closure-validation.py --batch startup-preflight` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating the
+  concrete startup refusal slice as runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -169,7 +176,7 @@ control model with OpenSearch-shaped API boundaries.
 Initial targets:
 
 1. bootstrap/preflight refusal tests for data-path, bind, role, and production
-   mode settings;
+   mode settings. Guarded batch evidence now exists for this slice;
 2. task registry model with cancellation and parent/child metadata;
 3. queue/backpressure smoke tests for search/write/admin routes;
 4. telemetry rows that are derived from runtime state rather than static route

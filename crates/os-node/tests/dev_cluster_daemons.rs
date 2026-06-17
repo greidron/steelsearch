@@ -4869,6 +4869,8 @@ fn os_node_binary() -> PathBuf {
         .arg("build")
         .arg("-p")
         .arg("os-node")
+        .arg("--features")
+        .arg("standalone-runtime")
         .arg("--bin")
         .arg("steelsearch")
         .current_dir(&workspace_root)
