@@ -6538,6 +6538,27 @@ mod tests {
     }
 
     #[test]
+    fn production_startup_preflight_accepts_service_account_only_authentication_users_file() {
+        let readiness = production_readiness_with_authentication_users_fixture(
+            br#"{"service_accounts":[{"name":"svc-indexer","token_hash":"fixture-token-hash","roles":["writer"]}]}"#,
+        );
+
+        assert!(!readiness.ready);
+        assert!(
+            readiness
+                .blockers
+                .iter()
+                .all(|blocker| !blocker.starts_with("[security]")),
+            "service-account bootstrap subject should clear security blockers: {:?}",
+            readiness.blockers
+        );
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[production]")));
+    }
+
+    #[test]
     fn production_startup_preflight_rejects_invalid_tls_bootstrap_material() {
         let path = unique_test_path("steelsearch-production-security-invalid-tls-data");
         let material_root = unique_test_path("steelsearch-production-security-invalid-tls-material");
