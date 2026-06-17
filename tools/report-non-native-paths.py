@@ -113,6 +113,18 @@ PROBES: tuple[Probe, ...] = (
         risk="must stay present so mixed movement keeps seq/checkpoint evidence, the interrupted/resumed phase contract, the enforceable gate option, and both live interruption exercises",
     ),
     Probe(
+        name="mixed shard movement validation batch",
+        category="mixed-cluster",
+        path=NATIVE_CLOSURE_VALIDATION,
+        patterns=(
+            r"MIXED_SHARD_MOVEMENT_BATCH",
+            r"mixed-shard-movement",
+            r"--exercise-interruption",
+            r"--require-interruption",
+        ),
+        risk="must stay wired so the final mixed-cluster gate can run the live interruption probe",
+    ),
+    Probe(
         name="runtime control gaps",
         category="runtime",
         path=ENGINE_SOURCE,
@@ -246,10 +258,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="mixed shard movement interruption",
         category="mixed-cluster",
-        status="summary contract, final-gate option, and both-direction live interruption exercises wired",
-        next_action="run the live probe with --exercise-interruption --require-interruption in the final mixed-cluster gate and capture retention-lease/checkpoint monotonicity evidence",
-        evidence_path=SHARD_PROBE,
-        evidence_pattern=r"interruption_evidence_passed",
+        status="summary contract, final-gate option, both-direction live interruption exercises, and mixed-shard validation batch wired",
+        next_action="run tools/run-native-closure-validation.py --batch mixed-shard-movement and capture retention-lease/checkpoint monotonicity evidence",
+        evidence_path=NATIVE_CLOSURE_VALIDATION,
+        evidence_pattern=r"mixed-shard-movement",
     ),
     Family(
         name="runtime search cache hooks",

@@ -35,11 +35,16 @@ Out of scope:
   replica rejoin, and failback to Java. The probe now records shard checkpoint
   drift and requires zero drift. Its summary contract now also reports whether
   both-direction interrupted, resumed-or-restarted, and finalized recovery
-  phases are present. `--exercise-interruption` now restarts the SteelSearch
-  recovery target during Java-to-SteelSearch recovery and records interrupted,
-  resumed-or-restarted, and finalized phases for that direction, while
-  `--require-interruption` can fail the mixed-cluster gate unless both
-  directions are recorded.
+  phases are present. `--exercise-interruption` now restarts the recovery
+  target during both Java-to-SteelSearch and SteelSearch-to-OpenSearch recovery
+  and records interrupted, resumed-or-restarted, and finalized phases for both
+  directions, while `--require-interruption` can fail the mixed-cluster gate
+  unless both directions are recorded.
+- The guarded runner now has a `mixed-shard-movement` batch that executes the
+  live shard movement probe with
+  `--exercise-interruption --require-interruption`; its external-command
+  handling verifies the probe JSON `summary.passed` field instead of treating
+  process exit alone as evidence.
 - Native-closure runtime validation now has a guarded compact runner,
   `tools/run-native-closure-validation.py --batch compact`, that rejects
   zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
@@ -277,6 +282,10 @@ Validation runner:
   propagation, background-worker descendant cancellation propagation, plus
   parent/child and multi-level descendant rethrottle rate visibility as
   runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch mixed-shard-movement` must
+  report `failed_count == 0` and `zero_test_count == 0`, and the probe artifact
+  must have `summary.passed == true`, before treating interrupted mixed-cluster
+  shard movement as final evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -302,8 +311,7 @@ Already evidenced:
 Remaining tests:
 
 1. run the final mixed-cluster gate with
-   `--exercise-interruption --require-interruption` after both live
-   interruption directions are added;
+   `tools/run-native-closure-validation.py --batch mixed-shard-movement`;
 2. verify retention-lease and checkpoint monotonicity during interruption;
 3. capture allocation explanation for unsupported movement shapes.
 

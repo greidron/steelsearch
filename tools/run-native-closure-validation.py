@@ -25,6 +25,17 @@ class ValidationTest:
     features: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class ExternalValidation:
+    name: str
+    group: str
+    command: tuple[str, ...]
+    timeout_seconds: int = 900
+
+
+ValidationCase = ValidationTest | ExternalValidation
+
+
 COMPACT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "engine_collects_placeholder_for_malformed_plugin_bucket_sort_request",
@@ -691,10 +702,27 @@ RUNTIME_TASK_CHILDREN_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
-BATCHES: dict[str, tuple[ValidationTest, ...]] = {
+MIXED_SHARD_MOVEMENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "three_node_shard_movement_exercises_both_interruption_directions",
+        "mixed-shard-movement",
+        (
+            "python3",
+            "tools/probe_three_node_shard_movement.py",
+            "--work-dir",
+            "/tmp/three-node-shard-movement.validation",
+            "--exercise-interruption",
+            "--require-interruption",
+        ),
+    ),
+)
+
+
+BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
+    "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
@@ -734,7 +762,21 @@ def parse_test_output(output: str) -> dict[str, Any]:
     }
 
 
-def run_test(test: ValidationTest) -> dict[str, Any]:
+def parse_json_payload(output: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(output):
+        if char != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(output[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def run_cargo_test(test: ValidationTest) -> dict[str, Any]:
     command = [
         "cargo",
         "test",
@@ -765,6 +807,55 @@ def run_test(test: ValidationTest) -> dict[str, Any]:
         "ok": ok,
         **parsed,
     }
+
+
+def run_external_validation(test: ExternalValidation) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            list(test.command),
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=test.timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "name": test.name,
+            "group": test.group,
+            "command": list(test.command),
+            "returncode": None,
+            "ok": False,
+            "running": 1,
+            "passed": 0,
+            "failed": 1,
+            "status": "timeout",
+            "summary": {"passed": False, "timeout_seconds": test.timeout_seconds},
+            "output": exc.output,
+        }
+    payload = parse_json_payload(completed.stdout)
+    summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
+    summary_passed = bool(summary.get("passed")) if isinstance(summary, dict) else False
+    ok = completed.returncode == 0 and summary_passed
+    return {
+        "name": test.name,
+        "group": test.group,
+        "command": list(test.command),
+        "returncode": completed.returncode,
+        "ok": ok,
+        "running": 1,
+        "passed": 1 if ok else 0,
+        "failed": 0 if ok else 1,
+        "status": "ok" if ok else "failed",
+        "summary": summary,
+    }
+
+
+def run_test(test: ValidationCase) -> dict[str, Any]:
+    if isinstance(test, ExternalValidation):
+        return run_external_validation(test)
+    return run_cargo_test(test)
 
 
 def main() -> int:

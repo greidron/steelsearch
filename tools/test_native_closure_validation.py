@@ -1,0 +1,61 @@
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNNER_PATH = ROOT / "tools" / "run-native-closure-validation.py"
+
+
+def load_runner_module():
+    module_name = "run_native_closure_validation"
+    spec = importlib.util.spec_from_file_location(
+        module_name, RUNNER_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class NativeClosureValidationRunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.runner = load_runner_module()
+
+    def test_parse_json_payload_skips_prefix_logs(self):
+        payload = self.runner.parse_json_payload('log line\n{"summary":{"passed":true}}\n')
+
+        self.assertEqual(payload, {"summary": {"passed": True}})
+
+    def test_mixed_shard_movement_batch_uses_required_interruption_probe(self):
+        batch = self.runner.BATCHES["mixed-shard-movement"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/probe_three_node_shard_movement.py", command)
+        self.assertIn("--exercise-interruption", command)
+        self.assertIn("--require-interruption", command)
+
+    def test_external_validation_reads_summary_passed(self):
+        case = self.runner.ExternalValidation(
+            "synthetic_external_validation",
+            "synthetic",
+            (
+                sys.executable,
+                "-c",
+                "import json; print(json.dumps({'summary': {'passed': True}}))",
+            ),
+        )
+
+        result = self.runner.run_test(case)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["running"], 1)
+        self.assertEqual(result["passed"], 1)
+        self.assertEqual(result["failed"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
