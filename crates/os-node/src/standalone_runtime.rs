@@ -27909,6 +27909,8 @@ mod tests {
         env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
         env::set_var("SECURITY_ADMIN_USERNAME", "admin");
         env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
         env::set_var("SECURITY_WRITER_USERNAME", "writer");
         env::set_var("SECURITY_WRITER_PASSWORD", "writer");
         env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
@@ -27958,12 +27960,34 @@ mod tests {
         ));
         assert_eq!(fail_closed.status, 501);
 
+        let writer_search_denied = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-security-audit-000001/_search")
+                .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg==")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(writer_search_denied.status, 403);
+
+        let reader_bulk_denied = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg==")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    concat!(
+                        "{\"index\":{\"_index\":\"logs-security-audit-000001\",\"_id\":\"doc-reader\"}}\n",
+                        "{\"message\":\"reader denied\"}\n"
+                    )
+                    .as_bytes()
+                    .to_vec(),
+                ),
+        );
+        assert_eq!(reader_bulk_denied.status, 403);
+
         let events = node
             .security_audit_events
             .lock()
             .expect("security audit event lock poisoned")
             .clone();
-        assert_eq!(events.len(), 4);
+        assert_eq!(events.len(), 6);
         assert_eq!(events[0].path, "/");
         assert_eq!(events[0].subject, "anonymous");
         assert_eq!(events[0].outcome, "denied");
@@ -27983,16 +28007,29 @@ mod tests {
         assert_eq!(events[3].outcome, "denied");
         assert_eq!(events[3].status, 501);
         assert_eq!(events[3].reason_type.as_deref(), Some("security_exception"));
+        assert_eq!(events[4].path, "/logs-security-audit-000001/_search");
+        assert_eq!(events[4].subject, "writer");
+        assert_eq!(events[4].outcome, "denied");
+        assert_eq!(events[4].status, 403);
+        assert_eq!(events[4].reason_type.as_deref(), Some("security_exception"));
+        assert_eq!(events[5].path, "/_bulk");
+        assert_eq!(events[5].subject, "reader");
+        assert_eq!(events[5].outcome, "denied");
+        assert_eq!(events[5].status, 403);
+        assert_eq!(events[5].reason_type.as_deref(), Some("security_exception"));
 
         let persisted_text =
             std::fs::read_to_string(&shared_state_path).expect("shared runtime state persisted");
         assert!(persisted_text.contains("security_audit_events"));
         assert!(persisted_text.contains("writer"));
         assert!(persisted_text.contains("admin"));
+        assert!(persisted_text.contains("reader"));
         assert!(!persisted_text.contains("writer:writer"));
         assert!(!persisted_text.contains("admin:admin"));
+        assert!(!persisted_text.contains("reader:reader"));
         assert!(!persisted_text.contains("d3JpdGVyOndyaXRlcg=="));
         assert!(!persisted_text.contains("YWRtaW46YWRtaW4="));
+        assert!(!persisted_text.contains("cmVhZGVyOnJlYWRlcg=="));
 
         let mut restarted = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -28010,6 +28047,8 @@ mod tests {
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
         env::remove_var("SECURITY_ADMIN_USERNAME");
         env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
         env::remove_var("SECURITY_WRITER_USERNAME");
         env::remove_var("SECURITY_WRITER_PASSWORD");
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");

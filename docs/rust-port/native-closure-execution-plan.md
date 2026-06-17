@@ -100,11 +100,11 @@ Out of scope:
   service-account credentials loaded through the shared subject model, root
   route Basic auth, the shared admin/reader/writer permission evaluator, ML
   admin-only routes, ML connector secret redaction from REST responses and
-  shared runtime persistence, authn/authz/fail-closed decisions persisted as
-  bounded security audit events, bulk/search/session allow/deny checks,
-  service-account writer authz, and explicit fail-closed OpenSearch Security
-  plugin API responses with documented `security_exception` bodies instead of
-  404-only ambiguity.
+  shared runtime persistence, authn/authz/fail-closed decisions including
+  shared permission-evaluator read/write denials persisted as bounded security
+  audit events, bulk/search/session allow/deny checks, service-account writer
+  authz, and explicit fail-closed OpenSearch Security plugin API responses with
+  documented `security_exception` bodies instead of 404-only ambiguity.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
   with 19/19 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
@@ -285,9 +285,10 @@ Validation runner:
   users-file subject model loading for users and service accounts,
   root/ML/bulk/search/session authn/authz checks, the shared
   admin/reader/writer permission evaluator, service-account writer authz,
-  bounded security audit event persistence, ML connector secret redaction, and
-  OpenSearch Security plugin API fail-closed responses as production-security
-  evidence.
+  bounded security audit event persistence for authn/authz/fail-closed and
+  shared permission-evaluator read/write denials, ML connector secret redaction,
+  and OpenSearch Security plugin API fail-closed responses as
+  production-security evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,

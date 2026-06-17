@@ -155,10 +155,10 @@ The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.
 It now also proves that representative authentication failures, authorization
-denials, allowed admin operations, and fail-closed Security API decisions are
-persisted as bounded security audit events without storing password material or
-Authorization header values. This is baseline audit evidence, not full
-OpenSearch audit-log parity.
+denials, permission-evaluator read/write denials, allowed admin operations, and
+fail-closed Security API decisions are persisted as bounded security audit events
+without storing password material or Authorization header values. This is
+baseline audit evidence, not full OpenSearch audit-log parity.
 
 ## Operator Evidence
 
