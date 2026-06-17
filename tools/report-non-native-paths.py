@@ -160,10 +160,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="geo_distance query",
         category="source-backed query",
-        status="source-backed",
-        next_action="evaluate whether geo-point index data can avoid full source scan for bounded distance filters",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"source-backed `geo_distance`",
+        status="native-candidate-narrowed for geo-point bounding boxes",
+        next_action="keep exact circle validation and unsupported geo shapes visible in fallback telemetry",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"build_tantivy_geo_distance_query",
     ),
     Family(
         name="distance_feature query",
@@ -184,10 +184,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="more_like_this query",
         category="source-backed query",
-        status="source-backed",
-        next_action="replace token-overlap source pass with indexed-term candidate path where analyzer parity is known",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"source-backed `more_like_this`",
+        status="native-candidate-narrowed for explicit-field token overlap",
+        next_action="keep fieldless and analyzer-parity-sensitive more_like_this shapes visible in fallback telemetry",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"build_tantivy_more_like_this_query",
     ),
     Family(
         name="terms_set query",
@@ -200,10 +200,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="query_string/simple_query_string",
         category="source-backed query",
-        status="source-backed broad parser fallback",
-        next_action="separate simple fielded terms from broad default-field source-derived clauses",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"source-backed `query_string`",
+        status="native-candidate-narrowed for tokenized text/keyword field sets",
+        next_action="keep broad parser, unsupported field-type, and empty-token fallback shapes visible in telemetry",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"build_tantivy_tokenized_field_set_query",
     ),
     Family(
         name="materialized SearchHit boundary",

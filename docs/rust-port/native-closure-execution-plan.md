@@ -67,6 +67,11 @@ Current narrowed families:
   numeric/date field-presence leaves: Tantivy native builders and hybrid
   candidate helpers cover the filter-like narrowing subset, while richer
   scoring/parity shapes remain fallback-visible.
+- `geo_distance` geo-point leaves, `more_like_this` explicit-field token
+  overlap, and `query_string` / `simple_query_string` tokenized text/keyword
+  field sets: Tantivy native builders and hybrid candidate helpers cover
+  candidate narrowing, while exact geo validation, fieldless/analyzer-sensitive
+  token overlap, and broad parser fallback shapes remain telemetry-visible.
 
 Exit evidence:
 
