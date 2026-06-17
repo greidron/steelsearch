@@ -42,7 +42,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
 const GENERATED_OPENAPI_JSON: &str =
@@ -1629,6 +1629,7 @@ pub struct SteelNode {
     pub cancelled_task_ids: Arc<Mutex<BTreeSet<String>>>,
     pub rethrottled_task_rates: Arc<Mutex<BTreeMap<String, f64>>>,
     runtime_thread_pool_counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
+    runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
@@ -1766,8 +1767,8 @@ struct RuntimeThreadPoolCounters {
 
 struct RuntimeThreadPoolExecution {
     counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
+    condvar: Arc<Condvar>,
     pool: &'static str,
-    queued: bool,
 }
 
 impl Drop for RuntimeThreadPoolExecution {
@@ -1777,11 +1778,10 @@ impl Drop for RuntimeThreadPoolExecution {
             .lock()
             .expect("runtime thread pool counters lock poisoned");
         let entry = counters.entry(self.pool.to_string()).or_default();
-        if self.queued {
-            entry.queue = entry.queue.saturating_sub(1);
-        }
         entry.active = entry.active.saturating_sub(1);
         entry.completed = entry.completed.saturating_add(1);
+        drop(counters);
+        self.condvar.notify_one();
     }
 }
 
@@ -1801,6 +1801,7 @@ impl SteelNode {
             cancelled_task_ids: Arc::new(Mutex::new(BTreeSet::new())),
             rethrottled_task_rates: Arc::new(Mutex::new(BTreeMap::new())),
             runtime_thread_pool_counters: Arc::new(Mutex::new(BTreeMap::new())),
+            runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
@@ -11309,12 +11310,13 @@ impl SteelNode {
         queue_size: u64,
     ) -> Result<RuntimeThreadPoolExecution, RestResponse> {
         let mut queued = false;
+        let pool_key = pool.to_string();
+        let mut counters = self
+            .runtime_thread_pool_counters
+            .lock()
+            .expect("runtime thread pool counters lock poisoned");
         {
-            let mut counters = self
-                .runtime_thread_pool_counters
-                .lock()
-                .expect("runtime thread pool counters lock poisoned");
-            let entry = counters.entry(pool.to_string()).or_default();
+            let entry = counters.entry(pool_key.clone()).or_default();
             if entry.active >= 1 {
                 if entry.queue >= queue_size {
                     entry.rejected = entry.rejected.saturating_add(1);
@@ -11323,12 +11325,27 @@ impl SteelNode {
                 entry.queue = entry.queue.saturating_add(1);
                 queued = true;
             }
-            entry.active = entry.active.saturating_add(1);
         }
+        while counters
+            .entry(pool_key.clone())
+            .or_default()
+            .active
+            >= 1
+        {
+            counters = self
+                .runtime_thread_pool_condvar
+                .wait(counters)
+                .expect("runtime thread pool counters lock poisoned");
+        }
+        let entry = counters.entry(pool_key).or_default();
+        if queued {
+            entry.queue = entry.queue.saturating_sub(1);
+        }
+        entry.active = entry.active.saturating_add(1);
         Ok(RuntimeThreadPoolExecution {
             counters: Arc::clone(&self.runtime_thread_pool_counters),
+            condvar: Arc::clone(&self.runtime_thread_pool_condvar),
             pool,
-            queued,
         })
     }
 
@@ -30822,8 +30839,35 @@ mod tests {
         assert_eq!(rows[1]["completed"], "2");
     }
 
+    fn wait_for_runtime_thread_pool_queue_depth(node: &SteelNode, pool: &str, expected: u64) {
+        for _ in 0..100 {
+            let counters = node.runtime_thread_pool_counters(pool);
+            if counters.queue == expected {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let counters = node.runtime_thread_pool_counters(pool);
+        panic!(
+            "runtime thread pool {pool} queue depth {}, expected {expected}",
+            counters.queue
+        );
+    }
+
+    fn release_runtime_thread_pool_active_slot(node: &SteelNode, pool: &str) {
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            let entry = counters.entry(pool.to_string()).or_default();
+            entry.active = entry.active.saturating_sub(1);
+        }
+        node.runtime_thread_pool_condvar.notify_all();
+    }
+
     #[test]
-    fn search_and_bulk_routes_drain_runtime_thread_pool_queue_after_queued_execution() {
+    fn search_and_bulk_routes_wait_and_drain_runtime_thread_pool_queue_under_concurrency() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -30873,32 +30917,75 @@ mod tests {
             );
         }
 
-        let search = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_search")
-                .with_json_body(serde_json::json!({
-                    "query": {"match_all": {}}
-                })),
-        );
-        assert_eq!(search.status, 200);
+        let queued_search_node = node.clone();
+        let queued_search = std::thread::spawn(move || {
+            queued_search_node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_search")
+                    .with_json_body(serde_json::json!({
+                        "query": {"match_all": {}}
+                    })),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "search", 1);
 
-        let bulk = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk").with_body(
-                "{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"queued runtime write\"}\n",
-            ),
-        );
-        assert_eq!(bulk.status, 200);
-
-        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
-        assert_eq!(stats.status, 200);
-        let first_node = stats.body["nodes"]
+        let stats_while_queued =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_queued.status, 200);
+        let first_node = stats_while_queued.body["nodes"]
             .as_object()
             .and_then(|nodes| nodes.values().next())
             .expect("node stats body to contain one node");
         assert_eq!(first_node["thread_pool"]["search"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["completed"], 0);
+
+        release_runtime_thread_pool_active_slot(&node, "search");
+        let search = queued_search
+            .join()
+            .expect("queued search request thread should not panic");
+        assert_eq!(search.status, 200);
+
+        let queued_write_node = node.clone();
+        let queued_write = std::thread::spawn(move || {
+            queued_write_node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk").with_body(
+                    "{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"queued runtime write\"}\n",
+                ),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "write", 1);
+
+        let mut cat_while_queued =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search,write");
+        cat_while_queued
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_while_queued);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows[0]["name"], "search");
+        assert_eq!(rows[0]["queue"], "0");
+        assert_eq!(rows[1]["name"], "write");
+        assert_eq!(rows[1]["queue"], "1");
+
+        release_runtime_thread_pool_active_slot(&node, "write");
+        let bulk = queued_write
+            .join()
+            .expect("queued bulk request thread should not panic");
+        assert_eq!(bulk.status, 200);
+
+        let stats_after_drain =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_drain.status, 200);
+        let first_node = stats_after_drain.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["search"]["active"], 0);
         assert_eq!(first_node["thread_pool"]["search"]["queue"], 0);
         assert_eq!(first_node["thread_pool"]["search"]["completed"], 1);
         assert_eq!(first_node["thread_pool"]["search"]["rejected"], 0);
-        assert_eq!(first_node["thread_pool"]["write"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["active"], 0);
         assert_eq!(first_node["thread_pool"]["write"]["queue"], 0);
         assert_eq!(first_node["thread_pool"]["write"]["completed"], 1);
         assert_eq!(first_node["thread_pool"]["write"]["rejected"], 0);

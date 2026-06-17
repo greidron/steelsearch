@@ -268,7 +268,7 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
-        "search_and_bulk_routes_drain_runtime_thread_pool_queue_after_queued_execution",
+        "search_and_bulk_routes_wait_and_drain_runtime_thread_pool_queue_under_concurrency",
         "route-backpressure-runtime-state",
         package="os-node",
         target=("--lib",),

@@ -225,8 +225,8 @@ internal subsystems, especially:
 
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
-| Queue ownership | there is no authoritative runtime-owned queue model for pending cluster-manager work, maintenance work, or long-running task admission |
-| Admission control | current evidence does not prove any overload threshold, refusal policy, or bounded queueing behavior when the runtime is saturated |
+| Queue ownership | search/write route admission now has active-slot queue waiting and drain evidence, but there is no authoritative runtime-owned queue model for pending cluster-manager work, maintenance work, or broader long-running task admission |
+| Admission control | search/write routes now have bounded queue-full refusal and queued execution evidence; the same overload contract is still missing for cluster-manager, maintenance, snapshot, and task-submission routes |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist, but there is no authoritative mapping between visible entries and the real internal queue owners or queue depth |
@@ -241,7 +241,8 @@ internal subsystems, especially:
 - add harness coverage for:
   - burst submission of maintenance/task-control requests;
   - pending-task visibility during backlog growth;
-  - backlog drain after load subsides.
+  - backlog drain after load subsides beyond the current search/write active-slot
+    queueing guard.
 - add restart-smoke coverage for:
   - queued work before shutdown;
   - queue state after restart;
@@ -251,8 +252,8 @@ internal subsystems, especially:
 
 - introduce an explicit queue owner for cluster-manager tasks, maintenance work,
   and other background admission-controlled actions.
-- define overload thresholds and refusal semantics instead of exposing only
-  success-shaped route envelopes.
+- extend overload thresholds and refusal semantics beyond the current
+  search/write queue-full guard.
 - connect visible pending-task surfaces to authoritative internal queue state.
 - define restart/drain handling for queued work rather than leaving it implicit.
 
