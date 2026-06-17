@@ -177,7 +177,7 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 16/16 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 17/17 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
   task readback, repeated cancel idempotency with post-cancel readback,
   parent-task-id child cancellation visibility including same-node, cross-node,
@@ -188,9 +188,9 @@ Current Steelsearch evidence:
   queue depth, bounded terminal task
   retention/eviction with stale cancellation-marker pruning and persisted
   restart readback, cancelled-task completion and partial-progress status
-  readback through restart until eviction, cancelled-terminal restart-sync
-  refusal with progress preservation, and shared-runtime restart readback for
-  task queue state plus cancelled task ids, including accepted in-flight task
+  readback through restart until eviction, cancelled-terminal restart-sync and
+  live-shutdown refusal with progress preservation, and shared-runtime restart
+  readback for task queue state plus cancelled task ids, including accepted in-flight task
   readback/refusal without queued replay, partial shared-state recovery error
   task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart;
@@ -254,8 +254,7 @@ Required next implementation direction:
 Required tests:
 
 - extend queue/backpressure smoke tests beyond bounded route admission into
-  cancelled-terminal live shutdown-transition windows and broader multi-node
-  fairness behavior;
+  broader multi-node fairness behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries

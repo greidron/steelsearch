@@ -87,28 +87,29 @@ internal subsystems, especially:
 | --- | --- |
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
 | Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
-| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, cancelled-task completion plus partial-progress status readback until eviction, and cancelled-terminal restart-sync refusal with progress preservation; live shutdown-window terminal transitions remain open |
+| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, cancelled-task completion plus partial-progress status readback until eviction, and cancelled-terminal restart-sync/live-shutdown refusal with progress preservation |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
-| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves cancelled-terminal progress when cancel is refused after restart sync, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart; live shutdown-window behavior remains open |
-| Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, completion-race terminal refusal without cancelled-marker pollution, and cancelled-terminal restart-sync refusal exist, but live shutdown-window error classification remains open |
+| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves cancelled-terminal progress when cancel is refused after restart sync or live shutdown, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart |
+| Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, completion-race terminal refusal without cancelled-marker pollution, and cancelled-terminal restart-sync/live-shutdown refusal exist |
 
 ### Required tests
 
 - add fixture-backed distinction for:
   - queued cancellation versus worker drain races;
-  - live shutdown-window cancellation refusal versus preservation behavior.
+  - node-role transition cancellation refusal versus preservation behavior.
 - add operator-visible evidence for terminal-state retention:
-  - whether live shutdown-window transitions preserve or evict cancelled-terminal
-    task visibility beyond the current completion/restart/eviction coverage.
+  - whether node-role transitions preserve or evict cancelled-terminal task
+    visibility beyond the current completion/restart/live-shutdown/eviction
+    coverage.
 
 ### Required implementation
 
 - introduce an explicit cancellation coordinator or equivalent runtime owner for
   task state transitions.
 - tie queued-task cancellation into in-flight worker ownership and drain ordering.
-- define cancelled-terminal live shutdown-window contracts for `GET /_tasks*`
-  beyond the current acknowledged/failed terminal eviction bound, stale
-  cancellation-marker pruning, and completion/progress/restart/eviction readback.
+- define node-role transition contracts for `GET /_tasks*` beyond the current
+  acknowledged/failed terminal eviction bound, stale cancellation-marker pruning,
+  and completion/progress/restart/live-shutdown/eviction readback.
 - tie cancellation state into shutdown-window and partial-recovery handling
   rather than treating those paths as stateless route-level responses.
 
@@ -222,7 +223,7 @@ internal subsystems, especially:
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist and now preserve remote node metadata for multi-node queued/in-flight task records, and `_nodes/stats` no longer copies local overload counters onto remote nodes, but the production mapping between visible entries and real internal queue owners remains bounded |
-| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, accepted queued task-submission work is not replayed into a restarted runtime view or during partial shared-state recovery errors, and new task-submission admission is refused while partial shared-state recovery is incomplete or live shutdown is in progress; cancelled-terminal live shutdown transitions and node-role transitions remain open |
+| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, accepted queued task-submission work is not replayed into a restarted runtime view or during partial shared-state recovery errors, and new task-submission admission is refused while partial shared-state recovery is incomplete or live shutdown is in progress; node-role transitions remain open |
 
 ### Required tests
 
@@ -235,7 +236,7 @@ internal subsystems, especially:
   - pending-task visibility during backlog growth;
   - backlog drain after load subsides beyond the current bounded single-node
     route admission guards.
-- add restart-smoke coverage for cancelled-terminal live shutdown transitions.
+- add restart-smoke coverage for node-role transitions.
 
 ### Required implementation
 

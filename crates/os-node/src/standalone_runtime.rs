@@ -24145,6 +24145,132 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_terminal_live_shutdown_preserves_progress_and_refuses_cancel() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 552,
+                task: ClusterManagerTask {
+                    source: "cancelled terminal live shutdown probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "reindex".to_string(),
+                        action: "indices:data/write/reindex".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:552/_cancel",
+        ));
+        assert_eq!(cancel.status, 200);
+        assert_eq!(
+            cancel.body["nodes"]["node-a"]["tasks"]["node-a:552"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        node.set_live_shutdown_in_progress(true);
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            task_statuses: BTreeMap::from([(
+                552,
+                serde_json::Map::from_iter([
+                    (
+                        "phase".to_string(),
+                        Value::String("live_shutdown_after_partial_work".to_string()),
+                    ),
+                    ("created".to_string(), serde_json::json!(8)),
+                    ("updated".to_string(), serde_json::json!(5)),
+                    ("deleted".to_string(), serde_json::json!(3)),
+                    ("batches".to_string(), serde_json::json!(2)),
+                ]),
+            )]),
+            acknowledged: vec![ClusterManagerTaskRecord {
+                task_id: 552,
+                task: ClusterManagerTask {
+                    source: "cancelled terminal live shutdown probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "reindex".to_string(),
+                        action: "indices:data/write/reindex".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Acknowledged,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let repeated_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:552/_cancel",
+        ));
+        assert_eq!(repeated_cancel.status, 400);
+        assert_eq!(
+            repeated_cancel.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let completed =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:552"));
+        assert_eq!(completed.status, 200);
+        assert_eq!(completed.body["task"]["cancelled"], Value::Bool(true));
+        assert_eq!(completed.body["task"]["cancellable"], Value::Bool(false));
+        assert_eq!(
+            completed.body["task"]["status"]["phase"],
+            Value::String("live_shutdown_after_partial_work".to_string())
+        );
+        assert_eq!(completed.body["task"]["status"]["created"], serde_json::json!(8));
+        assert_eq!(completed.body["task"]["status"]["updated"], serde_json::json!(5));
+        assert_eq!(completed.body["task"]["status"]["deleted"], serde_json::json!(3));
+        assert_eq!(completed.body["task"]["status"]["batches"], serde_json::json!(2));
+        assert_eq!(
+            completed.body["task"]["status"]["background_worker"],
+            Value::String("reindex".to_string())
+        );
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        assert_eq!(
+            pending.body["tasks"]
+                .as_array()
+                .expect("pending tasks array")
+                .len(),
+            0
+        );
+    }
+
+    #[test]
     fn task_queue_state_and_cancelled_ids_persist_across_shared_runtime_restart() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
