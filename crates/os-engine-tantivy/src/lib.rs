@@ -1893,11 +1893,6 @@ impl IndexEngine for TantivyEngine {
                 &request.sort,
                 &aggregation_map,
             );
-            store.record_request_result_cache_bypasses_for_search(
-                &query,
-                request.highlight.is_some(),
-                request.explain,
-            );
             index_names
         };
 
@@ -1954,41 +1949,47 @@ impl IndexEngine for TantivyEngine {
             .store
             .write()
             .expect("tantivy engine store rwlock poisoned");
-        let cached_response = if request.highlight.is_none() && !request.explain {
-            store.search_cached_single_index_knn_response(
-                single_index_name.as_deref(),
-                &query,
-                &request.sort,
-                &aggregation_map,
-                request.from,
-                request.size,
-                fetch_subphases.clone(),
-                source_projection_fields.as_deref(),
-            )?
-        } else {
-            None
-        };
-        drop(store);
-
-        if let Some(response) = cached_response {
-            return Ok(response);
-        }
-
-        let store = self
-            .store
-            .read()
-            .expect("tantivy engine store rwlock poisoned");
-        let (mut response, _) = store.search_response_index_aware_with_optional_reusable(
-            &index_names,
+        let request_result_cache_supported =
+            single_index_name.is_some() && matches!(query, Query::Knn(_));
+        store.record_request_result_cache_bypasses_for_search(
+            &query,
+            request.highlight.is_some(),
+            request.explain,
+            request_result_cache_supported,
+        );
+        let cached_response = store.search_cached_single_index_knn_response(
             single_index_name.as_deref(),
             &query,
             &request.sort,
             &aggregation_map,
             request.from,
             request.size,
-            fetch_subphases,
+            fetch_subphases.clone(),
             source_projection_fields.as_deref(),
         )?;
+        drop(store);
+
+        let store = self
+            .store
+            .read()
+            .expect("tantivy engine store rwlock poisoned");
+        let mut response = if let Some(response) = cached_response {
+            response
+        } else {
+            store
+                .search_response_index_aware_with_optional_reusable(
+                    &index_names,
+                    single_index_name.as_deref(),
+                    &query,
+                    &request.sort,
+                    &aggregation_map,
+                    request.from,
+                    request.size,
+                    fetch_subphases,
+                    source_projection_fields.as_deref(),
+                )?
+                .0
+        };
         if request.highlight.is_some() {
             response.transform_hits(|mut hit| {
                 let highlight_source = store
@@ -3882,8 +3883,12 @@ impl EngineStore {
         query: &Query,
         has_highlight: bool,
         explain: bool,
+        request_result_cache_supported: bool,
     ) {
         if !query_uses_vector_scores(query) {
+            return;
+        }
+        if request_result_cache_supported {
             return;
         }
         if has_highlight {
@@ -135165,6 +135170,93 @@ mod tests {
         assert_eq!(fast_field.fast_field_cache_capacity_evictions, 0);
         assert_eq!(fast_field.fast_field_cache_refresh_invalidations, 0);
         assert_eq!(fast_field.fast_field_cache_stale_invalidations, 0);
+        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
+        let request_result_cache_hits_before_highlight = telemetry.request_result_cache_hits;
+
+        let highlight_request = || SearchRequest {
+            indices: vec!["vectors".to_string()],
+            query: serde_json::json!({
+                "knn": {
+                    "embedding": {
+                        "vector": [1.0, 0.0, 0.0],
+                        "k": 5
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({
+                "services": { "terms": { "field": "service" } }
+            }),
+            sort: vec![SortSpec {
+                field: "service".to_string(),
+                order: SortOrder::Asc,
+                unmapped_type: None,
+                geo_origin: None,
+                mode: None,
+                script: None,
+            }],
+            from: 0,
+            size: 10,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_excludes: None,
+            source_include: None,
+            source_exclude: None,
+            highlight: Some(serde_json::json!({
+                "fields": {
+                    "embedding": {}
+                }
+            })),
+            explain: false,
+        };
+        let highlighted_response = engine.search(highlight_request()).unwrap();
+        assert_eq!(search_hit_ids(&highlighted_response.hits), vec!["1"]);
+
+        let explain_request = || SearchRequest {
+            indices: vec!["vectors".to_string()],
+            query: serde_json::json!({
+                "knn": {
+                    "embedding": {
+                        "vector": [1.0, 0.0, 0.0],
+                        "k": 5
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({
+                "services": { "terms": { "field": "service" } }
+            }),
+            sort: vec![SortSpec {
+                field: "service".to_string(),
+                order: SortOrder::Asc,
+                unmapped_type: None,
+                geo_origin: None,
+                mode: None,
+                script: None,
+            }],
+            from: 0,
+            size: 10,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_excludes: None,
+            source_include: None,
+            source_exclude: None,
+            highlight: None,
+            explain: true,
+        };
+        let explained_response = engine.search(explain_request()).unwrap();
+        assert_eq!(search_hit_ids(&explained_response.hits), vec!["1"]);
+        assert!(explained_response
+            .hits
+            .first()
+            .and_then(|hit| hit.explanation.as_ref())
+            .is_some());
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert!(telemetry.request_result_cache_hits > request_result_cache_hits_before_highlight);
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
