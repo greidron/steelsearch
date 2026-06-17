@@ -309,6 +309,41 @@ STARTUP_READINESS_BATCH: tuple[ValidationTest, ...] = (
 
 PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
+        "secure_env_credentials_are_loaded_through_authentication_users_subjects",
+        "production-security-auth-subjects",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "secure_root_route_requires_valid_basic_auth_credentials",
+        "production-security-authentication",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "secure_ml_routes_require_admin_role_and_connector_state_persists",
+        "production-security-authorization",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "secure_bulk_route_surfaces_writer_partial_authz_denial_and_reader_route_denial",
+        "production-security-authorization",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "secure_search_and_session_routes_require_read_roles",
+        "production-security-authorization",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "opensearch_security_plugin_apis_fail_closed_with_documented_error",
         "production-security-fail-closed",
         package="os-node",

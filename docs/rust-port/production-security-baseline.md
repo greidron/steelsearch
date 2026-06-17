@@ -138,8 +138,11 @@ security boundary and release checklist item, with tests proving that partial
 enforcement removes only the satisfied blockers. Startup preflight also has
 fixtures for missing and present TLS/authn bootstrap material, plus malformed
 authentication-users-file rejection through the shared users-file subject
-parser. These are baseline tests, not proof that TLS/authn/authz enforcement
-has been implemented.
+parser. Runtime security-profile env credentials are also loaded through that
+shared subject model before route-level Basic auth and role checks. The
+guarded production-security batch covers root authentication plus ML, bulk,
+search, and session allow/deny checks. These are baseline tests, not proof that
+TLS/authn/authz enforcement has been fully implemented.
 The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.

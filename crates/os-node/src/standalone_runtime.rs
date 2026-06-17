@@ -32,7 +32,7 @@ use os_engine::{
 };
 use os_engine_tantivy::TantivyEngine;
 use os_core::Version;
-use os_node_rest_core::RestServerConfig;
+use os_node_rest_core::{AuthenticationUser, AuthenticationUsersFile, RestServerConfig};
 use os_rest::{RestMethod, RestRequest, RestResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -328,23 +328,8 @@ fn security_profile_enabled() -> bool {
         .unwrap_or(false)
 }
 
-fn security_expected_basic_credentials() -> Vec<(String, String)> {
-    [
-        ("SECURITY_ADMIN_USERNAME", "SECURITY_ADMIN_PASSWORD"),
-        ("SECURITY_READER_USERNAME", "SECURITY_READER_PASSWORD"),
-        ("SECURITY_WRITER_USERNAME", "SECURITY_WRITER_PASSWORD"),
-    ]
-    .into_iter()
-    .filter_map(|(username_env, password_env)| {
-        let username = env::var(username_env).ok()?;
-        let password = env::var(password_env).ok()?;
-        Some((username, password))
-    })
-    .collect()
-}
-
-fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)> {
-    [
+fn security_authentication_users_file() -> AuthenticationUsersFile {
+    let users = [
         ("SECURITY_ADMIN_USERNAME", "SECURITY_ADMIN_PASSWORD", "admin"),
         ("SECURITY_READER_USERNAME", "SECURITY_READER_PASSWORD", "reader"),
         ("SECURITY_WRITER_USERNAME", "SECURITY_WRITER_PASSWORD", "writer"),
@@ -353,9 +338,40 @@ fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)
     .filter_map(|(username_env, password_env, role)| {
         let username = env::var(username_env).ok()?;
         let password = env::var(password_env).ok()?;
-        Some((username, password, role))
+        Some(AuthenticationUser {
+            username,
+            password_hash: None,
+            password: Some(password),
+            roles: vec![role.to_string()],
+        })
     })
-    .collect()
+    .collect();
+    AuthenticationUsersFile { users }
+}
+
+fn security_expected_basic_credentials() -> Vec<(String, String)> {
+    security_authentication_users_file()
+        .users
+        .into_iter()
+        .filter_map(|user| Some((user.username, user.password?)))
+        .collect()
+}
+
+fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)> {
+    security_authentication_users_file()
+        .users
+        .into_iter()
+        .filter_map(|user| {
+            let password = user.password?;
+            let role = user.roles.iter().find_map(|role| match role.as_str() {
+                "admin" => Some("admin"),
+                "reader" => Some("reader"),
+                "writer" => Some("writer"),
+                _ => None,
+            })?;
+            Some((user.username, password, role))
+        })
+        .collect()
 }
 
 fn decode_basic_authorization_credentials(header_value: &str) -> Option<(String, String)> {
@@ -21322,6 +21338,41 @@ mod tests {
     }
 
     #[test]
+    fn secure_env_credentials_are_loaded_through_authentication_users_subjects() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin-password");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader-password");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+
+        let users_file = security_authentication_users_file();
+
+        assert_eq!(users_file.users.len(), 2);
+        assert_eq!(users_file.users[0].username, "admin");
+        assert_eq!(users_file.users[0].password.as_deref(), Some("admin-password"));
+        assert_eq!(users_file.users[0].roles, vec!["admin".to_string()]);
+        assert_eq!(users_file.users[1].username, "reader");
+        assert_eq!(users_file.users[1].password.as_deref(), Some("reader-password"));
+        assert_eq!(users_file.users[1].roles, vec!["reader".to_string()]);
+        assert_eq!(
+            security_basic_credentials_with_roles(),
+            vec![
+                ("admin".to_string(), "admin-password".to_string(), "admin"),
+                ("reader".to_string(), "reader-password".to_string(), "reader"),
+            ]
+        );
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
     fn secure_root_route_requires_valid_basic_auth_credentials() {
         let _lock = security_env_lock();
         unsafe {
@@ -27449,6 +27500,7 @@ mod tests {
 
     #[test]
     fn secure_ml_routes_require_admin_role_and_connector_state_persists() {
+        let _lock = security_env_lock();
         unsafe {
             env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
             env::set_var("SECURITY_ADMIN_USERNAME", "admin");
@@ -27457,6 +27509,7 @@ mod tests {
             env::set_var("SECURITY_READER_PASSWORD", "reader");
             env::set_var("SECURITY_WRITER_USERNAME", "writer");
             env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+            env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
         }
 
         let root = std::env::temp_dir().join(format!(
@@ -27553,6 +27606,7 @@ mod tests {
             env::remove_var("SECURITY_READER_PASSWORD");
             env::remove_var("SECURITY_WRITER_USERNAME");
             env::remove_var("SECURITY_WRITER_PASSWORD");
+            env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         }
 
         let _ = std::fs::remove_file(shared_state_path);
@@ -33328,6 +33382,7 @@ mod tests {
 
     #[test]
     fn secure_bulk_route_surfaces_writer_partial_authz_denial_and_reader_route_denial() {
+        let _lock = security_env_lock();
         unsafe {
             env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
             env::set_var("SECURITY_ADMIN_USERNAME", "admin");
@@ -33403,6 +33458,7 @@ mod tests {
 
     #[test]
     fn secure_search_and_session_routes_require_read_roles() {
+        let _lock = security_env_lock();
         unsafe {
             env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
             env::set_var("SECURITY_ADMIN_USERNAME", "admin");
@@ -33428,7 +33484,7 @@ mod tests {
         );
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/logs-security-search-000001/_doc/doc-1")
+                RestRequest::new(RestMethod::Put, "/logs-security-search-000001/_doc/doc-1?refresh=true")
                     .with_json_body(serde_json::json!({ "message": "reader visible" })),
             )
             .status,
@@ -33487,14 +33543,13 @@ mod tests {
                 })),
         );
         assert_eq!(scroll_start.status, 200);
-        assert_eq!(scroll_start.body["_scroll_id"], "scroll-1");
 
-        let scroll_next = node.handle_rest_request(
+        let writer_scroll_next = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search/scroll/scroll-1")
-                .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+                .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
         );
-        assert_eq!(scroll_next.status, 200);
-        assert_eq!(scroll_next.body["_scroll_id"], "scroll-1");
+        assert_eq!(writer_scroll_next.status, 403);
+        assert_eq!(writer_scroll_next.body["error"]["type"], "security_exception");
 
         let missing_pit_list = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
