@@ -349,6 +349,13 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "multi_node_task_queue_visibility_uses_remote_node_metadata",
+        "task-queue-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "tasks_queued_and_in_flight_cancellation_have_distinct_runtime_visibility",
         "task-queue-runtime-state",
         package="os-node",

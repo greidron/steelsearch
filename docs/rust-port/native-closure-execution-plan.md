@@ -74,10 +74,11 @@ Out of scope:
   task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
-  with 3/3 tests and `zero_tests=0`, covering runtime task queue metadata plus
+  with 4/4 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
   tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes,
-  including queued cancellation state versus in-flight execution visibility.
+  including queued cancellation state versus in-flight execution visibility and
+  multi-node queued/in-flight task visibility with remote node metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
   2026-06-17 with 10/10 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
@@ -221,8 +222,8 @@ Validation runner:
   per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
-  depth, pending-task metadata, and pending-task cancellation visibility as
-  runtime-control evidence.
+  depth, pending-task metadata, pending-task cancellation visibility, and
+  multi-node remote task metadata visibility as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   administrative and search/write workload thread-pool telemetry plus

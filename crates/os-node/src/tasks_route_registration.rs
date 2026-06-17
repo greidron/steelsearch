@@ -174,6 +174,11 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
         .cloned()
         .unwrap_or_default();
     let node_metadata = body.get("node").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let nodes_metadata = body
+        .get("nodes")
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     let mut nodes = serde_json::Map::new();
     for task in tasks {
         let normalized = normalize_bounded_task_value(&task);
@@ -183,7 +188,10 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
         let node_entry = nodes
             .entry(node.to_string())
             .or_insert_with(|| {
-                let mut seeded = node_metadata.clone();
+                let mut seeded = nodes_metadata
+                    .get(node)
+                    .cloned()
+                    .unwrap_or_else(|| node_metadata.clone());
                 seeded["tasks"] = serde_json::json!({});
                 seeded
             });

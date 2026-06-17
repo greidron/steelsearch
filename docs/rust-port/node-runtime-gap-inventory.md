@@ -195,11 +195,12 @@ Current Steelsearch evidence:
   task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
-  2026-06-17 with 3/3 tests and `zero_tests=0`, covering runtime task queue
+  2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
   cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
   thread-pool routes, including queued cancellation state versus in-flight
-  execution visibility;
+  execution visibility and multi-node queued/in-flight task visibility with
+  remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
   on 2026-06-17 with 10/10 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
@@ -251,7 +252,7 @@ Required next implementation direction:
 Required tests:
 
 - extend queue/backpressure smoke tests beyond bounded route admission into
-  live shutdown-transition windows and broader multi-node propagation
+  live shutdown-transition windows and broader multi-node overload/fairness
   behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 

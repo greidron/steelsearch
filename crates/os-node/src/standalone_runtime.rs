@@ -9889,8 +9889,14 @@ impl SteelNode {
 
     fn tasks_body(&self) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
+        let nodes = view
+            .nodes
+            .iter()
+            .map(|node| (node.node_id.clone(), self.task_node_metadata(&node.node_id)))
+            .collect::<serde_json::Map<_, _>>();
         serde_json::json!({
             "node": self.task_node_metadata(&view.local_node_id),
+            "nodes": nodes,
             "tasks": self.task_records()
         })
     }
@@ -33617,6 +33623,148 @@ mod tests {
             .expect("node stats body to contain one node");
         assert_eq!(first_node["thread_pool"]["management"]["active"], 1);
         assert_eq!(first_node["thread_pool"]["management"]["queue"], 2);
+    }
+
+    #[test]
+    fn multi_node_task_queue_visibility_uses_remote_node_metadata() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node-a".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-node-a".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-node-b".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            task_node_ids: BTreeMap::from([
+                (410, "node-a".to_string()),
+                (420, "node-b".to_string()),
+                (421, "node-b".to_string()),
+            ]),
+            pending: vec![
+                ClusterManagerTaskRecord {
+                    task_id: 410,
+                    task: ClusterManagerTask {
+                        source: "local queued reroute".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 420,
+                    task: ClusterManagerTask {
+                        source: "remote queued shard move".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+            ],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 421,
+                task: ClusterManagerTask {
+                    source: "remote executing recovery".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "peer-recovery".to_string(),
+                        action: "indices:data/write/recovery".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["number_of_pending_tasks"], 3);
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 3);
+        let remote_queued = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 420)
+            .expect("remote queued task");
+        assert_eq!(remote_queued["node"], "node-b");
+        assert_eq!(remote_queued["node_name"], "steel-node-b");
+        assert_eq!(remote_queued["executing"], Value::Bool(false));
+        let remote_in_flight = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 421)
+            .expect("remote in-flight task");
+        assert_eq!(remote_in_flight["node"], "node-b");
+        assert_eq!(remote_in_flight["node_name"], "steel-node-b");
+        assert_eq!(remote_in_flight["executing"], Value::Bool(true));
+
+        let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks.status, 200);
+        assert_eq!(
+            tasks.body["nodes"]["node-a"]["name"],
+            Value::String("steel-node-a".to_string())
+        );
+        assert_eq!(
+            tasks.body["nodes"]["node-b"]["name"],
+            Value::String("steel-node-b".to_string())
+        );
+        assert!(tasks.body["nodes"]["node-a"]["tasks"].get("node-a:410").is_some());
+        assert!(tasks.body["nodes"]["node-b"]["tasks"].get("node-b:420").is_some());
+        assert_eq!(
+            tasks.body["nodes"]["node-b"]["tasks"]["node-b:421"]["status"]["background_worker"],
+            Value::String("peer-recovery".to_string())
+        );
+
+        let mut cat_pending = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        cat_pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_pending = node.handle_rest_request(cat_pending);
+        assert_eq!(cat_pending.status, 200);
+        let rows = cat_pending.body.as_array().expect("cat pending task rows");
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().any(|row| row["id"] == "420" && row["executing"] == "false"));
+        assert!(rows.iter().any(|row| row["id"] == "421" && row["executing"] == "true"));
+
+        let mut cat_thread_pool = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/management");
+        cat_thread_pool
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_thread_pool = node.handle_rest_request(cat_thread_pool);
+        assert_eq!(cat_thread_pool.status, 200);
+        assert_eq!(cat_thread_pool.body[0]["active"], "1");
+        assert_eq!(cat_thread_pool.body[0]["queue"], "2");
     }
 
     #[test]
