@@ -163,8 +163,9 @@ pipeline management routes, stored script management routes, data stream
 management/rollover routes, alias metadata mutation routes, and task
 cancel/rethrottle surfaces, plus index settings/mapping mutation routes and
 index maintenance open/close/cache controls plus index structure delete/block
-and resize controls, k-NN settings/model/cache mutation routes, and
-dangling-index/remote-store recovery mutation routes, and now verifies that
+and resize controls, k-NN settings/model/cache mutation routes,
+dangling-index/remote-store recovery mutation routes, and ingestion
+pause/resume control routes, and now verifies that
 alias bulk/named metadata mutation does not re-enter the metadata lock while
 resolving target indices, empty index mapping updates do not panic, closed
 indices can be resolved for reopen, and ML connector credential/action secret
