@@ -155,6 +155,10 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
         "multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible",
         "vector-hybrid-fallback-boundary",
     ),
+    ValidationTest(
+        "multi_index_hybrid_vector_cache_bypass_leaves_no_request_result_cache_detail_entries",
+        "vector-hybrid-fallback-boundary",
+    ),
 )
 
 SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (

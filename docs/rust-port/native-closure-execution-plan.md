@@ -62,12 +62,13 @@ Out of scope:
   shapes across `auto_date_histogram`, `histogram`, and
   `variable_width_histogram` multi-index rebucketing seats.
 - The guarded runner also has a `vector-knn` batch. It passed on 2026-06-17
-  with 8/8 tests and `zero_tests=0`, covering filtered KNN scoring, runtime
+  with 9/9 tests and `zero_tests=0`, covering filtered KNN scoring, runtime
   cache bounds/invalidation including same-request refresh correctness,
   single-index vector-native page plus aggregation fetch, multi-index
   vector-native page plus aggregation reduce, and `_id`, `_score`, and
   fast-field sort reduce variants, plus telemetry-visible unsupported hybrid
-  vector request-result cache bypasses.
+  vector request-result cache bypasses with empty per-index request-result
+  cache details.
 - The same runner now has a `source-backed-query` batch. It passed on
   2026-06-17 with 26/26 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
@@ -315,7 +316,8 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch vector-knn` must report
   `failed_count == 0` and `zero_test_count == 0` before treating the direct
   vector/KNN page, aggregation, cache, refresh-correctness, sort slices, and
-  unsupported hybrid vector cache-bypass boundary as runtime evidence.
+  unsupported hybrid vector cache-bypass boundary, including empty per-index
+  request-result cache details, as runtime evidence.
 - `tools/run-native-closure-validation.py --batch source-backed-query` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   source-backed query native execution, explicit fallback-boundary source
