@@ -26561,6 +26561,123 @@ mod tests {
     }
 
     #[test]
+    fn rethrottle_background_worker_child_tasks_keep_independent_rate_readback() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![
+                ClusterManagerTaskRecord {
+                    task_id: 451,
+                    task: ClusterManagerTask {
+                        source: "background worker parent rethrottle probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 452,
+                    task: ClusterManagerTask {
+                        source: "spawned background worker rethrottle probe".to_string(),
+                        kind: ClusterManagerTaskKind::BackgroundWorker {
+                            worker: "maintenance-refresh".to_string(),
+                            action: "indices:admin/refresh".to_string(),
+                        },
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: Some("node-a:451".to_string()),
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+            ],
+            ..Default::default()
+        });
+
+        let mut parent_rethrottle =
+            RestRequest::new(RestMethod::Post, "/_reindex/node-a:451/_rethrottle");
+        parent_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "2.25".to_string());
+        let parent_rethrottle = node.handle_rest_request(parent_rethrottle);
+        assert_eq!(parent_rethrottle.status, 200);
+        assert_eq!(
+            parent_rethrottle.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(2.25)
+        );
+
+        let worker_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:452"));
+        assert_eq!(worker_get.status, 200);
+        assert_eq!(worker_get.body["task"]["parent_task_id"], "node-a:451");
+        assert_eq!(
+            worker_get.body["task"]["action"],
+            Value::String("indices:admin/refresh".to_string())
+        );
+        assert_eq!(
+            worker_get.body["task"]["status"]["background_worker"],
+            Value::String("maintenance-refresh".to_string())
+        );
+        assert_eq!(
+            worker_get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(-1.0)
+        );
+
+        let mut worker_rethrottle =
+            RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:452/_rethrottle");
+        worker_rethrottle.body = br#"{"requests_per_second":4.5}"#.to_vec();
+        let worker_rethrottle = node.handle_rest_request(worker_rethrottle);
+        assert_eq!(worker_rethrottle.status, 200);
+        assert_eq!(
+            worker_rethrottle.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.5)
+        );
+        assert_eq!(
+            worker_rethrottle.body["task"]["status"]["background_worker"],
+            Value::String("maintenance-refresh".to_string())
+        );
+
+        let grouped =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks?group_by=parents"));
+        assert_eq!(grouped.status, 200);
+        let parent = &grouped.body["tasks"]["node-a:451"];
+        assert_eq!(
+            parent["status"]["requests_per_second"],
+            serde_json::json!(2.25)
+        );
+        let children = parent["children"].as_array().expect("parent children");
+        assert_eq!(children.len(), 1);
+        assert_eq!(
+            children[0]["status"]["requests_per_second"],
+            serde_json::json!(4.5)
+        );
+        assert_eq!(
+            children[0]["status"]["background_worker"],
+            Value::String("maintenance-refresh".to_string())
+        );
+    }
+
+    #[test]
     fn rethrottle_cross_node_parent_and_child_tasks_keep_independent_rate_readback() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
