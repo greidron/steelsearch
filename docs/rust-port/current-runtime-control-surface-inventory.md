@@ -152,18 +152,15 @@ internal subsystems, especially:
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
 | Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
 | Parent-child propagation | same-node parent/child and multi-level descendant rethrottle rate readback is independent without implicit propagation, but cross-node and spawned worker sub-task propagation remain open |
-| Persistence and restart | shared-runtime restart readback preserves requested throttle rates, and rethrottle requests are accepted after per-request shared-runtime sync on restart; shutdown-window and partial-recovery behavior remain open |
+| Persistence and restart | shared-runtime restart readback preserves requested throttle rates, rethrottle requests are accepted after per-request shared-runtime sync on restart, and shutdown-window plus partial-recovery rethrottle requests now fail closed without mutating rate state |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
-| Terminal-state behavior | rethrottle-after-cancel and rethrottle-after-terminal-task are rejected without mutating rate state, but rethrottle-during-shutdown remains open |
+| Terminal-state behavior | rethrottle-after-cancel, rethrottle-after-terminal-task, rethrottle-during-shutdown, and rethrottle-during-partial-recovery are rejected without mutating rate state |
 
 ### Required tests
 
 - add fixture-backed distinction for:
   - cross-node parent task rethrottle versus sliced child work visibility;
   - rethrottle race-with-completion behavior.
-- add restart-smoke coverage for:
-  - rethrottle request during shutdown or partial-recovery windows beyond the
-    current per-request sync-on-restart guard.
 - add operator-visible evidence for:
   - whether the last requested throttle rate is observable;
   - whether cross-node child work inherits or diverges from the parent rate;
@@ -176,8 +173,8 @@ internal subsystems, especially:
 - define race-with-finish states beyond the current repeated rethrottle
   last-write-wins route evidence.
 - connect throttle state to child-work orchestration for sliced tasks.
-- define shutdown-window and partial-recovery throttle behavior beyond the
-  current shared-runtime restart readback and per-request sync-on-restart guard.
+- connect shutdown-window and partial-recovery throttle refusal to future
+  daemon-level restart-smoke harnesses.
 
 ### Immediate follow-up
 

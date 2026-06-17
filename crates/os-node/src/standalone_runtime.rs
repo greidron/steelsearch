@@ -9584,6 +9584,9 @@ impl SteelNode {
     }
 
     fn handle_tasks_rethrottle_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.refuse_task_submission_if_unavailable() {
+            return response;
+        }
         let Some(task_id) = self.rethrottle_task_id_from_request(request) else {
             return RestResponse::not_found_for(request.method, &request.path);
         };
@@ -26280,6 +26283,82 @@ mod tests {
                 .lock()
                 .expect("rethrottled task rates lock poisoned")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn rethrottle_refuses_shutdown_and_partial_recovery_without_mutating_rate() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 141,
+                task: ClusterManagerTask {
+                    source: "rethrottle lifecycle gate probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "reindex".to_string(),
+                        action: "indices:data/write/reindex".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+        node.rethrottled_task_rates
+            .lock()
+            .expect("rethrottled task rates lock poisoned")
+            .insert("node-a:141".to_string(), 4.0);
+
+        node.set_live_shutdown_in_progress(true);
+        let mut shutdown_rethrottle =
+            RestRequest::new(RestMethod::Post, "/_reindex/node-a:141/_rethrottle");
+        shutdown_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "8.0".to_string());
+        let shutdown_response = node.handle_rest_request(shutdown_rethrottle);
+        assert_eq!(shutdown_response.status, 503);
+        assert_eq!(
+            shutdown_response.body["error"]["reason"],
+            Value::String("task submission rejected while node shutdown is in progress".to_string())
+        );
+        assert_eq!(
+            node.rethrottled_task_rates
+                .lock()
+                .expect("rethrottled task rates lock poisoned")
+                .get("node-a:141")
+                .copied(),
+            Some(4.0)
+        );
+
+        node.set_live_shutdown_in_progress(false);
+        node.set_shared_runtime_state_recovery_failed(true);
+        let mut recovery_rethrottle =
+            RestRequest::new(RestMethod::Post, "/_reindex/node-a:141/_rethrottle");
+        recovery_rethrottle.body = br#"{"requests_per_second":12.0}"#.to_vec();
+        let recovery_response = node.handle_rest_request(recovery_rethrottle);
+        assert_eq!(recovery_response.status, 503);
+        assert_eq!(
+            recovery_response.body["error"]["reason"],
+            Value::String(
+                "task submission rejected while shared runtime state recovery is incomplete"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            node.rethrottled_task_rates
+                .lock()
+                .expect("rethrottled task rates lock poisoned")
+                .get("node-a:141")
+                .copied(),
+            Some(4.0)
         );
     }
 
