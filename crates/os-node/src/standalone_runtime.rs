@@ -1983,10 +1983,7 @@ impl SteelNode {
                     &self.pending_tasks_body(),
                 ),
             )),
-            (RestMethod::Get, "/_tasks") => Some(RestResponse::json(
-                200,
-                tasks_route_registration::invoke_tasks_list_live_route(&self.tasks_body()),
-            )),
+            (RestMethod::Get, "/_tasks") => Some(self.handle_tasks_list_route(request)),
             (RestMethod::Post, "/_tasks/_cancel") => {
                 Some(self.handle_tasks_cancel_route(request))
             }
@@ -8998,6 +8995,17 @@ impl SteelNode {
             404,
             tasks_route_registration::build_unknown_task_error(task_id),
         )
+    }
+
+    fn handle_tasks_list_route(&self, request: &RestRequest) -> RestResponse {
+        let body = self.tasks_body();
+        let response = match request.query_params.get("group_by").map(String::as_str) {
+            Some("parents") => {
+                tasks_route_registration::invoke_tasks_list_by_parent_live_route(&body)
+            }
+            _ => tasks_route_registration::invoke_tasks_list_live_route(&body),
+        };
+        RestResponse::json(200, response)
     }
 
     fn handle_tasks_cancel_route(&self, request: &RestRequest) -> RestResponse {

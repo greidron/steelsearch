@@ -192,6 +192,54 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
     serde_json::json!({ "nodes": nodes })
 }
 
+pub fn invoke_tasks_list_by_parent_live_route(body: &serde_json::Value) -> serde_json::Value {
+    let tasks = body
+        .get("tasks")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|task| {
+            let normalized = normalize_bounded_task_value(&task);
+            let node = normalized["node"].as_str().unwrap_or("unknown").to_string();
+            let id = normalized["id"].as_u64().unwrap_or_default();
+            (format!("{node}:{id}"), normalized)
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut parent_rows = serde_json::Map::new();
+    for (task_id, task) in &tasks {
+        let parent_task_id = task
+            .get("parent_task_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("-");
+        if parent_task_id != "-" && tasks.contains_key(parent_task_id) {
+            continue;
+        }
+        let mut parent = task.clone();
+        parent["children"] = serde_json::json!([]);
+        parent_rows.insert(task_id.clone(), parent);
+    }
+    for task in tasks.values() {
+        let parent_task_id = task
+            .get("parent_task_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("-");
+        if parent_task_id == "-" || !tasks.contains_key(parent_task_id) {
+            continue;
+        }
+        if let Some(parent) = parent_rows.get_mut(parent_task_id) {
+            if !parent["children"].is_array() {
+                parent["children"] = serde_json::json!([]);
+            }
+            parent["children"]
+                .as_array_mut()
+                .expect("children array initialized")
+                .push(task.clone());
+        }
+    }
+    serde_json::json!({ "tasks": parent_rows })
+}
+
 pub fn invoke_tasks_get_live_route(body: &serde_json::Value) -> serde_json::Value {
     let task = body.get("task").unwrap_or(body);
     serde_json::json!({
@@ -353,6 +401,46 @@ mod tests {
         assert_eq!(
             cancel["nodes"]["node-a"]["tasks"]["node-a:7"]["id"],
             serde_json::json!(7)
+        );
+    }
+
+    #[test]
+    fn tasks_parent_grouping_nests_child_tasks_under_existing_parent() {
+        let body = serde_json::json!({
+            "tasks": [
+                {
+                    "node": "node-a",
+                    "id": 99,
+                    "action": "cluster:admin/reroute",
+                    "cancellable": false,
+                    "parent_task_id": "-",
+                    "headers": {"x-opaque-id": "parent-request"}
+                },
+                {
+                    "node": "node-a",
+                    "id": 7,
+                    "action": "indices:data/write/bulk",
+                    "cancellable": true,
+                    "parent_task_id": "node-a:99",
+                    "headers": {"x-opaque-id": "child-request"}
+                }
+            ]
+        });
+
+        let grouped = invoke_tasks_list_by_parent_live_route(&body);
+
+        assert_eq!(grouped["tasks"]["node-a:99"]["id"], serde_json::json!(99));
+        assert_eq!(
+            grouped["tasks"]["node-a:99"]["children"][0]["id"],
+            serde_json::json!(7)
+        );
+        assert_eq!(
+            grouped["tasks"]["node-a:99"]["children"][0]["parent_task_id"],
+            serde_json::json!("node-a:99")
+        );
+        assert_eq!(
+            grouped["tasks"]["node-a:99"]["children"][0]["headers"]["x-opaque-id"],
+            serde_json::json!("child-request")
         );
     }
 

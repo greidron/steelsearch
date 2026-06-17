@@ -10411,12 +10411,10 @@ mod tasks_live_route_parity_tests {
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
-                task_id: 2,
+                task_id: 99,
                 task: os_node::ClusterManagerTask {
-                    source: "node-left".to_string(),
-                    kind: os_node::ClusterManagerTaskKind::RemoveNode {
-                        node_id: "node-b".to_string(),
-                    },
+                    source: "parent reroute".to_string(),
+                    kind: os_node::ClusterManagerTaskKind::Reroute,
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
@@ -10477,6 +10475,25 @@ mod tasks_live_route_parity_tests {
             .any(|node_entry| node_entry["tasks"].as_object().is_some()));
         assert_eq!(
             list.body["nodes"]["node-a"]["tasks"]["node-a:1"]["headers"]["x-opaque-id"],
+            serde_json::json!("task-request-123")
+        );
+
+        let mut parents_request = os_rest::RestRequest::new(os_rest::RestMethod::Get, "/_tasks");
+        parents_request
+            .query_params
+            .insert("group_by".to_string(), "parents".to_string());
+        let parents = node.handle_rest_request(parents_request);
+        assert_eq!(parents.status, 200);
+        assert_eq!(
+            parents.body["tasks"]["node-a:99"]["children"][0]["id"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            parents.body["tasks"]["node-a:99"]["children"][0]["parent_task_id"],
+            serde_json::json!("node-a:99")
+        );
+        assert_eq!(
+            parents.body["tasks"]["node-a:99"]["children"][0]["headers"]["x-opaque-id"],
             serde_json::json!("task-request-123")
         );
 
