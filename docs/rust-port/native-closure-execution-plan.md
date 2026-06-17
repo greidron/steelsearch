@@ -57,17 +57,18 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 6/6 tests and `zero_tests=0`, covering task cancellation through
+  with 7/7 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
-  post-cancel readback, parent-task-id child cancellation visibility, and
-  acknowledged/failed terminal task readback without polluting pending-task
-  queue depth, plus shared-runtime restart readback for task queue state and
-  cancelled task ids.
+  post-cancel readback, parent-task-id child cancellation visibility,
+  queued-versus-in-flight cancellation distinction, and acknowledged/failed
+  terminal task readback without polluting pending-task queue depth, plus
+  shared-runtime restart readback for task queue state and cancelled task ids.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
-  with 2/2 tests and `zero_tests=0`, covering runtime task queue metadata plus
+  with 3/3 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
-  tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes.
+  tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes,
+  including queued cancellation state versus in-flight execution visibility.
 - The same runner now has a `runtime-backpressure` batch. It passed on
   2026-06-17 with 8/8 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
@@ -187,12 +188,13 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
-  terminal-state task readback, and pending-depth separation as runtime-control
-  evidence, including shared-runtime restart readback for task queue state and
-  cancelled ids.
+  queued-versus-in-flight cancellation distinction, terminal-state task
+  readback, and pending-depth separation as runtime-control evidence, including
+  shared-runtime restart readback for task queue state and cancelled ids.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
-  depth and pending-task metadata as runtime-control evidence.
+  depth, pending-task metadata, and pending-task cancellation visibility as
+  runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   administrative and search/write workload thread-pool telemetry plus

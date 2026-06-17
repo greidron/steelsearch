@@ -88,14 +88,14 @@ internal subsystems, especially:
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
 | Propagation model | same-node `parent_task_id` child cancellation visibility exists, but current route evidence does not prove multi-level, cross-node, or background-worker propagation |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, but retention/eviction and partial-progress contracts are still bounded |
-| Queue interaction | there is no explicit distinction between cancelling queued work versus cancelling already-running work, and no refusal/backpressure interaction is documented |
+| Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, but shutdown-window and partial-recovery behavior remain open |
 | Error classification | route-level `404`, bounded repeated-cancel success, and terminal non-cancellable refusal exist, but not a full matrix for race-with-completion states |
 
 ### Required tests
 
 - add fixture-backed distinction for:
-  - queued-versus-running cancellation;
+  - queued cancellation versus worker drain races;
   - multi-level and cross-node parent task cancel versus child task visibility;
   - race-with-completion cancellation behavior.
 - add restart-smoke coverage for:
@@ -110,7 +110,7 @@ internal subsystems, especially:
 
 - introduce an explicit cancellation coordinator or equivalent runtime owner for
   task state transitions.
-- separate queued-task cancellation from in-flight worker cancellation.
+- tie queued-task cancellation into in-flight worker ownership and drain ordering.
 - define terminal task retention/eviction and partial-progress contracts for
   `GET /_tasks*`.
 - tie cancellation state into shutdown-window and partial-recovery handling

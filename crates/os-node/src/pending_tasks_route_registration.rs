@@ -13,7 +13,7 @@ pub const PENDING_TASKS_ROUTE_PATH: &str = "/_cluster/pending_tasks";
 pub const PENDING_TASKS_RESPONSE_FIELDS: [&str; 1] = ["tasks"];
 
 /// Canonical per-task fields for the current pending-tasks subset.
-pub const PENDING_TASKS_ITEM_FIELDS: [&str; 11] = [
+pub const PENDING_TASKS_ITEM_FIELDS: [&str; 12] = [
     "id",
     "node",
     "node_name",
@@ -23,6 +23,7 @@ pub const PENDING_TASKS_ITEM_FIELDS: [&str; 11] = [
     "priority",
     "source",
     "executing",
+    "cancelled",
     "time_in_queue_millis",
     "time_in_queue",
 ];
@@ -120,6 +121,7 @@ mod tests {
                     "priority": "URGENT",
                     "source": "publish cluster state",
                     "executing": true,
+                    "cancelled": true,
                     "time_in_queue_millis": 0,
                     "time_in_queue": "0ms",
                     "unexpected_field": "drop-me"
@@ -136,6 +138,7 @@ mod tests {
             normalized["tasks"][0]["source"],
             serde_json::json!("publish cluster state")
         );
+        assert_eq!(normalized["tasks"][0]["cancelled"], serde_json::json!(true));
         assert!(normalized["tasks"][0].get("unexpected_field").is_none());
     }
 
@@ -153,6 +156,7 @@ mod tests {
                     "priority": "HIGH",
                     "source": "refresh metadata",
                     "executing": false,
+                    "cancelled": false,
                     "time_in_queue_millis": 12,
                     "time_in_queue": "12ms"
                 }
@@ -164,6 +168,7 @@ mod tests {
         assert_eq!(rendered["tasks"][0]["action"], serde_json::json!("cluster:admin/reroute"));
         assert_eq!(rendered["tasks"][0]["insert_order"], serde_json::json!(7));
         assert_eq!(rendered["tasks"][0]["priority"], serde_json::json!("HIGH"));
+        assert_eq!(rendered["tasks"][0]["cancelled"], serde_json::json!(false));
         assert_eq!(rendered["tasks"][0]["time_in_queue"], serde_json::json!("12ms"));
     }
 }

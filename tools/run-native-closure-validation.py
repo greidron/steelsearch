@@ -248,6 +248,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "tasks_queued_and_in_flight_cancellation_have_distinct_runtime_visibility",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "tasks_terminal_states_remain_readable_without_polluting_pending_queue_depth",
         "task-terminal-runtime-state",
         package="os-node",
@@ -273,6 +280,13 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
     ),
     ValidationTest(
         "cluster_health_tasks_and_cat_pending_tasks_share_runtime_queue_depth",
+        "task-queue-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "tasks_queued_and_in_flight_cancellation_have_distinct_runtime_visibility",
         "task-queue-runtime-state",
         package="os-node",
         target=("--lib",),

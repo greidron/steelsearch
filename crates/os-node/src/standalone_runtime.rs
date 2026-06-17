@@ -22606,6 +22606,120 @@ mod tests {
     }
 
     #[test]
+    fn tasks_queued_and_in_flight_cancellation_have_distinct_runtime_visibility() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 101,
+                task: ClusterManagerTask {
+                    source: "queued cancel visibility probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 102,
+                task: ClusterManagerTask {
+                    source: "running cancel visibility probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let queued_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:101/_cancel",
+        ));
+        assert_eq!(queued_cancel.status, 200);
+        assert_eq!(
+            queued_cancel.body["nodes"]["node-a"]["tasks"]["node-a:101"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        let running_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:102/_cancel",
+        ));
+        assert_eq!(running_cancel.status, 400);
+        assert_eq!(
+            running_cancel.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let queued_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:101"));
+        assert_eq!(queued_get.status, 200);
+        assert_eq!(queued_get.body["task"]["cancellable"], Value::Bool(true));
+        assert_eq!(queued_get.body["task"]["cancelled"], Value::Bool(true));
+
+        let running_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:102"));
+        assert_eq!(running_get.status, 200);
+        assert_eq!(running_get.body["task"]["cancellable"], Value::Bool(false));
+        assert_eq!(running_get.body["task"]["cancelled"], Value::Bool(false));
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 2);
+        let queued = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 101)
+            .expect("queued task");
+        assert_eq!(queued["cancelled"], Value::Bool(true));
+        assert_eq!(queued["executing"], Value::Bool(false));
+        let running = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 102)
+            .expect("running task");
+        assert_eq!(running["cancelled"], Value::Bool(false));
+        assert_eq!(running["executing"], Value::Bool(true));
+
+        let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["number_of_pending_tasks"], 2);
+
+        let mut thread_pool_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/management");
+        thread_pool_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let thread_pool = node.handle_rest_request(thread_pool_request);
+        assert_eq!(thread_pool.status, 200);
+        assert_eq!(thread_pool.body[0]["active"], "1");
+        assert_eq!(thread_pool.body[0]["queue"], "1");
+    }
+
+    #[test]
     fn tasks_terminal_states_remain_readable_without_polluting_pending_queue_depth() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
