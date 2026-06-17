@@ -764,6 +764,21 @@ def render_report(results: dict[str, Any]) -> str:
                     mean=latency.get("mean", 0.0),
                 )
             )
+        if scenario.engine == "steelsearch":
+            lines.extend(
+                [
+                    "",
+                    "### Steelsearch native-path telemetry",
+                    "",
+                    "| Counter | Delta | After |",
+                    "| --- | ---: | ---: |",
+                ]
+            )
+            for counter in STEELSEARCH_NATIVE_TELEMETRY_COUNTERS:
+                metric = payload.get("resource_usage", {}).get(counter, {})
+                lines.append(
+                    f"| `{counter}` | {safe_number(metric.get('delta'))} | {safe_number(metric.get('after'))} |"
+                )
 
     lines.extend(
         [
@@ -834,6 +849,15 @@ def render_report(results: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+STEELSEARCH_NATIVE_TELEMETRY_COUNTERS = (
+    "materialized_response_fetches",
+    "materialized_response_avoided_fetches",
+    "compatibility_materialized_response_fetches",
+    "request_result_cache_hybrid_vector_bypasses",
+    "request_result_cache_unsupported_vector_bypasses",
+)
 
 
 def safe_number(value: Any) -> str:

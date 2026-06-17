@@ -96,6 +96,21 @@ def main() -> int:
                     "vector_cache_bytes": {
                         "source": args.metrics_path,
                     },
+                    "materialized_response_fetches": {
+                        "source": args.metrics_path,
+                    },
+                    "materialized_response_avoided_fetches": {
+                        "source": args.metrics_path,
+                    },
+                    "compatibility_materialized_response_fetches": {
+                        "source": args.metrics_path,
+                    },
+                    "request_result_cache_hybrid_vector_bypasses": {
+                        "source": args.metrics_path,
+                    },
+                    "request_result_cache_unsupported_vector_bypasses": {
+                        "source": args.metrics_path,
+                    },
                 },
             },
             args.output,
@@ -537,6 +552,23 @@ class ResourceProbes:
             "memory_rss_bytes": process_rss_bytes(self.process_pids),
             "operation_log_bytes": path_size(self.operation_log_path),
             "vector_cache_bytes": vector_cache_bytes(metrics),
+            "materialized_response_fetches": metric_counter(metrics, "materialized_response_fetches"),
+            "materialized_response_avoided_fetches": metric_counter(
+                metrics,
+                "materialized_response_avoided_fetches",
+            ),
+            "compatibility_materialized_response_fetches": metric_counter(
+                metrics,
+                "compatibility_materialized_response_fetches",
+            ),
+            "request_result_cache_hybrid_vector_bypasses": metric_counter(
+                metrics,
+                "request_result_cache_hybrid_vector_bypasses",
+            ),
+            "request_result_cache_unsupported_vector_bypasses": metric_counter(
+                metrics,
+                "request_result_cache_unsupported_vector_bypasses",
+            ),
         }
 
     def start_peak_sampling(self, interval_seconds: float = 0.25) -> None:
@@ -621,6 +653,25 @@ def vector_cache_bytes(metrics: Any) -> int | None:
     return sum(values) if values else None
 
 
+def metric_counter(metrics: Any, key: str) -> int | None:
+    values = find_numeric_key(metrics, key)
+    return sum(values) if values else None
+
+
+def find_numeric_key(value: Any, target_key: str) -> list[int]:
+    found: list[int] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == target_key and isinstance(child, (int, float)):
+                found.append(int(child))
+            else:
+                found.extend(find_numeric_key(child, target_key))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(find_numeric_key(child, target_key))
+    return found
+
+
 def find_numeric_metrics(value: Any, required_key_terms: tuple[str, ...], value_key_terms: tuple[str, ...]) -> list[int]:
     found: list[int] = []
     if isinstance(value, dict):
@@ -653,7 +704,16 @@ def compare_resource_samples(
             "delta": delta(after.get(key), before.get(key)),
             "peak": peak.get(key),
         }
-        for key in ("memory_rss_bytes", "operation_log_bytes", "vector_cache_bytes")
+        for key in (
+            "memory_rss_bytes",
+            "operation_log_bytes",
+            "vector_cache_bytes",
+            "materialized_response_fetches",
+            "materialized_response_avoided_fetches",
+            "compatibility_materialized_response_fetches",
+            "request_result_cache_hybrid_vector_bypasses",
+            "request_result_cache_unsupported_vector_bypasses",
+        )
     }
 
 

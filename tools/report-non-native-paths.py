@@ -18,6 +18,7 @@ RUNTIME_DOC = ROOT / "docs" / "rust-port" / "node-runtime-gap-inventory.md"
 SECURITY_DOC = ROOT / "docs" / "rust-port" / "production-security-baseline.md"
 SHARD_PROBE = ROOT / "tools" / "probe_three_node_shard_movement.py"
 ENGINE_SOURCE = ROOT / "crates" / "os-engine-tantivy" / "src" / "lib.rs"
+BENCHMARK_MATRIX = ROOT / "tools" / "run-search-benchmark-matrix.py"
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,7 @@ PROBES: tuple[Probe, ...] = (
             r"materialized only the requested",
             r"SearchHit",
         ),
-        risk="some shapes still require SearchHit materialization boundaries",
+        risk="some shapes still require SearchHit materialization boundaries; benchmark telemetry now exposes the deltas",
     ),
     Probe(
         name="vector/hybrid fallback boundary",
@@ -207,10 +208,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="materialized SearchHit boundary",
         category="materialization",
-        status="present with telemetry counters",
-        next_action="feed materialized response counters into benchmark summaries and closure thresholds",
-        evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"materialized_response_fetches",
+        status="present with runtime and benchmark telemetry counters",
+        next_action="set closure thresholds and reduce high-delta materialized fallback families",
+        evidence_path=BENCHMARK_MATRIX,
+        evidence_pattern=r"STEELSEARCH_NATIVE_TELEMETRY_COUNTERS",
     ),
     Family(
         name="pure knn",

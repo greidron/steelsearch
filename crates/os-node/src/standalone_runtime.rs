@@ -9661,7 +9661,18 @@ impl SteelNode {
     fn nodes_stats_body(&self) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
+        let local_search_cache_telemetry = self
+            .native_engine
+            .search_cache_telemetry_snapshot()
+            .ok()
+            .and_then(|snapshot| serde_json::to_value(snapshot).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
         for node in &view.nodes {
+            let search_cache_telemetry = if node.node_id == view.local_node_id {
+                local_search_cache_telemetry.clone()
+            } else {
+                serde_json::json!({})
+            };
             nodes.insert(
                 node.node_id.clone(),
                 serde_json::json!({
@@ -9741,6 +9752,9 @@ impl SteelNode {
                             "estimated_size_in_bytes": 0,
                             "tripped": 0
                         }
+                    },
+                    "steelsearch": {
+                        "search_cache": search_cache_telemetry
                     }
                 }),
             );
@@ -21696,6 +21710,16 @@ mod tests {
             assert!(first_node["thread_pool"]["search"]["completed"].is_number(), "path {path}");
             assert!(first_node["fs"]["total"]["available_in_bytes"].is_number(), "path {path}");
             assert!(first_node["breakers"]["parent"]["tripped"].is_number(), "path {path}");
+            assert!(
+                first_node["steelsearch"]["search_cache"]["materialized_response_fetches"]
+                    .is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["steelsearch"]["search_cache"]["request_result_cache_unsupported_vector_bypasses"]
+                    .is_number(),
+                "path {path}"
+            );
         }
     }
 
