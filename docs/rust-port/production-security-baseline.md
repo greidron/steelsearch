@@ -34,10 +34,11 @@ and rolling-upgrade evidence out of the security-boundary state.
 Production startup preflight now also requires bootstrap material paths for
 HTTP TLS certificate/key, transport TLS certificate/key, and an authentication
 users file. The authentication users file must be valid JSON with at least one
-user entry, password or password hash material, and at least one role. Supplying
-readable and structurally valid files clears only the bootstrap-material
-blockers. The users-file subject parser lives in `os-node-rest-core` so startup
-preflight and future runtime authentication can share the same schema.
+user or service-account subject, password/password-hash or token/token-hash
+material, and at least one role. Supplying readable and structurally valid files
+clears only the bootstrap-material blockers. The users-file subject parser
+lives in `os-node-rest-core` so startup preflight and future runtime
+authentication can share the same schema.
 Production remains fail-closed until the corresponding enforcement boundaries
 are moved to `Enforced` and the release checklist is complete.
 
@@ -139,13 +140,14 @@ enforcement removes only the satisfied blockers. Startup preflight also has
 fixtures for missing, present, and malformed TLS bootstrap material, including
 PEM-marker certificate/key validation, plus malformed authentication-users-file
 rejection through the shared users-file subject parser. Runtime
-security-profile env credentials are also loaded through that shared subject
-model before route-level Basic auth and role checks. The
-guarded production-security batch covers root authentication plus ML, bulk,
-search, and session allow/deny checks, and now verifies that ML connector
-credential/action secret material is not returned through connector REST
-responses or persisted in shared runtime state. These are baseline tests, not
-proof that TLS/authn/authz enforcement has been fully implemented.
+security-profile env credentials for users and service accounts are also loaded
+through that shared subject model before route-level Basic auth and role checks.
+The guarded production-security batch covers root authentication plus ML, bulk,
+search, session, and service-account writer allow/deny checks, and now verifies
+that ML connector credential/action secret material is not returned through
+connector REST responses or persisted in shared runtime state. These are
+baseline tests, not proof that TLS/authn/authz enforcement has been fully
+implemented.
 The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.

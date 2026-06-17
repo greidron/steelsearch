@@ -32,7 +32,9 @@ use os_engine::{
 };
 use os_engine_tantivy::TantivyEngine;
 use os_core::Version;
-use os_node_rest_core::{AuthenticationUser, AuthenticationUsersFile, RestServerConfig};
+use os_node_rest_core::{
+    AuthenticationServiceAccount, AuthenticationUser, AuthenticationUsersFile, RestServerConfig,
+};
 use os_rest::{RestMethod, RestRequest, RestResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -330,7 +332,7 @@ fn security_profile_enabled() -> bool {
 }
 
 fn security_authentication_users_file() -> AuthenticationUsersFile {
-    let users = [
+    let users: Vec<_> = [
         ("SECURITY_ADMIN_USERNAME", "SECURITY_ADMIN_PASSWORD", "admin"),
         ("SECURITY_READER_USERNAME", "SECURITY_READER_PASSWORD", "reader"),
         ("SECURITY_WRITER_USERNAME", "SECURITY_WRITER_PASSWORD", "writer"),
@@ -347,19 +349,51 @@ fn security_authentication_users_file() -> AuthenticationUsersFile {
         })
     })
     .collect();
-    AuthenticationUsersFile { users }
+    let service_accounts = [
+        (
+            "SECURITY_SERVICE_ACCOUNT_USERNAME",
+            "SECURITY_SERVICE_ACCOUNT_TOKEN",
+            "SECURITY_SERVICE_ACCOUNT_ROLE",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(username_env, token_env, role_env)| {
+        let name = env::var(username_env).ok()?;
+        let token = env::var(token_env).ok()?;
+        let role = env::var(role_env).unwrap_or_else(|_| "writer".to_string());
+        Some(AuthenticationServiceAccount {
+            name,
+            token_hash: None,
+            token: Some(token),
+            roles: vec![role],
+        })
+    })
+    .collect();
+    AuthenticationUsersFile {
+        users,
+        service_accounts,
+    }
 }
 
 fn security_expected_basic_credentials() -> Vec<(String, String)> {
-    security_authentication_users_file()
+    let users_file = security_authentication_users_file();
+    let mut credentials = users_file
         .users
         .into_iter()
         .filter_map(|user| Some((user.username, user.password?)))
-        .collect()
+        .collect::<Vec<_>>();
+    credentials.extend(
+        users_file
+            .service_accounts
+            .into_iter()
+            .filter_map(|service_account| Some((service_account.name, service_account.token?))),
+    );
+    credentials
 }
 
 fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)> {
-    security_authentication_users_file()
+    let users_file = security_authentication_users_file();
+    let mut credentials = users_file
         .users
         .into_iter()
         .filter_map(|user| {
@@ -372,7 +406,23 @@ fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)
             })?;
             Some((user.username, password, role))
         })
-        .collect()
+        .collect::<Vec<_>>();
+    credentials.extend(users_file.service_accounts.into_iter().filter_map(
+        |service_account| {
+            let token = service_account.token?;
+            let role = service_account
+                .roles
+                .iter()
+                .find_map(|role| match role.as_str() {
+                    "admin" => Some("admin"),
+                    "reader" => Some("reader"),
+                    "writer" => Some("writer"),
+                    _ => None,
+                })?;
+            Some((service_account.name, token, role))
+        },
+    ));
+    credentials
 }
 
 fn decode_basic_authorization_credentials(header_value: &str) -> Option<(String, String)> {
@@ -21427,21 +21477,35 @@ mod tests {
         env::set_var("SECURITY_READER_PASSWORD", "reader-password");
         env::remove_var("SECURITY_WRITER_USERNAME");
         env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_USERNAME", "svc-indexer");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_TOKEN", "svc-token");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_ROLE", "writer");
 
         let users_file = security_authentication_users_file();
 
         assert_eq!(users_file.users.len(), 2);
+        assert_eq!(users_file.service_accounts.len(), 1);
         assert_eq!(users_file.users[0].username, "admin");
         assert_eq!(users_file.users[0].password.as_deref(), Some("admin-password"));
         assert_eq!(users_file.users[0].roles, vec!["admin".to_string()]);
         assert_eq!(users_file.users[1].username, "reader");
         assert_eq!(users_file.users[1].password.as_deref(), Some("reader-password"));
         assert_eq!(users_file.users[1].roles, vec!["reader".to_string()]);
+        assert_eq!(users_file.service_accounts[0].name, "svc-indexer");
+        assert_eq!(
+            users_file.service_accounts[0].token.as_deref(),
+            Some("svc-token")
+        );
+        assert_eq!(
+            users_file.service_accounts[0].roles,
+            vec!["writer".to_string()]
+        );
         assert_eq!(
             security_basic_credentials_with_roles(),
             vec![
                 ("admin".to_string(), "admin-password".to_string(), "admin"),
                 ("reader".to_string(), "reader-password".to_string(), "reader"),
+                ("svc-indexer".to_string(), "svc-token".to_string(), "writer"),
             ]
         );
 
@@ -21450,6 +21514,9 @@ mod tests {
         env::remove_var("SECURITY_ADMIN_PASSWORD");
         env::remove_var("SECURITY_READER_USERNAME");
         env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
     }
 
     #[test]
@@ -33752,6 +33819,65 @@ mod tests {
             env::remove_var("SECURITY_WRITER_USERNAME");
             env::remove_var("SECURITY_WRITER_PASSWORD");
         }
+    }
+
+    #[test]
+    fn secure_service_account_subject_can_authorize_writer_route() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_USERNAME", "svc-indexer");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_TOKEN", "svc-token");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_ROLE", "writer");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-service-account-bulk-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        let ndjson = concat!(
+            "{\"index\":{\"_index\":\"logs-service-account-bulk-000001\",\"_id\":\"doc-open\"}}\n",
+            "{\"message\":\"service account writer allowed\"}\n"
+        );
+        let service_account_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("Authorization", "Basic c3ZjLWluZGV4ZXI6c3ZjLXRva2Vu")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(service_account_response.status, 200);
+        assert_eq!(service_account_response.body["errors"], Value::Bool(false));
+        assert_eq!(
+            service_account_response.body["items"][0]["index"]["status"],
+            201
+        );
+
+        let wrong_token = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("Authorization", "Basic c3ZjLWluZGV4ZXI6d3Jvbmc=")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(wrong_token.status, 401);
+        assert_eq!(wrong_token.body["error"]["type"], "security_exception");
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
     }
 
     #[test]

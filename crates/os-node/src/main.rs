@@ -6594,7 +6594,7 @@ mod tests {
 
         assert!(readiness.blockers.iter().any(|blocker| {
             blocker.starts_with("[security] production authentication users file is invalid")
-                && blocker.contains("must contain at least one user")
+                && blocker.contains("must contain at least one authentication subject")
         }));
     }
 

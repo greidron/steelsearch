@@ -3,7 +3,10 @@ use std::net::{SocketAddr, TcpListener};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AuthenticationUsersFile {
+    #[serde(default)]
     pub users: Vec<AuthenticationUser>,
+    #[serde(default)]
+    pub service_accounts: Vec<AuthenticationServiceAccount>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -13,6 +16,16 @@ pub struct AuthenticationUser {
     pub password_hash: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
+    pub roles: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AuthenticationServiceAccount {
+    pub name: String,
+    #[serde(default)]
+    pub token_hash: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
     pub roles: Vec<String>,
 }
 
@@ -142,7 +155,7 @@ pub fn parse_authentication_users_json(
     raw: &str,
 ) -> Result<AuthenticationUsersFile, Box<dyn std::error::Error>> {
     if raw.trim().is_empty() {
-        return Err("must contain at least one user".into());
+        return Err("must contain at least one authentication subject".into());
     }
     let parsed: AuthenticationUsersFile =
         serde_json::from_str(raw).map_err(|error| format!("must be valid JSON: {error}"))?;
@@ -153,8 +166,8 @@ pub fn parse_authentication_users_json(
 pub fn validate_authentication_users_file(
     users_file: &AuthenticationUsersFile,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if users_file.users.is_empty() {
-        return Err("must contain at least one user".into());
+    if users_file.users.is_empty() && users_file.service_accounts.is_empty() {
+        return Err("must contain at least one authentication subject".into());
     }
     for (index, user) in users_file.users.iter().enumerate() {
         if user.username.trim().is_empty() {
@@ -175,6 +188,36 @@ pub fn validate_authentication_users_file(
         }
         if user.roles.is_empty() || user.roles.iter().any(|role| role.trim().is_empty()) {
             return Err(format!("user[{index}].roles must be a non-empty string array").into());
+        }
+    }
+    for (index, service_account) in users_file.service_accounts.iter().enumerate() {
+        if service_account.name.trim().is_empty() {
+            return Err(
+                format!("service_accounts[{index}].name must be a non-empty string").into(),
+            );
+        }
+        let has_token_hash = service_account
+            .token_hash
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        let has_token = service_account
+            .token
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if !has_token_hash && !has_token {
+            return Err(
+                format!("service_accounts[{index}] must include token_hash or token").into(),
+            );
+        }
+        if service_account.roles.is_empty()
+            || service_account.roles.iter().any(|role| role.trim().is_empty())
+        {
+            return Err(
+                format!("service_accounts[{index}].roles must be a non-empty string array")
+                    .into(),
+            );
         }
     }
     Ok(())
@@ -246,20 +289,29 @@ mod tests {
     #[test]
     fn authentication_users_file_parser_accepts_subjects_with_roles() {
         let parsed = parse_authentication_users_json(
-            r#"{"users":[{"username":"admin","password_hash":"hash","roles":["admin"]}]}"#,
+            r#"{"users":[{"username":"admin","password_hash":"hash","roles":["admin"]}],"service_accounts":[{"name":"svc-indexer","token_hash":"service-hash","roles":["writer"]}]}"#,
         )
         .unwrap();
 
         assert_eq!(parsed.users[0].username, "admin");
         assert_eq!(parsed.users[0].password_hash.as_deref(), Some("hash"));
         assert_eq!(parsed.users[0].roles, vec!["admin".to_string()]);
+        assert_eq!(parsed.service_accounts[0].name, "svc-indexer");
+        assert_eq!(
+            parsed.service_accounts[0].token_hash.as_deref(),
+            Some("service-hash")
+        );
+        assert_eq!(
+            parsed.service_accounts[0].roles,
+            vec!["writer".to_string()]
+        );
     }
 
     #[test]
     fn authentication_users_file_parser_rejects_empty_and_malformed_inputs() {
         assert_eq!(
             parse_authentication_users_json("").unwrap_err().to_string(),
-            "must contain at least one user"
+            "must contain at least one authentication subject"
         );
         assert!(parse_authentication_users_json("not-json")
             .unwrap_err()
@@ -269,7 +321,7 @@ mod tests {
             parse_authentication_users_json(r#"{"users":[]}"#)
                 .unwrap_err()
                 .to_string(),
-            "must contain at least one user"
+            "must contain at least one authentication subject"
         );
     }
 
@@ -298,6 +350,30 @@ mod tests {
             .unwrap_err()
             .to_string(),
             "user[0].roles must be a non-empty string array"
+        );
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"service_accounts":[{"name":"","token_hash":"hash","roles":["writer"]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "service_accounts[0].name must be a non-empty string"
+        );
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"service_accounts":[{"name":"svc-indexer","roles":["writer"]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "service_accounts[0] must include token_hash or token"
+        );
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"service_accounts":[{"name":"svc-indexer","token_hash":"hash","roles":[]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "service_accounts[0].roles must be a non-empty string array"
         );
     }
 }
