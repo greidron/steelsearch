@@ -9974,7 +9974,10 @@ impl SteelNode {
                             "heap_used_in_bytes": 0
                         }
                     },
-                    "thread_pool": self.thread_pool_stats_body(),
+                    "thread_pool": self.thread_pool_stats_body_for_node(
+                        &node.node_id,
+                        node.node_id == view.local_node_id,
+                    ),
                     "fs": {
                         "total": {
                             "total_in_bytes": 0,
@@ -11555,6 +11558,20 @@ impl SteelNode {
         (active, queue)
     }
 
+    fn task_queue_runtime_counts_for_node(&self, node_id: &str) -> (u64, u64) {
+        let records: Vec<_> = self
+            .active_task_records()
+            .into_iter()
+            .filter(|task| task.get("node").and_then(Value::as_str) == Some(node_id))
+            .collect();
+        let active = records
+            .iter()
+            .filter(|task| task.get("executing").and_then(Value::as_bool).unwrap_or(false))
+            .count() as u64;
+        let queue = records.len() as u64 - active;
+        (active, queue)
+    }
+
     fn enter_runtime_thread_pool(
         &self,
         pool: &'static str,
@@ -11609,14 +11626,49 @@ impl SteelNode {
             .unwrap_or_default()
     }
 
-    fn thread_pool_stats_body(&self) -> Value {
-        let (management_active, management_queue) = self.task_queue_runtime_counts();
+    fn thread_pool_stats_body_for_node(&self, node_id: &str, is_local: bool) -> Value {
+        let (management_active, management_queue) = self.task_queue_runtime_counts_for_node(node_id);
+        self.thread_pool_stats_body_from_counts(management_active, management_queue, is_local)
+    }
+
+    fn thread_pool_stats_body_from_counts(
+        &self,
+        management_active: u64,
+        management_queue: u64,
+        include_local_runtime_counters: bool,
+    ) -> Value {
         let cluster_manager = self.runtime_thread_pool_counters("cluster_manager");
         let maintenance = self.runtime_thread_pool_counters("maintenance");
         let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
         let task_submission = self.runtime_thread_pool_counters("task_submission");
         let write = self.runtime_thread_pool_counters("write");
+        let (
+            cluster_manager,
+            maintenance,
+            snapshot,
+            search,
+            task_submission,
+            write,
+        ) = if include_local_runtime_counters {
+            (
+                cluster_manager,
+                maintenance,
+                snapshot,
+                search,
+                task_submission,
+                write,
+            )
+        } else {
+            (
+                RuntimeThreadPoolCounters::default(),
+                RuntimeThreadPoolCounters::default(),
+                RuntimeThreadPoolCounters::default(),
+                RuntimeThreadPoolCounters::default(),
+                RuntimeThreadPoolCounters::default(),
+                RuntimeThreadPoolCounters::default(),
+            )
+        };
         serde_json::json!({
             "management": {
                 "threads": 1,
@@ -33765,6 +33817,83 @@ mod tests {
         assert_eq!(cat_thread_pool.status, 200);
         assert_eq!(cat_thread_pool.body[0]["active"], "1");
         assert_eq!(cat_thread_pool.body[0]["queue"], "2");
+
+        for index in ["multi-node-submit-source", "multi-node-submit-dest"] {
+            let create = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_json_body(serde_json::json!({})),
+            );
+            assert_eq!(create.status, 200);
+        }
+        let put_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/multi-node-submit-source/_doc/doc-1")
+                .with_json_body(serde_json::json!({"message": "multi-node overload"})),
+        );
+        assert_eq!(put_doc.status, 201);
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+        let submit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": {"index": "multi-node-submit-source"},
+                "dest": {"index": "multi-node-submit-dest"}
+            })),
+        );
+        assert_eq!(submit.status, 429);
+        assert_eq!(
+            submit.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["management"]["active"],
+            0
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["management"]["queue"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["task_submission"]["rejected"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["management"]["active"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["management"]["queue"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["task_submission"]["rejected"],
+            0
+        );
+
+        let tasks_after_reject = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks_after_reject.status, 200);
+        assert_eq!(
+            tasks_after_reject.body["nodes"]["node-b"]["name"],
+            Value::String("steel-node-b".to_string())
+        );
+        assert!(tasks_after_reject.body["nodes"]["node-b"]["tasks"]
+            .get("node-b:420")
+            .is_some());
     }
 
     #[test]

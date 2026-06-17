@@ -302,7 +302,9 @@ Initial targets:
    counters are derived from runtime-owned thread-pool state for both success
    and request-error paths; active-slot queue waiting/drain and queue-full
    overload rejection are now guarded for search/write, maintenance, and
-   snapshot pools, plus cluster reroute and task-submission admission;
+   snapshot pools, plus cluster reroute and task-submission admission, with
+   local overload counters isolated from remote task metadata in multi-node
+   task visibility;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 

@@ -252,8 +252,7 @@ Required next implementation direction:
 Required tests:
 
 - extend queue/backpressure smoke tests beyond bounded route admission into
-  live shutdown-transition windows and broader multi-node overload/fairness
-  behavior;
+  live shutdown-transition windows and broader multi-node fairness behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries

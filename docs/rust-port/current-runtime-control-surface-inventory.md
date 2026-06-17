@@ -218,10 +218,10 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Queue ownership | search/write, maintenance, snapshot, cluster-reroute, and task-submission route admission now have active-slot queue waiting and drain evidence, but terminal long-running task lifecycle ownership is still bounded |
-| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal, accepted queued task-submission no-replay after shared-runtime restart, partial shared-state recovery error task-listing/cancel continuity, and multi-node queued/in-flight task visibility with remote node metadata are covered, while queued-work live-shutdown/partial-recovery replay/refusal and multi-node overload/fairness contracts are still missing |
+| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal, accepted queued task-submission no-replay after shared-runtime restart, partial shared-state recovery error task-listing/cancel continuity, multi-node queued/in-flight task visibility with remote node metadata, and local overload counter isolation from remote task metadata are covered, while queued-work live-shutdown/partial-recovery replay/refusal and multi-node fairness contracts are still missing |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
-| Queue visibility | `pending_tasks` surfaces exist and now preserve remote node metadata for multi-node queued/in-flight task records, but the production mapping between visible entries and real internal queue owners remains bounded |
+| Queue visibility | `pending_tasks` surfaces exist and now preserve remote node metadata for multi-node queued/in-flight task records, and `_nodes/stats` no longer copies local overload counters onto remote nodes, but the production mapping between visible entries and real internal queue owners remains bounded |
 | Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, and accepted queued task-submission work is not replayed into a restarted runtime view; live shutdown, partial recovery, and node-role transitions remain open |
 
 ### Required tests
@@ -245,7 +245,7 @@ internal subsystems, especially:
 - introduce an explicit queue owner for cluster-manager tasks, maintenance work,
   and other background admission-controlled actions.
 - extend overload thresholds and refusal semantics beyond the current bounded
-  single-node queue-full guards into restart and multi-node overload/fairness behavior.
+  route admission guards into restart and multi-node fairness behavior.
 - connect visible pending-task surfaces to authoritative internal queue state.
 - define restart/drain handling for queued work rather than leaving it implicit.
 
