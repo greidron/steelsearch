@@ -3304,6 +3304,13 @@ impl SteelNode {
         if request.method == RestMethod::Put
             && request.path.starts_with("/_cluster/decommission/awareness/")
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "cluster decommission",
+            ) {
+                return Some(response);
+            }
             let remainder = request
                 .path
                 .trim_start_matches("/_cluster/decommission/awareness/");
@@ -3312,9 +3319,25 @@ impl SteelNode {
             }
         }
         if request.method == RestMethod::Delete && request.path == "/_cluster/routing/awareness/weights" {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "weighted routing",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_weighted_routing_delete_route(None, request));
         }
         if request.path == "/_cluster/voting_config_exclusions" {
+            if matches!(request.method, RestMethod::Post | RestMethod::Delete) {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "voting config exclusions",
+                ) {
+                    return Some(response);
+                }
+            }
             return match request.method {
                 RestMethod::Post => Some(self.handle_voting_config_exclusions_post_route(request)),
                 RestMethod::Delete => Some(self.handle_voting_config_exclusions_delete_route()),
@@ -3331,8 +3354,24 @@ impl SteelNode {
                 .trim_end_matches('/');
             return match request.method {
                 RestMethod::Get => Some(self.handle_weighted_routing_get_route(attribute)),
-                RestMethod::Put => Some(self.handle_weighted_routing_put_route(attribute, request)),
+                RestMethod::Put => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "weighted routing",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_weighted_routing_put_route(attribute, request))
+                }
                 RestMethod::Delete => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "weighted routing",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_weighted_routing_delete_route(Some(attribute), request))
                 }
                 _ => None,
@@ -23889,6 +23928,45 @@ mod tests {
             (
                 "cluster decommission",
                 RestRequest::new(RestMethod::Delete, "/_cluster/decommission/awareness"),
+                200,
+            ),
+            (
+                "cluster decommission",
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/_cluster/decommission/awareness/zone/zone-a",
+                ),
+                400,
+            ),
+            (
+                "weighted routing",
+                RestRequest::new(
+                    RestMethod::Delete,
+                    "/_cluster/routing/awareness/weights",
+                )
+                .with_json_body(serde_json::json!({"_version": -1})),
+                404,
+            ),
+            (
+                "weighted routing",
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/_cluster/routing/awareness/zone/weights",
+                )
+                .with_json_body(serde_json::json!({"_version": -1, "weights": {"zone-a": 1.0}})),
+                400,
+            ),
+            (
+                "voting config exclusions",
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_cluster/voting_config_exclusions?node_names=node-a",
+                ),
+                200,
+            ),
+            (
+                "voting config exclusions",
+                RestRequest::new(RestMethod::Delete, "/_cluster/voting_config_exclusions"),
                 200,
             ),
             (

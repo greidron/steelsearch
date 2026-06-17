@@ -129,9 +129,10 @@ Out of scope:
   shared permission-evaluator read/write denials persisted as bounded security
   audit events, bulk/search/session allow/deny checks, service-account writer
   authz, secure-settings reload admin-role enforcement, cluster-admin control
-  route enforcement for settings/reroute/decommission and task
-  cancel/rethrottle surfaces, and explicit fail-closed OpenSearch Security
-  plugin API responses across account, internal-user mutation, and
+  route enforcement for settings/reroute/decommission, weighted routing,
+  voting config exclusions, and task cancel/rethrottle surfaces, and explicit
+  fail-closed OpenSearch Security plugin API responses across account,
+  internal-user mutation, and
   transport-cert reload route shapes with
   documented `security_exception` bodies and persisted audit
   events instead of 404-only ambiguity or secret leakage.
@@ -381,10 +382,11 @@ Validation runner:
   users-file subject model loading for users and service accounts,
   root/ML/bulk/search/session authn/authz checks, the shared
   admin/reader/writer permission evaluator, service-account writer authz,
-  secure-settings reload and cluster-admin control route enforcement, bounded
-  security audit event persistence for authn/authz/fail-closed and shared
-  permission-evaluator read/write denials, ML connector secret redaction, and
-  OpenSearch Security plugin API fail-closed responses plus persisted audit
+  secure-settings reload and cluster-admin control route enforcement, including
+  weighted routing and voting config exclusions, bounded security audit event
+  persistence for authn/authz/fail-closed and shared permission-evaluator
+  read/write denials, ML connector secret redaction, and OpenSearch Security
+  plugin API fail-closed responses plus persisted audit
   events without request password material as production-security evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
