@@ -69,11 +69,12 @@ Out of scope:
   fast-field sort reduce variants, plus telemetry-visible unsupported hybrid
   vector request-result cache bypasses.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-17 with 18/18 tests and `zero_tests=0`, covering native execution,
+  2026-06-17 with 26/26 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
   current source-backed query families: nested child ordinals,
   `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
-  `terms_set`, `query_string`, `simple_query_string`, and `combined_fields`.
+  `terms_set`, phrase/prefix/bool-prefix text queries, `multi_match`,
+  `query_string`, `simple_query_string`, and `combined_fields`.
 - The same runner now has a `benchmark-telemetry` batch. It passed on
   2026-06-17 with 1/1 external validation and `zero_tests=0`, covering
   benchmark/load JSON and Markdown exposure for materialized response fetches,
@@ -218,6 +219,11 @@ Current narrowed families:
   field sets: Tantivy native builders and hybrid candidate helpers cover
   candidate narrowing, while exact geo validation, fieldless/analyzer-sensitive
   token overlap, and broad parser fallback shapes remain telemetry-visible.
+- `match_phrase`, `match_phrase_prefix`, `match_bool_prefix`, and
+  `multi_match` explicit-field text leaves: Tantivy native builders and hybrid
+  candidate helpers cover the current repo-local token/phrase/prefix subsets,
+  while richer analyzer-sensitive or broad parser shapes remain
+  telemetry-visible.
 
 Exit evidence:
 

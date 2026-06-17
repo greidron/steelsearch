@@ -131,6 +131,10 @@ Interpretation:
   explanation output now also surfaces `matched_token_count` plus
   `query_token_count`, so token overlap is directly visible instead of staying
   implicit behind a plain matched/not-matched boolean.
+- source-backed `match_phrase`, source-backed `match_phrase_prefix`,
+  source-backed `match_bool_prefix`, and source-backed `multi_match` now have
+  guarded native builder plus hybrid candidate-reduction evidence for the
+  current explicit-field text subsets.
 - plain `match` explanation output now also surfaces `matched_value_count`, so
   array-backed source overlap is visible directly instead of collapsing to a
   boolean-only matched/not-matched summary.

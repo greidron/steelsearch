@@ -203,6 +203,38 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
+        "native_tantivy_path_executes_match_phrase_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_match_phrase_prefix_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_match_bool_prefix_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_multi_match_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_match_phrase_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_match_phrase_prefix_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_match_bool_prefix_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_multi_match_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
         "grouped_hybrid_bool_geo_distance_leaf_reduces_candidate_ids_directly",
         "source-backed-hybrid-candidate-reduction",
     ),
