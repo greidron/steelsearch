@@ -284,8 +284,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="pure knn",
         category="vector-hybrid",
-        status="zero-test-guarded vector-knn runtime batch passed with unsupported hybrid vector bypass telemetry",
-        next_action="keep unsupported vector/hybrid shapes visible through bypass telemetry and widen only with parity tests",
+        status="zero-test-guarded vector-knn runtime batch passed with pure KNN and hybrid vector-native page/aggregation/sort coverage plus unsupported hybrid vector bypass telemetry",
+        next_action="keep unsupported vector/hybrid shapes visible through bypass telemetry while widening only with parity tests",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"VECTOR_KNN_BATCH",
     ),

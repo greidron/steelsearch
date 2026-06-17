@@ -152,6 +152,18 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
         "multi-index-vector-native-sort",
     ),
     ValidationTest(
+        "single_index_hybrid_uses_vector_native_page_and_aggregation_fetch_with_fast_field_sort",
+        "single-index-hybrid-vector-native-sort-aggregation",
+    ),
+    ValidationTest(
+        "multi_index_hybrid_uses_vector_native_page_and_aggregation_reduce",
+        "multi-index-hybrid-vector-native-page-aggregation",
+    ),
+    ValidationTest(
+        "multi_index_hybrid_uses_vector_native_page_and_aggregation_reduce_with_script_sort",
+        "multi-index-hybrid-vector-native-sort-aggregation",
+    ),
+    ValidationTest(
         "multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible",
         "vector-hybrid-fallback-boundary",
     ),
