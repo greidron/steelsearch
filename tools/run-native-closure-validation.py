@@ -407,6 +407,13 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "daemon_config_rejects_readonly_data_path",
+        "data-path-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "daemon_config_rejects_same_http_and_transport_socket",
         "bind-preflight",
         package="os-node",

@@ -5044,6 +5044,8 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             ));
         } else if let Err(error) = validate_data_path_unlocked(&config.data_path) {
             blockers.push(format!("[daemon] {error}"));
+        } else if let Err(error) = validate_data_path_not_readonly(&config.data_path) {
+            blockers.push(format!("[daemon] {error}"));
         } else if let Err(error) = validate_data_path_writable(&config.data_path) {
             blockers.push(format!("[daemon] {error}"));
         }
@@ -5257,6 +5259,19 @@ fn validate_data_path_unlocked(path: &std::path::Path) -> Result<(), Box<dyn std
             lock.display()
         )
         .into());
+    }
+    Ok(())
+}
+
+fn validate_data_path_not_readonly(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let metadata = fs::metadata(path).map_err(|error| {
+        format!(
+            "--path.data metadata must be readable before startup ({}): {error}",
+            path.display()
+        )
+    })?;
+    if metadata.permissions().readonly() {
+        return Err(format!("--path.data must not be read-only: {}", path.display()).into());
     }
     Ok(())
 }
@@ -6708,6 +6723,31 @@ mod tests {
 
         let _ = fs::remove_dir_all(path);
         assert!(error.contains("--path.data appears locked"));
+    }
+
+    #[test]
+    fn daemon_config_rejects_readonly_data_path() {
+        let vars = BTreeMap::new();
+        let path = unique_test_path("steelsearch-readonly-data-dir");
+        fs::create_dir_all(&path).unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions).unwrap();
+
+        let error = daemon_config_from_sources(
+            &vars,
+            ["--path.data", path.to_str().unwrap()]
+                .into_iter()
+                .map(ToOwned::to_owned),
+        )
+        .unwrap_err()
+        .to_string();
+
+        let mut cleanup_permissions = fs::metadata(&path).unwrap().permissions();
+        cleanup_permissions.set_readonly(false);
+        let _ = fs::set_permissions(&path, cleanup_permissions);
+        let _ = fs::remove_dir_all(path);
+        assert!(error.contains("--path.data must not be read-only"));
     }
 
     #[test]

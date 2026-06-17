@@ -100,9 +100,9 @@ Out of scope:
   wiring, so query-string compatibility materialization is visible through
   `_nodes/stats` rather than disappearing into the source-eval route.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 28/28 tests and `zero_tests=0`, covering missing, locked, file-backed,
-  and daemon-level data-path refusal/creation checks, bind, duplicate node-id,
-  invalid address/port, explicit OpenSearch `-E` config-setting
+  with 29/29 tests and `zero_tests=0`, covering missing, readonly, locked,
+  file-backed, and daemon-level data-path refusal/creation checks, bind,
+  duplicate node-id, invalid address/port, explicit OpenSearch `-E` config-setting
   rejection with the Steelsearch flag/env-var contract, role/bootstrap,
   structured production
   security/release policy gates, production security bootstrap material
@@ -362,7 +362,7 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release
-  gate, including missing/locked/file-backed data-path checks, explicit
+  gate, including missing/readonly/locked/file-backed data-path checks, explicit
   OpenSearch `-E` config-setting rejection, PEM-marker TLS bootstrap material,
   certificate/private-key role mismatch rejection, invalid bootstrap
   file-content redaction, authn bootstrap material, service-account-only authn
