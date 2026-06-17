@@ -177,11 +177,11 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 11/11 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 12/12 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
   task readback, repeated cancel idempotency with post-cancel readback,
-  parent-task-id child cancellation visibility including same-node multi-level
-  descendant propagation, queued-versus-in-flight cancellation distinction,
+  parent-task-id child cancellation visibility including same-node and
+  cross-node multi-level descendant propagation, queued-versus-in-flight cancellation distinction,
   plus acknowledged/failed terminal task readback without polluting pending-task
   queue depth, bounded terminal task
   retention/eviction with stale cancellation-marker pruning and persisted
@@ -226,11 +226,12 @@ Current Steelsearch evidence:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows;
 - `tools/run-native-closure-validation.py --batch runtime-task-children` passed
-  on 2026-06-17 with 6/6 tests and `zero_tests=0`, covering same-node
+  on 2026-06-17 with 7/7 tests and `zero_tests=0`, covering same-node
   `/_tasks?group_by=parents` child nesting from runtime task state plus
   parent-task-id child cancellation visibility, same-node multi-level
-  descendant cancellation propagation, and same-node parent/child plus
-  multi-level descendant rethrottle rate visibility;
+  descendant cancellation propagation, cross-node descendant cancellation
+  propagation, and same-node parent/child plus multi-level descendant
+  rethrottle rate visibility;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 
@@ -243,8 +244,8 @@ Required next implementation direction:
 Required tests:
 
 - extend the current task cancellation, throttling, parent metadata, task
-  header, and same-node child grouping/cancellation probes into broader
-  cross-node and background-worker child-task propagation coverage;
+  header, and child grouping/cancellation probes into broader background-worker
+  child-task propagation coverage;
 - extend queue/backpressure smoke tests beyond bounded route admission into
   cancelled-terminal partial-progress/shutdown windows and broader multi-node
   propagation behavior;

@@ -6771,6 +6771,7 @@ mod tests {
         ));
         let persisted_task_queue_state = PersistedClusterManagerTaskQueueState {
             next_task_id: 3,
+            task_node_ids: BTreeMap::new(),
             pending: vec![os_node::ClusterManagerTaskRecord {
                 task_id: 1,
                 task: os_node::ClusterManagerTask {
@@ -10304,6 +10305,7 @@ mod pending_tasks_live_route_parity_tests {
     fn build_pending_tasks_live_route_node(manifest_path: &std::path::Path) -> SteelNode {
         let persisted_task_queue_state = PersistedClusterManagerTaskQueueState {
             next_task_id: 3,
+            task_node_ids: BTreeMap::new(),
             pending: vec![os_node::ClusterManagerTaskRecord {
                 task_id: 1,
                 task: os_node::ClusterManagerTask {
@@ -10396,6 +10398,7 @@ mod tasks_live_route_parity_tests {
     fn build_tasks_live_route_node(manifest_path: &std::path::Path) -> SteelNode {
         let persisted_task_queue_state = PersistedClusterManagerTaskQueueState {
             next_task_id: 3,
+            task_node_ids: BTreeMap::new(),
             pending: vec![os_node::ClusterManagerTaskRecord {
                 task_id: 1,
                 task: os_node::ClusterManagerTask {
