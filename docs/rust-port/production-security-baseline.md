@@ -156,6 +156,11 @@ security-profile env credentials and
 are also loaded through that shared subject model before route-level Basic auth
 and role checks; unreadable or malformed runtime users files fail closed instead
 of falling back to env credentials.
+When runtime security is enabled and the production authentication users file
+is valid, startup preflight now derives the production security policy from
+that concrete state and removes the authentication, authorization, and
+audit-logging blockers while keeping HTTP TLS, transport TLS, tenant isolation,
+secure settings, and release checklist blockers fail-closed.
 The startup-preflight gate also validates the secure multi-node TLS handshake
 matrix fixture so success, client-certificate success, wrong-CA rejection, and
 expired-certificate rejection buckets remain present while the concrete TLS

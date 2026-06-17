@@ -21,7 +21,7 @@ use os_node::{
     SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest,
     persist_gateway_state_manifest,
 };
-use os_node_rest_core::parse_authentication_users_json;
+use os_node_rest_core::{parse_authentication_users_json, SecurityBoundaryState};
 use os_stream::StreamInput;
 use os_transport::compression::decompress_deflate_body;
 use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
@@ -5068,14 +5068,30 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         blockers.extend(production_security_bootstrap_blockers(
             &config.production_security_bootstrap,
         ));
-        if let Err(error) = validate_production_mode_request(
-            &SecurityBoundaryPolicy::default(),
-            ReleaseReadinessChecklist::default(),
-        ) {
+        let security_policy = production_security_boundary_policy(config);
+        if let Err(error) =
+            validate_production_mode_request(&security_policy, ReleaseReadinessChecklist::default())
+        {
             blockers.push(format!("[production] Steelsearch {error}"));
         }
     }
     blockers
+}
+
+fn production_security_boundary_policy(config: &DaemonConfig) -> SecurityBoundaryPolicy {
+    let mut policy = SecurityBoundaryPolicy::default();
+    let runtime_security_ready = config.production_security_runtime_enforcement_enabled;
+    let authentication_subjects_ready = config
+        .production_security_bootstrap
+        .authentication_users_path
+        .as_ref()
+        .is_some_and(|path| validate_production_authentication_users_file(path).is_ok());
+    if runtime_security_ready && authentication_subjects_ready {
+        policy.authentication = SecurityBoundaryState::Enforced;
+        policy.authorization = SecurityBoundaryState::Enforced;
+        policy.audit_logging = SecurityBoundaryState::Enforced;
+    }
+    policy
 }
 
 fn production_security_runtime_enforcement_blockers(enabled: bool) -> Vec<String> {
@@ -6944,6 +6960,18 @@ mod tests {
             .blockers
             .iter()
             .any(|blocker| blocker.starts_with("[production]")));
+        let production_blocker = readiness
+            .blockers
+            .iter()
+            .find(|blocker| blocker.starts_with("[production]"))
+            .expect("production policy blocker");
+        assert!(production_blocker.contains("http_tls must be implemented and enforced"));
+        assert!(production_blocker.contains("transport_tls must be implemented and enforced"));
+        assert!(!production_blocker.contains("authentication must be implemented and enforced"));
+        assert!(!production_blocker.contains("authorization must be implemented and enforced"));
+        assert!(!production_blocker.contains("audit_logging must be implemented and enforced"));
+        assert!(production_blocker.contains("tenant_isolation must be implemented and enforced"));
+        assert!(production_blocker.contains("secure_settings must be implemented and enforced"));
         assert!(startup_error.contains("production mode is blocked"));
     }
 

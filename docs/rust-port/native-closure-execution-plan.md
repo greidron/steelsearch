@@ -112,7 +112,9 @@ Out of scope:
   shared users-file subject parser including service-account-only
   authentication-users-file acceptance and malformed authentication-users-file
   rejection, runtime security enforcement env-var refusal when
-  `STEELSEARCH_SECURITY_ENABLED=true` is not set,
+  `STEELSEARCH_SECURITY_ENABLED=true` is not set, production policy promotion
+  for the authentication, authorization, and audit-logging boundaries once
+  runtime security and valid authentication subjects are present,
   production-mode gate, secure multi-node TLS handshake matrix fixture
   validation, and daemon-level data-path / occupied-port refusal cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
