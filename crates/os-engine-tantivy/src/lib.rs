@@ -176231,6 +176231,137 @@ mod tests {
     }
 
     #[test]
+    fn single_index_hybrid_uses_vector_native_page_and_aggregation_fetch_with_fast_field_sort() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "vectors".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "embedding": {
+                            "type": "knn_vector",
+                            "dimension": 3,
+                            "space_type": "l2"
+                        },
+                        "body": { "type": "text" },
+                        "service": { "type": "keyword" },
+                        "priority": { "type": "long", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, body, service, priority, embedding) in [
+            (
+                "a",
+                "apple alpha vector",
+                "api",
+                10,
+                Some(serde_json::json!([1.0, 0.0, 0.0])),
+            ),
+            (
+                "b",
+                "apple beta vector",
+                "worker",
+                30,
+                Some(serde_json::json!([0.9, 0.1, 0.0])),
+            ),
+            ("c", "apple lexical only", "api", 20, None),
+            ("d", "banana unrelated", "batch", 40, None),
+        ] {
+            let mut source = serde_json::json!({
+                "body": body,
+                "service": service,
+                "priority": priority
+            });
+            if let Some(embedding) = embedding {
+                source["embedding"] = embedding;
+            }
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "vectors".to_string(),
+                    id: id.to_string(),
+                    source,
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["vectors".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["vectors".to_string()],
+                query: serde_json::json!({
+                    "bool": {
+                        "should": [
+                            { "match": { "body": "apple" } },
+                            {
+                                "knn": {
+                                    "embedding": {
+                                        "vector": [1.0, 0.0, 0.0],
+                                        "k": 2
+                                    }
+                                }
+                            }
+                        ],
+                        "minimum_should_match": 1
+                    }
+                }),
+                aggregations: serde_json::json!({
+                    "by_service": { "terms": { "field": "service", "size": 10 } }
+                }),
+                sort: vec![SortSpec {
+                    field: "priority".to_string(),
+                    order: SortOrder::Desc,
+                    unmapped_type: None,
+                    geo_origin: None,
+                    mode: None,
+                    script: None,
+                }],
+                from: 0,
+                size: 2,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(response.total_hits, 3);
+        assert_eq!(search_hit_ids(&response.hits), vec!["b", "c"]);
+        assert_eq!(
+            response.aggregations,
+            serde_json::json!({
+                "by_service": {
+                    "buckets": [
+                        { "key": "api", "doc_count": 2 },
+                        { "key": "worker", "doc_count": 1 }
+                    ]
+                }
+            })
+        );
+        assert!(response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Query
+                && phase.description
+                    == "matched refreshed documents with vector-native page+aggregation fetch"
+        }));
+        assert!(response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Fetch
+                && phase.description
+                    == "materialized only the requested vector-native page with native aggregation collection"
+        }));
+    }
+
+    #[test]
     fn multi_index_plugin_top_hits_reduce_preserves_requested_window() {
         let engine = TantivyEngine::default();
         for index in ["vectors-a", "vectors-b"] {

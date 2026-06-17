@@ -220,10 +220,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="hybrid bool vector path",
         category="vector-hybrid",
-        status="direct-path representative coverage",
-        next_action="expand explicit sort plus aggregation combinations before claiming closure",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"direct-path hybrid",
+        status="direct-path representative coverage including single-index aggregation/sort",
+        next_action="add unsupported-shape counters and extend hybrid request-result cache coverage",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"single_index_hybrid_uses_vector_native_page_and_aggregation_fetch_with_fast_field_sort",
     ),
     Family(
         name="mixed shard movement interruption",
