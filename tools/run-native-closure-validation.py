@@ -208,6 +208,16 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+STARTUP_READINESS_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "startup_preflight_and_readiness_report_share_blocker_reasons",
+        "startup-readiness-shared-blockers",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+)
+
 RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "tasks_live_route_supports_list_get_and_cancel_shapes",
@@ -281,6 +291,7 @@ BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
+    "startup-readiness": STARTUP_READINESS_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,

@@ -4819,6 +4819,20 @@ fn validate_startup_preflight(config: &DaemonConfig) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StartupReadinessReport {
+    ready: bool,
+    blockers: Vec<String>,
+}
+
+fn startup_readiness_report(config: &DaemonConfig) -> StartupReadinessReport {
+    let blockers = startup_preflight_blockers(config);
+    StartupReadinessReport {
+        ready: blockers.is_empty(),
+        blockers,
+    }
+}
+
 fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
     let mut blockers = Vec::new();
 
@@ -5768,6 +5782,29 @@ Environment:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn minimal_daemon_config(data_path: PathBuf) -> DaemonConfig {
+        DaemonConfig {
+            host: "127.0.0.1".parse().unwrap(),
+            port: 9200,
+            transport_host: "127.0.0.1".parse().unwrap(),
+            transport_port: 9300,
+            node_id: "node-a".to_string(),
+            node_name: "steelsearch-dev-node".to_string(),
+            cluster_name: "steelsearch-dev".to_string(),
+            seed_hosts: Vec::new(),
+            data_path,
+            roles: default_roles(),
+            development_security_mode: DevelopmentSecurityMode::Disabled,
+            java_write_forwarding_validated: false,
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            extension_registry: ExtensionBoundaryRegistry::default(),
+            extension_registry_overrides: ExtensionRegistryOverrideConfig::default(),
+            extension_manifest_path: None,
+        }
+    }
+
     #[test]
     fn daemon_config_parses_multi_node_args() {
         let vars = BTreeMap::new();
@@ -6178,6 +6215,22 @@ mod tests {
 
         let _ = fs::remove_file(path);
         assert!(error.contains("--path.data must be a directory"));
+    }
+
+    #[test]
+    fn startup_preflight_and_readiness_report_share_blocker_reasons() {
+        let path = unique_test_path("steelsearch-readiness-data-file");
+        fs::write(&path, b"not a directory").unwrap();
+        let config = minimal_daemon_config(path.clone());
+
+        let startup_error = validate_startup_preflight(&config).unwrap_err().to_string();
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_file(path);
+        assert!(!readiness.ready);
+        assert_eq!(readiness.blockers.len(), 1);
+        assert!(readiness.blockers[0].contains("--path.data must be a directory"));
+        assert!(startup_error.contains(&readiness.blockers[0]));
     }
 
     #[test]
