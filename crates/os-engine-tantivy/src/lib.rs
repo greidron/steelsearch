@@ -16419,6 +16419,11 @@ fn native_nested_child_ordinals_for_query(
             value,
             case_insensitive,
         } => nested_child_prefix_ordinals(path_index, path, field, value, *case_insensitive),
+        Query::Wildcard {
+            field,
+            value,
+            case_insensitive,
+        } => nested_child_wildcard_ordinals(path_index, path, field, value, *case_insensitive),
         Query::Terms { field, values } => {
             let mut ordinals = std::collections::BTreeSet::new();
             for value in values {
@@ -16535,6 +16540,37 @@ fn nested_child_prefix_ordinals(
             term.starts_with(prefix)
         };
         if matched {
+            ordinals.extend(term_ordinals.iter().copied());
+        }
+    }
+    Some(ordinals)
+}
+
+fn nested_child_wildcard_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    field: &str,
+    pattern: &str,
+    case_insensitive: bool,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let mut ordinals = std::collections::BTreeSet::new();
+    if field == "_id" {
+        for (ordinal, child) in path_index.children.iter().enumerate() {
+            if matches_wildcard_query(
+                &Value::String(child.parent_id.clone()),
+                pattern,
+                case_insensitive,
+            ) {
+                ordinals.insert(ordinal);
+            }
+        }
+        return Some(ordinals);
+    }
+
+    let field = nested_child_local_field_name(path, field);
+    let field_terms = path_index.field_string_terms.get(&field)?;
+    for (term, term_ordinals) in field_terms {
+        if matches_wildcard_query(&Value::String(term.clone()), pattern, case_insensitive) {
             ordinals.extend(term_ordinals.iter().copied());
         }
     }
@@ -137837,6 +137873,85 @@ mod tests {
             .unwrap()
             .expect("native nested range hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1", "4"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_string_wildcard_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "author": "Alice Smith", "tag": "x" },
+                { "author": "Bob Jones", "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "author": "Alicia Jones", "tag": "y" }
+            ])),
+            ("3", serde_json::json!([
+                { "author": "Carol Smith", "tag": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "author": 12345, "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "wildcard": {
+                                    "comments.author": {
+                                        "value": "ali*smith",
+                                        "case_insensitive": true
+                                    }
+                                }
+                            },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native nested wildcard hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
     #[test]
