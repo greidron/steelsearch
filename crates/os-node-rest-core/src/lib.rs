@@ -1,6 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, TcpListener};
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AuthenticationUsersFile {
+    pub users: Vec<AuthenticationUser>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AuthenticationUser {
+    pub username: String,
+    #[serde(default)]
+    pub password_hash: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    pub roles: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RestServerConfig {
     pub bind_host: String,
@@ -123,6 +138,48 @@ pub fn validate_production_mode_request(
     Err(format!("production mode is blocked until {}", blockers.join(", ")).into())
 }
 
+pub fn parse_authentication_users_json(
+    raw: &str,
+) -> Result<AuthenticationUsersFile, Box<dyn std::error::Error>> {
+    if raw.trim().is_empty() {
+        return Err("must contain at least one user".into());
+    }
+    let parsed: AuthenticationUsersFile =
+        serde_json::from_str(raw).map_err(|error| format!("must be valid JSON: {error}"))?;
+    validate_authentication_users_file(&parsed)?;
+    Ok(parsed)
+}
+
+pub fn validate_authentication_users_file(
+    users_file: &AuthenticationUsersFile,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if users_file.users.is_empty() {
+        return Err("must contain at least one user".into());
+    }
+    for (index, user) in users_file.users.iter().enumerate() {
+        if user.username.trim().is_empty() {
+            return Err(format!("user[{index}].username must be a non-empty string").into());
+        }
+        let has_password_hash = user
+            .password_hash
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        let has_password = user
+            .password
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if !has_password_hash && !has_password {
+            return Err(format!("user[{index}] must include password_hash or password").into());
+        }
+        if user.roles.is_empty() || user.roles.iter().any(|role| role.trim().is_empty()) {
+            return Err(format!("user[{index}].roles must be a non-empty string array").into());
+        }
+    }
+    Ok(())
+}
+
 pub fn bind_rest_http_listener(address: SocketAddr) -> std::io::Result<TcpListener> {
     TcpListener::bind(address)
 }
@@ -184,5 +241,63 @@ mod tests {
         assert!(error.contains("authorization must be implemented and enforced"));
         assert!(!error.contains("benchmark coverage is missing"));
         assert!(error.contains("load test coverage is missing"));
+    }
+
+    #[test]
+    fn authentication_users_file_parser_accepts_subjects_with_roles() {
+        let parsed = parse_authentication_users_json(
+            r#"{"users":[{"username":"admin","password_hash":"hash","roles":["admin"]}]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.users[0].username, "admin");
+        assert_eq!(parsed.users[0].password_hash.as_deref(), Some("hash"));
+        assert_eq!(parsed.users[0].roles, vec!["admin".to_string()]);
+    }
+
+    #[test]
+    fn authentication_users_file_parser_rejects_empty_and_malformed_inputs() {
+        assert_eq!(
+            parse_authentication_users_json("").unwrap_err().to_string(),
+            "must contain at least one user"
+        );
+        assert!(parse_authentication_users_json("not-json")
+            .unwrap_err()
+            .to_string()
+            .contains("must be valid JSON"));
+        assert_eq!(
+            parse_authentication_users_json(r#"{"users":[]}"#)
+                .unwrap_err()
+                .to_string(),
+            "must contain at least one user"
+        );
+    }
+
+    #[test]
+    fn authentication_users_file_parser_rejects_invalid_subject_entries() {
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"users":[{"username":"","password_hash":"hash","roles":["admin"]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "user[0].username must be a non-empty string"
+        );
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"users":[{"username":"admin","roles":["admin"]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "user[0] must include password_hash or password"
+        );
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"users":[{"username":"admin","password_hash":"hash","roles":[]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "user[0].roles must be a non-empty string array"
+        );
     }
 }

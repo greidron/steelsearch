@@ -173,6 +173,24 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
     ),
     ValidationTest(
+        "authentication_users_file_parser_accepts_subjects_with_roles",
+        "security-bootstrap-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
+        "authentication_users_file_parser_rejects_empty_and_malformed_inputs",
+        "security-bootstrap-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
+        "authentication_users_file_parser_rejects_invalid_subject_entries",
+        "security-bootstrap-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
         "daemon_config_rejects_data_path_that_is_not_directory",
         "data-path-preflight",
         package="os-node",

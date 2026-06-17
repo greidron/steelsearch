@@ -68,11 +68,12 @@ Out of scope:
   vector-native page plus aggregation reduce, and `_id`, `_score`, and
   fast-field sort reduce variants.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 17/17 tests and `zero_tests=0`, covering data-path, bind, duplicate
+  with 20/20 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, role/bootstrap, structured production
   security/release policy gates, production security bootstrap material
-  including malformed authentication-users-file rejection, production-mode
-  gate, and daemon-level data-path / occupied-port refusal cases.
+  through the shared users-file subject parser including malformed
+  authentication-users-file rejection, production-mode gate, and daemon-level
+  data-path / occupied-port refusal cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
   with 2/2 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal plus production

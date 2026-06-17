@@ -21,6 +21,7 @@ use os_node::{
     SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest,
     persist_gateway_state_manifest,
 };
+use os_node_rest_core::parse_authentication_users_json;
 use os_stream::StreamInput;
 use os_transport::compression::decompress_deflate_body;
 use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
@@ -5066,55 +5067,7 @@ fn production_security_bootstrap_blockers(
 
 fn validate_production_authentication_users_file(path: &Path) -> Result<(), String> {
     let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
-    if raw.trim().is_empty() {
-        return Err("must contain at least one user".to_owned());
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|error| format!("must be valid JSON: {error}"))?;
-    let users = parsed
-        .get("users")
-        .and_then(serde_json::Value::as_array)
-        .ok_or("must contain a users array")?;
-    if users.is_empty() {
-        return Err("must contain at least one user".to_owned());
-    }
-    for (index, user) in users.iter().enumerate() {
-        let username = user
-            .get("username")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .trim();
-        if username.is_empty() {
-            return Err(format!("user[{index}].username must be a non-empty string"));
-        }
-        let password_hash = user
-            .get("password_hash")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .trim();
-        let password = user
-            .get("password")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .trim();
-        if password_hash.is_empty() && password.is_empty() {
-            return Err(format!("user[{index}] must include password_hash or password"));
-        }
-        let roles = user
-            .get("roles")
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| format!("user[{index}].roles must be a non-empty string array"))?;
-        if roles.is_empty()
-            || roles.iter().any(|role| {
-                role.as_str()
-                    .map(str::trim)
-                    .unwrap_or_default()
-                    .is_empty()
-            })
-        {
-            return Err(format!("user[{index}].roles must be a non-empty string array"));
-        }
-    }
+    parse_authentication_users_json(&raw).map_err(|error| error.to_string())?;
     Ok(())
 }
 
