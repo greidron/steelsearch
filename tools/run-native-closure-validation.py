@@ -428,6 +428,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_route_authn_authz_and_fail_closed_decisions_are_audited",
+        "production-security-audit",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_bulk_route_surfaces_writer_partial_authz_denial_and_reader_route_denial",
         "production-security-authorization",
         package="os-node",

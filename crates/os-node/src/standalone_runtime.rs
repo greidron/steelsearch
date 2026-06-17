@@ -52,6 +52,7 @@ const SWAGGER_UI_CSS: &str =
 const SWAGGER_UI_BUNDLE_JS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui-bundle.js");
 const TERMINAL_TASK_RETENTION_LIMIT: usize = 1024;
+const SECURITY_AUDIT_EVENT_LIMIT: usize = 1024;
 const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -796,6 +797,14 @@ fn pruned_cancelled_task_ids(
         .into_iter()
         .filter(|task_id| retained.contains(task_id))
         .collect()
+}
+
+fn prune_security_audit_events(mut events: Vec<SecurityAuditEvent>) -> Vec<SecurityAuditEvent> {
+    if events.len() > SECURITY_AUDIT_EVENT_LIMIT {
+        let excess = events.len() - SECURITY_AUDIT_EVENT_LIMIT;
+        events.drain(0..excess);
+    }
+    events
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -1752,6 +1761,7 @@ pub struct SteelNode {
     pub next_ml_connector_id: Arc<Mutex<u64>>,
     pub ml_tasks_state: Arc<Mutex<BTreeMap<String, MlTaskState>>>,
     pub next_ml_task_id: Arc<Mutex<u64>>,
+    pub security_audit_events: Arc<Mutex<Vec<SecurityAuditEvent>>>,
     pub scroll_contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>,
     pub next_scroll_id: Arc<Mutex<u64>>,
     pub pit_contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
@@ -1794,6 +1804,19 @@ pub struct SharedRuntimeState {
     pub ml_tasks: BTreeMap<String, MlTaskState>,
     #[serde(default)]
     pub next_ml_task_id: u64,
+    #[serde(default)]
+    pub security_audit_events: Vec<SecurityAuditEvent>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SecurityAuditEvent {
+    pub method: String,
+    pub path: String,
+    pub subject: String,
+    pub outcome: String,
+    pub status: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_type: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1932,6 +1955,7 @@ impl SteelNode {
             next_ml_connector_id: Arc::new(Mutex::new(0)),
             ml_tasks_state: Arc::new(Mutex::new(BTreeMap::new())),
             next_ml_task_id: Arc::new(Mutex::new(0)),
+            security_audit_events: Arc::new(Mutex::new(Vec::new())),
             scroll_contexts: Arc::new(Mutex::new(BTreeMap::new())),
             next_scroll_id: Arc::new(Mutex::new(0)),
             pit_contexts: Arc::new(Mutex::new(BTreeMap::new())),
@@ -2058,11 +2082,56 @@ impl SteelNode {
             normalized_request.path = path;
             normalized_request.query_params = query_params;
         }
-        if let Some(response) = self.handle_root_cluster_node_request(&normalized_request) {
-            return response.with_opaque_id_from(&normalized_request);
+        let response = if let Some(response) =
+            self.handle_root_cluster_node_request(&normalized_request)
+        {
+            response
+        } else {
+            RestResponse::not_found_for(normalized_request.method, &normalized_request.path)
+        };
+        self.record_security_audit_event(&normalized_request, &response);
+        response.with_opaque_id_from(&normalized_request)
+    }
+
+    fn record_security_audit_event(&self, request: &RestRequest, response: &RestResponse) {
+        if !security_profile_enabled() {
+            return;
         }
-        RestResponse::not_found_for(normalized_request.method, &normalized_request.path)
-            .with_opaque_id_from(&normalized_request)
+        let subject = request
+            .header("authorization")
+            .and_then(|value| decode_basic_authorization_credentials(value))
+            .map(|(username, _)| username)
+            .unwrap_or_else(|| "anonymous".to_string());
+        let reason_type = response
+            .body
+            .get("error")
+            .and_then(|error| error.get("type"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let outcome = match response.status {
+            401 | 403 | 501 => "denied",
+            status if status >= 400 => "failed",
+            _ => "allowed",
+        };
+        let event = SecurityAuditEvent {
+            method: request.method.as_str().to_string(),
+            path: request.path.clone(),
+            subject,
+            outcome: outcome.to_string(),
+            status: response.status,
+            reason_type,
+        };
+        let mut events = self
+            .security_audit_events
+            .lock()
+            .expect("security audit event lock poisoned");
+        events.push(event);
+        if events.len() > SECURITY_AUDIT_EVENT_LIMIT {
+            let excess = events.len() - SECURITY_AUDIT_EVENT_LIMIT;
+            events.drain(0..excess);
+        }
+        drop(events);
+        self.persist_shared_runtime_state_to_disk();
     }
 
     fn handle_root_cluster_node_request(&self, request: &RestRequest) -> Option<RestResponse> {
@@ -15222,6 +15291,11 @@ impl SteelNode {
             .next_ml_task_id
             .lock()
             .expect("next ml task id lock poisoned") = state.next_ml_task_id;
+        *self
+            .security_audit_events
+            .lock()
+            .expect("security audit event lock poisoned") =
+            prune_security_audit_events(state.security_audit_events);
         let task_queue_state = state.task_queue_state.map(pruned_task_queue_state);
         let node_id = self.local_task_node_id();
         let cancelled_task_ids =
@@ -15384,6 +15458,12 @@ impl SteelNode {
                 .next_ml_task_id
                 .lock()
                 .expect("next ml task id lock poisoned"),
+            security_audit_events: prune_security_audit_events(
+                self.security_audit_events
+                    .lock()
+                    .expect("security audit event lock poisoned")
+                    .clone(),
+            ),
         };
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -27710,6 +27790,121 @@ mod tests {
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
         env::remove_var("SECURITY_ADMIN_USERNAME");
         env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn secure_route_authn_authz_and_fail_closed_decisions_are_audited() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-security-audit-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+
+        let missing = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/"));
+        assert_eq!(missing.status, 401);
+
+        let writer_denied = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_ml/connectors/_create")
+                .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg==")
+                .with_json_body(serde_json::json!({
+                    "name": "writer-denied-connector",
+                    "protocol": "http"
+                })),
+        );
+        assert_eq!(writer_denied.status, 403);
+
+        let admin_allowed = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_ml/connectors/_create")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({
+                    "name": "admin-connector",
+                    "protocol": "http"
+                })),
+        );
+        assert_eq!(admin_allowed.status, 200);
+
+        let fail_closed = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_security/api/account",
+        ));
+        assert_eq!(fail_closed.status, 501);
+
+        let events = node
+            .security_audit_events
+            .lock()
+            .expect("security audit event lock poisoned")
+            .clone();
+        assert_eq!(events.len(), 4);
+        assert_eq!(events[0].path, "/");
+        assert_eq!(events[0].subject, "anonymous");
+        assert_eq!(events[0].outcome, "denied");
+        assert_eq!(events[0].status, 401);
+        assert_eq!(events[0].reason_type.as_deref(), Some("security_exception"));
+        assert_eq!(events[1].path, "/_plugins/_ml/connectors/_create");
+        assert_eq!(events[1].subject, "writer");
+        assert_eq!(events[1].outcome, "denied");
+        assert_eq!(events[1].status, 403);
+        assert_eq!(events[2].path, "/_plugins/_ml/connectors/_create");
+        assert_eq!(events[2].subject, "admin");
+        assert_eq!(events[2].outcome, "allowed");
+        assert_eq!(events[2].status, 200);
+        assert_eq!(events[2].reason_type, None);
+        assert_eq!(events[3].path, "/_plugins/_security/api/account");
+        assert_eq!(events[3].subject, "anonymous");
+        assert_eq!(events[3].outcome, "denied");
+        assert_eq!(events[3].status, 501);
+        assert_eq!(events[3].reason_type.as_deref(), Some("security_exception"));
+
+        let persisted_text =
+            std::fs::read_to_string(&shared_state_path).expect("shared runtime state persisted");
+        assert!(persisted_text.contains("security_audit_events"));
+        assert!(persisted_text.contains("writer"));
+        assert!(persisted_text.contains("admin"));
+        assert!(!persisted_text.contains("writer:writer"));
+        assert!(!persisted_text.contains("admin:admin"));
+        assert!(!persisted_text.contains("d3JpdGVyOndyaXRlcg=="));
+        assert!(!persisted_text.contains("YWRtaW46YWRtaW4="));
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+        let restarted_events = restarted
+            .security_audit_events
+            .lock()
+            .expect("security audit event lock poisoned")
+            .clone();
+        assert_eq!(restarted_events, events);
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
 
         let _ = std::fs::remove_file(shared_state_path);

@@ -167,10 +167,11 @@ PROBES: tuple[Probe, ...] = (
             r"authentication",
             r"authorization",
             r"audit logging",
+            r"security audit events",
             r"fail closed",
             r"OpenSearch Security plugin API",
         ),
-        risk="secure production replacement is blocked until boundaries are enforced; unsupported OpenSearch Security plugin APIs now fail closed explicitly",
+        risk="secure production replacement is blocked until boundaries are enforced; baseline audit events and unsupported OpenSearch Security plugin API fail-closed behavior are now explicit",
     ),
 )
 
@@ -298,7 +299,7 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="production security",
         category="security",
-        status="structured fail-closed boundary/checklist gate with TLS/authn bootstrap material preflight, shared users-file subject parser with malformed authentication-users-file rejection, runtime env credential loading through that subject model, guarded root/ML/bulk/search/session authn/authz checks, ML connector secret redaction from REST responses and shared runtime persistence, and explicit OpenSearch Security plugin API fail-closed responses",
+        status="structured fail-closed boundary/checklist gate with TLS/authn bootstrap material preflight, shared users-file subject parser with malformed authentication-users-file rejection, runtime env credential loading through that subject model, guarded root/ML/bulk/search/session authn/authz checks, bounded security audit event persistence, ML connector secret redaction from REST responses and shared runtime persistence, and explicit OpenSearch Security plugin API fail-closed responses",
         next_action="wire HTTP/transport TLS and authentication enforcement into the structured production security gate before enabling production startup",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"PRODUCTION_SECURITY_BATCH",
