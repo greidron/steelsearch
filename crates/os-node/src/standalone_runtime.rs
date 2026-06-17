@@ -2885,12 +2885,26 @@ impl SteelNode {
             return Some(RestResponse::json(200, self.nodes_info_body()));
         }
         if request.method == RestMethod::Post && request.path == "/_nodes/reload_secure_settings" {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "reload secure settings",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_nodes_reload_secure_settings_route(None));
         }
         if request.method == RestMethod::Post
             && request.path.starts_with("/_nodes/")
             && request.path.ends_with("/reload_secure_settings")
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "reload secure settings",
+            ) {
+                return Some(response);
+            }
             let node_id = request
                 .path
                 .trim_start_matches("/_nodes/")
@@ -23747,6 +23761,57 @@ mod tests {
             assert!(response.body["cluster_name"].is_string(), "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");
         }
+    }
+
+    #[test]
+    fn secure_reload_secure_settings_requires_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/_nodes/reload_secure_settings",
+            "/_nodes/_all/reload_secure_settings",
+        ] {
+            let missing = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, path)
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("reload secure settings"));
+
+            let admin = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, path)
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, 200, "path {path}");
+            assert_eq!(admin.body["_nodes"]["failed"], 0, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
     }
 
     #[test]
