@@ -40,6 +40,10 @@ Out of scope:
   four malformed wrapper placeholder seats (`bucket_sort`, `derivative`,
   `serial_diff`, `bucket_count`) and four multi-index `date_histogram`
   rebucketing wrapper seats for the same wrapper shapes.
+- The same guarded runner now has a `rebucketing-wide` batch. It passed on
+  2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
+  shapes across `auto_date_histogram`, `histogram`, and
+  `variable_width_histogram` multi-index rebucketing seats.
 
 ## Workstreams
 
@@ -115,9 +119,10 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch compact` must report
   `failed_count == 0` and `zero_test_count == 0` before treating the compact
   malformed-wrapper / `date_histogram` rebucketing slice as runtime evidence.
-- The next validation widening should reuse the same runner shape for the
-  corresponding `auto_date_histogram`, `histogram`, and
-  `variable_width_histogram` rebucketing wrapper seats.
+- `tools/run-native-closure-validation.py --batch rebucketing-wide` must also
+  report `failed_count == 0` and `zero_test_count == 0` before treating the
+  widened `auto_date_histogram`, `histogram`, and `variable_width_histogram`
+  rebucketing-wrapper slice as runtime evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 

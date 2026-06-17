@@ -57,6 +57,62 @@ COMPACT_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+REBUCKETING_WIDE_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_auto_date_histogram_reduce_feeds_bucket_sort_surface",
+        "auto-date-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_auto_date_histogram_reduce_feeds_bucket_count_surface",
+        "auto-date-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_auto_date_histogram_reduce_feeds_derivative_surface",
+        "auto-date-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_auto_date_histogram_reduce_feeds_serial_diff_surface",
+        "auto-date-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_histogram_reduce_feeds_bucket_sort_surface",
+        "histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_histogram_reduce_feeds_bucket_count_surface",
+        "histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_histogram_reduce_feeds_derivative_surface",
+        "histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_histogram_reduce_feeds_serial_diff_surface",
+        "histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_variable_width_histogram_reduce_feeds_bucket_sort_surface",
+        "variable-width-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_variable_width_histogram_reduce_feeds_bucket_count_surface",
+        "variable-width-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_variable_width_histogram_reduce_feeds_derivative_surface",
+        "variable-width-histogram-rebucketing-wrapper",
+    ),
+    ValidationTest(
+        "search_size_zero_multi_index_plugin_variable_width_histogram_reduce_feeds_serial_diff_surface",
+        "variable-width-histogram-rebucketing-wrapper",
+    ),
+)
+
+BATCHES: dict[str, tuple[ValidationTest, ...]] = {
+    "compact": COMPACT_BATCH,
+    "rebucketing-wide": REBUCKETING_WIDE_BATCH,
+}
+
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")
 RESULT_RE = re.compile(
     r"test result: (?P<status>\w+)\. (?P<passed>\d+) passed; (?P<failed>\d+) failed;"
@@ -118,7 +174,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--batch",
-        choices=("compact",),
+        choices=tuple(BATCHES),
         default="compact",
         help="validation batch to run",
     )
@@ -130,7 +186,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    tests = COMPACT_BATCH
+    tests = BATCHES[args.batch]
     results = [run_test(test) for test in tests]
     summary = {
         "batch": args.batch,

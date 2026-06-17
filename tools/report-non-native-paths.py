@@ -217,10 +217,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="malformed wrapper and rebucketing validation",
         category="materialization",
-        status="compact runtime batch passed for malformed wrappers and date_histogram rebucketing wrappers",
-        next_action="widen the same zero-test-guarded validation to auto_date_histogram, histogram, and variable_width_histogram wrapper seats",
+        status="zero-test-guarded compact and rebucketing-wide runtime batches passed",
+        next_action="keep malformed-wrapper and rebucketing-wrapper batches in the closure gate while moving remaining work to mixed-cluster, runtime-control, and security evidence",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
-        evidence_pattern=r"COMPACT_BATCH",
+        evidence_pattern=r"REBUCKETING_WIDE_BATCH",
     ),
     Family(
         name="pure knn",
