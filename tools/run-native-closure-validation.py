@@ -368,6 +368,13 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "rethrottle_rate_persists_across_shared_runtime_restart",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_TASK_METADATA_BATCH: tuple[ValidationTest, ...] = (

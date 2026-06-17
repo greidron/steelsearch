@@ -1668,6 +1668,8 @@ pub struct SharedRuntimeState {
     pub task_queue_state: Option<PersistedClusterManagerTaskQueueState>,
     #[serde(default)]
     pub cancelled_task_ids: BTreeSet<String>,
+    #[serde(default)]
+    pub rethrottled_task_rates: BTreeMap<String, String>,
     pub knn_operational_state: Option<KnnOperationalState>,
     #[serde(default)]
     pub ml_models: BTreeMap<String, MlModelState>,
@@ -9164,6 +9166,7 @@ impl SteelNode {
                     .lock()
                     .expect("rethrottled task rates lock poisoned")
                     .insert(task_id.to_string(), rate);
+                self.persist_shared_runtime_state_to_disk();
                 if let Some(task) = self.find_task(task_id) {
                     return RestResponse::json(
                         200,
@@ -14941,6 +14944,14 @@ impl SteelNode {
             .cancelled_task_ids
             .lock()
             .expect("cancelled task ids lock poisoned") = state.cancelled_task_ids;
+        *self
+            .rethrottled_task_rates
+            .lock()
+            .expect("rethrottled task rates lock poisoned") = state
+            .rethrottled_task_rates
+            .into_iter()
+            .filter_map(|(task_id, rate)| rate.parse::<f64>().ok().map(|rate| (task_id, rate)))
+            .collect();
     }
 
     fn sync_shared_runtime_state_from_disk_if_enabled(&self) {
@@ -14991,6 +15002,13 @@ impl SteelNode {
                 .lock()
                 .expect("cancelled task ids lock poisoned")
                 .clone(),
+            rethrottled_task_rates: self
+                .rethrottled_task_rates
+                .lock()
+                .expect("rethrottled task rates lock poisoned")
+                .iter()
+                .map(|(task_id, rate)| (task_id.clone(), rate.to_string()))
+                .collect(),
             knn_operational_state: self
                 .knn_operational_state
                 .lock()
@@ -23146,6 +23164,96 @@ mod tests {
             get.body["task"]["status"]["requests_per_second"],
             serde_json::json!(6.5)
         );
+    }
+
+    #[test]
+    fn rethrottle_rate_persists_across_shared_runtime_restart() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-rethrottle-state-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 131,
+                task: ClusterManagerTask {
+                    source: "rethrottle restart probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+        node.persist_shared_runtime_state_to_disk();
+
+        let mut rethrottle = RestRequest::new(RestMethod::Post, "/_reindex/node-a:131/_rethrottle");
+        rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "4.75".to_string());
+        let rethrottle = node.handle_rest_request(rethrottle);
+        assert_eq!(rethrottle.status, 200);
+        assert_eq!(
+            rethrottle.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.75)
+        );
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let get =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:131"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.75)
+        );
+
+        let list = restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(list.status, 200);
+        assert_eq!(
+            list.body["nodes"]["node-a"]["tasks"]["node-a:131"]["status"]["requests_per_second"],
+            serde_json::json!(4.75)
+        );
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

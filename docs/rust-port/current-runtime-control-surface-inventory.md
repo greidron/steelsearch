@@ -155,7 +155,7 @@ internal subsystems, especially:
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
 | Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
 | Parent-child propagation | there is no contract for whether rethrottle affects only a parent task, all child slices, or spawned worker sub-tasks consistently |
-| Persistence and restart | there is no evidence for whether throttle state survives restart, is recomputed, or is dropped during recovery |
+| Persistence and restart | shared-runtime restart readback preserves requested throttle rates, but shutdown-window and partial-recovery behavior remain open |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
 | Terminal-state behavior | route-level errors exist, but not a full matrix for rethrottle-after-finish, rethrottle-after-cancel, or rethrottle-during-shutdown |
 
@@ -166,8 +166,6 @@ internal subsystems, especially:
   - parent task rethrottle versus sliced child work visibility;
   - rethrottle race-with-completion behavior.
 - add restart-smoke coverage for:
-  - throttled task before shutdown;
-  - throttle state after restart;
   - rethrottle request during restart window.
 - add operator-visible evidence for:
   - whether the last requested throttle rate is observable;
@@ -181,8 +179,8 @@ internal subsystems, especially:
 - define race-with-finish states beyond the current repeated rethrottle
   last-write-wins route evidence.
 - connect throttle state to child-work orchestration for sliced tasks.
-- decide whether throttle state is persisted, recomputed, or discarded across
-  restart and recovery, and expose that contract.
+- define shutdown-window and partial-recovery throttle behavior beyond the
+  current shared-runtime restart readback.
 
 ### Immediate follow-up
 
