@@ -47,7 +47,9 @@ Out of scope:
   process exit alone as evidence. It passed on 2026-06-17 with 1/1 validation
   cases, `zero_tests=0`, `summary.passed=true`, both interruption directions
   present, zero checkpoint drift in each recorded checkpoint phase, and a
-  `checkpoint_monotonicity_ok` summary gate.
+  `checkpoint_monotonicity_ok` summary gate. The live artifact also records
+  retention-lease metadata from shard stats and now requires
+  `retention_lease_metadata_ok=true`.
 - Native-closure runtime validation now has a guarded compact runner,
   `tools/run-native-closure-validation.py --batch compact`, that rejects
   zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
@@ -309,14 +311,14 @@ Already evidenced:
   with target restart, resume-or-restart observation, and finalized recovery
   phase recording.
 - `--exercise-interruption` coverage to interrupt SteelSearch primary to Java replica recovery
-  with target restart, resume-or-restart observation, and finalized recovery
-  phase recording.
+  with target restart after the Java replica is assigned, resume-or-restart
+  observation, and finalized recovery phase recording.
+- retention-lease metadata capture from shard stats with a
+  `retention_lease_metadata_ok` summary gate.
 
 Remaining tests:
 
-1. verify explicit retention-lease metadata beyond the checkpoint monotonicity
-   and drift fields currently captured during interruption;
-2. capture allocation explanation for unsupported movement shapes.
+1. capture allocation explanation for unsupported movement shapes.
 
 Exit evidence:
 
@@ -324,6 +326,8 @@ Exit evidence:
   `finalized` phases for both directions;
 - each phase records placement, visibility, recovery state, and checkpoint
   drift;
+- shard-stats phases record retention-lease metadata where the OpenSearch stats
+  surface exposes it;
 - unsupported cases fail closed with a ledger row.
 
 ### 4. Production Runtime Controls

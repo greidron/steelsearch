@@ -196,35 +196,75 @@ def recovery_report(client: HttpJson, index: str) -> dict[str, Any]:
     )
 
 
-def collect_checkpoint_observed(client: HttpJson, index: str) -> list[dict[str, Any]]:
+def collect_shard_stats(client: HttpJson, index: str) -> dict[str, Any]:
     _, stats = client.request(
         "GET",
         f"/{urllib.parse.quote(index, safe='')}/_stats?level=shards",
         expected={200},
     )
+    if not isinstance(stats, dict):
+        return {}
+    return stats
+
+
+def shard_stats_copies(stats: dict[str, Any], index: str) -> list[tuple[int, dict[str, Any]]]:
     indices = stats.get("indices", {}) if isinstance(stats, dict) else {}
     index_data = indices.get(index, {}) if isinstance(indices, dict) else {}
     shards = index_data.get("shards", {}) if isinstance(index_data, dict) else {}
-    observed: list[dict[str, Any]] = []
+    copies_by_shard: list[tuple[int, dict[str, Any]]] = []
+    if not isinstance(shards, dict):
+        return copies_by_shard
     for shard_id, copies in shards.items():
         if not isinstance(copies, list):
             continue
+        try:
+            parsed_shard_id = int(shard_id)
+        except (TypeError, ValueError):
+            continue
         for copy in copies:
-            if not isinstance(copy, dict):
-                continue
-            routing = copy.get("routing", {}) if isinstance(copy.get("routing"), dict) else {}
-            seq_no = copy.get("seq_no", {}) if isinstance(copy.get("seq_no"), dict) else {}
-            observed.append(
-                {
-                    "index": index,
-                    "shard": int(shard_id),
-                    "role": "primary" if routing.get("primary") else "replica",
-                    "node": routing.get("node"),
-                    "max_seq_no": seq_no.get("max_seq_no"),
-                    "local_checkpoint": seq_no.get("local_checkpoint"),
-                    "global_checkpoint": seq_no.get("global_checkpoint"),
-                }
-            )
+            if isinstance(copy, dict):
+                copies_by_shard.append((parsed_shard_id, copy))
+    return copies_by_shard
+
+
+def collect_checkpoint_observed(stats: dict[str, Any], index: str) -> list[dict[str, Any]]:
+    observed: list[dict[str, Any]] = []
+    for shard_id, copy in shard_stats_copies(stats, index):
+        routing = copy.get("routing", {}) if isinstance(copy.get("routing"), dict) else {}
+        seq_no = copy.get("seq_no", {}) if isinstance(copy.get("seq_no"), dict) else {}
+        observed.append(
+            {
+                "index": index,
+                "shard": shard_id,
+                "role": "primary" if routing.get("primary") else "replica",
+                "node": routing.get("node"),
+                "max_seq_no": seq_no.get("max_seq_no"),
+                "local_checkpoint": seq_no.get("local_checkpoint"),
+                "global_checkpoint": seq_no.get("global_checkpoint"),
+            }
+        )
+    return observed
+
+
+def collect_retention_leases_observed(stats: dict[str, Any], index: str) -> list[dict[str, Any]]:
+    observed: list[dict[str, Any]] = []
+    for shard_id, copy in shard_stats_copies(stats, index):
+        routing = copy.get("routing", {}) if isinstance(copy.get("routing"), dict) else {}
+        seq_no = copy.get("seq_no", {}) if isinstance(copy.get("seq_no"), dict) else {}
+        leases = copy.get("retention_leases")
+        if not isinstance(leases, dict):
+            leases = seq_no.get("retention_leases")
+        if not isinstance(leases, dict):
+            continue
+        observed.append(
+            {
+                "index": index,
+                "shard": shard_id,
+                "role": "primary" if routing.get("primary") else "replica",
+                "node": routing.get("node"),
+                "retention_leases": leases,
+            }
+        )
     return observed
 
 
@@ -241,10 +281,12 @@ def checkpoint_drift(observed: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def checkpoint_report(client: HttpJson, index: str) -> dict[str, Any]:
-    observed = collect_checkpoint_observed(client, index)
+    stats = collect_shard_stats(client, index)
+    observed = collect_checkpoint_observed(stats, index)
     return {
         "checkpoint_observed": observed,
         "checkpoint_drift": checkpoint_drift(observed),
+        "retention_leases_observed": collect_retention_leases_observed(stats, index),
     }
 
 
@@ -362,6 +404,28 @@ def checkpoint_monotonicity_passed(report: dict[str, Any]) -> bool:
     return True
 
 
+def retention_lease_metadata_passed(report: dict[str, Any]) -> bool:
+    phases = report.get("phases", [])
+    if not isinstance(phases, list):
+        return False
+    observed_entries = [
+        entry
+        for phase in phases
+        if isinstance(phase, dict)
+        for entry in phase.get("retention_leases_observed", [])
+        if isinstance(entry, dict)
+    ]
+    if not observed_entries:
+        return False
+    for entry in observed_entries:
+        leases = entry.get("retention_leases")
+        if not isinstance(leases, dict):
+            return False
+        if "leases" in leases and not isinstance(leases.get("leases"), list):
+            return False
+    return True
+
+
 def interruption_evidence_passed(report: dict[str, Any]) -> bool:
     expected = {
         "interrupt_java_to_steelsearch_recovery",
@@ -381,17 +445,20 @@ def summarize_movement_report(
     steelsearch_to_opensearch_passed = phase_passed(report, "steelsearch_to_opensearch")
     checkpoint_drift_ok = checkpoint_drift_passed(report)
     checkpoint_monotonicity_ok = checkpoint_monotonicity_passed(report)
+    retention_lease_metadata_ok = retention_lease_metadata_passed(report)
     interruption_evidence_ok = interruption_evidence_passed(report)
     return {
         "passed": opensearch_to_steelsearch_passed
         and steelsearch_to_opensearch_passed
         and checkpoint_drift_ok
         and checkpoint_monotonicity_ok
+        and retention_lease_metadata_ok
         and (interruption_evidence_ok or not require_interruption),
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "checkpoint_drift_ok": checkpoint_drift_ok,
         "checkpoint_monotonicity_ok": checkpoint_monotonicity_ok,
+        "retention_lease_metadata_ok": retention_lease_metadata_ok,
         "interruption_evidence_ok": interruption_evidence_ok,
         "interruption_evidence_required": require_interruption,
     }
@@ -772,7 +839,13 @@ def main() -> int:
         if not wait_for_node_count(java2_client, expected_count=3, attempts=45, sleep_seconds=1.0):
             raise RuntimeError(f"three-node cluster did not reform after java1 restart; java_view_node_count={current_node_count(java2_client)}")
         if args.exercise_interruption:
-            interrupted_shards = get_shards(java2_client, args.index)
+            interrupted_shards = wait_for_shard_condition(
+                java2_client,
+                args.index,
+                lambda rows: placement(rows)["primary_node"] == "rust-replica-1"
+                and placement(rows)["primary_state"] == "STARTED"
+                and placement(rows)["replica_node"] == "java-primary-1",
+            )
             report["phases"].append(
                 phase_result(
                     "interrupt_steelsearch_to_opensearch_recovery",

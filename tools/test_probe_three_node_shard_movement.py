@@ -33,6 +33,25 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
                     "phase": "opensearch_to_steelsearch",
                     "passed": True,
                     "checkpoint_drift": zero_drift,
+                    "retention_leases_observed": [
+                        {
+                            "index": "three-node-shard-movement-000001",
+                            "shard": 0,
+                            "role": "primary",
+                            "node": "rust-replica-1",
+                            "retention_leases": {
+                                "primary_term": 1,
+                                "version": 2,
+                                "leases": [
+                                    {
+                                        "id": "java-primary-1",
+                                        "retaining_sequence_number": 0,
+                                        "timestamp": 1,
+                                    }
+                                ],
+                            },
+                        }
+                    ],
                 },
                 {
                     "phase": "steelsearch_to_opensearch",
@@ -50,6 +69,7 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
         self.assertTrue(summary["steelsearch_to_opensearch_passed"])
         self.assertTrue(summary["checkpoint_drift_ok"])
         self.assertTrue(summary["checkpoint_monotonicity_ok"])
+        self.assertTrue(summary["retention_lease_metadata_ok"])
         self.assertFalse(summary["interruption_evidence_ok"])
         self.assertFalse(summary["interruption_evidence_required"])
 
@@ -152,6 +172,69 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
 
         self.assertFalse(summary["passed"])
         self.assertFalse(summary["checkpoint_monotonicity_ok"])
+
+    def test_retention_lease_metadata_fails_when_missing(self):
+        report = self.representative_report()
+        report["phases"][0]["retention_leases_observed"] = []
+
+        summary = self.probe.summarize_movement_report(report)
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["retention_lease_metadata_ok"])
+
+    def test_retention_lease_metadata_fails_when_lease_list_is_malformed(self):
+        report = self.representative_report()
+        report["phases"][0]["retention_leases_observed"][0]["retention_leases"][
+            "leases"
+        ] = {}
+
+        summary = self.probe.summarize_movement_report(report)
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["retention_lease_metadata_ok"])
+
+    def test_collects_checkpoint_and_retention_leases_from_shard_stats(self):
+        stats = {
+            "indices": {
+                "movement": {
+                    "shards": {
+                        "0": [
+                            {
+                                "routing": {
+                                    "primary": True,
+                                    "node": "java-primary-1",
+                                },
+                                "seq_no": {
+                                    "max_seq_no": 7,
+                                    "local_checkpoint": 7,
+                                    "global_checkpoint": 7,
+                                },
+                                "retention_leases": {
+                                    "primary_term": 1,
+                                    "version": 4,
+                                    "leases": [
+                                        {
+                                            "id": "rust-replica-1",
+                                            "retaining_sequence_number": 0,
+                                            "timestamp": 10,
+                                        }
+                                    ],
+                                },
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+        checkpoints = self.probe.collect_checkpoint_observed(stats, "movement")
+        leases = self.probe.collect_retention_leases_observed(stats, "movement")
+
+        self.assertEqual(checkpoints[0]["max_seq_no"], 7)
+        self.assertEqual(leases[0]["retention_leases"]["version"], 4)
+        self.assertEqual(
+            leases[0]["retention_leases"]["leases"][0]["id"], "rust-replica-1"
+        )
 
 
 if __name__ == "__main__":
