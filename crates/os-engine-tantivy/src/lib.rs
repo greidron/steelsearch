@@ -1835,14 +1835,23 @@ impl IndexEngine for TantivyEngine {
             )
                 .map_err(invalid_request)?;
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
-        let store = self
-            .store
-            .read()
-            .expect("tantivy engine store rwlock poisoned");
-        let index_names = if request.indices.is_empty() {
-            store.indices.keys().cloned().collect::<Vec<_>>()
-        } else {
-            request.indices
+        let index_names = {
+            let mut store = self
+                .store
+                .write()
+                .expect("tantivy engine store rwlock poisoned");
+            let index_names = if request.indices.is_empty() {
+                store.indices.keys().cloned().collect::<Vec<_>>()
+            } else {
+                request.indices
+            };
+            store.touch_runtime_caches_for_search(
+                &index_names,
+                &query,
+                &request.sort,
+                &aggregation_map,
+            );
+            index_names
         };
 
         let single_index_name = (index_names.len() == 1).then(|| index_names[0].clone());
@@ -1894,6 +1903,10 @@ impl IndexEngine for TantivyEngine {
             },
         ];
 
+        let store = self
+            .store
+            .read()
+            .expect("tantivy engine store rwlock poisoned");
         let (mut response, _) = store.search_response_index_aware_with_optional_reusable(
             &index_names,
             single_index_name.as_deref(),
@@ -3779,6 +3792,20 @@ fn tantivy_error(error: impl std::fmt::Display) -> EngineError {
 }
 
 impl EngineStore {
+    fn touch_runtime_caches_for_search(
+        &mut self,
+        index_names: &[String],
+        query: &Query,
+        sort: &[SortSpec],
+        aggregations: &AggregationMap,
+    ) {
+        for index_name in index_names {
+            if let Some(index) = self.indices.get_mut(index_name) {
+                index.touch_search_runtime_caches(query, sort, aggregations);
+            }
+        }
+    }
+
     fn documents_for_search_hits<'a>(&'a self, hits: &[SearchHit]) -> Vec<&'a StoredDocument> {
         hits.iter()
             .filter_map(|hit| {
@@ -134692,8 +134719,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runtime cache touch hooks are present but not wired into search execution"]
-    fn search_populates_distinct_runtime_cache_surfaces() {
+    fn search_populates_vector_and_fast_field_runtime_cache_surfaces() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -134768,7 +134794,6 @@ mod tests {
             .write()
             .expect("tantivy engine store rwlock poisoned");
         let index = store.indices.get("vectors").expect("vectors index present");
-        assert!(index.runtime_cache.knn_search_by_field.contains_key("embedding"));
         assert!(
             index
                 .runtime_cache
@@ -134786,7 +134811,7 @@ mod tests {
     }
 
     #[test]
-    fn search_cache_telemetry_reports_zero_for_unwired_runtime_cache_surfaces() {
+    fn search_cache_telemetry_tracks_wired_runtime_cache_surfaces() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -134864,16 +134889,34 @@ mod tests {
         assert_eq!(telemetry.request_result_cache_misses, 0);
         assert_eq!(telemetry.request_result_cache_evictions, 0);
         assert!(vectors.request_result_cache_fields.is_empty());
-        assert_eq!(telemetry.vector_graph_cache_entries, 0);
-        assert_eq!(telemetry.vector_graph_cache_hits, 0);
-        assert_eq!(telemetry.vector_graph_cache_misses, 0);
+        let vector_graph_field = vectors
+            .vector_graph_cache_fields
+            .get("embedding")
+            .expect("embedding vector-graph detail");
+        let fast_field = vectors
+            .fast_field_cache_fields
+            .get("service")
+            .expect("service fast-field detail");
+        assert_eq!(telemetry.vector_graph_cache_entries, 1);
+        assert!(telemetry.vector_graph_cache_hits > 0);
+        assert!(telemetry.vector_graph_cache_misses > 0);
         assert_eq!(telemetry.vector_graph_cache_evictions, 0);
-        assert!(vectors.vector_graph_cache_fields.is_empty());
-        assert_eq!(telemetry.fast_field_cache_entries, 0);
-        assert_eq!(telemetry.fast_field_cache_hits, 0);
-        assert_eq!(telemetry.fast_field_cache_misses, 0);
+        assert!(vectors.vector_graph_cache_oldest_entry_age_ticks >= vectors.vector_graph_cache_newest_entry_age_ticks);
+        assert!(vector_graph_field.vector_graph_cache_hits > 0);
+        assert!(vector_graph_field.vector_graph_cache_misses > 0);
+        assert_eq!(vector_graph_field.vector_graph_cache_capacity_evictions, 0);
+        assert_eq!(vector_graph_field.vector_graph_cache_refresh_invalidations, 0);
+        assert_eq!(vector_graph_field.vector_graph_cache_stale_invalidations, 0);
+        assert_eq!(telemetry.fast_field_cache_entries, 1);
+        assert!(telemetry.fast_field_cache_hits > 0);
+        assert!(telemetry.fast_field_cache_misses > 0);
         assert_eq!(telemetry.fast_field_cache_evictions, 0);
-        assert!(vectors.fast_field_cache_fields.is_empty());
+        assert!(vectors.fast_field_cache_oldest_entry_age_ticks >= vectors.fast_field_cache_newest_entry_age_ticks);
+        assert!(fast_field.fast_field_cache_hits > 0);
+        assert!(fast_field.fast_field_cache_misses > 0);
+        assert_eq!(fast_field.fast_field_cache_capacity_evictions, 0);
+        assert_eq!(fast_field.fast_field_cache_refresh_invalidations, 0);
+        assert_eq!(fast_field.fast_field_cache_stale_invalidations, 0);
     }
 
     #[test]

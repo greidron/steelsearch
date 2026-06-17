@@ -110,12 +110,11 @@ PROBES: tuple[Probe, ...] = (
         category="runtime",
         path=ENGINE_SOURCE,
         patterns=(
-            r"runtime cache touch hooks are present but not wired into search execution",
-            r"touch_search_runtime_caches",
+            r"runtime KNN request-result cache hooks are present but not wired into search execution",
             r"cache_knn_search_result",
-            r"search_cache_telemetry_reports_zero_for_unwired_runtime_cache_surfaces",
+            r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
         ),
-        risk="runtime cache structures exist, but search execution currently bypasses them",
+        risk="request-result cache structures exist, but search execution currently bypasses them",
     ),
     Probe(
         name="production runtime controls",
@@ -236,10 +235,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="runtime search cache hooks",
         category="runtime",
-        status="present but unwired",
-        next_action="wire request-result, vector-graph, and fast-field cache hooks into search execution or remove dead cache surfaces",
+        status="partially wired",
+        next_action="wire request-result cache hooks into search execution or remove the dead request-result cache surface",
         evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"search_cache_telemetry_reports_zero_for_unwired_runtime_cache_surfaces",
+        evidence_pattern=r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
     ),
     Family(
         name="production runtime controls",
