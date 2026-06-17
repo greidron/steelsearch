@@ -185,6 +185,10 @@ Current Steelsearch evidence:
   2026-06-17 with 1/1 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates plus follow-up task
   readback;
+- `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
+  on 2026-06-17 with 3/3 tests and `zero_tests=0`, covering parent task
+  metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
+  bounded task route surface;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 
@@ -196,8 +200,8 @@ Required next implementation direction:
 
 Required tests:
 
-- extend from the current task cancellation mutation probe into throttling and
-  parent/child task metadata probes that touch real runtime state;
+- extend the current task cancellation, throttling, and parent metadata probes
+  into broader child-task and request-header propagation coverage;
 - queue/backpressure smoke tests for administrative and search/write workloads;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 

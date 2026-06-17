@@ -6725,6 +6725,7 @@ mod tests {
                     kind: os_node::ClusterManagerTaskKind::Reroute,
                 },
                 state: os_node::ClusterManagerTaskState::Queued,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
@@ -6736,6 +6737,7 @@ mod tests {
                     },
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             acknowledged: Vec::new(),
@@ -10254,6 +10256,7 @@ mod pending_tasks_live_route_parity_tests {
                     kind: os_node::ClusterManagerTaskKind::Reroute,
                 },
                 state: os_node::ClusterManagerTaskState::Queued,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
@@ -10265,6 +10268,7 @@ mod pending_tasks_live_route_parity_tests {
                     },
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             acknowledged: Vec::new(),
@@ -10342,6 +10346,7 @@ mod tasks_live_route_parity_tests {
                     kind: os_node::ClusterManagerTaskKind::Reroute,
                 },
                 state: os_node::ClusterManagerTaskState::Queued,
+                parent_task_id: Some("node-a:99".to_string()),
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
@@ -10353,6 +10358,7 @@ mod tasks_live_route_parity_tests {
                     },
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             acknowledged: Vec::new(),
@@ -10415,6 +10421,10 @@ mod tasks_live_route_parity_tests {
         assert_eq!(get.status, 200);
         assert!(get.body["task"].get("action").is_some());
         assert!(get.body["task"].get("cancellable").is_some());
+        assert_eq!(
+            get.body["task"]["parent_task_id"],
+            serde_json::json!("node-a:99")
+        );
 
         let cancel = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Post,

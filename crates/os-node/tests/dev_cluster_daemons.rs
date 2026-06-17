@@ -349,6 +349,7 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
                 kind: ClusterManagerTaskKind::Reroute,
             },
             state: ClusterManagerTaskState::Queued,
+            parent_task_id: None,
             failure_reason: None,
         }],
         in_flight: vec![ClusterManagerTaskRecord {
@@ -360,6 +361,7 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
                 },
             },
             state: ClusterManagerTaskState::InFlight,
+            parent_task_id: None,
             failure_reason: None,
         }],
         acknowledged: Vec::new(),
@@ -537,6 +539,7 @@ fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
                 kind: ClusterManagerTaskKind::Reroute,
             },
             state: ClusterManagerTaskState::Queued,
+            parent_task_id: None,
             failure_reason: None,
         }],
         in_flight: Vec::new(),

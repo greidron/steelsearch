@@ -252,6 +252,30 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_TASK_METADATA_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "tasks_live_route_supports_list_get_and_cancel_shapes",
+        "task-parent-metadata-runtime-state",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "cat_tasks_route_serves_json_and_text_views",
+        "task-parent-metadata-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "tasks_registry_table_describes_bounded_task_surface",
+        "task-parent-metadata-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
@@ -260,6 +284,7 @@ BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
+    "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")

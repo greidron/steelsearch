@@ -667,6 +667,8 @@ pub struct ClusterManagerTaskRecord {
     pub task_id: u64,
     pub task: ClusterManagerTask,
     pub state: ClusterManagerTaskState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_task_id: Option<String>,
     pub failure_reason: Option<String>,
 }
 
@@ -11187,6 +11189,7 @@ impl SteelNode {
                         }),
                         "start_time_in_millis": 1,
                         "running_time_in_nanos": 1,
+                        "parent_task_id": record.parent_task_id.unwrap_or_else(|| "-".to_string()),
                         "cancellable": cancellable,
                         "cancelled": cancelled,
                         "headers": {},
@@ -13824,7 +13827,7 @@ impl SteelNode {
                         task.get("node").and_then(Value::as_str).unwrap_or("node-a"),
                         task.get("id").and_then(Value::as_u64).unwrap_or(0)
                     ),
-                    "parent_task_id": "-",
+                    "parent_task_id": task.get("parent_task_id").and_then(Value::as_str).unwrap_or("-"),
                     "type": task.get("type").and_then(Value::as_str).unwrap_or("transport"),
                     "start_time": task.get("start_time_in_millis").and_then(Value::as_u64).unwrap_or(1).to_string(),
                     "timestamp": "00:00:00",
@@ -20965,6 +20968,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             ..Default::default()
@@ -21308,6 +21312,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::Queued,
+                parent_task_id: Some("node-a:1".to_string()),
                 failure_reason: None,
             }],
             ..Default::default()
@@ -21320,6 +21325,7 @@ mod tests {
         let tasks_json_response = node.handle_rest_request(tasks_json_request);
         assert_eq!(tasks_json_response.status, 200);
         assert_eq!(tasks_json_response.body[0]["action"], "cluster:admin/reroute");
+        assert_eq!(tasks_json_response.body[0]["parent_task_id"], "node-a:1");
 
         let mut tasks_text_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
         tasks_text_request
@@ -21334,6 +21340,7 @@ mod tests {
             "action task_id parent_task_id type start_time timestamp running_time ip node"
         ));
         assert!(tasks_text.contains("cluster:admin/reroute"));
+        assert!(tasks_text.contains("node-a:1"));
     }
 
     #[test]
@@ -21853,6 +21860,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             in_flight: vec![ClusterManagerTaskRecord {
@@ -21862,6 +21870,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             ..Default::default()
@@ -21921,6 +21930,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             ..Default::default()
@@ -30401,6 +30411,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             in_flight: vec![ClusterManagerTaskRecord {
@@ -30410,6 +30421,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             ..Default::default()
@@ -30461,6 +30473,7 @@ mod tests {
                         kind: ClusterManagerTaskKind::Reroute,
                     },
                     state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
                     failure_reason: None,
                 },
                 ClusterManagerTaskRecord {
@@ -30470,6 +30483,7 @@ mod tests {
                         kind: ClusterManagerTaskKind::Reroute,
                     },
                     state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
                     failure_reason: None,
                 },
             ],
@@ -30480,6 +30494,7 @@ mod tests {
                     kind: ClusterManagerTaskKind::Reroute,
                 },
                 state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
                 failure_reason: None,
             }],
             ..Default::default()
