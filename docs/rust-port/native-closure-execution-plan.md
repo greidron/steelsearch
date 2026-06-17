@@ -68,7 +68,7 @@ Out of scope:
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
-  search and bulk route execution.
+  search and bulk route execution across success and request-error paths.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 1/1 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates plus follow-up
@@ -240,7 +240,8 @@ Initial targets:
 3. queue/backpressure smoke tests for search/write/admin routes. Runtime queue
    depth evidence now exists for cluster-manager task visibility and
    administrative thread-pool telemetry, and search/write route completion
-   counters are derived from runtime-owned thread-pool state;
+   counters are derived from runtime-owned thread-pool state for both success
+   and request-error paths;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 

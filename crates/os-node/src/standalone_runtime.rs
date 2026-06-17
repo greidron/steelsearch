@@ -30733,12 +30733,29 @@ mod tests {
         );
         assert_eq!(search.status, 200);
 
+        let mut failed_search_request =
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_search");
+        failed_search_request
+            .query_params
+            .insert("search_type".to_string(), "unsupported".to_string());
+        failed_search_request = failed_search_request.with_json_body(serde_json::json!({
+            "query": {"match_all": {}}
+        }));
+        let failed_search = node.handle_rest_request(failed_search_request);
+        assert_eq!(failed_search.status, 400);
+
         let bulk = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk").with_body(
                 "{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"runtime write\"}\n",
             ),
         );
         assert_eq!(bulk.status, 200);
+
+        let failed_bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk")
+                .with_body("not-json\n"),
+        );
+        assert_eq!(failed_bulk.status, 400);
 
         let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
         assert_eq!(stats.status, 200);
@@ -30747,9 +30764,9 @@ mod tests {
             .and_then(|nodes| nodes.values().next())
             .expect("node stats body to contain one node");
         assert_eq!(first_node["thread_pool"]["search"]["active"], 0);
-        assert_eq!(first_node["thread_pool"]["search"]["completed"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["completed"], 2);
         assert_eq!(first_node["thread_pool"]["write"]["active"], 0);
-        assert_eq!(first_node["thread_pool"]["write"]["completed"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["completed"], 2);
 
         let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search,write");
         cat_request
@@ -30760,9 +30777,9 @@ mod tests {
         let rows = cat.body.as_array().expect("cat thread_pool rows");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["name"], "search");
-        assert_eq!(rows[0]["completed"], "1");
+        assert_eq!(rows[0]["completed"], "2");
         assert_eq!(rows[1]["name"], "write");
-        assert_eq!(rows[1]["completed"], "1");
+        assert_eq!(rows[1]["completed"], "2");
     }
 
     #[test]

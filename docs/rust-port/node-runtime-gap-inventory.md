@@ -189,7 +189,7 @@ Current Steelsearch evidence:
   on 2026-06-17 with 2/2 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
-  search and bulk route execution;
+  search and bulk route execution across success and request-error paths;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 1/1 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates plus follow-up task
