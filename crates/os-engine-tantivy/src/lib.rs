@@ -129342,6 +129342,85 @@ mod tests {
     }
 
     #[test]
+    fn terms_set_non_term_field_fallback_updates_materialized_telemetry() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "places".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "shape": { "type": "geo_point" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, shape) in [
+            ("1", serde_json::json!(["alpha", "beta"])),
+            ("2", serde_json::json!(["alpha", "gamma"])),
+            ("3", serde_json::json!(["beta", "alpha", "omega"])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "places".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "shape": shape }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["places".to_string()],
+            })
+            .unwrap();
+
+        let search_request = |size| SearchRequest {
+            indices: vec!["places".to_string()],
+            query: serde_json::json!({
+                "terms_set": {
+                    "shape": {
+                        "terms": ["alpha", "beta"],
+                        "minimum_should_match": 2
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: Vec::new(),
+            from: 0,
+            size,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_include: None,
+            source_excludes: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+
+        let page_response = engine.search(search_request(10)).unwrap();
+        assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "3"]);
+        assert!(page_response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Fetch
+                && phase.description == "compatibility materialization materialized requested hits"
+        }));
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 1);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let size_zero_response = engine.search(search_request(0)).unwrap();
+        assert_eq!(size_zero_response.total_hits, 2);
+        assert!(size_zero_response.hits.is_empty());
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 1);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
+    }
+
+    #[test]
     fn single_index_text_case_insensitive_wildcard_size_zero_compatibility_aggregation_path_skips_hit_materialization(
     ) {
         let engine = TantivyEngine::default();
