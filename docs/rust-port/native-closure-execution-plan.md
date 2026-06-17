@@ -87,14 +87,14 @@ Out of scope:
   waiting and rejection model, and by-query/reindex task-submission admission
   through the same runtime-owned waiting and rejection model.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
-  with 6/6 tests and `zero_tests=0`, covering by-query rethrottle state
+  with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, repeated
   last-write-wins rethrottle sequencing, follow-up `/_tasks` list/get readback,
   shared-runtime restart readback for requested throttle rates, and rejection
   for cancelled or terminal tasks without mutating rate state, plus same-node
-  parent/child rethrottle rate readback without implicit rate propagation and
-  rethrottle requests accepted during the per-request shared-runtime sync
-  window after restart.
+  parent/child and multi-level descendant rethrottle rate readback without
+  implicit rate propagation and rethrottle requests accepted during the
+  per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-task-metadata` batch. It passed on
   2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
@@ -104,11 +104,11 @@ Out of scope:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows.
 - The same runner now has a `runtime-task-children` batch. It passed on
-  2026-06-17 with 5/5 tests and `zero_tests=0`, covering same-node
+  2026-06-17 with 6/6 tests and `zero_tests=0`, covering same-node
   `/_tasks?group_by=parents` child nesting from runtime task state plus
   parent-task-id child cancellation visibility, same-node multi-level
-  descendant cancellation propagation, and same-node parent/child rethrottle
-  rate visibility.
+  descendant cancellation propagation, and same-node parent/child plus
+  multi-level descendant rethrottle rate visibility.
 
 ## Workstreams
 
@@ -222,8 +222,8 @@ Validation runner:
   task rethrottle state, repeated last-write-wins sequencing, and readback as
   runtime-control evidence, including shared-runtime restart readback for
   requested throttle rates, cancelled/terminal task refusal, and same-node
-  parent/child independent rate readback, plus rethrottle-request handling
-  during the per-request sync window after restart.
+  parent/child plus multi-level descendant independent rate readback, plus
+  rethrottle-request handling during the per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
   report `failed_count == 0` and `zero_test_count == 0` before treating parent
   task metadata and cat task readback as runtime-control evidence.
@@ -234,7 +234,8 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating
   same-node parent/child task grouping and parent-task-id child cancellation
   visibility, same-node multi-level descendant cancellation propagation, plus
-  parent/child rethrottle rate visibility as runtime-control evidence.
+  parent/child and multi-level descendant rethrottle rate visibility as
+  runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -278,7 +279,8 @@ Initial targets:
    mutation evidence now exists for bounded cancellation/readback and by-query
    rethrottle/readback; parent task metadata, task header readback, same-node
    child grouping, same-node multi-level child cancellation propagation, and
-   same-node parent/child rethrottle rate visibility now have guarded coverage;
+   same-node parent/child plus multi-level rethrottle rate visibility now have
+   guarded coverage;
 3. queue/backpressure smoke tests for search/write/admin routes. Runtime queue
    depth evidence now exists for cluster-manager task visibility and
    administrative thread-pool telemetry, and search/write route completion
