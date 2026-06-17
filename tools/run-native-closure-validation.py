@@ -164,6 +164,10 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
         "multi-index-hybrid-vector-native-sort-aggregation",
     ),
     ValidationTest(
+        "multi_index_knn_vector_cache_bypass_leaves_no_request_result_cache_detail_entries",
+        "vector-knn-fallback-boundary",
+    ),
+    ValidationTest(
         "multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible",
         "vector-hybrid-fallback-boundary",
     ),

@@ -146,9 +146,10 @@ PROBES: tuple[Probe, ...] = (
             r"request_result_cache_unsupported_vector_bypasses",
             r"request_result_cache_hybrid_vector_bypasses",
             r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
+            r"multi_index_knn_vector_cache_bypass_leaves_no_request_result_cache_detail_entries",
             r"multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible",
         ),
-        risk="request-result cache is wired for pure single-index KNN and single-index hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing and same-request refresh correctness; unsupported pure and hybrid vector surfaces are counted",
+        risk="request-result cache is wired for pure single-index KNN and single-index hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing and same-request refresh correctness; unsupported multi-index pure and hybrid vector surfaces are counted and leave no request-result detail entries",
     ),
     Probe(
         name="production runtime controls",
@@ -284,7 +285,7 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="pure knn",
         category="vector-hybrid",
-        status="zero-test-guarded vector-knn runtime batch passed with pure KNN and hybrid vector-native page/aggregation/sort coverage plus unsupported hybrid vector bypass telemetry",
+        status="zero-test-guarded vector-knn runtime batch passed with pure KNN and hybrid vector-native page/aggregation/sort coverage plus unsupported pure and hybrid vector bypass telemetry",
         next_action="keep unsupported vector/hybrid shapes visible through bypass telemetry while widening only with parity tests",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"VECTOR_KNN_BATCH",
@@ -308,8 +309,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="runtime search cache hooks",
         category="runtime",
-        status="wired for pure single-index KNN and hybrid bool vector requests plus native aggregation/sort/highlight/explain, refresh-correct cache invalidation, and unsupported hybrid vector bypass telemetry",
-        next_action="extend request-result cache coverage beyond the current single-index KNN/hybrid bool vector surface using unsupported-vector bypass telemetry",
+        status="wired for pure single-index KNN and hybrid bool vector requests plus native aggregation/sort/highlight/explain, refresh-correct cache invalidation, and unsupported multi-index pure/hybrid vector bypass telemetry with empty request-result detail entries",
+        next_action="extend request-result cache coverage beyond the current single-index KNN/hybrid bool vector surface only when a native multi-index cache key can preserve index-local invalidation semantics",
         evidence_path=ENGINE_SOURCE,
         evidence_pattern=r"request_result_cache_unsupported_vector_bypasses",
     ),
