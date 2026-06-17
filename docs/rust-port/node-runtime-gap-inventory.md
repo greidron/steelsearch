@@ -187,12 +187,13 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 19/19 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 20/20 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
   task readback, repeated cancel idempotency with post-cancel readback,
   parent-task-id child cancellation visibility including same-node, cross-node,
   and background-worker descendant propagation, queued-versus-in-flight
-  cancellation distinction,
+  cancellation distinction, queued-cancelled worker drain into terminal readback
+  without pending-depth pollution,
   and completion-race refusal without cancelled-marker pollution,
   plus acknowledged/failed terminal task readback without polluting pending-task
   queue depth, bounded terminal task
@@ -207,13 +208,14 @@ Current Steelsearch evidence:
   task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
-  2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime task queue
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
   cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
   thread-pool routes, including cat thread-pool node rows derived from
   node-specific queued/in-flight runtime task state, queued cancellation state
-  versus in-flight execution visibility, and multi-node queued/in-flight task
-  visibility with remote node metadata;
+  versus in-flight execution visibility, queued-cancelled worker drain into
+  terminal readback without pending-depth pollution, and multi-node
+  queued/in-flight task visibility with remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
   on 2026-06-17 with 17/17 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue

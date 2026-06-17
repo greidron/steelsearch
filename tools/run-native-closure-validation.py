@@ -610,6 +610,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "queued_cancelled_task_worker_drain_preserves_terminal_marker_and_queue_depth",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "cancel_after_completion_race_does_not_create_cancelled_marker",
         "task-cancellation-runtime-state",
         package="os-node",
@@ -712,6 +719,13 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
     ),
     ValidationTest(
         "tasks_queued_and_in_flight_cancellation_have_distinct_runtime_visibility",
+        "task-queue-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "queued_cancelled_task_worker_drain_preserves_terminal_marker_and_queue_depth",
         "task-queue-runtime-state",
         package="os-node",
         target=("--lib",),

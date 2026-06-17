@@ -88,14 +88,12 @@ internal subsystems, especially:
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
 | Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, cancelled-task completion plus partial-progress status readback until eviction, and cancelled-terminal restart-sync/live-shutdown/node-role-transition refusal with progress preservation |
-| Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, including active queued/in-flight node-role-transition cancellation/refusal; worker-owned drain/refusal ordering is still bounded |
+| Queue interaction | queued cancellation state, in-flight refusal, and queued-cancelled worker drain into terminal readback are visible through task and pending-task routes, including active queued/in-flight node-role-transition cancellation/refusal; broader worker-owned drain/refusal ordering is still bounded |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves cancelled-terminal progress when cancel is refused after restart sync, live shutdown, or node-role transition, preserves active queued/in-flight task cancellation/refusal across node-role transition, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart |
 | Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, completion-race terminal refusal without cancelled-marker pollution, and cancelled-terminal restart-sync/live-shutdown/node-role-transition refusal exist |
 
 ### Required tests
 
-- add fixture-backed distinction for:
-  - queued cancellation versus worker drain races;
 - add operator-visible evidence for terminal-state retention:
   - broader node-role transition retention beyond cancelled-terminal
     visibility/refusal and the current completion/restart/live-shutdown/eviction

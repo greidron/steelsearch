@@ -111,14 +111,15 @@ Out of scope:
   authz, and explicit fail-closed OpenSearch Security plugin API responses with
   documented `security_exception` bodies instead of 404-only ambiguity.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 19/19 tests and `zero_tests=0`, covering task cancellation through
+  with 20/20 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility including
   same-node, cross-node, and background-worker descendant propagation,
-  queued-versus-in-flight cancellation distinction, completion-race refusal
-  without cancelled-marker pollution, and acknowledged/failed terminal task readback
-  without polluting pending-task queue depth, plus
+  queued-versus-in-flight cancellation distinction, queued-cancelled worker
+  drain into terminal readback without pending-depth pollution, completion-race
+  refusal without cancelled-marker pollution, and acknowledged/failed terminal
+  task readback without polluting pending-task queue depth, plus
   bounded terminal task retention/eviction with stale cancellation-marker
   pruning, cancelled-task completion and partial-progress status readback through
   restart until eviction, cancelled-terminal restart-sync, live-shutdown, and
@@ -129,13 +130,14 @@ Out of scope:
   partial shared-state recovery error task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
-  with 4/4 tests and `zero_tests=0`, covering runtime task queue metadata plus
+  with 5/5 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
   tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes,
   including cat thread-pool node rows derived from node-specific queued/in-flight
   runtime task state, queued cancellation state versus in-flight execution
-  visibility, and multi-node queued/in-flight task visibility with remote node
-  metadata.
+  visibility, queued-cancelled worker drain into terminal readback without
+  pending-depth pollution, and multi-node queued/in-flight task visibility with
+  remote node metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
   2026-06-17 with 17/17 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
@@ -332,8 +334,9 @@ Validation runner:
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
   same-node, cross-node, and background-worker descendant cancellation propagation,
-  queued-versus-in-flight cancellation distinction, completion-race refusal
-  without cancelled-marker pollution, terminal-state task readback, bounded
+  queued-versus-in-flight cancellation distinction, queued-cancelled worker
+  drain into terminal readback without pending-depth pollution,
+  completion-race refusal without cancelled-marker pollution, terminal-state task readback, bounded
   terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
   completion and partial-progress status readback through restart until eviction,
   cancelled-terminal restart-sync, live-shutdown, and node-role-transition

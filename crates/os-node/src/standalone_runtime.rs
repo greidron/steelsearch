@@ -24121,6 +24121,116 @@ mod tests {
     }
 
     #[test]
+    fn queued_cancelled_task_worker_drain_preserves_terminal_marker_and_queue_depth() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 171,
+                task: ClusterManagerTask {
+                    source: "queued cancel worker drain probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "maintenance-refresh".to_string(),
+                        action: "indices:admin/refresh".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:171/_cancel",
+        ));
+        assert_eq!(cancel.status, 200);
+        assert_eq!(
+            cancel.body["nodes"]["node-a"]["tasks"]["node-a:171"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        {
+            let mut queue = node
+                .task_queue_state
+                .lock()
+                .expect("task queue state lock poisoned");
+            let state = queue.as_mut().expect("task queue state");
+            let mut drained = state.pending.pop().expect("pending task");
+            drained.state = ClusterManagerTaskState::Acknowledged;
+            state.task_statuses.insert(
+                171,
+                serde_json::Map::from_iter([
+                    (
+                        "phase".to_string(),
+                        Value::String("drained_after_queued_cancel".to_string()),
+                    ),
+                    ("batches".to_string(), serde_json::json!(1)),
+                ]),
+            );
+            state.acknowledged.push(drained);
+        }
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:171"));
+        assert_eq!(get.status, 200);
+        assert_eq!(get.body["task"]["cancellable"], Value::Bool(false));
+        assert_eq!(get.body["task"]["cancelled"], Value::Bool(true));
+        assert_eq!(
+            get.body["task"]["status"]["phase"],
+            Value::String("drained_after_queued_cancel".to_string())
+        );
+        assert_eq!(
+            get.body["task"]["status"]["background_worker"],
+            Value::String("maintenance-refresh".to_string())
+        );
+
+        let repeated_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:171/_cancel",
+        ));
+        assert_eq!(repeated_cancel.status, 400);
+        assert_eq!(
+            repeated_cancel.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        assert_eq!(
+            pending.body["tasks"]
+                .as_array()
+                .expect("pending tasks array")
+                .len(),
+            0
+        );
+        let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["number_of_pending_tasks"], 0);
+    }
+
+    #[test]
     fn cancel_after_completion_race_does_not_create_cancelled_marker() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
