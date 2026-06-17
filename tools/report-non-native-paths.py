@@ -108,8 +108,9 @@ PROBES: tuple[Probe, ...] = (
             r"--require-interruption",
             r"--exercise-interruption",
             r"interrupt_java_to_steelsearch_recovery",
+            r"interrupt_steelsearch_to_opensearch_recovery",
         ),
-        risk="must stay present so mixed movement keeps seq/checkpoint evidence, the interrupted/resumed phase contract, the enforceable gate option, and the Java-to-SteelSearch interruption exercise",
+        risk="must stay present so mixed movement keeps seq/checkpoint evidence, the interrupted/resumed phase contract, the enforceable gate option, and both live interruption exercises",
     ),
     Probe(
         name="runtime control gaps",
@@ -245,8 +246,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="mixed shard movement interruption",
         category="mixed-cluster",
-        status="summary contract, final-gate option, and Java-to-SteelSearch live interruption exercise wired; SteelSearch-to-OpenSearch interrupted recovery still pending",
-        next_action="add SteelSearch-to-OpenSearch interrupted/resumed/finalized recovery phases, then run the live probe with --exercise-interruption --require-interruption in the final mixed-cluster gate",
+        status="summary contract, final-gate option, and both-direction live interruption exercises wired",
+        next_action="run the live probe with --exercise-interruption --require-interruption in the final mixed-cluster gate and capture retention-lease/checkpoint monotonicity evidence",
         evidence_path=SHARD_PROBE,
         evidence_pattern=r"interruption_evidence_passed",
     ),

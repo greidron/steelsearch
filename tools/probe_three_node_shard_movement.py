@@ -432,6 +432,28 @@ def steelsearch_dev_env(
     )
 
 
+def opensearch_dev_env(
+    *,
+    http_port: int,
+    transport_port: int,
+    node_name: str,
+    seeds: str,
+    initial_managers: str,
+    work_dir: Path,
+) -> dict[str, str]:
+    return make_env(
+        {
+            "OPENSEARCH_HTTP_PORT": str(http_port),
+            "OPENSEARCH_TRANSPORT_PORT": str(transport_port),
+            "OPENSEARCH_CLUSTER_NAME": "mixed-three-node-dev",
+            "OPENSEARCH_NODE_NAME": node_name,
+            "OPENSEARCH_DISCOVERY_SEED_HOSTS": seeds,
+            "OPENSEARCH_INITIAL_CLUSTER_MANAGER_NODES": initial_managers,
+            "OPENSEARCH_WORK_DIR": str(work_dir),
+        }
+    )
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", default="/tmp/three-node-shard-movement.latest")
@@ -494,16 +516,13 @@ def main() -> int:
     try:
         java1_proc = start_process(
             "bash tools/run-opensearch-dev.sh",
-            make_env(
-                {
-                    "OPENSEARCH_HTTP_PORT": str(java1_http),
-                    "OPENSEARCH_TRANSPORT_PORT": str(java1_transport),
-                    "OPENSEARCH_CLUSTER_NAME": "mixed-three-node-dev",
-                    "OPENSEARCH_NODE_NAME": "java-primary-1",
-                    "OPENSEARCH_DISCOVERY_SEED_HOSTS": seeds,
-                    "OPENSEARCH_INITIAL_CLUSTER_MANAGER_NODES": initial_managers,
-                    "OPENSEARCH_WORK_DIR": str(java1_dir),
-                }
+            opensearch_dev_env(
+                http_port=java1_http,
+                transport_port=java1_transport,
+                node_name="java-primary-1",
+                seeds=seeds,
+                initial_managers=initial_managers,
+                work_dir=java1_dir,
             ),
             java1_dir / "stdout.log",
             java1_dir / "stderr.log",
@@ -513,16 +532,13 @@ def main() -> int:
 
         java2_proc = start_process(
             "bash tools/run-opensearch-dev.sh",
-            make_env(
-                {
-                    "OPENSEARCH_HTTP_PORT": str(java2_http),
-                    "OPENSEARCH_TRANSPORT_PORT": str(java2_transport),
-                    "OPENSEARCH_CLUSTER_NAME": "mixed-three-node-dev",
-                    "OPENSEARCH_NODE_NAME": "java-primary-2",
-                    "OPENSEARCH_DISCOVERY_SEED_HOSTS": seeds,
-                    "OPENSEARCH_INITIAL_CLUSTER_MANAGER_NODES": initial_managers,
-                    "OPENSEARCH_WORK_DIR": str(java2_dir),
-                }
+            opensearch_dev_env(
+                http_port=java2_http,
+                transport_port=java2_transport,
+                node_name="java-primary-2",
+                seeds=seeds,
+                initial_managers=initial_managers,
+                work_dir=java2_dir,
             ),
             java2_dir / "stdout.log",
             java2_dir / "stderr.log",
@@ -706,16 +722,13 @@ def main() -> int:
 
         java1_proc = start_process(
             "bash tools/run-opensearch-dev.sh",
-            make_env(
-                {
-                    "OPENSEARCH_HTTP_PORT": str(java1_http),
-                    "OPENSEARCH_TRANSPORT_PORT": str(java1_transport),
-                    "OPENSEARCH_CLUSTER_NAME": "mixed-three-node-dev",
-                    "OPENSEARCH_NODE_NAME": "java-primary-1",
-                    "OPENSEARCH_DISCOVERY_SEED_HOSTS": seeds,
-                    "OPENSEARCH_INITIAL_CLUSTER_MANAGER_NODES": initial_managers,
-                    "OPENSEARCH_WORK_DIR": str(java1_dir),
-                }
+            opensearch_dev_env(
+                http_port=java1_http,
+                transport_port=java1_transport,
+                node_name="java-primary-1",
+                seeds=seeds,
+                initial_managers=initial_managers,
+                work_dir=java1_dir,
             ),
             java1_dir / "stdout.log",
             java1_dir / "stderr.log",
@@ -724,6 +737,50 @@ def main() -> int:
             raise RuntimeError("java-primary-1 did not restart")
         if not wait_for_node_count(java2_client, expected_count=3, attempts=45, sleep_seconds=1.0):
             raise RuntimeError(f"three-node cluster did not reform after java1 restart; java_view_node_count={current_node_count(java2_client)}")
+        if args.exercise_interruption:
+            interrupted_shards = get_shards(java2_client, args.index)
+            report["phases"].append(
+                phase_result(
+                    "interrupt_steelsearch_to_opensearch_recovery",
+                    shards=interrupted_shards,
+                    placement=placement(interrupted_shards),
+                    recovery=recovery_report(java2_client, args.index),
+                    **checkpoint_report(java2_client, args.index),
+                )
+            )
+            terminate_process(java1_proc)
+            java1_proc = None
+
+            java1_proc = start_process(
+                "bash tools/run-opensearch-dev.sh",
+                opensearch_dev_env(
+                    http_port=java1_http,
+                    transport_port=java1_transport,
+                    node_name="java-primary-1",
+                    seeds=seeds,
+                    initial_managers=initial_managers,
+                    work_dir=java1_dir,
+                ),
+                java1_dir / "stdout.log",
+                java1_dir / "stderr.log",
+            )
+            if not wait_for_http(f"http://127.0.0.1:{java1_http}", attempts=120, sleep_seconds=1.0):
+                raise RuntimeError("java-primary-1 did not restart after interrupted recovery")
+            if not wait_for_node_count(java2_client, expected_count=3, attempts=45, sleep_seconds=1.0):
+                raise RuntimeError(
+                    "three-node cluster did not reform after interrupted SteelSearch-to-OpenSearch recovery"
+                )
+            resumed_shards = get_shards(java2_client, args.index)
+            report["phases"].append(
+                phase_result(
+                    "resume_or_restart_steelsearch_to_opensearch_recovery",
+                    shards=resumed_shards,
+                    placement=placement(resumed_shards),
+                    recovery=recovery_report(java2_client, args.index),
+                    search_count=get_search_count(java2_client, args.index),
+                    **checkpoint_report(java2_client, args.index),
+                )
+            )
         green_on_rust_java = wait_for_index_health(java2_client, args.index, expected_status="green", attempts=180, sleep_seconds=1.0)
         rust_primary_java_replica = wait_for_shard_condition(
             java2_client,
@@ -742,6 +799,18 @@ def main() -> int:
                 **checkpoint_report(java2_client, args.index),
             )
         )
+        if args.exercise_interruption:
+            report["phases"].append(
+                phase_result(
+                    "finalize_steelsearch_to_opensearch_recovery",
+                    cluster_health=green_on_rust_java,
+                    shards=rust_primary_java_replica,
+                    placement=placement(rust_primary_java_replica),
+                    recovery=recovery_report(java2_client, args.index),
+                    search_count=get_search_count(java2_client, args.index),
+                    **checkpoint_report(java2_client, args.index),
+                )
+            )
 
         terminate_process(rust_proc)
         rust_proc = None

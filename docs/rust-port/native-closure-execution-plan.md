@@ -295,16 +295,17 @@ Already evidenced:
 - `--exercise-interruption` coverage to interrupt Java to SteelSearch recovery
   with target restart, resume-or-restart observation, and finalized recovery
   phase recording.
+- `--exercise-interruption` coverage to interrupt SteelSearch primary to Java replica recovery
+  with target restart, resume-or-restart observation, and finalized recovery
+  phase recording.
 
 Remaining tests:
 
-1. interrupt SteelSearch primary to Java replica recovery before finalize by
-   adding live phase execution;
-2. run the final mixed-cluster gate with
+1. run the final mixed-cluster gate with
    `--exercise-interruption --require-interruption` after both live
    interruption directions are added;
-3. verify retention-lease and checkpoint monotonicity during interruption;
-4. capture allocation explanation for unsupported movement shapes.
+2. verify retention-lease and checkpoint monotonicity during interruption;
+3. capture allocation explanation for unsupported movement shapes.
 
 Exit evidence:
 
