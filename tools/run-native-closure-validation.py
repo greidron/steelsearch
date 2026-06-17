@@ -252,6 +252,16 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "cluster_health_tasks_and_cat_pending_tasks_share_runtime_queue_depth",
+        "route-backpressure-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "rethrottle_routes_support_task_id_path_variants",
@@ -294,6 +304,7 @@ BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "startup-readiness": STARTUP_READINESS_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
+    "runtime-backpressure": RUNTIME_BACKPRESSURE_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
 }

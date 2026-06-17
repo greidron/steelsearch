@@ -63,7 +63,11 @@ Out of scope:
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
   with 2/2 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
-  tasks, and cat pending tasks.
+  tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes.
+- The same runner now has a `runtime-backpressure` batch. It passed on
+  2026-06-17 with 1/1 tests and `zero_tests=0`, covering administrative
+  thread-pool active/queued telemetry derived from the same runtime task queue
+  state.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 1/1 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates plus follow-up
@@ -166,6 +170,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
   depth and pending-task metadata as runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch runtime-backpressure` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating
+  administrative route backpressure telemetry as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state and readback as runtime-control evidence.
@@ -215,7 +222,8 @@ Initial targets:
    mutation evidence now exists for bounded cancellation/readback and by-query
    rethrottle/readback; parent task metadata readback now has guarded coverage;
 3. queue/backpressure smoke tests for search/write/admin routes. Runtime queue
-   depth evidence now exists for cluster-manager task visibility;
+   depth evidence now exists for cluster-manager task visibility and
+   administrative thread-pool telemetry;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 

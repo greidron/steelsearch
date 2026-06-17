@@ -183,7 +183,12 @@ Current Steelsearch evidence:
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
-  cluster pending tasks, and cat pending tasks;
+  cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
+  thread-pool routes;
+- `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
+  on 2026-06-17 with 1/1 tests and `zero_tests=0`, covering administrative
+  thread-pool active/queued telemetry derived from the same runtime task queue
+  state;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 1/1 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates plus follow-up task
@@ -205,7 +210,8 @@ Required tests:
 
 - extend the current task cancellation, throttling, and parent metadata probes
   into broader child-task and request-header propagation coverage;
-- queue/backpressure smoke tests for administrative and search/write workloads;
+- extend queue/backpressure smoke tests from administrative task telemetry into
+  search/write workloads;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries

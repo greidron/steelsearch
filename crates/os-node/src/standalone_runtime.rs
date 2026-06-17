@@ -9757,15 +9757,7 @@ impl SteelNode {
                             "heap_used_in_bytes": 0
                         }
                     },
-                    "thread_pool": {
-                        "search": {
-                            "threads": 1,
-                            "queue": 0,
-                            "active": 0,
-                            "rejected": 0,
-                            "completed": 0
-                        }
-                    },
+                    "thread_pool": self.thread_pool_stats_body(),
                     "fs": {
                         "total": {
                             "total_in_bytes": 0,
@@ -11250,6 +11242,43 @@ impl SteelNode {
 
     fn tasks_len(&self) -> u64 {
         self.task_records().len() as u64
+    }
+
+    fn task_queue_runtime_counts(&self) -> (u64, u64) {
+        let records = self.task_records();
+        let active = records
+            .iter()
+            .filter(|task| task.get("executing").and_then(Value::as_bool).unwrap_or(false))
+            .count() as u64;
+        let queue = records.len() as u64 - active;
+        (active, queue)
+    }
+
+    fn thread_pool_stats_body(&self) -> Value {
+        let (management_active, management_queue) = self.task_queue_runtime_counts();
+        serde_json::json!({
+            "management": {
+                "threads": 1,
+                "queue": management_queue,
+                "active": management_active,
+                "rejected": 0,
+                "completed": 0
+            },
+            "search": {
+                "threads": 1,
+                "queue": 0,
+                "active": 0,
+                "rejected": 0,
+                "completed": 0
+            },
+            "write": {
+                "threads": 1,
+                "queue": 0,
+                "active": 0,
+                "rejected": 0,
+                "completed": 0
+            }
+        })
     }
 
     fn find_task(&self, task_id: &str) -> Option<Value> {
@@ -13989,9 +14018,36 @@ impl SteelNode {
         target: Option<&str>,
     ) -> RestResponse {
         let node_name = self.info.name.clone();
+        let (management_active, management_queue) = self.task_queue_runtime_counts();
+        let management_active = management_active.to_string();
+        let management_queue = management_queue.to_string();
         let mut rows = vec![
             serde_json::json!({
                 "node_name": node_name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "management",
+                "type": "scaling",
+                "active": management_active,
+                "pool_size": "1",
+                "queue": management_queue,
+                "queue_size": "1000",
+                "rejected": "0",
+                "largest": "1",
+                "completed": "0",
+                "total_wait_time": "0ms",
+                "core": "1",
+                "max": "1",
+                "size": "1",
+                "keep_alive": "5m",
+                "parallelism": ""
+            }),
+            serde_json::json!({
+                "node_name": self.info.name,
                 "node_id": "steelsearch-dev-node",
                 "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
                 "pid": "0",
@@ -21419,7 +21475,7 @@ mod tests {
                 .as_array()
                 .expect("cat thread_pool array")
                 .len(),
-            2
+            3
         );
 
         let mut thread_pool_text_request =
@@ -30534,6 +30590,27 @@ mod tests {
         assert_eq!(cat_rows.len(), 3);
         assert_eq!(cat_rows[0]["insertOrder"], "21");
         assert_eq!(cat_rows[2]["executing"], "true");
+
+        let mut thread_pool_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/management");
+        thread_pool_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let thread_pool = node.handle_rest_request(thread_pool_request);
+        assert_eq!(thread_pool.status, 200);
+        let thread_pool_rows = thread_pool.body.as_array().expect("thread pool rows");
+        assert_eq!(thread_pool_rows.len(), 1);
+        assert_eq!(thread_pool_rows[0]["active"], "1");
+        assert_eq!(thread_pool_rows[0]["queue"], "2");
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["management"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["management"]["queue"], 2);
     }
 
     #[test]
