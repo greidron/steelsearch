@@ -717,6 +717,44 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "multi_node_task_queue_visibility_uses_remote_node_metadata",
+        "runtime-fairness-multi-node-metadata",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "remote_task_backlog_does_not_block_local_task_submission_admission",
+        "runtime-fairness-local-admission",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "remote_task_backlog_does_not_block_local_search_or_write_admission",
+        "runtime-fairness-local-admission",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "runtime_thread_pool_classes_drain_independently_under_mixed_backlog",
+        "runtime-fairness-independent-drain",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "runtime_write_and_maintenance_pools_drain_independently_under_mixed_backlog",
+        "runtime-fairness-independent-drain",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "rethrottle_routes_support_task_id_path_variants",
@@ -905,6 +943,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
     "runtime-backpressure": RUNTIME_BACKPRESSURE_BATCH,
+    "runtime-fairness": RUNTIME_FAIRNESS_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,

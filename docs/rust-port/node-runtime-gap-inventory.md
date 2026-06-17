@@ -226,6 +226,11 @@ Current Steelsearch evidence:
   errors, partial-recovery task-submission refusal, live-shutdown
   task-submission refusal, plus restart reset evidence for runtime thread-pool
   queue/counter state;
+- `tools/run-native-closure-validation.py --batch runtime-fairness` passed on
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering simulated multi-node
+  remote task metadata visibility, local task-submission/search/write admission
+  under remote backlog, local overload counter isolation from remote task
+  metadata, and independent search/write versus maintenance drain behavior;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 7/7 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, repeated

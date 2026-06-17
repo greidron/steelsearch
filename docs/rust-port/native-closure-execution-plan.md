@@ -139,6 +139,11 @@ Out of scope:
   shared-state recovery errors, partial-recovery task-submission refusal, plus
   live-shutdown task-submission refusal, plus restart reset evidence for
   runtime thread-pool queue/counter state.
+- The same runner now has a `runtime-fairness` batch. It passed on
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering multi-node remote
+  task metadata visibility, local task-submission/search/write admission under
+  remote backlog, local overload counter isolation from remote task metadata,
+  and independent search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, repeated
@@ -301,6 +306,11 @@ Validation runner:
   partial-recovery task-submission refusal, live-shutdown task-submission
   refusal, and runtime thread-pool queue/counter reset after shared-runtime
   restart.
+- `tools/run-native-closure-validation.py --batch runtime-fairness` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating
+  simulated multi-node remote task metadata isolation, local admission under
+  remote backlog, and independent local workload drain as runtime fairness
+  evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, repeated last-write-wins sequencing, and readback as
