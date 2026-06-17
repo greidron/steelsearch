@@ -58,6 +58,11 @@ Interpretation:
   `compatibility_materialized_response_fetches`, normalized by successful
   operation count, so future runs can flag high-delta materialized fallback
   regressions directly in the JSON/Markdown artifacts.
+- `tools/run-http-load-baseline.py --operation-resource-deltas` now records
+  operation-level native telemetry deltas for the same counters. Use it with
+  `--clients 1` when the goal is exact per-case materialization attribution;
+  the matrix runner forwards the same flag and renders operation-level
+  materialization budget rows when those deltas are present.
 
 Functional OpenSearch E2E comparison status:
 

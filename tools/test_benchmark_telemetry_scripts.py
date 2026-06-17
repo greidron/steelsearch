@@ -49,6 +49,7 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
+        self.assertFalse(payload["config"]["operation_resource_deltas"])
         resource_usage = payload["resource_usage"]
         for counter in EXPECTED_NATIVE_COUNTERS:
             self.assertEqual(resource_usage[counter]["source"], "/_nodes/stats")
@@ -90,6 +91,10 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                                 "p99": 1.0,
                                 "mean": 1.0,
                             },
+                            "resource_usage": {
+                                "materialized_response_fetches": {"delta": 1},
+                                "compatibility_materialized_response_fetches": {"delta": 0},
+                            },
                         }
                     },
                 }
@@ -106,6 +111,11 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertIn("| `materialized_response_fetches` | 1 | 4 | 0.25 | 1.00 | `pass` |", report)
         self.assertIn(
             "| `compatibility_materialized_response_fetches` | 3 | 4 | 0.75 | 1.00 | `pass` |",
+            report,
+        )
+        self.assertIn("### Steelsearch operation materialization budget", report)
+        self.assertIn(
+            "| lexical | `materialized_response_fetches` | 1 | 4 | 0.25 | 1.00 | `pass` |",
             report,
         )
 
@@ -135,6 +145,43 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             scenario["counters"]["compatibility_materialized_response_fetches"]["status"],
             "pass",
         )
+
+    def test_benchmark_matrix_json_marks_operation_materialization_budget_failures(self):
+        matrix = load_matrix_module()
+        budgets = matrix.build_native_telemetry_budgets(
+            {
+                "steelsearch-single-node": {
+                    "resource_usage": {
+                        "materialized_response_fetches": {"delta": 5},
+                        "compatibility_materialized_response_fetches": {"delta": 1},
+                    },
+                    "operations": {
+                        "facet": {
+                            "success_count": 2,
+                            "resource_usage": {
+                                "materialized_response_fetches": {"delta": 4},
+                                "compatibility_materialized_response_fetches": {"delta": 0},
+                            },
+                        },
+                        "lexical": {
+                            "success_count": 3,
+                            "resource_usage": {
+                                "materialized_response_fetches": {"delta": 1},
+                                "compatibility_materialized_response_fetches": {"delta": 1},
+                            },
+                        },
+                    },
+                }
+            }
+        )
+
+        operations = budgets["steelsearch-single-node"]["operations"]
+        self.assertEqual(operations["facet"]["status"], "fail")
+        self.assertEqual(
+            operations["facet"]["counters"]["materialized_response_fetches"]["per_success"],
+            2.0,
+        )
+        self.assertEqual(operations["lexical"]["status"], "pass")
 
 
 if __name__ == "__main__":

@@ -121,6 +121,14 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=positive_float, default=10.0)
     parser.add_argument("--query-mix")
     parser.add_argument("--seed", type=int, default=13)
+    parser.add_argument(
+        "--operation-resource-deltas",
+        action="store_true",
+        help=(
+            "ask the load runner to sample native telemetry counters before and after each operation; "
+            "use --clients 1 for exact per-operation materialization attribution"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     profile = PROFILES[args.profile]
@@ -157,6 +165,7 @@ def main() -> int:
             "query_mix": args.query_mix,
             "seed": args.seed,
             "profile": args.profile,
+            "operation_resource_deltas": args.operation_resource_deltas,
         },
         "scenarios": [
             {
@@ -526,6 +535,8 @@ def run_baseline(
         command.extend(["--process-pids", ",".join(str(pid) for pid in resource_pids)])
     if handle.operation_log_path is not None:
         command.extend(["--operation-log-path", str(handle.operation_log_path)])
+    if args.operation_resource_deltas:
+        command.append("--operation-resource-deltas")
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=os.environ.copy(), check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"{scenario.label} baseline failed: {completed.stderr.strip() or completed.stdout.strip()}")
@@ -668,25 +679,49 @@ def build_native_telemetry_budgets(scenarios: dict[str, Any]) -> dict[str, Any]:
         counters: dict[str, Any] = {}
         for counter, budget in MATERIALIZATION_BUDGETS.items():
             delta = payload.get("resource_usage", {}).get(counter, {}).get("delta")
-            per_success = None
-            status = "unknown"
-            if isinstance(delta, (int, float)) and success_count > 0:
-                per_success = delta / success_count
-                status = "pass" if per_success <= budget["max_per_success"] else "fail"
-            counters[counter] = {
-                "delta": delta,
-                "success_count": success_count,
-                "per_success": per_success,
-                "max_per_success": budget["max_per_success"],
-                "status": status,
-                "description": budget["description"],
+            counters[counter] = materialization_budget_payload(delta, success_count, budget)
+        operations: dict[str, Any] = {}
+        for operation, op_payload in sorted(payload.get("operations", {}).items()):
+            op_resource_usage = op_payload.get("resource_usage")
+            if not isinstance(op_resource_usage, dict):
+                continue
+            op_success_count = op_payload.get("success_count", 0)
+            operation_counters = {
+                counter: materialization_budget_payload(
+                    op_resource_usage.get(counter, {}).get("delta"),
+                    op_success_count,
+                    budget,
+                )
+                for counter, budget in MATERIALIZATION_BUDGETS.items()
+            }
+            operations[operation] = {
+                "success_count": op_success_count,
+                "counters": operation_counters,
+                "status": aggregate_budget_status(operation_counters),
             }
         budgets[scenario_key] = {
             "success_count": success_count,
             "counters": counters,
+            "operations": operations,
             "status": aggregate_budget_status(counters),
         }
     return budgets
+
+
+def materialization_budget_payload(delta: Any, success_count: Any, budget: dict[str, Any]) -> dict[str, Any]:
+    per_success = None
+    status = "unknown"
+    if isinstance(delta, (int, float)) and isinstance(success_count, (int, float)) and success_count > 0:
+        per_success = delta / success_count
+        status = "pass" if per_success <= budget["max_per_success"] else "fail"
+    return {
+        "delta": delta,
+        "success_count": success_count,
+        "per_success": per_success,
+        "max_per_success": budget["max_per_success"],
+        "status": status,
+        "description": budget["description"],
+    }
 
 
 def aggregate_budget_status(counters: dict[str, Any]) -> str:
@@ -855,6 +890,21 @@ def render_report(results: dict[str, Any]) -> str:
                 lines.append(
                     f"| `{counter}` | {safe_number(budget.get('delta'))} | {safe_number(budget.get('success_count'))} | {safe_number(budget.get('per_success'))} | {safe_number(budget.get('max_per_success'))} | `{budget.get('status', 'unknown')}` |"
                 )
+            if native_budget.get("operations"):
+                lines.extend(
+                    [
+                        "",
+                        "### Steelsearch operation materialization budget",
+                        "",
+                        "| Operation | Counter | Delta | Successful ops | Per successful op | Max per successful op | Status |",
+                        "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+                    ]
+                )
+                for operation, operation_budget in native_budget.get("operations", {}).items():
+                    for counter, budget in operation_budget.get("counters", {}).items():
+                        lines.append(
+                            f"| {operation} | `{counter}` | {safe_number(budget.get('delta'))} | {safe_number(budget.get('success_count'))} | {safe_number(budget.get('per_success'))} | {safe_number(budget.get('max_per_success'))} | `{budget.get('status', 'unknown')}` |"
+                        )
 
     lines.extend(
         [

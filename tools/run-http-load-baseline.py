@@ -21,6 +21,15 @@ from typing import Any
 
 DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5"
 OPERATIONS = ("write", "lexical", "ranking", "facet", "sort_filter", "nested", "vector", "hybrid", "refresh")
+NATIVE_TELEMETRY_COUNTERS = (
+    "materialized_response_fetches",
+    "materialized_response_avoided_fetches",
+    "compatibility_materialized_response_fetches",
+    "request_result_cache_hybrid_vector_bypasses",
+    "request_result_cache_unsupported_vector_bypasses",
+    "request_result_cache_highlight_bypasses",
+    "request_result_cache_explain_bypasses",
+)
 
 
 def main() -> int:
@@ -51,6 +60,14 @@ def main() -> int:
         default="/_nodes/stats",
         help="HTTP metrics path used to sample vector cache counters when supported",
     )
+    parser.add_argument(
+        "--operation-resource-deltas",
+        action="store_true",
+        help=(
+            "sample native telemetry counters before and after each operation; "
+            "use clients=1 for exact per-operation attribution"
+        ),
+    )
     args = parser.parse_args()
 
     load_opt_in = os.environ.get("RUN_HTTP_LOAD_TESTS") == "1" or os.environ.get("RUN_HTTP_LOAD_COMPARISON") == "1"
@@ -78,6 +95,7 @@ def main() -> int:
         "query_mix": query_mix,
         "seed": args.seed,
         "reset": not args.no_reset,
+        "operation_resource_deltas": args.operation_resource_deltas,
     }
 
     if args.dry_run:
@@ -96,27 +114,7 @@ def main() -> int:
                     "vector_cache_bytes": {
                         "source": args.metrics_path,
                     },
-                    "materialized_response_fetches": {
-                        "source": args.metrics_path,
-                    },
-                    "materialized_response_avoided_fetches": {
-                        "source": args.metrics_path,
-                    },
-                    "compatibility_materialized_response_fetches": {
-                        "source": args.metrics_path,
-                    },
-                    "request_result_cache_hybrid_vector_bypasses": {
-                        "source": args.metrics_path,
-                    },
-                    "request_result_cache_unsupported_vector_bypasses": {
-                        "source": args.metrics_path,
-                    },
-                    "request_result_cache_highlight_bypasses": {
-                        "source": args.metrics_path,
-                    },
-                    "request_result_cache_explain_bypasses": {
-                        "source": args.metrics_path,
-                    },
+                    **{counter: {"source": args.metrics_path} for counter in NATIVE_TELEMETRY_COUNTERS},
                 },
             },
             args.output,
@@ -225,6 +223,7 @@ class LoadRunner:
         self.success: dict[str, int] = defaultdict(int)
         self.errors: dict[str, int] = defaultdict(int)
         self.error_examples: dict[str, list[str]] = defaultdict(list)
+        self.operation_resource_deltas: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def run(self, probes: "ResourceProbes") -> dict[str, Any]:
         before = probes.sample()
@@ -235,7 +234,7 @@ class LoadRunner:
         start = time.monotonic()
         deadline = start + self.config["duration_seconds"]
         threads = [
-            threading.Thread(target=self.worker, args=(client_id, deadline), daemon=True)
+            threading.Thread(target=self.worker, args=(client_id, deadline, probes), daemon=True)
             for client_id in range(self.config["clients"])
         ]
         for thread in threads:
@@ -332,20 +331,25 @@ class LoadRunner:
         if response["status"] >= 300:
             raise RuntimeError(f"failed to refresh seed corpus: {response}")
 
-    def worker(self, client_id: int, deadline: float) -> None:
+    def worker(self, client_id: int, deadline: float, probes: "ResourceProbes") -> None:
         rng = random.Random(self.config["seed"] + client_id)
         cumulative = cumulative_weights(self.config["query_mix"])
         counter = 0
         while time.monotonic() < deadline:
             operation = choose_operation(rng, cumulative)
             counter += 1
+            before_operation = self.operation_resource_sample(probes)
             started = time.perf_counter()
             try:
                 response = self.run_operation(operation, client_id, counter, rng)
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
+                after_operation = self.operation_resource_sample(probes)
+                self.record_operation_resource_delta(operation, before_operation, after_operation)
                 self.record(operation, elapsed_ms, response)
             except Exception as error:  # noqa: BLE001 - report load-test failures per operation
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
+                after_operation = self.operation_resource_sample(probes)
+                self.record_operation_resource_delta(operation, before_operation, after_operation)
                 self.record_exception(operation, elapsed_ms, error)
 
     def run_operation(self, operation: str, client_id: int, counter: int, rng: random.Random) -> dict[str, Any]:
@@ -508,14 +512,40 @@ class LoadRunner:
             if len(self.error_examples[operation]) < 3:
                 self.error_examples[operation].append(repr(error))
 
+    def operation_resource_sample(self, probes: "ResourceProbes") -> dict[str, int | None] | None:
+        if not self.config.get("operation_resource_deltas"):
+            return None
+        sample = probes.sample()
+        return {counter: sample.get(counter) for counter in NATIVE_TELEMETRY_COUNTERS}
+
+    def record_operation_resource_delta(
+        self,
+        operation: str,
+        before: dict[str, int | None] | None,
+        after: dict[str, int | None] | None,
+    ) -> None:
+        if before is None or after is None:
+            return
+        with self.lock:
+            for counter in NATIVE_TELEMETRY_COUNTERS:
+                value = delta(after.get(counter), before.get(counter))
+                if value is not None and value > 0:
+                    self.operation_resource_deltas[operation][counter] += value
+
     def operation_summary(self, operation: str) -> dict[str, Any]:
         samples = self.samples[operation]
-        return {
+        summary = {
             "success_count": self.success[operation],
             "error_count": self.errors[operation],
             "latency_ms": latency_summary(samples),
             "error_examples": self.error_examples[operation],
         }
+        if self.config.get("operation_resource_deltas"):
+            summary["resource_usage"] = {
+                counter: {"delta": self.operation_resource_deltas[operation].get(counter, 0)}
+                for counter in NATIVE_TELEMETRY_COUNTERS
+            }
+        return summary
 
     def http(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.config['base_url']}{path}"
@@ -558,31 +588,7 @@ class ResourceProbes:
             "memory_rss_bytes": process_rss_bytes(self.process_pids),
             "operation_log_bytes": path_size(self.operation_log_path),
             "vector_cache_bytes": vector_cache_bytes(metrics),
-            "materialized_response_fetches": metric_counter(metrics, "materialized_response_fetches"),
-            "materialized_response_avoided_fetches": metric_counter(
-                metrics,
-                "materialized_response_avoided_fetches",
-            ),
-            "compatibility_materialized_response_fetches": metric_counter(
-                metrics,
-                "compatibility_materialized_response_fetches",
-            ),
-            "request_result_cache_hybrid_vector_bypasses": metric_counter(
-                metrics,
-                "request_result_cache_hybrid_vector_bypasses",
-            ),
-            "request_result_cache_unsupported_vector_bypasses": metric_counter(
-                metrics,
-                "request_result_cache_unsupported_vector_bypasses",
-            ),
-            "request_result_cache_highlight_bypasses": metric_counter(
-                metrics,
-                "request_result_cache_highlight_bypasses",
-            ),
-            "request_result_cache_explain_bypasses": metric_counter(
-                metrics,
-                "request_result_cache_explain_bypasses",
-            ),
+            **{counter: metric_counter(metrics, counter) for counter in NATIVE_TELEMETRY_COUNTERS},
         }
 
     def start_peak_sampling(self, interval_seconds: float = 0.25) -> None:
@@ -722,13 +728,7 @@ def compare_resource_samples(
             "memory_rss_bytes",
             "operation_log_bytes",
             "vector_cache_bytes",
-            "materialized_response_fetches",
-            "materialized_response_avoided_fetches",
-            "compatibility_materialized_response_fetches",
-            "request_result_cache_hybrid_vector_bypasses",
-            "request_result_cache_unsupported_vector_bypasses",
-            "request_result_cache_highlight_bypasses",
-            "request_result_cache_explain_bypasses",
+            *NATIVE_TELEMETRY_COUNTERS,
         )
     }
 
