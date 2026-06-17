@@ -114,10 +114,11 @@ PROBES: tuple[Probe, ...] = (
             r"search_hits_page_for_knn_query_cached",
             r"search_hits_page_for_hybrid_bool_query_cached",
             r"cache_knn_search_result",
+            r"request_result_cache_unsupported_vector_bypasses",
             r"request_result_cache_hybrid_vector_bypasses",
             r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
         ),
-        risk="request-result cache is wired for pure single-index KNN and single-index hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing",
+        risk="request-result cache is wired for pure single-index KNN and single-index hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing; unsupported vector surfaces are counted",
     ),
     Probe(
         name="production runtime controls",
@@ -222,10 +223,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="hybrid bool vector path",
         category="vector-hybrid",
-        status="direct-path representative coverage including single-index aggregation/sort",
-        next_action="use bypass counters to prioritize hybrid request-result cache coverage",
+        status="direct-path representative coverage including single-index aggregation/sort/cache",
+        next_action="keep widening vector coverage using unsupported vector bypass counters",
         evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"single_index_hybrid_uses_vector_native_page_and_aggregation_fetch_with_fast_field_sort",
+        evidence_pattern=r"search_hits_page_for_hybrid_bool_query_cached",
     ),
     Family(
         name="mixed shard movement interruption",
@@ -239,9 +240,9 @@ FAMILIES: tuple[Family, ...] = (
         name="runtime search cache hooks",
         category="runtime",
         status="wired for pure single-index KNN and hybrid bool vector requests plus native aggregation/sort/highlight/explain",
-        next_action="extend request-result cache coverage beyond the current single-index KNN/hybrid bool vector surface",
+        next_action="extend request-result cache coverage beyond the current single-index KNN/hybrid bool vector surface using unsupported-vector bypass telemetry",
         evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"search_hits_page_for_hybrid_bool_query_cached",
+        evidence_pattern=r"request_result_cache_unsupported_vector_bypasses",
     ),
     Family(
         name="production runtime controls",

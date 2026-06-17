@@ -513,6 +513,7 @@ pub struct SearchCacheTelemetrySnapshot {
     pub materialized_response_avoided_fetches: u64,
     pub compatibility_materialized_response_fetches: u64,
     pub request_result_cache_hybrid_vector_bypasses: u64,
+    pub request_result_cache_unsupported_vector_bypasses: u64,
     pub request_result_cache_highlight_bypasses: u64,
     pub request_result_cache_explain_bypasses: u64,
 }

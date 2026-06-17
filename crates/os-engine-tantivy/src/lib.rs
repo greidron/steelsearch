@@ -623,6 +623,7 @@ struct SearchExecutionTelemetry {
     materialized_response_avoided_fetches: AtomicU64,
     compatibility_materialized_response_fetches: AtomicU64,
     request_result_cache_hybrid_vector_bypasses: AtomicU64,
+    request_result_cache_unsupported_vector_bypasses: AtomicU64,
     request_result_cache_highlight_bypasses: AtomicU64,
     request_result_cache_explain_bypasses: AtomicU64,
 }
@@ -646,6 +647,11 @@ impl SearchExecutionTelemetry {
 
     fn record_request_result_cache_hybrid_vector_bypass(&self) {
         self.request_result_cache_hybrid_vector_bypasses
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_request_result_cache_unsupported_vector_bypass(&self) {
+        self.request_result_cache_unsupported_vector_bypasses
             .fetch_add(1, Ordering::Relaxed);
     }
 
@@ -675,6 +681,11 @@ impl SearchExecutionTelemetry {
 
     fn request_result_cache_hybrid_vector_bypasses(&self) -> u64 {
         self.request_result_cache_hybrid_vector_bypasses
+            .load(Ordering::Relaxed)
+    }
+
+    fn request_result_cache_unsupported_vector_bypasses(&self) -> u64 {
+        self.request_result_cache_unsupported_vector_bypasses
             .load(Ordering::Relaxed)
     }
 
@@ -1465,6 +1476,9 @@ impl IndexEngine for TantivyEngine {
         snapshot.request_result_cache_hybrid_vector_bypasses = store
             .search_execution_telemetry
             .request_result_cache_hybrid_vector_bypasses();
+        snapshot.request_result_cache_unsupported_vector_bypasses = store
+            .search_execution_telemetry
+            .request_result_cache_unsupported_vector_bypasses();
         snapshot.request_result_cache_highlight_bypasses = store
             .search_execution_telemetry
             .request_result_cache_highlight_bypasses();
@@ -3898,6 +3912,10 @@ impl EngineStore {
         if explain {
             self.search_execution_telemetry
                 .record_request_result_cache_explain_bypass();
+        }
+        if !request_result_cache_supported {
+            self.search_execution_telemetry
+                .record_request_result_cache_unsupported_vector_bypass();
         }
         if !has_highlight && !explain && !matches!(query, Query::Knn(_)) {
             self.search_execution_telemetry
@@ -135226,6 +135244,22 @@ mod tests {
             })
             .unwrap();
         engine
+            .create_index(CreateIndexRequest {
+                index: "vectors-alt".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "service": { "type": "keyword" },
+                        "embedding": {
+                            "type": "knn_vector",
+                            "dimension": 3,
+                            "space_type": "l2"
+                        }
+                    }
+                }),
+            })
+            .unwrap();
+        engine
             .index_document(IndexDocumentRequest {
                 index: "vectors".to_string(),
                 id: "1".to_string(),
@@ -135236,8 +135270,18 @@ mod tests {
             })
             .unwrap();
         engine
+            .index_document(IndexDocumentRequest {
+                index: "vectors-alt".to_string(),
+                id: "2".to_string(),
+                source: serde_json::json!({
+                    "service": "worker",
+                    "embedding": [0.0, 1.0, 0.0]
+                }),
+            })
+            .unwrap();
+        engine
             .refresh(RefreshRequest {
-                indices: vec!["vectors".to_string()],
+                indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
             })
             .unwrap();
 
@@ -135332,6 +135376,7 @@ mod tests {
         assert_eq!(fast_field.fast_field_cache_refresh_invalidations, 0);
         assert_eq!(fast_field.fast_field_cache_stale_invalidations, 0);
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
         let request_result_cache_hits_before_highlight = telemetry.request_result_cache_hits;
@@ -135419,6 +135464,7 @@ mod tests {
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
         assert!(telemetry.request_result_cache_hits > request_result_cache_hits_before_highlight);
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
         let request_result_cache_hits_before_hybrid = telemetry.request_result_cache_hits;
@@ -135471,6 +135517,45 @@ mod tests {
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
         assert!(telemetry.request_result_cache_hits > request_result_cache_hits_before_hybrid);
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
+
+        let unsupported_vector_request = || SearchRequest {
+            indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
+            query: serde_json::json!({
+                "knn": {
+                    "embedding": {
+                        "vector": [1.0, 0.0, 0.0],
+                        "k": 5
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: vec![],
+            from: 0,
+            size: 10,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_excludes: None,
+            source_include: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+        let first_unsupported_response = engine.search(unsupported_vector_request()).unwrap();
+        let second_unsupported_response = engine.search(unsupported_vector_request()).unwrap();
+        let mut first_unsupported_ids = search_hit_ids(&first_unsupported_response.hits);
+        first_unsupported_ids.sort();
+        let mut second_unsupported_ids = search_hit_ids(&second_unsupported_response.hits);
+        second_unsupported_ids.sort();
+        assert_eq!(first_unsupported_ids, vec!["1", "2"]);
+        assert_eq!(second_unsupported_ids, vec!["1", "2"]);
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 2);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
     }
