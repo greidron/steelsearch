@@ -3416,27 +3416,69 @@ impl SteelNode {
                 ["_snapshot", repository] => match request.method {
                     RestMethod::Get => Some(self.handle_snapshot_repository_read_route(Some(repository))),
                     RestMethod::Put | RestMethod::Post => {
+                        if let Err(response) = require_security_permission(
+                            request,
+                            SecurityPermission::ClusterAdmin,
+                            "snapshot",
+                        ) {
+                            return Some(response);
+                        }
                         Some(self.handle_snapshot_repository_mutation_route(repository, request))
                     }
                     RestMethod::Delete => {
+                        if let Err(response) = require_security_permission(
+                            request,
+                            SecurityPermission::ClusterAdmin,
+                            "snapshot",
+                        ) {
+                            return Some(response);
+                        }
                         Some(self.handle_snapshot_repository_delete_route(repository))
                     }
                     _ => None,
                 },
                 ["_snapshot", repository, "_verify"] if request.method == RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "snapshot",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_snapshot_repository_verify_route(repository))
                 }
                 ["_snapshot", repository, "_cleanup"] if request.method == RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "snapshot",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_snapshot_cleanup_route(repository))
                 }
                 ["_snapshot", repository, snapshot] => match request.method {
                     RestMethod::Put | RestMethod::Post => {
+                        if let Err(response) = require_security_permission(
+                            request,
+                            SecurityPermission::ClusterAdmin,
+                            "snapshot",
+                        ) {
+                            return Some(response);
+                        }
                         Some(self.handle_snapshot_create_route(repository, snapshot, request))
                     }
                     RestMethod::Get => {
                         Some(self.handle_snapshot_readback_route(repository, snapshot))
                     }
                     RestMethod::Delete => {
+                        if let Err(response) = require_security_permission(
+                            request,
+                            SecurityPermission::ClusterAdmin,
+                            "snapshot",
+                        ) {
+                            return Some(response);
+                        }
                         Some(self.handle_snapshot_delete_route(repository, snapshot))
                     }
                     _ => None,
@@ -3454,6 +3496,13 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_clone", target_snapshot]
                     if request.method == RestMethod::Put =>
                 {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "snapshot",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_snapshot_clone_route(
                         repository,
                         snapshot,
@@ -3464,11 +3513,25 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_restore"]
                     if request.method == RestMethod::Post =>
                 {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "snapshot",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_snapshot_restore_route(repository, snapshot, request))
                 }
                 ["_snapshot", repository, snapshot, "_mount"]
                     if request.method == RestMethod::Post =>
                 {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "snapshot",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_snapshot_mount_route(repository, snapshot, request))
                 }
                 _ => None,
@@ -24010,6 +24073,97 @@ mod tests {
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
             );
             assert_eq!(admin.status, admin_status, "route {route_family}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_snapshot_control_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let cases = [
+            (
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure")
+                    .with_json_body(serde_json::json!({"type": "fs", "settings": {"location": "/tmp/repo-secure"}})),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_snapshot/repo-secure/_verify"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_snapshot/repo-secure/_cleanup"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure/snap-secure"),
+                200,
+            ),
+            (
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/_snapshot/repo-secure/snap-secure/_clone/snap-secure-clone",
+                ),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_snapshot/repo-secure/snap-secure/_restore"),
+                400,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_snapshot/repo-secure/snap-secure/_mount"),
+                400,
+            ),
+            (
+                RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure/snap-secure"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure"),
+                200,
+            ),
+        ];
+
+        for (request, admin_status) in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("snapshot"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, admin_status, "path {path}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");

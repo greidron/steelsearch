@@ -658,6 +658,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_snapshot_control_routes_require_admin_role",
+        "production-security-authorization",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "opensearch_security_plugin_apis_fail_closed_with_documented_error",
         "production-security-fail-closed",
         package="os-node",
