@@ -81,13 +81,14 @@ Out of scope:
   cache bypass counters for hybrid vector, unsupported vector, highlight, and
   explain request surfaces.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 23/23 tests and `zero_tests=0`, covering data-path, bind, duplicate
+  with 24/24 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, role/bootstrap, structured production
   security/release policy gates, production security bootstrap material
   through PEM-marker TLS certificate/key validation, certificate/private-key
-  role mismatch rejection, and the shared users-file subject parser including
-  service-account-only authentication-users-file acceptance and malformed
-  authentication-users-file rejection,
+  role mismatch rejection, invalid bootstrap file-content redaction, and the
+  shared users-file subject parser including service-account-only
+  authentication-users-file acceptance and malformed authentication-users-file
+  rejection,
   production-mode gate, and daemon-level data-path / occupied-port refusal
   cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
@@ -271,9 +272,9 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release
   gate, including PEM-marker TLS bootstrap material, certificate/private-key
-  role mismatch rejection, authn bootstrap material, service-account-only
-  authn bootstrap material, and malformed users-file checks, as runtime-control
-  evidence.
+  role mismatch rejection, invalid bootstrap file-content redaction, authn
+  bootstrap material, service-account-only authn bootstrap material, and
+  malformed users-file checks, as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate

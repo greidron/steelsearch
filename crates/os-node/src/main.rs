@@ -6686,6 +6686,75 @@ mod tests {
     }
 
     #[test]
+    fn production_startup_preflight_redacts_invalid_security_bootstrap_file_contents() {
+        let path = unique_test_path("steelsearch-production-security-redaction-data");
+        let material_root = unique_test_path("steelsearch-production-security-redaction-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        fs::write(
+            &http_cert,
+            b"not-a-pem-certificate STEELSEARCH_SECRET_CERT_PAYLOAD",
+        )
+        .unwrap();
+        fs::write(
+            &http_key,
+            b"not-a-pem-private-key STEELSEARCH_SECRET_PRIVATE_KEY_PAYLOAD",
+        )
+        .unwrap();
+        fs::write(
+            &transport_cert,
+            b"not-a-pem-certificate STEELSEARCH_SECRET_TRANSPORT_CERT_PAYLOAD",
+        )
+        .unwrap();
+        fs::write(
+            &transport_key,
+            b"not-a-pem-private-key STEELSEARCH_SECRET_TRANSPORT_KEY_PAYLOAD",
+        )
+        .unwrap();
+        fs::write(
+            &users,
+            br#"{"users":[{"username":"admin","password":"STEELSEARCH_SECRET_PASSWORD","roles":[]}]}"#,
+        )
+        .unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+        };
+
+        let readiness = startup_readiness_report(&config);
+        let blockers = readiness.blockers.join("\n");
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(blockers.contains("[security] production HTTP TLS certificate is invalid"));
+        assert!(blockers.contains("[security] production HTTP TLS private key is invalid"));
+        assert!(blockers.contains("[security] production transport TLS certificate is invalid"));
+        assert!(blockers.contains("[security] production transport TLS private key is invalid"));
+        assert!(blockers.contains("[security] production authentication users file is invalid"));
+        for secret in [
+            "STEELSEARCH_SECRET_CERT_PAYLOAD",
+            "STEELSEARCH_SECRET_PRIVATE_KEY_PAYLOAD",
+            "STEELSEARCH_SECRET_TRANSPORT_CERT_PAYLOAD",
+            "STEELSEARCH_SECRET_TRANSPORT_KEY_PAYLOAD",
+            "STEELSEARCH_SECRET_PASSWORD",
+        ] {
+            assert!(
+                !blockers.contains(secret),
+                "startup/readiness blockers must not expose bootstrap file contents: {blockers}"
+            );
+        }
+    }
+
+    #[test]
     fn production_startup_preflight_rejects_empty_authentication_users_file() {
         let readiness = production_readiness_with_authentication_users_fixture(b"");
 
