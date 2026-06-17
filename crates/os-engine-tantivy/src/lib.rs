@@ -129576,6 +129576,86 @@ mod tests {
     }
 
     #[test]
+    fn more_like_this_fieldless_fallback_updates_materialized_telemetry() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "title": { "type": "text" },
+                        "body": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, title, body) in [
+            ("1", "api", "checkout beta"),
+            ("2", "worker", "api gamma"),
+            ("3", "worker", "cold path"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "title": title,
+                        "body": body
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let search_request = |size| SearchRequest {
+            indices: vec!["logs-000001".to_string()],
+            query: serde_json::json!({
+                "more_like_this": {
+                    "like": ["api"]
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: Vec::new(),
+            from: 0,
+            size,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_include: None,
+            source_excludes: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+
+        let page_response = engine.search(search_request(10)).unwrap();
+        assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "2"]);
+        assert!(page_response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Fetch
+                && phase.description == "compatibility materialization materialized requested hits"
+        }));
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 1);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let size_zero_response = engine.search(search_request(0)).unwrap();
+        assert_eq!(size_zero_response.total_hits, 2);
+        assert!(size_zero_response.hits.is_empty());
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 1);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
+    }
+
+    #[test]
     fn single_index_text_case_insensitive_wildcard_size_zero_compatibility_aggregation_path_skips_hit_materialization(
     ) {
         let engine = TantivyEngine::default();
