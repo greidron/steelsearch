@@ -1712,6 +1712,7 @@ pub struct SteelNode {
     pub next_seq_no: Arc<Mutex<u64>>,
     pub shared_runtime_state_path: Option<PathBuf>,
     shared_runtime_state_recovery_failed: Arc<Mutex<bool>>,
+    live_shutdown_in_progress: Arc<Mutex<bool>>,
     pub knn_operational_state: Arc<Mutex<Option<KnnOperationalState>>>,
     pub ml_models_state: Arc<Mutex<BTreeMap<String, MlModelState>>>,
     pub next_ml_model_id: Arc<Mutex<u64>>,
@@ -1891,6 +1892,7 @@ impl SteelNode {
             next_seq_no: Arc::new(Mutex::new(0)),
             shared_runtime_state_path: None,
             shared_runtime_state_recovery_failed: Arc::new(Mutex::new(false)),
+            live_shutdown_in_progress: Arc::new(Mutex::new(false)),
             knn_operational_state: Arc::new(Mutex::new(None)),
             ml_models_state: Arc::new(Mutex::new(BTreeMap::new())),
             next_ml_model_id: Arc::new(Mutex::new(0)),
@@ -9316,7 +9318,7 @@ impl SteelNode {
                 }),
             );
         };
-        if let Some(response) = self.refuse_task_submission_if_shared_runtime_state_recovery_failed()
+        if let Some(response) = self.refuse_task_submission_if_unavailable()
         {
             return response;
         }
@@ -9403,7 +9405,7 @@ impl SteelNode {
     }
 
     fn handle_delete_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        if let Some(response) = self.refuse_task_submission_if_shared_runtime_state_recovery_failed()
+        if let Some(response) = self.refuse_task_submission_if_unavailable()
         {
             return response;
         }
@@ -9463,7 +9465,7 @@ impl SteelNode {
     }
 
     fn handle_update_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        if let Some(response) = self.refuse_task_submission_if_shared_runtime_state_recovery_failed()
+        if let Some(response) = self.refuse_task_submission_if_unavailable()
         {
             return response;
         }
@@ -15229,11 +15231,28 @@ impl SteelNode {
             .expect("shared runtime state recovery flag lock poisoned")
     }
 
-    fn refuse_task_submission_if_shared_runtime_state_recovery_failed(
-        &self,
-    ) -> Option<RestResponse> {
-        self.shared_runtime_state_recovery_failed()
-            .then(build_shared_runtime_state_recovery_unavailable_response)
+    pub fn set_live_shutdown_in_progress(&self, in_progress: bool) {
+        *self
+            .live_shutdown_in_progress
+            .lock()
+            .expect("live shutdown flag lock poisoned") = in_progress;
+    }
+
+    fn live_shutdown_in_progress(&self) -> bool {
+        *self
+            .live_shutdown_in_progress
+            .lock()
+            .expect("live shutdown flag lock poisoned")
+    }
+
+    fn refuse_task_submission_if_unavailable(&self) -> Option<RestResponse> {
+        if self.live_shutdown_in_progress() {
+            return Some(build_live_shutdown_task_submission_unavailable_response());
+        }
+        if self.shared_runtime_state_recovery_failed() {
+            return Some(build_shared_runtime_state_recovery_unavailable_response());
+        }
+        None
     }
 
     fn persist_shared_runtime_state_to_disk(&self) {
@@ -15861,6 +15880,19 @@ fn build_shared_runtime_state_recovery_unavailable_response() -> RestResponse {
             "error": {
                 "type": "unavailable_shards_exception",
                 "reason": "task submission rejected while shared runtime state recovery is incomplete"
+            },
+            "status": 503
+        }),
+    )
+}
+
+fn build_live_shutdown_task_submission_unavailable_response() -> RestResponse {
+    RestResponse::json(
+        503,
+        serde_json::json!({
+            "error": {
+                "type": "unavailable_shards_exception",
+                "reason": "task submission rejected while node shutdown is in progress"
             },
             "status": 503
         }),
@@ -35032,6 +35064,106 @@ mod tests {
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         let _ = std::fs::remove_file(shared_state_path);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn task_submission_is_refused_during_live_shutdown_window() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/queued-submit-shutdown")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+        let put_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/queued-submit-shutdown/_doc/doc-1")
+                .with_json_body(serde_json::json!({"message": "queued delete shutdown"})),
+        );
+        assert_eq!(put_doc.status, 201);
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_delete_node = node.clone();
+        let queued_delete = std::thread::spawn(move || {
+            queued_delete_node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/queued-submit-shutdown/_delete_by_query")
+                    .with_json_body(serde_json::json!({
+                        "query": {"match_all": {}}
+                    })),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "task_submission", 1);
+
+        node.set_live_shutdown_in_progress(true);
+        let refused_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/queued-submit-shutdown/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {"match_all": {}}
+                })),
+        );
+        assert_eq!(refused_delete.status, 503);
+        assert_eq!(
+            refused_delete.body["error"]["type"],
+            Value::String("unavailable_shards_exception".to_string())
+        );
+        assert_eq!(
+            refused_delete.body["error"]["reason"],
+            Value::String("task submission rejected while node shutdown is in progress".to_string())
+        );
+
+        let doc_after_refusal = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/queued-submit-shutdown/_doc/doc-1",
+        ));
+        assert_eq!(doc_after_refusal.status, 200);
+        assert_eq!(doc_after_refusal.body["found"], Value::Bool(true));
+
+        release_runtime_thread_pool_active_slot(&node, "task_submission");
+        let delete = queued_delete
+            .join()
+            .expect("queued delete-by-query request thread should not panic");
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["deleted"], 1);
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["task_submission"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["completed"], 1);
     }
 
     #[test]
