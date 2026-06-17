@@ -120,7 +120,7 @@ Out of scope:
   security/release gate refusal, and readiness blocker terminology that keeps
   user-facing Steelsearch runtime categories distinct from internal crate names.
 - The same runner now has a `production-security` batch. It passed on
-  2026-06-17 with 23/23 tests and `zero_tests=0`, covering runtime env user,
+  2026-06-17 with 24/24 tests and `zero_tests=0`, covering runtime env user,
   authentication-users-file user, and service-account credentials loaded
   through the shared subject model, root route Basic auth, the shared
   admin/reader/writer permission evaluator, ML
@@ -135,8 +135,8 @@ Out of scope:
   stored script management routes, data stream management and rollover routes,
   alias metadata mutation routes, index settings/mapping mutation routes, and
   index maintenance control routes, index structure mutation routes, and task
-  cancel/rethrottle surfaces, k-NN operational mutation routes, and explicit
-  fail-closed OpenSearch Security
+  cancel/rethrottle surfaces, k-NN operational mutation routes, recovery
+  mutation routes, and explicit fail-closed OpenSearch Security
   plugin API responses across account,
   internal-user mutation, and
   transport-cert reload route shapes with
@@ -397,9 +397,10 @@ Validation runner:
   mapping-property update panic removed, and index maintenance open/close/cache
   controls with closed-index reopen resolution, and index structure
   delete/block/resize controls, plus k-NN settings/model/cache mutation routes,
-  bounded security audit event persistence for authn/authz/fail-closed and
-  shared permission-evaluator read/write denials, ML connector secret redaction,
-  and OpenSearch Security plugin API fail-closed responses plus persisted audit
+  and dangling-index/remote-store recovery mutation routes, bounded security
+  audit event persistence for authn/authz/fail-closed and shared
+  permission-evaluator read/write denials, ML connector secret redaction, and
+  OpenSearch Security plugin API fail-closed responses plus persisted audit
   events without request password material as production-security evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task

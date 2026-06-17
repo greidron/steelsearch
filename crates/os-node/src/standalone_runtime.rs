@@ -2774,8 +2774,26 @@ impl SteelNode {
         }
         if let Some(index_uuid) = request.path.strip_prefix("/_dangling/") {
             return match request.method {
-                RestMethod::Post => Some(self.handle_dangling_index_import_route(index_uuid, request)),
-                RestMethod::Delete => Some(self.handle_dangling_index_delete_route(index_uuid, request)),
+                RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "recovery",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_dangling_index_import_route(index_uuid, request))
+                }
+                RestMethod::Delete => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "recovery",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_dangling_index_delete_route(index_uuid, request))
+                }
                 _ => None,
             };
         }
@@ -2871,6 +2889,13 @@ impl SteelNode {
             return Some(self.handle_remote_store_stats_shard_route(index, shard_id));
         }
         if request.method == RestMethod::Post && request.path == "/_remotestore/_restore" {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "recovery",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_remote_store_restore_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_list/wlm_stats" {
@@ -25183,6 +25208,76 @@ mod tests {
                 .as_str()
                 .expect("security reason")
                 .contains("k-NN"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, admin_status, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_recovery_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let cases = [
+            (
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_dangling/sec-dangling?accept_data_loss=true",
+                ),
+                200,
+            ),
+            (
+                RestRequest::new(
+                    RestMethod::Delete,
+                    "/_dangling/sec-dangling?accept_data_loss=true",
+                ),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/_remotestore/_restore")
+                    .with_json_body(serde_json::json!({"indices": ["sec-remote"]})),
+                200,
+            ),
+        ];
+
+        for (request, admin_status) in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("recovery"));
 
             let admin = node.handle_rest_request(
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
