@@ -38050,6 +38050,163 @@ mod tests {
     }
 
     #[test]
+    fn maintenance_and_control_plane_burst_submissions_surface_backlog_growth_and_drain() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+            counters.insert(
+                "cluster_manager".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_refresh_node = node.clone();
+        let queued_refresh = std::thread::spawn(move || {
+            queued_refresh_node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 1);
+
+        let queued_flush_node = node.clone();
+        let queued_flush = std::thread::spawn(move || {
+            queued_flush_node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_flush"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 2);
+
+        let queued_reroute_a_node = node.clone();
+        let queued_reroute_a = std::thread::spawn(move || {
+            queued_reroute_a_node
+                .handle_rest_request(RestRequest::new(RestMethod::Post, "/_cluster/reroute"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "cluster_manager", 1);
+
+        let queued_reroute_b_node = node.clone();
+        let queued_reroute_b = std::thread::spawn(move || {
+            queued_reroute_b_node
+                .handle_rest_request(RestRequest::new(RestMethod::Post, "/_cluster/reroute"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "cluster_manager", 2);
+
+        let stats_while_burst =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_burst.status, 200);
+        let first_node = stats_while_burst.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 2);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 0);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["queue"], 2);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["completed"], 0);
+
+        let mut cat_while_burst =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/cluster_manager,maintenance");
+        cat_while_burst
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_while_burst);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        let cluster_manager = rows
+            .iter()
+            .find(|row| row["name"] == "cluster_manager")
+            .expect("cluster_manager thread pool row");
+        let maintenance = rows
+            .iter()
+            .find(|row| row["name"] == "maintenance")
+            .expect("maintenance thread pool row");
+        assert_eq!(cluster_manager["active"], "1");
+        assert_eq!(cluster_manager["queue"], "2");
+        assert_eq!(cluster_manager["completed"], "0");
+        assert_eq!(maintenance["active"], "1");
+        assert_eq!(maintenance["queue"], "2");
+        assert_eq!(maintenance["completed"], "0");
+
+        release_runtime_thread_pool_active_slot(&node, "maintenance");
+        let refresh = queued_refresh
+            .join()
+            .expect("queued refresh request thread should not panic");
+        let flush = queued_flush
+            .join()
+            .expect("queued flush request thread should not panic");
+        assert_eq!(refresh.status, 200);
+        assert_eq!(flush.status, 200);
+
+        let stats_after_maintenance_drain =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_maintenance_drain.status, 200);
+        let first_node = stats_after_maintenance_drain.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 2);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["queue"], 2);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["completed"], 0);
+
+        release_runtime_thread_pool_active_slot(&node, "cluster_manager");
+        let reroute_a = queued_reroute_a
+            .join()
+            .expect("first queued cluster reroute request thread should not panic");
+        let reroute_b = queued_reroute_b
+            .join()
+            .expect("second queued cluster reroute request thread should not panic");
+        assert_eq!(reroute_a.status, 200);
+        assert_eq!(reroute_b.status, 200);
+
+        let stats_after_drain =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_drain.status, 200);
+        let first_node = stats_after_drain.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 2);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["cluster_manager"]["completed"], 2);
+    }
+
+    #[test]
     fn snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
