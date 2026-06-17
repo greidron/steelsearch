@@ -46,7 +46,8 @@ Out of scope:
   handling verifies the probe JSON `summary.passed` field instead of treating
   process exit alone as evidence. It passed on 2026-06-17 with 1/1 validation
   cases, `zero_tests=0`, `summary.passed=true`, both interruption directions
-  present, and zero checkpoint drift in each recorded checkpoint phase.
+  present, zero checkpoint drift in each recorded checkpoint phase, and a
+  `checkpoint_monotonicity_ok` summary gate.
 - Native-closure runtime validation now has a guarded compact runner,
   `tools/run-native-closure-validation.py --batch compact`, that rejects
   zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
@@ -313,8 +314,8 @@ Already evidenced:
 
 Remaining tests:
 
-1. verify retention-lease metadata and checkpoint monotonicity beyond the
-   checkpoint drift fields currently captured during interruption;
+1. verify explicit retention-lease metadata beyond the checkpoint monotonicity
+   and drift fields currently captured during interruption;
 2. capture allocation explanation for unsupported movement shapes.
 
 Exit evidence:

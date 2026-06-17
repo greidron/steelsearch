@@ -331,6 +331,37 @@ def checkpoint_drift_passed(report: dict[str, Any]) -> bool:
     )
 
 
+def checkpoint_monotonicity_passed(report: dict[str, Any]) -> bool:
+    phases = report.get("phases", [])
+    if not isinstance(phases, list):
+        return False
+    latest_by_copy: dict[tuple[int, str], dict[str, int]] = {}
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        observed = phase.get("checkpoint_observed", [])
+        if not isinstance(observed, list):
+            continue
+        for entry in observed:
+            if not isinstance(entry, dict):
+                continue
+            shard = entry.get("shard")
+            role = entry.get("role")
+            if not isinstance(shard, int) or not isinstance(role, str):
+                continue
+            key = (shard, role)
+            previous = latest_by_copy.setdefault(key, {})
+            for field in ("max_seq_no", "local_checkpoint", "global_checkpoint"):
+                value = entry.get(field)
+                if not isinstance(value, int):
+                    continue
+                previous_value = previous.get(field)
+                if previous_value is not None and value < previous_value:
+                    return False
+                previous[field] = value
+    return True
+
+
 def interruption_evidence_passed(report: dict[str, Any]) -> bool:
     expected = {
         "interrupt_java_to_steelsearch_recovery",
@@ -349,15 +380,18 @@ def summarize_movement_report(
     opensearch_to_steelsearch_passed = phase_passed(report, "opensearch_to_steelsearch")
     steelsearch_to_opensearch_passed = phase_passed(report, "steelsearch_to_opensearch")
     checkpoint_drift_ok = checkpoint_drift_passed(report)
+    checkpoint_monotonicity_ok = checkpoint_monotonicity_passed(report)
     interruption_evidence_ok = interruption_evidence_passed(report)
     return {
         "passed": opensearch_to_steelsearch_passed
         and steelsearch_to_opensearch_passed
         and checkpoint_drift_ok
+        and checkpoint_monotonicity_ok
         and (interruption_evidence_ok or not require_interruption),
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "checkpoint_drift_ok": checkpoint_drift_ok,
+        "checkpoint_monotonicity_ok": checkpoint_monotonicity_ok,
         "interruption_evidence_ok": interruption_evidence_ok,
         "interruption_evidence_required": require_interruption,
     }

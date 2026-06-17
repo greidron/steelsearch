@@ -103,6 +103,7 @@ PROBES: tuple[Probe, ...] = (
         patterns=(
             r"checkpoint_drift",
             r"checkpoint_drift_ok",
+            r"checkpoint_monotonicity_ok",
             r"collect_checkpoint_observed",
             r"interruption_evidence_passed",
             r"--require-interruption",
@@ -110,7 +111,7 @@ PROBES: tuple[Probe, ...] = (
             r"interrupt_java_to_steelsearch_recovery",
             r"interrupt_steelsearch_to_opensearch_recovery",
         ),
-        risk="must stay present so mixed movement keeps seq/checkpoint evidence, the interrupted/resumed phase contract, the enforceable gate option, and both live interruption exercises",
+        risk="must stay present so mixed movement keeps seq/checkpoint drift and monotonicity evidence, the interrupted/resumed phase contract, the enforceable gate option, and both live interruption exercises",
     ),
     Probe(
         name="mixed shard movement validation batch",
@@ -259,7 +260,7 @@ FAMILIES: tuple[Family, ...] = (
         name="mixed shard movement interruption",
         category="mixed-cluster",
         status="mixed-shard validation batch passed with both-direction live interruption exercises and zero checkpoint drift",
-        next_action="capture retention-lease metadata beyond checkpoint drift and add allocation-explain coverage for unsupported movement shapes",
+        next_action="capture explicit retention-lease metadata beyond checkpoint monotonicity and add allocation-explain coverage for unsupported movement shapes",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"mixed-shard-movement",
     ),

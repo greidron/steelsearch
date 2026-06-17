@@ -49,6 +49,7 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
         self.assertTrue(summary["opensearch_to_steelsearch_passed"])
         self.assertTrue(summary["steelsearch_to_opensearch_passed"])
         self.assertTrue(summary["checkpoint_drift_ok"])
+        self.assertTrue(summary["checkpoint_monotonicity_ok"])
         self.assertFalse(summary["interruption_evidence_ok"])
         self.assertFalse(summary["interruption_evidence_required"])
 
@@ -125,6 +126,32 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
 
         self.assertFalse(summary["passed"])
         self.assertFalse(summary["checkpoint_drift_ok"])
+
+    def test_checkpoint_monotonicity_fails_on_regression(self):
+        report = self.representative_report()
+        report["phases"][0]["checkpoint_observed"] = [
+            {
+                "shard": 0,
+                "role": "primary",
+                "max_seq_no": 5,
+                "local_checkpoint": 5,
+                "global_checkpoint": 5,
+            }
+        ]
+        report["phases"][1]["checkpoint_observed"] = [
+            {
+                "shard": 0,
+                "role": "primary",
+                "max_seq_no": 4,
+                "local_checkpoint": 4,
+                "global_checkpoint": 4,
+            }
+        ]
+
+        summary = self.probe.summarize_movement_report(report)
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["checkpoint_monotonicity_ok"])
 
 
 if __name__ == "__main__":
