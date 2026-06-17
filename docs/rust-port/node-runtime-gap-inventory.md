@@ -233,13 +233,14 @@ Current Steelsearch evidence:
   metadata, and independent search/write versus maintenance drain behavior;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 7/7 tests and `zero_tests=0`, covering by-query rethrottle
-  state mutation from query-parameter and request-body rates, repeated
-  last-write-wins rethrottle sequencing, follow-up task readback, and
-  shared-runtime restart readback for requested throttle rates, plus rejection
-  for cancelled or terminal tasks without mutating rate state, and same-node
-  parent/child plus multi-level descendant rethrottle rate readback without
-  implicit rate propagation, plus rethrottle requests accepted during the
-  per-request shared-runtime sync window after restart;
+  state mutation from query-parameter and request-body rates, `-1` unlimited
+  rate acceptance, malformed/zero/invalid negative rate rejection without
+  mutating rate state, repeated last-write-wins rethrottle sequencing, follow-up
+  task readback, and shared-runtime restart readback for requested throttle
+  rates, plus rejection for cancelled or terminal tasks without mutating rate
+  state, and same-node parent/child plus multi-level descendant rethrottle rate
+  readback without implicit rate propagation, plus rethrottle requests accepted
+  during the per-request shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

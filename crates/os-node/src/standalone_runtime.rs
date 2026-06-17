@@ -9390,7 +9390,21 @@ impl SteelNode {
         let Some(task_id) = self.rethrottle_task_id_from_request(request) else {
             return RestResponse::not_found_for(request.method, &request.path);
         };
-        let requested_rate = self.requested_rethrottle_rate(request);
+        let requested_rate = match self.requested_rethrottle_rate(request) {
+            Ok(rate) => rate,
+            Err(reason) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "illegal_argument_exception",
+                            "reason": reason
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        };
         if let Some(task) = self.find_task(task_id) {
             let cancelled = task
                 .get("cancelled")
@@ -11959,17 +11973,33 @@ impl SteelNode {
         None
     }
 
-    fn requested_rethrottle_rate(&self, request: &RestRequest) -> Option<f64> {
-        request
-            .query_params
-            .get("requests_per_second")
-            .and_then(|value| value.parse::<f64>().ok())
-            .or_else(|| {
-                serde_json::from_slice::<Value>(&request.body)
-                    .ok()
-                    .and_then(|body| body.get("requests_per_second").cloned())
-                    .and_then(|value| value.as_f64())
-            })
+    fn requested_rethrottle_rate(&self, request: &RestRequest) -> Result<Option<f64>, String> {
+        if let Some(value) = request.query_params.get("requests_per_second") {
+            return Self::validate_rethrottle_rate(value.parse::<f64>().ok());
+        }
+        if request.body.is_empty() {
+            return Ok(None);
+        }
+        let body = serde_json::from_slice::<Value>(&request.body)
+            .map_err(|_| "requests_per_second body must be valid JSON".to_string())?;
+        if let Some(value) = body.get("requests_per_second") {
+            return Self::validate_rethrottle_rate(value.as_f64());
+        }
+        Ok(None)
+    }
+
+    fn validate_rethrottle_rate(rate: Option<f64>) -> Result<Option<f64>, String> {
+        let Some(rate) = rate else {
+            return Err(
+                "requests_per_second must be a finite number, -1, or a positive value".to_string(),
+            );
+        };
+        if !rate.is_finite() || (rate < 0.0 && rate != -1.0) || rate == 0.0 {
+            return Err(
+                "requests_per_second must be a finite number, -1, or a positive value".to_string(),
+            );
+        }
+        Ok(Some(rate))
     }
 
     fn unknown_task_cancel_body(&self, task_id: &str) -> Value {
@@ -25335,6 +25365,74 @@ mod tests {
             body_response.body["task"]["status"]["requests_per_second"],
             serde_json::json!(7.25)
         );
+
+        let mut unlimited_request =
+            RestRequest::new(RestMethod::Post, "/_reindex/node-a:11/_rethrottle");
+        unlimited_request
+            .query_params
+            .insert("requests_per_second".to_string(), "-1".to_string());
+        let unlimited_response = node.handle_rest_request(unlimited_request);
+        assert_eq!(unlimited_response.status, 200);
+        assert_eq!(
+            unlimited_response.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(-1.0)
+        );
+
+        for (description, request) in [
+            {
+                let mut request =
+                    RestRequest::new(RestMethod::Post, "/_delete_by_query/node-a:11/_rethrottle");
+                request
+                    .query_params
+                    .insert("requests_per_second".to_string(), "not-a-number".to_string());
+                ("malformed query rate", request)
+            },
+            {
+                let mut request =
+                    RestRequest::new(RestMethod::Post, "/_reindex/node-a:11/_rethrottle");
+                request
+                    .query_params
+                    .insert("requests_per_second".to_string(), "0".to_string());
+                ("zero query rate", request)
+            },
+            {
+                let mut request =
+                    RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:11/_rethrottle");
+                request
+                    .query_params
+                    .insert("requests_per_second".to_string(), "-2".to_string());
+                ("negative query rate", request)
+            },
+            {
+                let mut request =
+                    RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:11/_rethrottle");
+                request.body = br#"{"requests_per_second":"fast"}"#.to_vec();
+                ("malformed body rate", request)
+            },
+            {
+                let mut request =
+                    RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:11/_rethrottle");
+                request.body = br#"{"requests_per_second":"#.to_vec();
+                ("invalid body json", request)
+            },
+        ] {
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 400, "{description}");
+            assert_eq!(
+                response.body["error"]["type"],
+                Value::String("illegal_argument_exception".to_string()),
+                "{description}"
+            );
+
+            let get =
+                node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:11"));
+            assert_eq!(get.status, 200, "{description}");
+            assert_eq!(
+                get.body["task"]["status"]["requests_per_second"],
+                serde_json::json!(-1.0),
+                "{description}"
+            );
+        }
 
         for path in [
             "/_delete_by_query/node-a:999/_rethrottle",

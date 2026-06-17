@@ -155,13 +155,15 @@ Out of scope:
   and independent search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
-  mutation from both query-parameter and request-body rates, repeated
-  last-write-wins rethrottle sequencing, follow-up `/_tasks` list/get readback,
-  shared-runtime restart readback for requested throttle rates, and rejection
-  for cancelled or terminal tasks without mutating rate state, plus same-node
-  parent/child and multi-level descendant rethrottle rate readback without
-  implicit rate propagation and rethrottle requests accepted during the
-  per-request shared-runtime sync window after restart.
+  mutation from both query-parameter and request-body rates, `-1` unlimited
+  rate acceptance, malformed/zero/invalid negative rate rejection without
+  mutating rate state, repeated last-write-wins rethrottle sequencing,
+  follow-up `/_tasks` list/get readback, shared-runtime restart readback for
+  requested throttle rates, and rejection for cancelled or terminal tasks
+  without mutating rate state, plus same-node parent/child and multi-level
+  descendant rethrottle rate readback without implicit rate propagation and
+  rethrottle requests accepted during the per-request shared-runtime sync
+  window after restart.
 - The same runner now has a `runtime-task-metadata` batch. It passed on
   2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
@@ -328,11 +330,13 @@ Validation runner:
   evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
-  task rethrottle state, repeated last-write-wins sequencing, and readback as
-  runtime-control evidence, including shared-runtime restart readback for
-  requested throttle rates, cancelled/terminal task refusal, and same-node
-  parent/child plus multi-level descendant independent rate readback, plus
-  rethrottle-request handling during the per-request sync window after restart.
+  task rethrottle state, `-1` unlimited rate acceptance,
+  malformed/zero/invalid negative rate refusal, repeated last-write-wins
+  sequencing, and readback as runtime-control evidence, including
+  shared-runtime restart readback for requested throttle rates,
+  cancelled/terminal task refusal, and same-node parent/child plus multi-level
+  descendant independent rate readback, plus rethrottle-request handling during
+  the per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
   report `failed_count == 0` and `zero_test_count == 0` before treating parent
   task metadata and cat task readback as runtime-control evidence.
