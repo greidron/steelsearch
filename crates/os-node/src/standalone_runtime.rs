@@ -2733,15 +2733,43 @@ impl SteelNode {
             }
         }
         if request.path == "/_filecache/prune" && request.method == RestMethod::Post {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index maintenance",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_filecache_prune_route());
         }
         if request.path == "/_cache/clear" && request.method == RestMethod::Post {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index maintenance",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_cache_clear_route(None));
         }
         if request.path == "/_close" && request.method == RestMethod::Post {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index maintenance",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_close_route(None));
         }
         if request.path == "/_open" && request.method == RestMethod::Post {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index maintenance",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_open_route(None));
         }
         if let Some(index_uuid) = request.path.strip_prefix("/_dangling/") {
@@ -3920,16 +3948,37 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_cache/clear") {
             if request.method == RestMethod::Post && !index.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index maintenance",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_cache_clear_route(Some(index)));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_close") {
             if request.method == RestMethod::Post && !index.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index maintenance",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_close_route(Some(index)));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_open") {
             if request.method == RestMethod::Post && !index.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "index maintenance",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_open_route(Some(index)));
             }
         }
@@ -12060,7 +12109,7 @@ impl SteelNode {
 
     fn handle_open_route(&self, target: Option<&str>) -> RestResponse {
         let matched = if let Some(target) = target {
-            match self.resolve_index_metadata_targets(target, false, false, "open") {
+            match self.resolve_index_metadata_targets(target, false, false, "all") {
                 Ok(matched) => matched,
                 Err(response) => return response,
             }
@@ -24851,6 +24900,71 @@ mod tests {
             );
             assert_eq!(admin.status, 200, "path {path}");
             assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_index_maintenance_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-maintenance-index")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let cases = [
+            RestRequest::new(RestMethod::Post, "/_filecache/prune"),
+            RestRequest::new(RestMethod::Post, "/_cache/clear"),
+            RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_cache/clear"),
+            RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_close"),
+            RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_open"),
+            RestRequest::new(RestMethod::Post, "/_close"),
+            RestRequest::new(RestMethod::Post, "/_open"),
+        ];
+
+        for request in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("index maintenance"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, 200, "path {path}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
