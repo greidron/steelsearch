@@ -23875,6 +23875,20 @@ mod tests {
                 headers: BTreeMap::new(),
                 failure_reason: None,
             }],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 56,
+                task: ClusterManagerTask {
+                    source: "accepted in-flight restart probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "maintenance-flush".to_string(),
+                        action: "indices:admin/flush".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
             acknowledged: vec![ClusterManagerTaskRecord {
                 task_id: 61,
                 task: ClusterManagerTask {
@@ -23921,19 +23935,49 @@ mod tests {
         let health =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
         assert_eq!(health.status, 200);
-        assert_eq!(health.body["number_of_pending_tasks"], 1);
+        assert_eq!(health.body["number_of_pending_tasks"], 2);
 
         let pending = restarted
             .handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
         assert_eq!(pending.status, 200);
         let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
-        assert_eq!(pending_tasks.len(), 1);
-        assert_eq!(pending_tasks[0]["id"], 51);
+        assert_eq!(pending_tasks.len(), 2);
+        let queued = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 51)
+            .expect("queued task");
+        assert_eq!(queued["executing"], Value::Bool(false));
+        let accepted = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 56)
+            .expect("accepted in-flight task");
+        assert_eq!(accepted["executing"], Value::Bool(true));
+        assert_eq!(accepted["action"], "indices:admin/flush");
 
         let cancelled_get =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:51"));
         assert_eq!(cancelled_get.status, 200);
         assert_eq!(cancelled_get.body["task"]["cancelled"], Value::Bool(true));
+        let accepted_get =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:56"));
+        assert_eq!(accepted_get.status, 200);
+        assert_eq!(
+            accepted_get.body["task"]["action"],
+            Value::String("indices:admin/flush".to_string())
+        );
+        assert_eq!(
+            accepted_get.body["task"]["status"]["background_worker"],
+            Value::String("maintenance-flush".to_string())
+        );
+        let accepted_cancel = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:56/_cancel",
+        ));
+        assert_eq!(accepted_cancel.status, 400);
+        assert_eq!(
+            accepted_cancel.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
 
         let terminal_get =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:61"));
@@ -23948,8 +23992,9 @@ mod tests {
         let cat_pending = restarted.handle_rest_request(cat_pending);
         assert_eq!(cat_pending.status, 200);
         let rows = cat_pending.body.as_array().expect("cat pending task rows");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["id"], "51");
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row["id"] == "51"));
+        assert!(rows.iter().any(|row| row["id"] == "56"));
 
         let mut cat_tasks = RestRequest::new(RestMethod::Get, "/_cat/tasks");
         cat_tasks
@@ -23958,8 +24003,9 @@ mod tests {
         let cat_tasks = restarted.handle_rest_request(cat_tasks);
         assert_eq!(cat_tasks.status, 200);
         let rows = cat_tasks.body.as_array().expect("cat task rows");
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 4);
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:51"));
+        assert!(rows.iter().any(|row| row["task_id"] == "node-a:56"));
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:61"));
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:71"));
 

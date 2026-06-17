@@ -189,8 +189,9 @@ Current Steelsearch evidence:
   retention/eviction with stale cancellation-marker pruning and persisted
   restart readback, cancelled-task completion and partial-progress status
   readback through restart until eviction, and shared-runtime restart readback
-  for task queue state plus cancelled task ids, including cancel requests
-  accepted during the per-request shared-runtime sync window after restart;
+  for task queue state plus cancelled task ids, including accepted in-flight
+  task readback/refusal without queued replay and cancel requests accepted
+  during the per-request shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 3/3 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
