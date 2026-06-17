@@ -147,7 +147,7 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
-| Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, the last requested throttle rate is visible through rethrottle response, `GET /_tasks/{task_id}`, and `GET /_tasks`, and active-to-terminal completion race refusal preserves the last accepted rate; concurrent daemon scheduler races are still open |
+| Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, the last requested throttle rate is visible through rethrottle response, `GET /_tasks/{task_id}`, and `GET /_tasks`, and pending-to-terminal plus in-flight-to-terminal completion race refusals preserve the last accepted rate with terminal readback; concurrent daemon scheduler races are still open |
 | Parent-child propagation | same-node, cross-node, spawned background-worker child, and multi-level descendant rethrottle rate readback is independent without implicit propagation |
 | Persistence and restart | shared-runtime restart readback preserves requested throttle rates, rethrottle requests are accepted after per-request shared-runtime sync on restart, and shutdown-window plus partial-recovery rethrottle requests now fail closed without mutating rate state |
 | Admission and backpressure interaction | rethrottle route-level state changes do not consume task-submission backpressure capacity, active throttled task execution still admits or rejects new task submissions according to `task_submission` backpressure state, and saturated task-submission pools still reject new by-query/reindex submissions; daemon-level throttle scheduler feedback into admission is still open |
@@ -155,8 +155,8 @@ internal subsystems, especially:
 
 ### Required tests
 
-- add fixture-backed distinction for:
-  - concurrent daemon-level rethrottle race-with-completion behavior.
+- no additional fixture-backed rethrottle race-with-completion distinctions
+  remain for the bounded throttling profile.
 - no additional fixture-backed active-throttle admission/backpressure
   distinctions remain for the bounded throttling profile.
 

@@ -26901,6 +26901,115 @@ mod tests {
     }
 
     #[test]
+    fn rethrottle_refuses_in_flight_completion_race_with_terminal_readback() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 342,
+                task: ClusterManagerTask {
+                    source: "in-flight completion race rethrottle probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "update-by-query".to_string(),
+                        action: "indices:data/write/update/byquery".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let mut first =
+            RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:342/_rethrottle");
+        first
+            .query_params
+            .insert("requests_per_second".to_string(), "5.25".to_string());
+        let first = node.handle_rest_request(first);
+        assert_eq!(first.status, 200);
+        assert_eq!(first.body["task"]["executing"], Value::Bool(true));
+        assert_eq!(
+            first.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(5.25)
+        );
+
+        {
+            let mut queue = node
+                .task_queue_state
+                .lock()
+                .expect("task queue state lock poisoned");
+            let state = queue.as_mut().expect("task queue state");
+            let mut completed = state.in_flight.pop().expect("in-flight task");
+            completed.state = ClusterManagerTaskState::Acknowledged;
+            state.acknowledged.push(completed);
+        }
+
+        let mut late = RestRequest::new(RestMethod::Post, "/_reindex/node-a:342/_rethrottle");
+        late.body = br#"{"requests_per_second":11.0}"#.to_vec();
+        let late = node.handle_rest_request(late);
+        assert_eq!(late.status, 400);
+        assert_eq!(
+            late.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:342"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(5.25)
+        );
+        let list = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(list.status, 200);
+        assert_eq!(
+            list.body["nodes"]["node-a"]["tasks"]["node-a:342"]["status"]["requests_per_second"],
+            serde_json::json!(5.25)
+        );
+        let mut pending =
+            RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let pending = node.handle_rest_request(pending);
+        assert_eq!(pending.status, 200);
+        assert!(!pending
+            .body
+            .as_array()
+            .expect("pending task rows")
+            .iter()
+            .any(|row| row["id"] == "342"));
+        assert_eq!(
+            node.rethrottled_task_rates
+                .lock()
+                .expect("rethrottled task rates lock poisoned")
+                .get("node-a:342")
+                .copied(),
+            Some(5.25)
+        );
+    }
+
+    #[test]
     fn rethrottle_refuses_shutdown_and_partial_recovery_without_mutating_rate() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
