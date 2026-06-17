@@ -1664,6 +1664,10 @@ pub struct SharedRuntimeState {
     pub metadata_manifest: Value,
     pub documents: BTreeMap<String, StoredDocument>,
     pub next_seq_no: u64,
+    #[serde(default)]
+    pub task_queue_state: Option<PersistedClusterManagerTaskQueueState>,
+    #[serde(default)]
+    pub cancelled_task_ids: BTreeSet<String>,
     pub knn_operational_state: Option<KnnOperationalState>,
     #[serde(default)]
     pub ml_models: BTreeMap<String, MlModelState>,
@@ -9098,6 +9102,7 @@ impl SteelNode {
                 .lock()
                 .expect("cancelled task ids lock poisoned")
                 .insert(task_id.to_string());
+            self.persist_shared_runtime_state_to_disk();
             let task = self.find_task(task_id).unwrap_or(task);
             return RestResponse::json(
                 200,
@@ -14836,6 +14841,14 @@ impl SteelNode {
             .next_ml_task_id
             .lock()
             .expect("next ml task id lock poisoned") = state.next_ml_task_id;
+        *self
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = state.task_queue_state;
+        *self
+            .cancelled_task_ids
+            .lock()
+            .expect("cancelled task ids lock poisoned") = state.cancelled_task_ids;
     }
 
     fn sync_shared_runtime_state_from_disk_if_enabled(&self) {
@@ -14876,6 +14889,16 @@ impl SteelNode {
                 .expect("documents state lock poisoned")
                 .clone(),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
+            task_queue_state: self
+                .task_queue_state
+                .lock()
+                .expect("task queue state lock poisoned")
+                .clone(),
+            cancelled_task_ids: self
+                .cancelled_task_ids
+                .lock()
+                .expect("cancelled task ids lock poisoned")
+                .clone(),
             knn_operational_state: self
                 .knn_operational_state
                 .lock()
@@ -22424,6 +22447,147 @@ mod tests {
         assert_eq!(rows.len(), 3);
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:31"));
         assert!(rows.iter().any(|row| row["task_id"] == "node-a:41"));
+    }
+
+    #[test]
+    fn task_queue_state_and_cancelled_ids_persist_across_shared_runtime_restart() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-task-queue-state-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 51,
+                task: ClusterManagerTask {
+                    source: "queued restart probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            acknowledged: vec![ClusterManagerTaskRecord {
+                task_id: 61,
+                task: ClusterManagerTask {
+                    source: "acknowledged restart probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Acknowledged,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            failed: vec![ClusterManagerTaskRecord {
+                task_id: 71,
+                task: ClusterManagerTask {
+                    source: "failed restart probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Failed,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: Some("simulated restart failure".to_string()),
+            }],
+            ..Default::default()
+        });
+        node.persist_shared_runtime_state_to_disk();
+
+        let cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:51/_cancel",
+        ));
+        assert_eq!(cancel.status, 200);
+        assert_eq!(
+            cancel.body["nodes"]["node-a"]["tasks"]["node-a:51"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let health =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["number_of_pending_tasks"], 1);
+
+        let pending = restarted
+            .handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 1);
+        assert_eq!(pending_tasks[0]["id"], 51);
+
+        let cancelled_get =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:51"));
+        assert_eq!(cancelled_get.status, 200);
+        assert_eq!(cancelled_get.body["task"]["cancelled"], Value::Bool(true));
+
+        let terminal_get =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:61"));
+        assert_eq!(terminal_get.status, 200);
+        assert_eq!(terminal_get.body["task"]["id"], 61);
+        assert_eq!(terminal_get.body["task"]["cancellable"], Value::Bool(false));
+
+        let mut cat_pending = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        cat_pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_pending = restarted.handle_rest_request(cat_pending);
+        assert_eq!(cat_pending.status, 200);
+        let rows = cat_pending.body.as_array().expect("cat pending task rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], "51");
+
+        let mut cat_tasks = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        cat_tasks
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_tasks = restarted.handle_rest_request(cat_tasks);
+        assert_eq!(cat_tasks.status, 200);
+        let rows = cat_tasks.body.as_array().expect("cat task rows");
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().any(|row| row["task_id"] == "node-a:51"));
+        assert!(rows.iter().any(|row| row["task_id"] == "node-a:61"));
+        assert!(rows.iter().any(|row| row["task_id"] == "node-a:71"));
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

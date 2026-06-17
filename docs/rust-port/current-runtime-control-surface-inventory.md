@@ -89,7 +89,7 @@ internal subsystems, especially:
 | Propagation model | current route evidence does not prove cancellation reaches all task kinds, child work, or background workers in a deterministic order |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, but retention/eviction and partial-progress contracts are still bounded |
 | Queue interaction | there is no explicit distinction between cancelling queued work versus cancelling already-running work, and no refusal/backpressure interaction is documented |
-| Restart interaction | there is no evidence for what happens when cancellation is requested near shutdown, restart, or partial persisted-state recovery |
+| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, but shutdown-window and partial-recovery behavior remain open |
 | Error classification | route-level `404`/bounded success exists, but not a full matrix for already-finished, already-cancelled, or race-with-completion states |
 
 ### Required tests
@@ -100,9 +100,8 @@ internal subsystems, especially:
   - parent task cancel versus child task visibility;
   - repeated cancel idempotency with post-cancel readback.
 - add restart-smoke coverage for:
-  - cancel-before-shutdown;
   - cancel-during-restart;
-  - post-restart task listing continuity.
+  - post-restart partial-recovery/error-path task listing continuity.
 - add operator-visible evidence for terminal-state retention:
   - how long cancelled tasks remain listable;
   - whether partial progress fields are stable;
@@ -115,8 +114,8 @@ internal subsystems, especially:
 - separate queued-task cancellation from in-flight worker cancellation.
 - define terminal task retention/eviction and partial-progress contracts for
   `GET /_tasks*`.
-- tie cancellation state into restart/recovery handling rather than treating it
-  as a stateless route-level response.
+- tie cancellation state into shutdown-window and partial-recovery handling
+  rather than treating those paths as stateless route-level responses.
 
 ### Immediate follow-up
 
