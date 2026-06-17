@@ -512,6 +512,9 @@ pub struct SearchCacheTelemetrySnapshot {
     pub materialized_response_fetches: u64,
     pub materialized_response_avoided_fetches: u64,
     pub compatibility_materialized_response_fetches: u64,
+    pub request_result_cache_hybrid_vector_bypasses: u64,
+    pub request_result_cache_highlight_bypasses: u64,
+    pub request_result_cache_explain_bypasses: u64,
 }
 
 impl SearchCacheTelemetrySnapshot {
@@ -1793,12 +1796,12 @@ mod tests {
                 },
                 score: 1.0,
                 source: serde_json::json!({
+                    "message": "hello"
+                }),
                 fields: None,
                 highlight: None,
                 explanation: None,
                 sort: None,
-                    "message": "hello"
-                }),
             }],
             serde_json::json!({
                 "by_service": {

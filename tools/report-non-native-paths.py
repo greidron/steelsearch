@@ -113,9 +113,10 @@ PROBES: tuple[Probe, ...] = (
             r"search_cached_single_index_knn_response",
             r"search_hits_page_for_knn_query_cached",
             r"cache_knn_search_result",
+            r"request_result_cache_hybrid_vector_bypasses",
             r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
         ),
-        risk="request-result cache is wired for pure single-index KNN with native aggregation/sort, but highlight/explain and hybrid vector combinations still bypass it",
+        risk="request-result cache is wired for pure single-index KNN with native aggregation/sort; highlight/explain and hybrid vector bypasses are now counted but still bypass it",
     ),
     Probe(
         name="production runtime controls",
@@ -221,7 +222,7 @@ FAMILIES: tuple[Family, ...] = (
         name="hybrid bool vector path",
         category="vector-hybrid",
         status="direct-path representative coverage including single-index aggregation/sort",
-        next_action="add unsupported-shape counters and extend hybrid request-result cache coverage",
+        next_action="use bypass counters to prioritize hybrid request-result cache coverage",
         evidence_path=ENGINE_SOURCE,
         evidence_pattern=r"single_index_hybrid_uses_vector_native_page_and_aggregation_fetch_with_fast_field_sort",
     ),
@@ -236,10 +237,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="runtime search cache hooks",
         category="runtime",
-        status="wired for pure single-index KNN plus native aggregation/sort",
+        status="wired for pure single-index KNN plus native aggregation/sort, with vector bypass counters",
         next_action="extend request-result cache coverage to highlight, explain, and hybrid vector combinations",
         evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"search_hits_page_for_knn_query_cached",
+        evidence_pattern=r"request_result_cache_hybrid_vector_bypasses",
     ),
     Family(
         name="production runtime controls",

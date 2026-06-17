@@ -622,6 +622,9 @@ struct SearchExecutionTelemetry {
     materialized_response_fetches: AtomicU64,
     materialized_response_avoided_fetches: AtomicU64,
     compatibility_materialized_response_fetches: AtomicU64,
+    request_result_cache_hybrid_vector_bypasses: AtomicU64,
+    request_result_cache_highlight_bypasses: AtomicU64,
+    request_result_cache_explain_bypasses: AtomicU64,
 }
 
 impl SearchExecutionTelemetry {
@@ -641,6 +644,21 @@ impl SearchExecutionTelemetry {
         self.record_materialized_response_fetch();
     }
 
+    fn record_request_result_cache_hybrid_vector_bypass(&self) {
+        self.request_result_cache_hybrid_vector_bypasses
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_request_result_cache_highlight_bypass(&self) {
+        self.request_result_cache_highlight_bypasses
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_request_result_cache_explain_bypass(&self) {
+        self.request_result_cache_explain_bypasses
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
     fn materialized_response_fetches(&self) -> u64 {
         self.materialized_response_fetches.load(Ordering::Relaxed)
     }
@@ -652,6 +670,21 @@ impl SearchExecutionTelemetry {
 
     fn compatibility_materialized_response_fetches(&self) -> u64 {
         self.compatibility_materialized_response_fetches
+            .load(Ordering::Relaxed)
+    }
+
+    fn request_result_cache_hybrid_vector_bypasses(&self) -> u64 {
+        self.request_result_cache_hybrid_vector_bypasses
+            .load(Ordering::Relaxed)
+    }
+
+    fn request_result_cache_highlight_bypasses(&self) -> u64 {
+        self.request_result_cache_highlight_bypasses
+            .load(Ordering::Relaxed)
+    }
+
+    fn request_result_cache_explain_bypasses(&self) -> u64 {
+        self.request_result_cache_explain_bypasses
             .load(Ordering::Relaxed)
     }
 }
@@ -1429,6 +1462,15 @@ impl IndexEngine for TantivyEngine {
         snapshot.compatibility_materialized_response_fetches = store
             .search_execution_telemetry
             .compatibility_materialized_response_fetches();
+        snapshot.request_result_cache_hybrid_vector_bypasses = store
+            .search_execution_telemetry
+            .request_result_cache_hybrid_vector_bypasses();
+        snapshot.request_result_cache_highlight_bypasses = store
+            .search_execution_telemetry
+            .request_result_cache_highlight_bypasses();
+        snapshot.request_result_cache_explain_bypasses = store
+            .search_execution_telemetry
+            .request_result_cache_explain_bypasses();
         for index in store.indices.values() {
             snapshot.request_result_cache_bytes = snapshot
                 .request_result_cache_bytes
@@ -1850,6 +1892,11 @@ impl IndexEngine for TantivyEngine {
                 &query,
                 &request.sort,
                 &aggregation_map,
+            );
+            store.record_request_result_cache_bypasses_for_search(
+                &query,
+                request.highlight.is_some(),
+                request.explain,
             );
             index_names
         };
@@ -3827,6 +3874,29 @@ impl EngineStore {
             if let Some(index) = self.indices.get_mut(index_name) {
                 index.touch_search_runtime_caches(query, sort, aggregations);
             }
+        }
+    }
+
+    fn record_request_result_cache_bypasses_for_search(
+        &self,
+        query: &Query,
+        has_highlight: bool,
+        explain: bool,
+    ) {
+        if !query_uses_vector_scores(query) {
+            return;
+        }
+        if has_highlight {
+            self.search_execution_telemetry
+                .record_request_result_cache_highlight_bypass();
+        }
+        if explain {
+            self.search_execution_telemetry
+                .record_request_result_cache_explain_bypass();
+        }
+        if !has_highlight && !explain && !matches!(query, Query::Knn(_)) {
+            self.search_execution_telemetry
+                .record_request_result_cache_hybrid_vector_bypass();
         }
     }
 
@@ -135095,6 +135165,59 @@ mod tests {
         assert_eq!(fast_field.fast_field_cache_capacity_evictions, 0);
         assert_eq!(fast_field.fast_field_cache_refresh_invalidations, 0);
         assert_eq!(fast_field.fast_field_cache_stale_invalidations, 0);
+        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
+
+        let hybrid_request = || SearchRequest {
+            indices: vec!["vectors".to_string()],
+            query: serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "term": { "service": "api" } },
+                        {
+                            "knn": {
+                                "embedding": {
+                                    "vector": [1.0, 0.0, 0.0],
+                                    "k": 5
+                                }
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            aggregations: serde_json::json!({
+                "services": { "terms": { "field": "service" } }
+            }),
+            sort: vec![SortSpec {
+                field: "service".to_string(),
+                order: SortOrder::Asc,
+                unmapped_type: None,
+                geo_origin: None,
+                mode: None,
+                script: None,
+            }],
+            from: 0,
+            size: 10,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_excludes: None,
+            source_include: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+        let first_hybrid_response = engine.search(hybrid_request()).unwrap();
+        let second_hybrid_response = engine.search(hybrid_request()).unwrap();
+        assert_eq!(search_hit_ids(&first_hybrid_response.hits), vec!["1"]);
+        assert_eq!(search_hit_ids(&second_hybrid_response.hits), vec!["1"]);
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 2);
+        assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
     }
 
     #[test]
