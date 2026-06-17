@@ -29,6 +29,16 @@ class Probe:
     risk: str
 
 
+@dataclass(frozen=True)
+class Family:
+    name: str
+    category: str
+    status: str
+    next_action: str
+    evidence_path: Path
+    evidence_pattern: str
+
+
 PROBES: tuple[Probe, ...] = (
     Probe(
         name="source-backed query families",
@@ -120,6 +130,113 @@ PROBES: tuple[Probe, ...] = (
     ),
 )
 
+FAMILIES: tuple[Family, ...] = (
+    Family(
+        name="nested query",
+        category="source-backed query",
+        status="source-backed",
+        next_action="add candidate narrowing before source evaluation for common nested scalar/text leaves",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `nested`",
+    ),
+    Family(
+        name="geo_distance query",
+        category="source-backed query",
+        status="source-backed",
+        next_action="evaluate whether geo-point index data can avoid full source scan for bounded distance filters",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `geo_distance`",
+    ),
+    Family(
+        name="distance_feature query",
+        category="source-backed query",
+        status="source-backed",
+        next_action="promote numeric/date candidate narrowing if scoring parity is preserved",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `distance_feature`",
+    ),
+    Family(
+        name="rank_feature query",
+        category="source-backed query",
+        status="source-backed",
+        next_action="promote positive numeric/bool feature lookup away from broad source evaluation",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `rank_feature`",
+    ),
+    Family(
+        name="more_like_this query",
+        category="source-backed query",
+        status="source-backed",
+        next_action="replace token-overlap source pass with indexed-term candidate path where analyzer parity is known",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `more_like_this`",
+    ),
+    Family(
+        name="terms_set query",
+        category="source-backed query",
+        status="source-backed",
+        next_action="split scalar exact-match candidate narrowing from minimum-match source fallback",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `terms_set`",
+    ),
+    Family(
+        name="query_string/simple_query_string",
+        category="source-backed query",
+        status="source-backed broad parser fallback",
+        next_action="separate simple fielded terms from broad default-field source-derived clauses",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"source-backed `query_string`",
+    ),
+    Family(
+        name="materialized SearchHit boundary",
+        category="materialization",
+        status="present",
+        next_action="add counters for when materialized compatibility response path is selected",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"collect_materialized",
+    ),
+    Family(
+        name="pure knn",
+        category="vector-hybrid",
+        status="partially native",
+        next_action="keep direct vector path covered while adding unsupported-shape counters",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"top-level `knn` queries use the engine direct vector path",
+    ),
+    Family(
+        name="hybrid bool vector path",
+        category="vector-hybrid",
+        status="direct-path representative coverage",
+        next_action="expand explicit sort plus aggregation combinations before claiming closure",
+        evidence_path=ENGINE_DOC,
+        evidence_pattern=r"direct-path hybrid",
+    ),
+    Family(
+        name="mixed shard movement interruption",
+        category="mixed-cluster",
+        status="planned",
+        next_action="add interrupted and resumed recovery phases to the live shard movement probe",
+        evidence_path=PLAN_DOC,
+        evidence_pattern=r"interrupt Java to SteelSearch recovery",
+    ),
+    Family(
+        name="production runtime controls",
+        category="runtime",
+        status="partial",
+        next_action="start with startup refusal and task registry probes",
+        evidence_path=RUNTIME_DOC,
+        evidence_pattern=r"Thread Pools, Task Tracking, And Runtime Controls",
+    ),
+    Family(
+        name="production security",
+        category="security",
+        status="fail-closed",
+        next_action="start with TLS/authn bootstrap fixtures before enabling production startup",
+        evidence_path=SECURITY_DOC,
+        evidence_pattern=r"Production security readiness requires",
+    ),
+)
+
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
@@ -141,8 +258,24 @@ def probe_result(probe: Probe) -> dict[str, Any]:
     }
 
 
+def family_result(family: Family) -> dict[str, Any]:
+    text = read_text(family.evidence_path)
+    count = len(re.findall(family.evidence_pattern, text, flags=re.IGNORECASE))
+    return {
+        "name": family.name,
+        "category": family.category,
+        "status": family.status,
+        "next_action": family.next_action,
+        "evidence_path": str(family.evidence_path.relative_to(ROOT)),
+        "evidence_pattern": family.evidence_pattern,
+        "evidence_count": count,
+        "evidenced": count > 0,
+    }
+
+
 def build_report() -> dict[str, Any]:
     results = [probe_result(probe) for probe in PROBES]
+    families = [family_result(family) for family in FAMILIES]
     return {
         "scope": {
             "excluded": [
@@ -163,8 +296,12 @@ def build_report() -> dict[str, Any]:
             "probe_count": len(results),
             "matched_probe_count": sum(1 for result in results if result["matched"]),
             "missing_probe_count": sum(1 for result in results if not result["matched"]),
+            "family_count": len(families),
+            "evidenced_family_count": sum(1 for family in families if family["evidenced"]),
+            "missing_family_count": sum(1 for family in families if not family["evidenced"]),
         },
         "probes": results,
+        "families": families,
     }
 
 
@@ -179,6 +316,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Probes: `{report['summary']['probe_count']}`",
         f"- Matched: `{report['summary']['matched_probe_count']}`",
         f"- Missing: `{report['summary']['missing_probe_count']}`",
+        f"- Families: `{report['summary']['family_count']}`",
+        f"- Evidenced families: `{report['summary']['evidenced_family_count']}`",
+        f"- Missing families: `{report['summary']['missing_family_count']}`",
         "",
         "## Probes",
         "",
@@ -189,6 +329,20 @@ def render_markdown(report: dict[str, Any]) -> str:
         matched = "yes" if probe["matched"] else "no"
         lines.append(
             f"| {probe['category']} | {probe['name']} | {matched} | `{probe['path']}` | {probe['risk']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Family Inventory",
+            "",
+            "| Category | Family | Status | Evidenced | Next action |",
+            "| --- | --- | --- | ---: | --- |",
+        ]
+    )
+    for family in report["families"]:
+        evidenced = "yes" if family["evidenced"] else "no"
+        lines.append(
+            f"| {family['category']} | {family['name']} | {family['status']} | {evidenced} | {family['next_action']} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -210,7 +364,8 @@ def main() -> int:
         Path(args.output).write_text(rendered, encoding="utf-8")
     else:
         print(rendered, end="")
-    return 0 if report["summary"]["missing_probe_count"] == 0 else 1
+    missing = report["summary"]["missing_probe_count"] + report["summary"]["missing_family_count"]
+    return 0 if missing == 0 else 1
 
 
 if __name__ == "__main__":
