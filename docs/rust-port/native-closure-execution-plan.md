@@ -55,6 +55,12 @@ Initial targets:
 4. promote one high-traffic family at a time from source-backed scan to native
    candidate narrowing when the Tantivy surface supports it.
 
+Current narrowed families:
+
+- `nested` exact scalar leaves: child ordinal indexes now narrow term/terms and
+  supported bool nested leaves before parent document lookup. Unsupported nested
+  shapes still use the explicit source-validation fallback.
+
 Exit evidence:
 
 - `tools/report-non-native-paths.py` reports the family as native or
@@ -166,4 +172,3 @@ Exit evidence:
 4. Add startup/preflight refusal tests before broad runtime-control wiring.
 5. Start security with fail-closed TLS/authn bootstrap fixtures, then add real
    enforcement paths.
-

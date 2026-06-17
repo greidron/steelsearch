@@ -152,10 +152,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="nested query",
         category="source-backed query",
-        status="source-backed",
-        next_action="add candidate narrowing before source evaluation for common nested scalar/text leaves",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"source-backed `nested`",
+        status="native-candidate-narrowed for exact nested term/terms/bool leaves",
+        next_action="extend child-ordinal narrowing beyond exact scalar leaves and keep unsupported nested shapes on explicit fallback telemetry",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"native_nested_child_ordinals_for_query",
     ),
     Family(
         name="geo_distance query",
