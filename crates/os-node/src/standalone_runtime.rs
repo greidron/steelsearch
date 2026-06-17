@@ -5516,6 +5516,10 @@ impl SteelNode {
     }
 
     fn handle_global_refresh_route(&self) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let _ = self.native_engine.refresh(RefreshRequest { indices: Vec::new() });
         self.documents_state
             .lock()
@@ -5540,6 +5544,10 @@ impl SteelNode {
     }
 
     fn handle_index_refresh_route(&self, index: &str) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let matched = self
             .created_indices_state
             .lock()
@@ -10867,6 +10875,10 @@ impl SteelNode {
     }
 
     fn handle_flush_route(&self, target: Option<&str>) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let total = self
             .created_indices_state
             .lock()
@@ -10887,6 +10899,10 @@ impl SteelNode {
     }
 
     fn handle_cache_clear_route(&self, target: Option<&str>) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let total = self
             .created_indices_state
             .lock()
@@ -10939,6 +10955,10 @@ impl SteelNode {
     }
 
     fn handle_forcemerge_route(&self, target: Option<&str>) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let total = self
             .created_indices_state
             .lock()
@@ -11360,6 +11380,7 @@ impl SteelNode {
 
     fn thread_pool_stats_body(&self) -> Value {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
+        let maintenance = self.runtime_thread_pool_counters("maintenance");
         let search = self.runtime_thread_pool_counters("search");
         let write = self.runtime_thread_pool_counters("write");
         serde_json::json!({
@@ -11369,6 +11390,13 @@ impl SteelNode {
                 "active": management_active,
                 "rejected": 0,
                 "completed": 0
+            },
+            "maintenance": {
+                "threads": 1,
+                "queue": maintenance.queue,
+                "active": maintenance.active,
+                "rejected": maintenance.rejected,
+                "completed": maintenance.completed
             },
             "search": {
                 "threads": 1,
@@ -14131,6 +14159,7 @@ impl SteelNode {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
         let management_active = management_active.to_string();
         let management_queue = management_queue.to_string();
+        let maintenance = self.runtime_thread_pool_counters("maintenance");
         let search = self.runtime_thread_pool_counters("search");
         let write = self.runtime_thread_pool_counters("write");
         let mut rows = vec![
@@ -14156,6 +14185,30 @@ impl SteelNode {
                 "max": "1",
                 "size": "1",
                 "keep_alive": "5m",
+                "parallelism": ""
+            }),
+            serde_json::json!({
+                "node_name": self.info.name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "maintenance",
+                "type": "fixed",
+                "active": maintenance.active.to_string(),
+                "pool_size": "1",
+                "queue": maintenance.queue.to_string(),
+                "queue_size": "1000",
+                "rejected": maintenance.rejected.to_string(),
+                "largest": "1",
+                "completed": maintenance.completed.to_string(),
+                "total_wait_time": "0ms",
+                "core": "",
+                "max": "",
+                "size": "1",
+                "keep_alive": "",
                 "parallelism": ""
             }),
             serde_json::json!({
@@ -21609,7 +21662,7 @@ mod tests {
                 .as_array()
                 .expect("cat thread_pool array")
                 .len(),
-            3
+            4
         );
 
         let mut thread_pool_text_request =
@@ -31095,6 +31148,118 @@ mod tests {
         assert_eq!(rows[0]["rejected"], "1");
         assert_eq!(rows[1]["name"], "write");
         assert_eq!(rows[1]["rejected"], "1");
+    }
+
+    #[test]
+    fn maintenance_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/maintenance-runtime-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_refresh_node = node.clone();
+        let queued_refresh = std::thread::spawn(move || {
+            queued_refresh_node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 1);
+
+        let stats_while_queued =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_queued.status, 200);
+        let first_node = stats_while_queued.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 0);
+
+        release_runtime_thread_pool_active_slot(&node, "maintenance");
+        let refresh = queued_refresh
+            .join()
+            .expect("queued refresh request thread should not panic");
+        assert_eq!(refresh.status, 200);
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/maintenance");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "maintenance");
+        assert_eq!(rows[0]["active"], "0");
+        assert_eq!(rows[0]["queue"], "0");
+        assert_eq!(rows[0]["completed"], "1");
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let flush = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_flush"));
+        assert_eq!(flush.status, 429);
+        assert_eq!(
+            flush.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let stats_after_reject =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_reject.status, 200);
+        let first_node = stats_after_reject.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1000);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 1);
     }
 
     #[test]
