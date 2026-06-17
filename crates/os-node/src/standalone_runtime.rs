@@ -38788,6 +38788,119 @@ mod tests {
     }
 
     #[test]
+    fn maintenance_work_accepted_before_shutdown_is_not_replayed_after_restart() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-maintenance-shutdown-restart-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/maintenance-shutdown-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+        let index_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/maintenance-shutdown-000001/_doc/doc-1")
+                .with_json_body(serde_json::json!({
+                    "message": "accepted maintenance before shutdown"
+                })),
+        );
+        assert_eq!(index_doc.status, 201);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_refresh_node = node.clone();
+        let queued_refresh = std::thread::spawn(move || {
+            queued_refresh_node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/maintenance-shutdown-000001/_refresh",
+            ))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 1);
+
+        node.set_live_shutdown_in_progress(true);
+        let shutdown = node.runtime_lifecycle_snapshot();
+        assert_eq!(shutdown.active_phase, "shutdown");
+        assert_eq!(shutdown.task_submission_available, false);
+        assert!(shutdown
+            .blockers
+            .iter()
+            .any(|blocker| blocker == "live_shutdown_in_progress"));
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+        assert_eq!(restarted.runtime_thread_pool_counters("maintenance").queue, 0);
+        assert_eq!(
+            restarted
+                .runtime_thread_pool_counters("maintenance")
+                .completed,
+            0
+        );
+        let mut restarted_get =
+            RestRequest::new(RestMethod::Get, "/maintenance-shutdown-000001/_doc/doc-1");
+        restarted_get
+            .query_params
+            .insert("realtime".to_string(), "false".to_string());
+        let restarted_get = restarted.handle_rest_request(restarted_get);
+        assert_eq!(restarted_get.status, 404);
+
+        release_runtime_thread_pool_active_slot(&node, "maintenance");
+        let refresh = queued_refresh
+            .join()
+            .expect("queued refresh request thread should not panic");
+        assert_eq!(refresh.status, 200);
+        assert_eq!(refresh.body["_shards"]["total"], 1);
+
+        let mut completed_get =
+            RestRequest::new(RestMethod::Get, "/maintenance-shutdown-000001/_doc/doc-1");
+        completed_get
+            .query_params
+            .insert("realtime".to_string(), "false".to_string());
+        let completed_get = node.handle_rest_request(completed_get);
+        assert_eq!(completed_get.status, 200);
+        assert_eq!(
+            completed_get.body["_source"]["message"],
+            "accepted maintenance before shutdown"
+        );
+        let counters_after_drain = node.runtime_thread_pool_counters("maintenance");
+        assert_eq!(counters_after_drain.queue, 0);
+        assert_eq!(counters_after_drain.completed, 1);
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

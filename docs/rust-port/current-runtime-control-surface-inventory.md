@@ -286,14 +286,14 @@ internal subsystems, especially:
 | Progress visibility | overlapping refresh/flush requests on the same target now distinguish accepted-but-pending queue telemetry from completed refresh readback, but there is still no daemon-level operator-visible contract for partially-applied maintenance state |
 | Cross-surface coordination | bounded overlapping refresh/flush on the same target is fixture-covered, tier transition readback/cancel survives shared-runtime restart-smoke, and snapshot restore/cleanup restart-smoke preserves metadata without queue replay; there is still no contract for how close/open and snapshot restore interact when they overlap on the same index or data stream |
 | Cleanup guarantees | there is no evidence for whether accepted maintenance work guarantees cleanup of temporary state, leases, or intermediate markers after failure |
-| Restart interaction | tier transition readback/cancel and snapshot restore/cleanup metadata readback survive shared-runtime restart-smoke without replaying queued snapshot work; maintenance work accepted before shutdown remains open |
+| Restart interaction | tier transition readback/cancel, snapshot restore/cleanup metadata readback, and maintenance work accepted before shutdown survive shared-runtime restart-smoke without replaying queued runtime work; daemon-level resume/rollback policy remains open |
 
 ### Required tests
 
 - no additional fixture-backed refresh/flush overlap distinctions remain for the
   bounded maintenance profile.
-- add restart-smoke coverage for:
-  - maintenance work accepted before shutdown.
+- no additional shared-runtime restart-smoke coverage remains for the bounded
+  maintenance profile.
 - add operator-visible evidence for:
   - post-operation readback showing completion or rollback;
   - failure-path visibility when cleanup is partial;

@@ -868,6 +868,13 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "maintenance_work_accepted_before_shutdown_is_not_replayed_after_restart",
+        "maintenance-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated",
         "route-backpressure-runtime-state",
         package="os-node",
