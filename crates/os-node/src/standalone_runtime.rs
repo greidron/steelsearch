@@ -1711,6 +1711,7 @@ pub struct SteelNode {
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub shared_runtime_state_path: Option<PathBuf>,
+    shared_runtime_state_recovery_failed: Arc<Mutex<bool>>,
     pub knn_operational_state: Arc<Mutex<Option<KnnOperationalState>>>,
     pub ml_models_state: Arc<Mutex<BTreeMap<String, MlModelState>>>,
     pub next_ml_model_id: Arc<Mutex<u64>>,
@@ -1889,6 +1890,7 @@ impl SteelNode {
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
             shared_runtime_state_path: None,
+            shared_runtime_state_recovery_failed: Arc::new(Mutex::new(false)),
             knn_operational_state: Arc::new(Mutex::new(None)),
             ml_models_state: Arc::new(Mutex::new(BTreeMap::new())),
             next_ml_model_id: Arc::new(Mutex::new(0)),
@@ -9314,6 +9316,10 @@ impl SteelNode {
                 }),
             );
         };
+        if let Some(response) = self.refuse_task_submission_if_shared_runtime_state_recovery_failed()
+        {
+            return response;
+        }
         let _thread_pool = match self.enter_runtime_thread_pool("task_submission", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -9397,6 +9403,10 @@ impl SteelNode {
     }
 
     fn handle_delete_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.refuse_task_submission_if_shared_runtime_state_recovery_failed()
+        {
+            return response;
+        }
         let _thread_pool = match self.enter_runtime_thread_pool("task_submission", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -9453,6 +9463,10 @@ impl SteelNode {
     }
 
     fn handle_update_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.refuse_task_submission_if_shared_runtime_state_recovery_failed()
+        {
+            return response;
+        }
         let _thread_pool = match self.enter_runtime_thread_pool("task_submission", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -15106,14 +15120,28 @@ impl SteelNode {
 
     fn sync_shared_runtime_state_from_disk(&self) {
         let Some(path) = self.shared_runtime_state_path.as_ref() else {
+            self.set_shared_runtime_state_recovery_failed(false);
             return;
         };
-        let Ok(bytes) = std::fs::read(path) else {
-            return;
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.set_shared_runtime_state_recovery_failed(false);
+                return;
+            }
+            Err(_) => {
+                self.set_shared_runtime_state_recovery_failed(true);
+                return;
+            }
         };
-        let Ok(state) = serde_json::from_slice::<SharedRuntimeState>(&bytes) else {
-            return;
+        let state = match serde_json::from_slice::<SharedRuntimeState>(&bytes) {
+            Ok(state) => state,
+            Err(_) => {
+                self.set_shared_runtime_state_recovery_failed(true);
+                return;
+            }
         };
+        self.set_shared_runtime_state_recovery_failed(false);
         *self
             .created_indices_state
             .lock()
@@ -15185,6 +15213,27 @@ impl SteelNode {
         {
             self.sync_shared_runtime_state_from_disk();
         }
+    }
+
+    fn set_shared_runtime_state_recovery_failed(&self, failed: bool) {
+        *self
+            .shared_runtime_state_recovery_failed
+            .lock()
+            .expect("shared runtime state recovery flag lock poisoned") = failed;
+    }
+
+    fn shared_runtime_state_recovery_failed(&self) -> bool {
+        *self
+            .shared_runtime_state_recovery_failed
+            .lock()
+            .expect("shared runtime state recovery flag lock poisoned")
+    }
+
+    fn refuse_task_submission_if_shared_runtime_state_recovery_failed(
+        &self,
+    ) -> Option<RestResponse> {
+        self.shared_runtime_state_recovery_failed()
+            .then(build_shared_runtime_state_recovery_unavailable_response)
     }
 
     fn persist_shared_runtime_state_to_disk(&self) {
@@ -15283,10 +15332,14 @@ impl SteelNode {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let _ = std::fs::write(
+        if std::fs::write(
             path,
             serde_json::to_vec(&state).unwrap_or_else(|_| b"{}".to_vec()),
-        );
+        )
+        .is_ok()
+        {
+            self.set_shared_runtime_state_recovery_failed(false);
+        }
     }
 
     fn resolve_index_or_alias(&self, target: &str) -> String {
@@ -15797,6 +15850,19 @@ fn build_thread_pool_rejected_response(pool: &str, queue_size: u64) -> RestRespo
                 )
             },
             "status": 429
+        }),
+    )
+}
+
+fn build_shared_runtime_state_recovery_unavailable_response() -> RestResponse {
+    RestResponse::json(
+        503,
+        serde_json::json!({
+            "error": {
+                "type": "unavailable_shards_exception",
+                "reason": "task submission rejected while shared runtime state recovery is incomplete"
+            },
+            "status": 503
         }),
     )
 }
@@ -34933,6 +34999,27 @@ mod tests {
             doc.body["_source"]["message"],
             "queued delete partial recovery"
         );
+
+        let refused_delete = restarted.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/queued-submit-partial-recovery/_delete_by_query",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {"match_all": {}}
+            })),
+        );
+        assert_eq!(refused_delete.status, 503);
+        assert_eq!(
+            refused_delete.body["error"]["type"],
+            Value::String("unavailable_shards_exception".to_string())
+        );
+        let doc_after_refusal = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/queued-submit-partial-recovery/_doc/doc-1",
+        ));
+        assert_eq!(doc_after_refusal.status, 200);
+        assert_eq!(doc_after_refusal.body["found"], Value::Bool(true));
 
         release_runtime_thread_pool_active_slot(&node, "task_submission");
         let delete = queued_delete

@@ -214,8 +214,8 @@ Current Steelsearch evidence:
   rejection model, and by-query/reindex task-submission admission through the
   same runtime-owned waiting and rejection model, accepted queued task-submission
   no-replay across shared-runtime restart and partial shared-state recovery
-  errors, plus restart reset evidence for runtime thread-pool queue/counter
-  state;
+  errors, partial-recovery task-submission refusal, plus restart reset evidence
+  for runtime thread-pool queue/counter state;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 7/7 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, repeated
@@ -253,8 +253,7 @@ Required next implementation direction:
 Required tests:
 
 - extend queue/backpressure smoke tests beyond bounded route admission into
-  live shutdown-transition windows, partial-recovery refusal policy, and broader
-  multi-node fairness behavior;
+  live shutdown-transition windows and broader multi-node fairness behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries

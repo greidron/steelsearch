@@ -92,8 +92,8 @@ Out of scope:
   waiting and rejection model, and by-query/reindex task-submission admission
   through the same runtime-owned waiting and rejection model, accepted queued
   task-submission no-replay across shared-runtime restart and partial
-  shared-state recovery errors, plus restart reset evidence for runtime
-  thread-pool queue/counter state.
+  shared-state recovery errors, partial-recovery task-submission refusal, plus
+  restart reset evidence for runtime thread-pool queue/counter state.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 7/7 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, repeated
@@ -232,7 +232,8 @@ Validation runner:
   plus snapshot/cluster-manager/task-submission route admission as
   runtime-control evidence, including accepted queued task-submission no-replay
   across shared-runtime restart and partial shared-state recovery errors, and
-  runtime thread-pool queue/counter reset after shared-runtime restart.
+  partial-recovery task-submission refusal, and runtime thread-pool
+  queue/counter reset after shared-runtime restart.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, repeated last-write-wins sequencing, and readback as
@@ -306,7 +307,8 @@ Initial targets:
    overload rejection are now guarded for search/write, maintenance, and
    snapshot pools, plus cluster reroute and task-submission admission, with
    accepted queued task-submission no-replay covered across shared-runtime
-   restart and partial shared-state recovery errors, and with
+   restart and partial shared-state recovery errors, partial-recovery
+   task-submission refusal covered, and with
    local overload counters isolated from remote task metadata in multi-node
    task visibility;
 4. telemetry rows that are derived from runtime state rather than static route
