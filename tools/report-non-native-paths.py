@@ -225,10 +225,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="pure knn",
         category="vector-hybrid",
-        status="partially native",
-        next_action="keep direct vector path covered while adding unsupported-shape counters",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"top-level `knn` queries use the engine direct vector path",
+        status="zero-test-guarded vector-knn runtime batch passed",
+        next_action="keep unsupported vector/hybrid shapes visible through bypass telemetry and widen only with parity tests",
+        evidence_path=NATIVE_CLOSURE_VALIDATION,
+        evidence_pattern=r"VECTOR_KNN_BATCH",
     ),
     Family(
         name="hybrid bool vector path",

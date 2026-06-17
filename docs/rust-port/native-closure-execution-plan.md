@@ -44,6 +44,11 @@ Out of scope:
   2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
   shapes across `auto_date_histogram`, `histogram`, and
   `variable_width_histogram` multi-index rebucketing seats.
+- The guarded runner also has a `vector-knn` batch. It passed on 2026-06-17
+  with 7/7 tests and `zero_tests=0`, covering filtered KNN scoring, runtime
+  cache bounds/invalidation, single-index vector-native page plus aggregation
+  fetch, multi-index vector-native page plus aggregation reduce, and `_id`,
+  `_score`, and fast-field sort reduce variants.
 
 ## Workstreams
 
@@ -123,6 +128,9 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   widened `auto_date_histogram`, `histogram`, and `variable_width_histogram`
   rebucketing-wrapper slice as runtime evidence.
+- `tools/run-native-closure-validation.py --batch vector-knn` must report
+  `failed_count == 0` and `zero_test_count == 0` before treating the direct
+  vector/KNN page, aggregation, cache, and sort slices as runtime evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 

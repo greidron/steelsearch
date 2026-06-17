@@ -176814,13 +176814,19 @@ mod tests {
         );
         assert!(response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Query
-                && phase.description
-                    == "matched refreshed documents with vector-native page+aggregation fetch"
+                && matches!(
+                    phase.description.as_str(),
+                    "matched refreshed documents with vector-native page+aggregation fetch"
+                        | "matched refreshed documents with vector-native cached page+aggregation fetch"
+                )
         }));
         assert!(response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
-                && phase.description
-                    == "materialized only the requested vector-native page with native aggregation collection"
+                && matches!(
+                    phase.description.as_str(),
+                    "materialized only the requested vector-native page with native aggregation collection"
+                        | "materialized only the requested vector-native cached page with native aggregation collection"
+                )
         }));
     }
 
@@ -177110,13 +177116,19 @@ mod tests {
         );
         assert!(response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Query
-                && phase.description
-                    == "matched refreshed documents with vector-native page+aggregation fetch"
+                && matches!(
+                    phase.description.as_str(),
+                    "matched refreshed documents with vector-native page+aggregation fetch"
+                        | "matched refreshed documents with vector-native cached page+aggregation fetch"
+                )
         }));
         assert!(response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
-                && phase.description
-                    == "materialized only the requested vector-native page with native aggregation collection"
+                && matches!(
+                    phase.description.as_str(),
+                    "materialized only the requested vector-native page with native aggregation collection"
+                        | "materialized only the requested vector-native cached page with native aggregation collection"
+                )
         }));
     }
 

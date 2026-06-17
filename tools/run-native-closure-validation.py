@@ -108,9 +108,41 @@ REBUCKETING_WIDE_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "engine_executes_knn_query_with_filter_and_vector_scores",
+        "vector-knn-filter-score",
+    ),
+    ValidationTest(
+        "engine_bounds_and_invalidates_knn_runtime_cache_entries",
+        "vector-knn-cache",
+    ),
+    ValidationTest(
+        "single_index_knn_uses_vector_native_page_and_aggregation_fetch",
+        "single-index-vector-native-page-aggregation",
+    ),
+    ValidationTest(
+        "multi_index_knn_uses_vector_native_page_and_aggregation_reduce",
+        "multi-index-vector-native-page-aggregation",
+    ),
+    ValidationTest(
+        "multi_index_knn_uses_vector_native_page_reduce_with_id_sort",
+        "multi-index-vector-native-sort",
+    ),
+    ValidationTest(
+        "multi_index_knn_uses_vector_native_page_and_aggregation_reduce_with_score_desc",
+        "multi-index-vector-native-sort",
+    ),
+    ValidationTest(
+        "multi_index_knn_uses_vector_native_page_and_aggregation_reduce_with_fast_field_sort",
+        "multi-index-vector-native-sort",
+    ),
+)
+
 BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
+    "vector-knn": VECTOR_KNN_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")
