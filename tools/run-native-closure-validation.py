@@ -413,6 +413,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_ml_connector_create_redacts_secret_material_from_response_and_persistence",
+        "production-security-secret-redaction",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_bulk_route_surfaces_writer_partial_authz_denial_and_reader_route_denial",
         "production-security-authorization",
         package="os-node",

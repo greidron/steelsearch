@@ -27614,6 +27614,109 @@ mod tests {
     }
 
     #[test]
+    fn secure_ml_connector_create_redacts_secret_material_from_response_and_persistence() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-ml-secret-redaction-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_ml/connectors/_create")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({
+                    "name": "redacted-connector",
+                    "protocol": "http",
+                    "credential": {
+                        "api_key": "steelsearch-secret-api-key",
+                        "access_key": "steelsearch-secret-access-key"
+                    },
+                    "parameters": {
+                        "endpoint": "https://example.invalid",
+                        "password": "steelsearch-secret-password"
+                    },
+                    "actions": [{
+                        "headers": {
+                            "Authorization": "Bearer steelsearch-secret-bearer"
+                        },
+                        "request_body": "{\"token\":\"steelsearch-secret-body\"}"
+                    }]
+                })),
+        );
+        assert_eq!(create.status, 200);
+        assert_eq!(create.body["connector_id"], "ml-connector-1");
+        let create_text = create.body.to_string();
+        for secret in [
+            "steelsearch-secret-api-key",
+            "steelsearch-secret-access-key",
+            "steelsearch-secret-password",
+            "steelsearch-secret-bearer",
+            "steelsearch-secret-body",
+        ] {
+            assert!(
+                !create_text.contains(secret),
+                "connector create response leaked {secret}"
+            );
+        }
+
+        let get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_plugins/_ml/connectors/ml-connector-1")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(get.status, 200);
+        assert_eq!(get.body["name"], "redacted-connector");
+        assert!(!get.body.to_string().contains("steelsearch-secret"));
+
+        let persisted_text =
+            std::fs::read_to_string(&shared_state_path).expect("shared runtime state persisted");
+        assert!(!persisted_text.contains("steelsearch-secret"));
+        assert!(persisted_text.contains("redacted-connector"));
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let restarted_get = restarted.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_plugins/_ml/connectors/ml-connector-1")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(restarted_get.status, 200);
+        assert_eq!(restarted_get.body["name"], "redacted-connector");
+        assert!(!restarted_get.body.to_string().contains("steelsearch-secret"));
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn neural_search_pipeline_routes_support_default_model_enrichment_and_fail_closed_on_unsupported_processor() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

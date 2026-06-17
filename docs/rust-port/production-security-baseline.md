@@ -141,8 +141,10 @@ authentication-users-file rejection through the shared users-file subject
 parser. Runtime security-profile env credentials are also loaded through that
 shared subject model before route-level Basic auth and role checks. The
 guarded production-security batch covers root authentication plus ML, bulk,
-search, and session allow/deny checks. These are baseline tests, not proof that
-TLS/authn/authz enforcement has been fully implemented.
+search, and session allow/deny checks, and now verifies that ML connector
+credential/action secret material is not returned through connector REST
+responses or persisted in shared runtime state. These are baseline tests, not
+proof that TLS/authn/authz enforcement has been fully implemented.
 The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.
