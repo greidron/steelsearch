@@ -177,7 +177,7 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 9/9 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 10/10 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
   task readback, repeated cancel idempotency with post-cancel readback,
   parent-task-id child cancellation visibility, queued-versus-in-flight
@@ -186,7 +186,8 @@ Current Steelsearch evidence:
   retention/eviction with stale cancellation-marker pruning and persisted
   restart readback, cancelled-task completion readback through restart until
   eviction, and shared-runtime restart readback for task queue state plus
-  cancelled task ids;
+  cancelled task ids, including cancel requests accepted during the per-request
+  shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 3/3 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
@@ -206,12 +207,14 @@ Current Steelsearch evidence:
   rejection model, and by-query/reindex task-submission admission through the
   same runtime-owned waiting and rejection model;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
-  2026-06-17 with 5/5 tests and `zero_tests=0`, covering by-query rethrottle
+  2026-06-17 with 6/6 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, repeated
   last-write-wins rethrottle sequencing, follow-up task readback, and
   shared-runtime restart readback for requested throttle rates, plus rejection
   for cancelled or terminal tasks without mutating rate state, and same-node
-  parent/child rethrottle rate readback without implicit rate propagation;
+  parent/child rethrottle rate readback without implicit rate propagation, plus
+  rethrottle requests accepted during the per-request shared-runtime sync
+  window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

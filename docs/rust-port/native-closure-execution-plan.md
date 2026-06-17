@@ -57,7 +57,7 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 9/9 tests and `zero_tests=0`, covering task cancellation through
+  with 10/10 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility,
@@ -66,7 +66,8 @@ Out of scope:
   bounded terminal task retention/eviction with stale cancellation-marker
   pruning, cancelled-task completion readback through restart until eviction,
   and persisted restart readback, and shared-runtime restart readback for task
-  queue state and cancelled task ids.
+  queue state and cancelled task ids, including cancel requests accepted during
+  the per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
   with 3/3 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
@@ -85,12 +86,14 @@ Out of scope:
   waiting and rejection model, and by-query/reindex task-submission admission
   through the same runtime-owned waiting and rejection model.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
-  with 5/5 tests and `zero_tests=0`, covering by-query rethrottle state
+  with 6/6 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, repeated
   last-write-wins rethrottle sequencing, follow-up `/_tasks` list/get readback,
   shared-runtime restart readback for requested throttle rates, and rejection
   for cancelled or terminal tasks without mutating rate state, plus same-node
-  parent/child rethrottle rate readback without implicit rate propagation.
+  parent/child rethrottle rate readback without implicit rate propagation and
+  rethrottle requests accepted during the per-request shared-runtime sync
+  window after restart.
 - The same runner now has a `runtime-task-metadata` batch. It passed on
   2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
@@ -199,7 +202,8 @@ Validation runner:
   readback, bounded terminal retention/eviction, stale cancellation-marker
   pruning, cancelled-task completion readback through restart until eviction,
   and pending-depth separation as runtime-control evidence, including
-  shared-runtime restart readback for task queue state and cancelled ids.
+  shared-runtime restart readback for task queue state and cancelled ids plus
+  cancel-request handling during the per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
   depth, pending-task metadata, and pending-task cancellation visibility as
@@ -215,7 +219,8 @@ Validation runner:
   task rethrottle state, repeated last-write-wins sequencing, and readback as
   runtime-control evidence, including shared-runtime restart readback for
   requested throttle rates, cancelled/terminal task refusal, and same-node
-  parent/child independent rate readback.
+  parent/child independent rate readback, plus rethrottle-request handling
+  during the per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
   report `failed_count == 0` and `zero_test_count == 0` before treating parent
   task metadata and cat task readback as runtime-control evidence.

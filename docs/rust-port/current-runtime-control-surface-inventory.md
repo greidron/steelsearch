@@ -89,7 +89,7 @@ internal subsystems, especially:
 | Propagation model | same-node `parent_task_id` child cancellation visibility exists, but current route evidence does not prove multi-level, cross-node, or background-worker propagation |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, and cancelled-task completion readback until eviction; partial-progress contracts remain bounded |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
-| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, but shutdown-window and partial-recovery behavior remain open |
+| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, and cancel requests are accepted after per-request shared-runtime sync on restart; shutdown-window and partial-recovery behavior remain open |
 | Error classification | route-level `404`, bounded repeated-cancel success, and terminal non-cancellable refusal exist, but not a full matrix for race-with-completion states |
 
 ### Required tests
@@ -99,7 +99,6 @@ internal subsystems, especially:
   - multi-level and cross-node parent task cancel versus child task visibility;
   - race-with-completion cancellation behavior.
 - add restart-smoke coverage for:
-  - cancel-during-restart;
   - post-restart partial-recovery/error-path task listing continuity.
 - add operator-visible evidence for terminal-state retention:
   - whether partial progress fields are stable;
@@ -156,7 +155,7 @@ internal subsystems, especially:
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
 | Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
 | Parent-child propagation | same-node parent/child rethrottle rate readback is independent without implicit propagation, but multi-level, cross-node, and spawned worker sub-task propagation remain open |
-| Persistence and restart | shared-runtime restart readback preserves requested throttle rates, but shutdown-window and partial-recovery behavior remain open |
+| Persistence and restart | shared-runtime restart readback preserves requested throttle rates, and rethrottle requests are accepted after per-request shared-runtime sync on restart; shutdown-window and partial-recovery behavior remain open |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
 | Terminal-state behavior | rethrottle-after-cancel and rethrottle-after-terminal-task are rejected without mutating rate state, but rethrottle-during-shutdown remains open |
 
@@ -166,7 +165,8 @@ internal subsystems, especially:
   - multi-level or cross-node parent task rethrottle versus sliced child work visibility;
   - rethrottle race-with-completion behavior.
 - add restart-smoke coverage for:
-  - rethrottle request during restart window.
+  - rethrottle request during shutdown or partial-recovery windows beyond the
+    current per-request sync-on-restart guard.
 - add operator-visible evidence for:
   - whether the last requested throttle rate is observable;
   - whether multi-level or cross-node child work inherits or diverges from the
@@ -181,7 +181,7 @@ internal subsystems, especially:
   last-write-wins route evidence.
 - connect throttle state to child-work orchestration for sliced tasks.
 - define shutdown-window and partial-recovery throttle behavior beyond the
-  current shared-runtime restart readback.
+  current shared-runtime restart readback and per-request sync-on-restart guard.
 
 ### Immediate follow-up
 

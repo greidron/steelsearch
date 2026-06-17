@@ -282,6 +282,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "cancel_request_during_restart_window_syncs_before_mutation",
+        "task-restart-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
@@ -384,6 +391,13 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
     ),
     ValidationTest(
         "rethrottle_rate_persists_across_shared_runtime_restart",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "rethrottle_request_during_restart_window_syncs_before_mutation",
         "task-throttle-runtime-state",
         package="os-node",
         target=("--lib",),
