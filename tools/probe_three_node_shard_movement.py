@@ -393,12 +393,21 @@ def make_env(extra: dict[str, str]) -> dict[str, str]:
     return env
 
 
-def main() -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", default="/tmp/three-node-shard-movement.latest")
     parser.add_argument("--index", default="three-node-shard-movement-000001")
     parser.add_argument("--doc-count", type=int, default=5)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--require-interruption",
+        action="store_true",
+        help="fail the final summary unless both-direction interruption/resume/finalize phases are recorded",
+    )
+    return parser
+
+
+def main() -> int:
+    args = build_arg_parser().parse_args()
 
     work_dir = Path(args.work_dir)
     if work_dir.exists():
@@ -663,7 +672,9 @@ def main() -> int:
             )
         )
 
-        report["summary"] = summarize_movement_report(report)
+        report["summary"] = summarize_movement_report(
+            report, require_interruption=args.require_interruption
+        )
     except Exception as exc:
         report["failure_context"] = {
             "java1_nodes": None if java1_client is None else safe_request(java1_client, "GET", "/_cat/nodes?format=json"),

@@ -52,6 +52,16 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
         self.assertFalse(summary["interruption_evidence_ok"])
         self.assertFalse(summary["interruption_evidence_required"])
 
+    def test_require_interruption_cli_defaults_to_representative_mode(self):
+        args = self.probe.build_arg_parser().parse_args([])
+
+        self.assertFalse(args.require_interruption)
+
+    def test_require_interruption_cli_enables_final_gate_requirement(self):
+        args = self.probe.build_arg_parser().parse_args(["--require-interruption"])
+
+        self.assertTrue(args.require_interruption)
+
     def test_required_interruption_fails_without_interrupted_resume_phases(self):
         summary = self.probe.summarize_movement_report(
             self.representative_report(), require_interruption=True

@@ -35,8 +35,9 @@ Out of scope:
   replica rejoin, and failback to Java. The probe now records shard checkpoint
   drift and requires zero drift. Its summary contract now also reports whether
   both-direction interrupted, resumed-or-restarted, and finalized recovery
-  phases are present, so the live probe can fail the mixed-cluster gate once
-  those phases are enabled as required evidence.
+  phases are present, and `--require-interruption` can fail the mixed-cluster
+  gate unless those phases are recorded once live interruption execution is
+  enabled.
 - Native-closure runtime validation now has a guarded compact runner,
   `tools/run-native-closure-validation.py --batch compact`, that rejects
   zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
@@ -287,7 +288,8 @@ Already evidenced:
 - Java replica rejoin behind SteelSearch primary;
 - Java primary recovery after SteelSearch node loss;
 - zero observed shard checkpoint drift in the representative probe.
-- summary-level interruption evidence contract for both movement directions.
+- summary-level interruption evidence contract and `--require-interruption`
+  gate option for both movement directions.
 
 Remaining tests:
 
@@ -296,7 +298,8 @@ Remaining tests:
 2. interrupt SteelSearch primary to Java replica recovery before finalize by
    adding live phase execution;
 3. restart the recovering target and verify explicit resume or bounded restart;
-4. require the interruption summary contract in the final mixed-cluster gate;
+4. run the final mixed-cluster gate with `--require-interruption` after live
+   interruption phases are added;
 5. verify retention-lease and checkpoint monotonicity during interruption;
 6. capture allocation explanation for unsupported movement shapes.
 
