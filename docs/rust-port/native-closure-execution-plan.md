@@ -57,7 +57,7 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 18/18 tests and `zero_tests=0`, covering task cancellation through
+  with 19/19 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility including
@@ -69,10 +69,10 @@ Out of scope:
   pruning, cancelled-task completion and partial-progress status readback through
   restart until eviction, cancelled-terminal restart-sync, live-shutdown, and
   node-role-transition refusal with progress preservation, persisted restart
-  readback, and shared-runtime restart readback for task queue state and cancelled task ids,
-  including accepted in-flight task
-  readback/refusal without queued replay, partial shared-state recovery error
-  task-listing/cancel continuity, and cancel requests accepted during the
+  readback, active queued/in-flight node-role-transition cancellation/refusal,
+  and shared-runtime restart readback for task queue state and cancelled task
+  ids, including accepted in-flight task readback/refusal without queued replay,
+  partial shared-state recovery error task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
   with 4/4 tests and `zero_tests=0`, covering runtime task queue metadata plus
@@ -219,7 +219,8 @@ Validation runner:
   terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
   completion and partial-progress status readback through restart until eviction,
   cancelled-terminal restart-sync, live-shutdown, and node-role-transition
-  refusal with progress preservation, and pending-depth separation as
+  refusal with progress preservation, active queued/in-flight
+  node-role-transition cancellation/refusal, and pending-depth separation as
   runtime-control evidence, including shared-runtime restart readback for task
   queue state and cancelled ids, accepted in-flight
   task readback/refusal without queued replay, partial shared-state recovery
