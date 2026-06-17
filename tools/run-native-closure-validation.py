@@ -208,11 +208,29 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "tasks_live_route_supports_list_get_and_cancel_shapes",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "tasks_cancel_route_supports_task_id_path_variant",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
+    "runtime-tasks": RUNTIME_TASKS_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")

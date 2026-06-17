@@ -1622,6 +1622,7 @@ pub struct SteelNode {
     pub created_indices_state: Arc<Mutex<BTreeSet<String>>>,
     pub metadata_manifest_state: Arc<Mutex<Value>>,
     pub task_queue_state: Arc<Mutex<Option<PersistedClusterManagerTaskQueueState>>>,
+    pub cancelled_task_ids: Arc<Mutex<BTreeSet<String>>>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
@@ -1762,6 +1763,7 @@ impl SteelNode {
             created_indices_state: Arc::new(Mutex::new(BTreeSet::new())),
             metadata_manifest_state: Arc::new(Mutex::new(default_cluster_metadata_manifest())),
             task_queue_state: Arc::new(Mutex::new(None)),
+            cancelled_task_ids: Arc::new(Mutex::new(BTreeSet::new())),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
@@ -9014,6 +9016,11 @@ impl SteelNode {
                     tasks_route_registration::build_non_cancellable_task_error(task_id),
                 );
             }
+            self.cancelled_task_ids
+                .lock()
+                .expect("cancelled task ids lock poisoned")
+                .insert(task_id.to_string());
+            let task = self.find_task(task_id).unwrap_or(task);
             return RestResponse::json(
                 200,
                 tasks_route_registration::invoke_tasks_cancel_live_route(&serde_json::json!({
@@ -11114,6 +11121,11 @@ impl SteelNode {
     }
 
     fn task_records(&self) -> Vec<Value> {
+        let cancelled_task_ids = self
+            .cancelled_task_ids
+            .lock()
+            .expect("cancelled task ids lock poisoned")
+            .clone();
         if let Some(queue) = self
             .task_queue_state
             .lock()
@@ -11125,8 +11137,16 @@ impl SteelNode {
                 .into_iter()
                 .chain(queue.in_flight)
                 .map(|record| {
+                    let node_id = self
+                        .cluster_view
+                        .as_ref()
+                        .map(|v| v.local_node_id.clone())
+                        .unwrap_or_else(|| "node-a".to_string());
+                    let task_id = format!("{node_id}:{}", record.task_id);
+                    let cancellable = record.state == ClusterManagerTaskState::Queued;
+                    let cancelled = cancelled_task_ids.contains(&task_id);
                     serde_json::json!({
-                        "node": self.cluster_view.as_ref().map(|v| v.local_node_id.clone()).unwrap_or_else(|| "node-a".to_string()),
+                        "node": node_id,
                         "node_name": self.cluster_view.as_ref().and_then(|v| {
                             v.nodes.iter().find(|node| node.node_id == v.local_node_id).map(|node| node.node_name.clone())
                         }).unwrap_or_else(|| "steel-node".to_string()),
@@ -11141,8 +11161,8 @@ impl SteelNode {
                         }),
                         "start_time_in_millis": 1,
                         "running_time_in_nanos": 1,
-                        "cancellable": false,
-                        "cancelled": false,
+                        "cancellable": cancellable,
+                        "cancelled": cancelled,
                         "headers": {},
                         "insert_order": record.task_id,
                         "priority": "URGENT",
@@ -21793,6 +21813,15 @@ mod tests {
                 state: ClusterManagerTaskState::Queued,
                 failure_reason: None,
             }],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 12,
+                task: ClusterManagerTask {
+                    source: "publication in flight".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::InFlight,
+                failure_reason: None,
+            }],
             ..Default::default()
         });
 
@@ -21800,9 +21829,26 @@ mod tests {
             RestMethod::Post,
             "/_tasks/node-a:11/_cancel",
         ));
-        assert_eq!(existing.status, 400);
+        assert_eq!(existing.status, 200);
         assert_eq!(
-            existing.body["error"]["type"],
+            existing.body["nodes"]["node-a"]["tasks"]["node-a:11"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        let cancelled_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_tasks/node-a:11",
+        ));
+        assert_eq!(cancelled_get.status, 200);
+        assert_eq!(cancelled_get.body["task"]["cancelled"], Value::Bool(true));
+
+        let non_cancellable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:12/_cancel",
+        ));
+        assert_eq!(non_cancellable.status, 400);
+        assert_eq!(
+            non_cancellable.body["error"]["type"],
             Value::String("illegal_argument_exception".to_string())
         );
 

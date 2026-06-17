@@ -53,6 +53,10 @@ Out of scope:
   with 9/9 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, role/bootstrap, production-mode gate, and
   daemon-level data-path / occupied-port refusal cases.
+- The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
+  with 2/2 tests and `zero_tests=0`, covering task cancellation through
+  runtime-local state mutation plus follow-up task readback for both query-param
+  and path task-id cancellation forms.
 
 ## Workstreams
 
@@ -138,6 +142,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice as runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch runtime-tasks` must report
+  `failed_count == 0` and `zero_test_count == 0` before treating task
+  cancellation and task readback as runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -177,7 +184,8 @@ Initial targets:
 
 1. bootstrap/preflight refusal tests for data-path, bind, role, and production
    mode settings. Guarded batch evidence now exists for this slice;
-2. task registry model with cancellation and parent/child metadata;
+2. task registry model with cancellation and parent/child metadata. Runtime
+   mutation evidence now exists for bounded cancellation/readback;
 3. queue/backpressure smoke tests for search/write/admin routes;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.

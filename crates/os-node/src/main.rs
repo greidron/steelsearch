@@ -10418,11 +10418,23 @@ mod tasks_live_route_parity_tests {
 
         let cancel = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Post,
-            "/_tasks/_cancel?task_id=node-a:999",
+            "/_tasks/_cancel?task_id=node-a:1",
         ));
         assert_eq!(cancel.status, 200);
-        assert!(cancel.body["nodes"].is_object());
+        assert_eq!(
+            cancel.body["nodes"]["node-a"]["tasks"]["node-a:1"]["cancelled"],
+            serde_json::json!(true)
+        );
         assert!(cancel.body["node_failures"].is_array());
+        let cancelled_get = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/_tasks/node-a:1",
+        ));
+        assert_eq!(cancelled_get.status, 200);
+        assert_eq!(
+            cancelled_get.body["task"]["cancelled"],
+            serde_json::json!(true)
+        );
     }
 }
 

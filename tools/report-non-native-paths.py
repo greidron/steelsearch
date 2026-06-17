@@ -257,10 +257,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="production runtime controls",
         category="runtime",
-        status="startup-preflight refusal batch is zero-test guarded; task/backpressure controls remain partial",
-        next_action="add task registry cancellation and queue/backpressure probes against real runtime state",
+        status="startup-preflight and task-cancellation runtime batches are zero-test guarded; queue/backpressure controls remain partial",
+        next_action="add queue/backpressure probes against real runtime state",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
-        evidence_pattern=r"STARTUP_PREFLIGHT_BATCH",
+        evidence_pattern=r"RUNTIME_TASKS_BATCH",
     ),
     Family(
         name="production security",

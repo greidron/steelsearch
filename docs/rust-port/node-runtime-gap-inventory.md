@@ -173,6 +173,10 @@ Current Steelsearch evidence:
 - `os-rest` already models selected header behavior such as content negotiation,
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
+- `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
+  2026-06-17 with 2/2 tests and `zero_tests=0`, covering bounded task
+  cancellation that mutates runtime-local state and is visible through follow-up
+  task readback;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 
@@ -184,7 +188,8 @@ Required next implementation direction:
 
 Required tests:
 
-- task cancellation and throttling probes that touch real runtime state;
+- extend from the current task cancellation mutation probe into throttling and
+  parent/child task metadata probes that touch real runtime state;
 - queue/backpressure smoke tests for administrative and search/write workloads;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
