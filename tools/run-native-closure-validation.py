@@ -1074,6 +1074,13 @@ MODULE_REGISTRATION_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "extension_registry_uses_rust_native_extension_api_descriptors",
+        "module-registration-boundary",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
 )
 
 MIXED_SHARD_MOVEMENT_BATCH: tuple[ExternalValidation, ...] = (

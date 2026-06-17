@@ -87,11 +87,77 @@ pub struct ExtensionBoundaryRegistry {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RustNativeExtensionDescriptor {
+    pub module: &'static str,
+    pub feature: &'static str,
+    pub description: &'static str,
+    pub classname: &'static str,
+    pub rest_routes: &'static [&'static str],
+    pub transport_actions: &'static [&'static str],
+}
+
+pub trait RustNativeExtension {
+    fn descriptor(&self) -> RustNativeExtensionDescriptor;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExtensionRegistrationEntry {
     pub module: &'static str,
     pub feature: &'static str,
     pub rest_routes: &'static [&'static str],
     pub transport_actions: &'static [&'static str],
+}
+
+struct SteelsearchRuntimeExtension;
+struct KnnCompatibilityExtension;
+struct MlCommonsCompatibilityExtension;
+
+impl RustNativeExtension for SteelsearchRuntimeExtension {
+    fn descriptor(&self) -> RustNativeExtensionDescriptor {
+        RustNativeExtensionDescriptor {
+            module: "steelsearch-runtime",
+            feature: "runtime-observability",
+            description: "Steelsearch development runtime plugin surface",
+            classname: "org.steelsearch.runtime.Plugin",
+            rest_routes: &["/_cat/plugins"],
+            transport_actions: &[],
+        }
+    }
+}
+
+impl RustNativeExtension for KnnCompatibilityExtension {
+    fn descriptor(&self) -> RustNativeExtensionDescriptor {
+        RustNativeExtensionDescriptor {
+            module: "opensearch-knn",
+            feature: "knn-rest-compatibility",
+            description: "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry",
+            classname: "org.steelsearch.knn.KNNPlugin",
+            rest_routes: &[
+                "/_plugins/_knn/stats",
+                "/_plugins/_knn/settings",
+                "/_plugins/_knn/warmup",
+                "/_plugins/_knn/models",
+            ],
+            transport_actions: &[],
+        }
+    }
+}
+
+impl RustNativeExtension for MlCommonsCompatibilityExtension {
+    fn descriptor(&self) -> RustNativeExtensionDescriptor {
+        RustNativeExtensionDescriptor {
+            module: "opensearch-ml-commons",
+            feature: "ml-commons-rest-compatibility",
+            description: "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry",
+            classname: "org.steelsearch.ml.MLCommonsPlugin",
+            rest_routes: &[
+                "/_plugins/_ml/models",
+                "/_plugins/_ml/tasks",
+                "/_plugins/_ml/connectors",
+            ],
+            transport_actions: &[],
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -137,72 +203,44 @@ impl ExtensionBoundaryRegistry {
     }
 
     pub fn registered_components(&self) -> Vec<&'static str> {
-        let mut components = vec!["steelsearch-runtime"];
-        if self.knn_plugin_enabled {
-            components.push("opensearch-knn");
-        }
-        if self.ml_commons_enabled {
-            components.push("opensearch-ml-commons");
-        }
-        components
+        self.rust_native_extension_descriptors()
+            .into_iter()
+            .map(|descriptor| descriptor.module)
+            .collect()
     }
 
     pub fn registration_table(&self) -> Vec<ExtensionRegistrationEntry> {
-        let mut entries = vec![ExtensionRegistrationEntry {
-            module: "steelsearch-runtime",
-            feature: "runtime-observability",
-            rest_routes: &["/_cat/plugins"],
-            transport_actions: &[],
-        }];
+        self.rust_native_extension_descriptors()
+            .into_iter()
+            .map(|descriptor| ExtensionRegistrationEntry {
+                module: descriptor.module,
+                feature: descriptor.feature,
+                rest_routes: descriptor.rest_routes,
+                transport_actions: descriptor.transport_actions,
+            })
+            .collect()
+    }
+
+    pub fn rust_native_extension_descriptors(&self) -> Vec<RustNativeExtensionDescriptor> {
+        let mut descriptors = vec![SteelsearchRuntimeExtension.descriptor()];
         if self.knn_plugin_enabled {
-            entries.push(ExtensionRegistrationEntry {
-                module: "opensearch-knn",
-                feature: "knn-rest-compatibility",
-                rest_routes: &[
-                    "/_plugins/_knn/stats",
-                    "/_plugins/_knn/settings",
-                    "/_plugins/_knn/warmup",
-                    "/_plugins/_knn/models",
-                ],
-                transport_actions: &[],
-            });
+            descriptors.push(KnnCompatibilityExtension.descriptor());
         }
         if self.ml_commons_enabled {
-            entries.push(ExtensionRegistrationEntry {
-                module: "opensearch-ml-commons",
-                feature: "ml-commons-rest-compatibility",
-                rest_routes: &[
-                    "/_plugins/_ml/models",
-                    "/_plugins/_ml/tasks",
-                    "/_plugins/_ml/connectors",
-                ],
-                transport_actions: &[],
-            });
+            descriptors.push(MlCommonsCompatibilityExtension.descriptor());
         }
-        entries
+        descriptors
     }
 
     fn registered_plugin_specs(&self) -> Vec<ExtensionPluginSpec> {
-        let mut specs = vec![ExtensionPluginSpec {
-            component: "steelsearch-runtime",
-            description: "Steelsearch development runtime plugin surface",
-            classname: "org.steelsearch.runtime.Plugin",
-        }];
-        if self.knn_plugin_enabled {
-            specs.push(ExtensionPluginSpec {
-                component: "opensearch-knn",
-                description: "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry",
-                classname: "org.steelsearch.knn.KNNPlugin",
-            });
-        }
-        if self.ml_commons_enabled {
-            specs.push(ExtensionPluginSpec {
-                component: "opensearch-ml-commons",
-                description: "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry",
-                classname: "org.steelsearch.ml.MLCommonsPlugin",
-            });
-        }
-        specs
+        self.rust_native_extension_descriptors()
+            .into_iter()
+            .map(|descriptor| ExtensionPluginSpec {
+                component: descriptor.module,
+                description: descriptor.description,
+                classname: descriptor.classname,
+            })
+            .collect()
     }
 }
 
@@ -22768,6 +22806,37 @@ mod tests {
         assert!(!entries
             .iter()
             .any(|entry| entry.module == "opensearch-ml-commons"));
+    }
+
+    #[test]
+    fn extension_registry_uses_rust_native_extension_api_descriptors() {
+        let registry = ExtensionBoundaryRegistry {
+            manifest_path: Some(PathBuf::from("/tmp/steelsearch-extensions.json")),
+            knn_plugin_enabled: true,
+            ml_commons_enabled: true,
+        };
+        let descriptors = registry.rust_native_extension_descriptors();
+        assert_eq!(descriptors.len(), 3);
+        assert!(descriptors.iter().any(|descriptor| {
+            descriptor.module == "steelsearch-runtime"
+                && descriptor.classname == "org.steelsearch.runtime.Plugin"
+                && descriptor.rest_routes == &["/_cat/plugins"]
+                && descriptor.transport_actions.is_empty()
+        }));
+        assert!(descriptors.iter().any(|descriptor| {
+            descriptor.module == "opensearch-knn"
+                && descriptor.feature == "knn-rest-compatibility"
+                && descriptor.description.contains("Rust-native k-NN")
+                && descriptor.rest_routes.contains(&"/_plugins/_knn/settings")
+                && descriptor.transport_actions.is_empty()
+        }));
+        assert!(descriptors.iter().any(|descriptor| {
+            descriptor.module == "opensearch-ml-commons"
+                && descriptor.feature == "ml-commons-rest-compatibility"
+                && descriptor.description.contains("Rust-native ML Commons")
+                && descriptor.rest_routes.contains(&"/_plugins/_ml/connectors")
+                && descriptor.transport_actions.is_empty()
+        }));
     }
 
     #[test]
