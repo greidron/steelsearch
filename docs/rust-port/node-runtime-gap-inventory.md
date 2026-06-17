@@ -253,7 +253,8 @@ Current Steelsearch evidence:
 - `tools/run-native-closure-validation.py --batch runtime-fairness` passed on
   2026-06-17 with 6/6 tests and `zero_tests=0`, covering simulated multi-node
   remote task metadata visibility including node-specific cat thread-pool
-  management telemetry, local task-submission/search/write and local
+  management telemetry, node-scoped cat thread-pool control-plane telemetry
+  under remote backlog, local task-submission/search/write and local
   maintenance/snapshot/cluster-manager control-plane admission under remote
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior;

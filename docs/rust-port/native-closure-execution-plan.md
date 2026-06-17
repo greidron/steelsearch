@@ -185,7 +185,8 @@ Out of scope:
 - The same runner now has a `runtime-fairness` batch. It passed on
   2026-06-17 with 6/6 tests and `zero_tests=0`, covering multi-node remote
   task metadata visibility including node-specific cat thread-pool management
-  telemetry, local task-submission/search/write and local
+  telemetry, node-scoped cat thread-pool control-plane telemetry under remote
+  backlog, local task-submission/search/write and local
   maintenance/snapshot/cluster-manager control-plane admission under remote
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior.
@@ -405,7 +406,8 @@ Validation runner:
   simulated multi-node remote task metadata isolation, local
   task-submission/search/write and maintenance/snapshot/cluster-manager
   admission under remote backlog, node-specific cat thread-pool management
-  telemetry, and independent local workload drain as runtime fairness evidence.
+  telemetry, node-scoped cat thread-pool control-plane telemetry under remote
+  backlog, and independent local workload drain as runtime fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,

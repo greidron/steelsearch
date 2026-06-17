@@ -37895,6 +37895,37 @@ mod tests {
             stats.body["nodes"]["node-b"]["thread_pool"]["cluster_manager"]["completed"],
             0
         );
+
+        let mut cat_thread_pool = RestRequest::new(
+            RestMethod::Get,
+            "/_cat/thread_pool/management,maintenance,snapshot,cluster_manager",
+        );
+        cat_thread_pool
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_thread_pool = node.handle_rest_request(cat_thread_pool);
+        assert_eq!(cat_thread_pool.status, 200);
+        let thread_pool_rows = cat_thread_pool
+            .body
+            .as_array()
+            .expect("cat thread pool rows");
+        assert_eq!(thread_pool_rows.len(), 8);
+        let row_for = |node_id: &str, name: &str| {
+            thread_pool_rows
+                .iter()
+                .find(|row| row["node_id"] == node_id && row["name"] == name)
+                .unwrap_or_else(|| panic!("missing {node_id} {name} cat thread pool row"))
+        };
+        assert_eq!(row_for("node-a", "management")["active"], "0");
+        assert_eq!(row_for("node-a", "management")["queue"], "0");
+        assert_eq!(row_for("node-a", "maintenance")["completed"], "1");
+        assert_eq!(row_for("node-a", "snapshot")["completed"], "1");
+        assert_eq!(row_for("node-a", "cluster_manager")["completed"], "1");
+        assert_eq!(row_for("node-b", "management")["active"], "1");
+        assert_eq!(row_for("node-b", "management")["queue"], "1");
+        assert_eq!(row_for("node-b", "maintenance")["completed"], "0");
+        assert_eq!(row_for("node-b", "snapshot")["completed"], "0");
+        assert_eq!(row_for("node-b", "cluster_manager")["completed"], "0");
     }
 
     #[test]
