@@ -216,6 +216,13 @@ STARTUP_READINESS_BATCH: tuple[ValidationTest, ...] = (
         target=("--bin", "steelsearch"),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "production_startup_preflight_and_readiness_share_security_blockers",
+        "startup-readiness-shared-blockers",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (

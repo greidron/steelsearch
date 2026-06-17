@@ -5,7 +5,7 @@ use os_node::{
     PersistedClusterManagerTaskQueueState,
 };
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -342,6 +342,8 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
 
     let injected_task_queue_state = PersistedClusterManagerTaskQueueState {
         next_task_id: 3,
+        task_node_ids: BTreeMap::new(),
+        task_statuses: BTreeMap::new(),
         pending: vec![ClusterManagerTaskRecord {
             task_id: 1,
             task: ClusterManagerTask {
@@ -350,6 +352,7 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
             },
             state: ClusterManagerTaskState::Queued,
             parent_task_id: None,
+            headers: BTreeMap::new(),
             failure_reason: None,
         }],
         in_flight: vec![ClusterManagerTaskRecord {
@@ -362,6 +365,7 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
             },
             state: ClusterManagerTaskState::InFlight,
             parent_task_id: None,
+            headers: BTreeMap::new(),
             failure_reason: None,
         }],
         acknowledged: Vec::new(),
@@ -532,6 +536,8 @@ fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
         .expect("gateway manifest should exist after initial cluster formation");
     persisted.task_queue_state = Some(PersistedClusterManagerTaskQueueState {
         next_task_id: 1,
+        task_node_ids: BTreeMap::new(),
+        task_statuses: BTreeMap::new(),
         pending: vec![ClusterManagerTaskRecord {
             task_id: 0,
             task: ClusterManagerTask {
@@ -540,6 +546,7 @@ fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
             },
             state: ClusterManagerTaskState::Queued,
             parent_task_id: None,
+            headers: BTreeMap::new(),
             failure_reason: None,
         }],
         in_flight: Vec::new(),

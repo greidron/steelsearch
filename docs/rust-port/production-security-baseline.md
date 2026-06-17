@@ -120,8 +120,10 @@ Production security is not complete until tests cover:
 - production readiness and startup failures when any boundary is stubbed.
 
 Existing production mode and readiness tests already assert that the daemon
-blocks production until all security boundaries are enforced. They are baseline
-tests, not proof that enforcement has been implemented.
+blocks production until all security boundaries are enforced, and that
+production startup preflight and startup readiness report the same production
+security/release gate blocker. They are baseline tests, not proof that
+enforcement has been implemented.
 
 ## Operator Evidence
 

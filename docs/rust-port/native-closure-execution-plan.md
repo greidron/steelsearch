@@ -54,8 +54,9 @@ Out of scope:
   node-id, invalid address/port, role/bootstrap, production-mode gate, and
   daemon-level data-path / occupied-port refusal cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
-  with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
-  readiness blocker reasons for concrete filesystem refusal.
+  with 2/2 tests and `zero_tests=0`, covering shared startup preflight and
+  readiness blocker reasons for concrete filesystem refusal plus production
+  security/release gate refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
   with 19/19 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
@@ -210,7 +211,8 @@ Validation runner:
   concrete startup refusal slice as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
-  startup/readiness blocker reasons as runtime-control evidence.
+  startup/readiness blocker reasons, including production security/release gate
+  blockers, as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,

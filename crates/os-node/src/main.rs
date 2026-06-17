@@ -4293,6 +4293,7 @@ struct DaemonConfig {
     seed_hosts: Vec<String>,
     data_path: PathBuf,
     roles: Vec<String>,
+    mode: DaemonMode,
     development_security_mode: DevelopmentSecurityMode,
     java_write_forwarding_validated: bool,
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
@@ -4694,6 +4695,7 @@ where
         seed_hosts,
         data_path,
         roles,
+        mode,
         development_security_mode,
         java_write_forwarding_validated,
         seed_peer_identity,
@@ -4703,12 +4705,6 @@ where
         extension_manifest_path,
     };
     validate_startup_preflight(&config)?;
-    if mode == DaemonMode::Production {
-        validate_production_mode_request(
-            &SecurityBoundaryPolicy::default(),
-            ReleaseReadinessChecklist::default(),
-        )?;
-    }
     Ok(config)
 }
 
@@ -4943,6 +4939,14 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
                 "[membership] duplicate development node id [{}]",
                 node.node_id
             ));
+        }
+    }
+    if config.mode == DaemonMode::Production {
+        if let Err(error) = validate_production_mode_request(
+            &SecurityBoundaryPolicy::default(),
+            ReleaseReadinessChecklist::default(),
+        ) {
+            blockers.push(format!("[production] {error}"));
         }
     }
     blockers
@@ -5795,6 +5799,7 @@ mod tests {
             seed_hosts: Vec::new(),
             data_path,
             roles: default_roles(),
+            mode: DaemonMode::Development,
             development_security_mode: DevelopmentSecurityMode::Disabled,
             java_write_forwarding_validated: false,
             seed_peer_identity: None,
@@ -6231,6 +6236,32 @@ mod tests {
         assert_eq!(readiness.blockers.len(), 1);
         assert!(readiness.blockers[0].contains("--path.data must be a directory"));
         assert!(startup_error.contains(&readiness.blockers[0]));
+    }
+
+    #[test]
+    fn production_startup_preflight_and_readiness_share_security_blockers() {
+        let path = unique_test_path("steelsearch-production-readiness");
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+
+        let startup_error = validate_startup_preflight(&config)
+            .unwrap_err()
+            .to_string();
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        assert!(!readiness.ready);
+        let production_blocker = readiness
+            .blockers
+            .iter()
+            .find(|blocker| blocker.starts_with("[production]"))
+            .expect("production blocker should be reported");
+        assert!(production_blocker.contains("production mode is blocked"));
+        assert!(production_blocker.contains("tls must be implemented and enforced"));
+        assert!(production_blocker.contains("authentication must be implemented and enforced"));
+        assert!(production_blocker.contains("authorization must be implemented and enforced"));
+        assert!(production_blocker.contains("audit_logging must be implemented and enforced"));
+        assert!(startup_error.contains(production_blocker));
     }
 
     #[test]

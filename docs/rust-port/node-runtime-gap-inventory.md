@@ -142,8 +142,9 @@ Current Steelsearch evidence:
   daemon-level data-path, bind, duplicate node-id, invalid address/port,
   role/bootstrap, and production-mode refusal cases;
 - `tools/run-native-closure-validation.py --batch startup-readiness` passed on
-  2026-06-17 with 1/1 tests and `zero_tests=0`, covering shared startup
-  preflight and readiness blocker reasons for concrete filesystem refusal;
+  2026-06-17 with 2/2 tests and `zero_tests=0`, covering shared startup
+  preflight and readiness blocker reasons for concrete filesystem refusal plus
+  production security/release gate refusal;
 - development mode still starts with a reduced runtime and advisory warnings.
 
 Required next implementation direction:
@@ -156,8 +157,8 @@ Required tests:
 - extend startup refusal fixtures from the current file/not-directory,
   occupied-port, invalid bind/config, duplicate node-id, role/bootstrap, and
   production-gate coverage into absent/readonly/locked data paths;
-- extend the startup/readiness consistency probe beyond filesystem refusal into
-  production and multi-node gate reasons.
+- extend the startup/readiness consistency probe beyond filesystem refusal and
+  production security/release gate refusal into multi-node gate reasons.
 
 ## Gap Class 2: Thread Pools, Task Tracking, And Runtime Controls
 
