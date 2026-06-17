@@ -34438,6 +34438,116 @@ mod tests {
     }
 
     #[test]
+    fn accepted_queued_task_submission_is_not_replayed_after_shared_runtime_restart() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-task-submission-restart-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/queued-submit-restart")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+        let put_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/queued-submit-restart/_doc/doc-1")
+                .with_json_body(serde_json::json!({"message": "queued delete"})),
+        );
+        assert_eq!(put_doc.status, 201);
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_delete_node = node.clone();
+        let queued_delete = std::thread::spawn(move || {
+            queued_delete_node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/queued-submit-restart/_delete_by_query")
+                    .with_json_body(serde_json::json!({
+                        "query": {"match_all": {}}
+                    })),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "task_submission", 1);
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.cluster_view = node.cluster_view.clone();
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let stats =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["task_submission"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["completed"], 0);
+
+        let doc = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/queued-submit-restart/_doc/doc-1",
+        ));
+        assert_eq!(doc.status, 200);
+        assert_eq!(doc.body["found"], Value::Bool(true));
+        assert_eq!(doc.body["_source"]["message"], "queued delete");
+
+        release_runtime_thread_pool_active_slot(&node, "task_submission");
+        let delete = queued_delete
+            .join()
+            .expect("queued delete-by-query request thread should not panic");
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["deleted"], 1);
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn runtime_thread_pool_queue_state_resets_across_shared_runtime_restart() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");

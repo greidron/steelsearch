@@ -218,11 +218,11 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Queue ownership | search/write, maintenance, snapshot, cluster-reroute, and task-submission route admission now have active-slot queue waiting and drain evidence, but terminal long-running task lifecycle ownership is still bounded |
-| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal after shared-runtime restart and partial shared-state recovery error task-listing/cancel continuity are covered, while queued-work shutdown/partial-recovery replay/refusal and multi-node overload contracts are still missing |
+| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal, accepted queued task-submission no-replay after shared-runtime restart, and partial shared-state recovery error task-listing/cancel continuity are covered, while queued-work live-shutdown/partial-recovery replay/refusal and multi-node overload contracts are still missing |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist, but there is no authoritative mapping between visible entries and the real internal queue owners or queue depth |
-| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, but there is no evidence for what accepted queued work does on shutdown, partial recovery, or node-role transitions |
+| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, and accepted queued task-submission work is not replayed into a restarted runtime view; live shutdown, partial recovery, and node-role transitions remain open |
 
 ### Required tests
 
@@ -237,7 +237,7 @@ internal subsystems, especially:
     route admission guards.
 - add restart-smoke coverage for:
   - queued work before shutdown;
-  - accepted queued-work replay/refusal after shutdown or partial recovery;
+  - accepted queued-work replay/refusal after live shutdown or partial recovery;
   - refusal versus replay behavior during partial recovery.
 
 ### Required implementation
