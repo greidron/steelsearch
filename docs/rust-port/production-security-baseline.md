@@ -136,10 +136,11 @@ production startup preflight and startup readiness report the same production
 security/release gate blocker. The production gate is now structured by
 security boundary and release checklist item, with tests proving that partial
 enforcement removes only the satisfied blockers. Startup preflight also has
-fixtures for missing and present TLS/authn bootstrap material, plus malformed
-authentication-users-file rejection through the shared users-file subject
-parser. Runtime security-profile env credentials are also loaded through that
-shared subject model before route-level Basic auth and role checks. The
+fixtures for missing, present, and malformed TLS bootstrap material, including
+PEM-marker certificate/key validation, plus malformed authentication-users-file
+rejection through the shared users-file subject parser. Runtime
+security-profile env credentials are also loaded through that shared subject
+model before route-level Basic auth and role checks. The
 guarded production-security batch covers root authentication plus ML, bulk,
 search, and session allow/deny checks, and now verifies that ML connector
 credential/action secret material is not returned through connector REST

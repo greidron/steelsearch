@@ -5062,6 +5062,44 @@ fn production_security_bootstrap_blockers(
             ));
         }
     }
+    for (name, path) in [
+        (
+            "HTTP TLS certificate",
+            bootstrap.http_tls_certificate_path.as_ref(),
+        ),
+        (
+            "transport TLS certificate",
+            bootstrap.transport_tls_certificate_path.as_ref(),
+        ),
+    ] {
+        if let Some(path) = path {
+            if let Err(error) = validate_production_tls_certificate_file(path) {
+                blockers.push(format!(
+                    "[security] production {name} is invalid ({}): {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    for (name, path) in [
+        (
+            "HTTP TLS private key",
+            bootstrap.http_tls_private_key_path.as_ref(),
+        ),
+        (
+            "transport TLS private key",
+            bootstrap.transport_tls_private_key_path.as_ref(),
+        ),
+    ] {
+        if let Some(path) = path {
+            if let Err(error) = validate_production_tls_private_key_file(path) {
+                blockers.push(format!(
+                    "[security] production {name} is invalid ({}): {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
     blockers
 }
 
@@ -5069,6 +5107,30 @@ fn validate_production_authentication_users_file(path: &Path) -> Result<(), Stri
     let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
     parse_authentication_users_json(&raw).map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn validate_production_tls_certificate_file(path: &Path) -> Result<(), String> {
+    let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
+    if raw.contains("-----BEGIN CERTIFICATE-----") && raw.contains("-----END CERTIFICATE-----") {
+        Ok(())
+    } else {
+        Err("must contain PEM certificate markers".to_string())
+    }
+}
+
+fn validate_production_tls_private_key_file(path: &Path) -> Result<(), String> {
+    let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
+    let has_private_key = raw.contains("-----BEGIN PRIVATE KEY-----")
+        && raw.contains("-----END PRIVATE KEY-----");
+    let has_rsa_private_key = raw.contains("-----BEGIN RSA PRIVATE KEY-----")
+        && raw.contains("-----END RSA PRIVATE KEY-----");
+    let has_ec_private_key = raw.contains("-----BEGIN EC PRIVATE KEY-----")
+        && raw.contains("-----END EC PRIVATE KEY-----");
+    if has_private_key || has_rsa_private_key || has_ec_private_key {
+        Ok(())
+    } else {
+        Err("must contain PEM private key markers".to_string())
+    }
 }
 
 fn validate_seed_host(seed_host: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -6436,9 +6498,7 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
-        for file in [&http_cert, &http_key, &transport_cert, &transport_key] {
-            fs::write(file, b"fixture").unwrap();
-        }
+        write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
         fs::write(
             &users,
             br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
@@ -6475,6 +6535,57 @@ mod tests {
             .iter()
             .any(|blocker| blocker.starts_with("[production]")));
         assert!(startup_error.contains("production mode is blocked"));
+    }
+
+    #[test]
+    fn production_startup_preflight_rejects_invalid_tls_bootstrap_material() {
+        let path = unique_test_path("steelsearch-production-security-invalid-tls-data");
+        let material_root = unique_test_path("steelsearch-production-security-invalid-tls-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        fs::write(&http_cert, b"not-a-pem-certificate").unwrap();
+        fs::write(&http_key, b"not-a-pem-private-key").unwrap();
+        fs::write(&transport_cert, b"not-a-pem-certificate").unwrap();
+        fs::write(&transport_key, b"not-a-pem-private-key").unwrap();
+        fs::write(
+            &users,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
+        )
+        .unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+        };
+
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production HTTP TLS certificate is invalid")
+                && blocker.contains("must contain PEM certificate markers")
+        }));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production HTTP TLS private key is invalid")
+                && blocker.contains("must contain PEM private key markers")
+        }));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production transport TLS certificate is invalid")
+                && blocker.contains("must contain PEM certificate markers")
+        }));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production transport TLS private key is invalid")
+                && blocker.contains("must contain PEM private key markers")
+        }));
     }
 
     #[test]
@@ -6520,9 +6631,7 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
-        for file in [&http_cert, &http_key, &transport_cert, &transport_key] {
-            fs::write(file, b"fixture").unwrap();
-        }
+        write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
         fs::write(&users, users_fixture).unwrap();
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
@@ -6539,6 +6648,20 @@ mod tests {
         let _ = fs::remove_dir_all(path);
         let _ = fs::remove_dir_all(material_root);
         readiness
+    }
+
+    fn write_valid_tls_bootstrap_material(
+        http_cert: &Path,
+        http_key: &Path,
+        transport_cert: &Path,
+        transport_key: &Path,
+    ) {
+        let certificate = b"-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n";
+        let private_key = b"-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----\n";
+        fs::write(http_cert, certificate).unwrap();
+        fs::write(http_key, private_key).unwrap();
+        fs::write(transport_cert, certificate).unwrap();
+        fs::write(transport_key, private_key).unwrap();
     }
 
     #[test]

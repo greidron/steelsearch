@@ -345,6 +345,13 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "production_startup_preflight_rejects_invalid_tls_bootstrap_material",
+        "security-bootstrap-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "production_startup_preflight_rejects_empty_authentication_users_file",
         "security-bootstrap-preflight",
         package="os-node",
