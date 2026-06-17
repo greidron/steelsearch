@@ -153,7 +153,7 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
-| Rethrottle sequencing | current evidence does not prove ordered behavior for repeated rethrottle calls, last-write-wins semantics, or races with task completion |
+| Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
 | Parent-child propagation | there is no contract for whether rethrottle affects only a parent task, all child slices, or spawned worker sub-tasks consistently |
 | Persistence and restart | there is no evidence for whether throttle state survives restart, is recomputed, or is dropped during recovery |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
@@ -162,10 +162,9 @@ internal subsystems, especially:
 ### Required tests
 
 - add fixture-backed distinction for:
-  - repeated rethrottle on the same task id;
   - rethrottle before task completion versus after task completion;
   - parent task rethrottle versus sliced child work visibility;
-  - rethrottle followed by task readback to confirm stable effective rate.
+  - rethrottle race-with-completion behavior.
 - add restart-smoke coverage for:
   - throttled task before shutdown;
   - throttle state after restart;
@@ -179,8 +178,8 @@ internal subsystems, especially:
 
 - introduce an explicit runtime owner for throttle rate state rather than
   treating rethrottle as a stateless route response.
-- define sequencing semantics for repeated rethrottle calls and race-with-finish
-  states.
+- define race-with-finish states beyond the current repeated rethrottle
+  last-write-wins route evidence.
 - connect throttle state to child-work orchestration for sliced tasks.
 - decide whether throttle state is persisted, recomputed, or discarded across
   restart and recovery, and expose that contract.

@@ -23065,6 +23065,90 @@ mod tests {
     }
 
     #[test]
+    fn repeated_rethrottle_is_last_write_wins_with_list_and_get_readback() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 121,
+                task: ClusterManagerTask {
+                    source: "repeated rethrottle probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        for rate in [2.5, 8.75, 1.25] {
+            let mut request = RestRequest::new(RestMethod::Post, "/_reindex/node-a:121/_rethrottle");
+            request
+                .query_params
+                .insert("requests_per_second".to_string(), rate.to_string());
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 200, "rate {rate}");
+            assert_eq!(
+                response.body["task"]["status"]["requests_per_second"],
+                serde_json::json!(rate),
+                "rate {rate}"
+            );
+        }
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:121"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(1.25)
+        );
+
+        let list = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(list.status, 200);
+        assert_eq!(
+            list.body["nodes"]["node-a"]["tasks"]["node-a:121"]["status"]["requests_per_second"],
+            serde_json::json!(1.25)
+        );
+
+        let mut body_request =
+            RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:121/_rethrottle");
+        body_request.body = br#"{"requests_per_second":6.5}"#.to_vec();
+        let body_response = node.handle_rest_request(body_request);
+        assert_eq!(body_response.status, 200);
+        assert_eq!(
+            body_response.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(6.5)
+        );
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:121"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(6.5)
+        );
+    }
+
+    #[test]
     fn reindex_route_copies_source_documents_into_destination_index() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

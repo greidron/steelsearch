@@ -82,9 +82,10 @@ Out of scope:
   waiting and rejection model, and by-query/reindex task-submission admission
   through the same runtime-owned waiting and rejection model.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
-  with 1/1 tests and `zero_tests=0`, covering by-query rethrottle state
-  mutation from both query-parameter and request-body rates plus follow-up
-  `_tasks/{task_id}` readback.
+  with 2/2 tests and `zero_tests=0`, covering by-query rethrottle state
+  mutation from both query-parameter and request-body rates, repeated
+  last-write-wins rethrottle sequencing, and follow-up `/_tasks` list/get
+  readback.
 - The same runner now has a `runtime-task-metadata` batch. It passed on
   2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
@@ -203,7 +204,8 @@ Validation runner:
   runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
-  task rethrottle state and readback as runtime-control evidence.
+  task rethrottle state, repeated last-write-wins sequencing, and readback as
+  runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
   report `failed_count == 0` and `zero_test_count == 0` before treating parent
   task metadata and cat task readback as runtime-control evidence.
