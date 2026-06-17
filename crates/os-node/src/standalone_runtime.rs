@@ -1767,6 +1767,7 @@ struct RuntimeThreadPoolCounters {
 struct RuntimeThreadPoolExecution {
     counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
     pool: &'static str,
+    queued: bool,
 }
 
 impl Drop for RuntimeThreadPoolExecution {
@@ -1776,6 +1777,9 @@ impl Drop for RuntimeThreadPoolExecution {
             .lock()
             .expect("runtime thread pool counters lock poisoned");
         let entry = counters.entry(self.pool.to_string()).or_default();
+        if self.queued {
+            entry.queue = entry.queue.saturating_sub(1);
+        }
         entry.active = entry.active.saturating_sub(1);
         entry.completed = entry.completed.saturating_add(1);
     }
@@ -6840,7 +6844,10 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
-        let _thread_pool = self.enter_runtime_thread_pool("search");
+        let _thread_pool = match self.enter_runtime_thread_pool("search", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         if let Some(search_type) = request.query_params.get("search_type") {
             if search_type != "query_then_fetch" && search_type != "dfs_query_then_fetch" {
                 return build_unsupported_search_response("unsupported search_type");
@@ -7252,7 +7259,10 @@ impl SteelNode {
             }
             Err(response) => return response,
         };
-        let _thread_pool = self.enter_runtime_thread_pool("write");
+        let _thread_pool = match self.enter_runtime_thread_pool("write", 10000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let body = String::from_utf8_lossy(&request.body);
         let mut lines = body.lines();
         let mut items = Vec::new();
@@ -11293,19 +11303,33 @@ impl SteelNode {
         (active, queue)
     }
 
-    fn enter_runtime_thread_pool(&self, pool: &'static str) -> RuntimeThreadPoolExecution {
+    fn enter_runtime_thread_pool(
+        &self,
+        pool: &'static str,
+        queue_size: u64,
+    ) -> Result<RuntimeThreadPoolExecution, RestResponse> {
+        let mut queued = false;
         {
             let mut counters = self
                 .runtime_thread_pool_counters
                 .lock()
                 .expect("runtime thread pool counters lock poisoned");
             let entry = counters.entry(pool.to_string()).or_default();
+            if entry.active >= 1 {
+                if entry.queue >= queue_size {
+                    entry.rejected = entry.rejected.saturating_add(1);
+                    return Err(build_thread_pool_rejected_response(pool, queue_size));
+                }
+                entry.queue = entry.queue.saturating_add(1);
+                queued = true;
+            }
             entry.active = entry.active.saturating_add(1);
         }
-        RuntimeThreadPoolExecution {
+        Ok(RuntimeThreadPoolExecution {
             counters: Arc::clone(&self.runtime_thread_pool_counters),
             pool,
-        }
+            queued,
+        })
     }
 
     fn runtime_thread_pool_counters(&self, pool: &str) -> RuntimeThreadPoolCounters {
@@ -15179,6 +15203,22 @@ fn native_search_response_to_rest_response(response: SearchResponse, body: &Valu
         }
     }
     RestResponse::json(200, response_body)
+}
+
+fn build_thread_pool_rejected_response(pool: &str, queue_size: u64) -> RestResponse {
+    RestResponse::json(
+        429,
+        serde_json::json!({
+            "error": {
+                "type": "es_rejected_execution_exception",
+                "reason": format!(
+                    "rejected execution of {} request because thread pool queue is full [{}]",
+                    pool, queue_size
+                )
+            },
+            "status": 429
+        }),
+    )
 }
 
 fn engine_error_to_rest_response(error: EngineError) -> RestResponse {
@@ -30780,6 +30820,98 @@ mod tests {
         assert_eq!(rows[0]["completed"], "2");
         assert_eq!(rows[1]["name"], "write");
         assert_eq!(rows[1]["completed"], "2");
+    }
+
+    #[test]
+    fn search_and_bulk_routes_reject_when_runtime_thread_pools_are_saturated() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "search".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+            counters.insert(
+                "write".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 10000,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": {"match_all": {}}
+            })),
+        );
+        assert_eq!(search.status, 429);
+        assert_eq!(
+            search.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk").with_body(
+                "{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"runtime write\"}\n",
+            ),
+        );
+        assert_eq!(bulk.status, 429);
+        assert_eq!(bulk.body["error"]["type"], "es_rejected_execution_exception");
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["search"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["queue"], 1000);
+        assert_eq!(first_node["thread_pool"]["search"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["completed"], 0);
+        assert_eq!(first_node["thread_pool"]["write"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["queue"], 10000);
+        assert_eq!(first_node["thread_pool"]["write"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["completed"], 0);
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search,write");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows[0]["name"], "search");
+        assert_eq!(rows[0]["rejected"], "1");
+        assert_eq!(rows[1]["name"], "write");
+        assert_eq!(rows[1]["rejected"], "1");
     }
 
     #[test]

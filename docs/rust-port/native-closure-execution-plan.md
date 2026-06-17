@@ -65,10 +65,11 @@ Out of scope:
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
   tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes.
 - The same runner now has a `runtime-backpressure` batch. It passed on
-  2026-06-17 with 2/2 tests and `zero_tests=0`, covering administrative
+  2026-06-17 with 3/3 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
-  search and bulk route execution across success and request-error paths.
+  search and bulk route execution across success and request-error paths, and
+  bounded queue-full rejection for saturated search/write pools.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 1/1 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates plus follow-up
@@ -180,8 +181,8 @@ Validation runner:
   depth and pending-task metadata as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
-  administrative and search/write workload thread-pool telemetry as
-  runtime-control evidence.
+  administrative and search/write workload thread-pool telemetry plus bounded
+  queue-full rejection as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state and readback as runtime-control evidence.
@@ -241,7 +242,8 @@ Initial targets:
    depth evidence now exists for cluster-manager task visibility and
    administrative thread-pool telemetry, and search/write route completion
    counters are derived from runtime-owned thread-pool state for both success
-   and request-error paths;
+   and request-error paths; bounded queue-full overload rejection is now guarded
+   for saturated search/write pools;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 
