@@ -3237,8 +3237,26 @@ impl SteelNode {
             let name = request.path.trim_start_matches("/_data_stream/");
             return match request.method {
                 RestMethod::Get => Some(self.handle_data_stream_get_route(Some(name))),
-                RestMethod::Put => Some(self.handle_data_stream_put_route(name)),
-                RestMethod::Delete => Some(self.handle_data_stream_delete_route(name)),
+                RestMethod::Put => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "data stream",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_data_stream_put_route(name))
+                }
+                RestMethod::Delete => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "data stream",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_data_stream_delete_route(name))
+                }
                 _ => None,
             };
         }
@@ -3251,6 +3269,13 @@ impl SteelNode {
             } else {
                 (path, None)
             };
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "rollover",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_rollover_route(target, named));
         }
         if request.method == RestMethod::Get && request.path == "/_cat" {
@@ -24480,6 +24505,83 @@ mod tests {
                 .as_str()
                 .expect("security reason")
                 .contains("stored script"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, admin_status, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_data_stream_management_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/sec-ds-template")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["sec-ds-*"],
+                    "data_stream": {},
+                    "template": {}
+                })),
+        );
+        assert_eq!(template.status, 200);
+
+        let cases = [
+            (
+                "data stream",
+                RestRequest::new(RestMethod::Put, "/_data_stream/sec-ds-prod"),
+                200,
+            ),
+            (
+                "rollover",
+                RestRequest::new(RestMethod::Post, "/sec-ds-prod/_rollover"),
+                200,
+            ),
+            (
+                "data stream",
+                RestRequest::new(RestMethod::Delete, "/_data_stream/sec-ds-prod"),
+                200,
+            ),
+        ];
+
+        for (route_family, request, admin_status) in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains(route_family));
 
             let admin = node.handle_rest_request(
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
