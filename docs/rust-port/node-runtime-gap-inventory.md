@@ -138,8 +138,9 @@ Current Steelsearch evidence:
 
 - production mode is explicitly gated and can fail closed;
 - `tools/run-native-closure-validation.py --batch startup-preflight` passed on
-  2026-06-17 with 12/12 tests and `zero_tests=0`, covering structured
-  production security/release policy gates plus config-level and
+  2026-06-17 with 14/14 tests and `zero_tests=0`, covering structured
+  production security/release policy gates, production security bootstrap
+  material, plus config-level and
   daemon-level data-path, bind, duplicate node-id, invalid address/port,
   role/bootstrap, and production-mode refusal cases;
 - `tools/run-native-closure-validation.py --batch startup-readiness` passed on
@@ -150,8 +151,9 @@ Current Steelsearch evidence:
 
 Required next implementation direction:
 
-- move from "production mode blocked by structured policy/checklist" to "node
-  startup is blocked by concrete TLS/authn and runtime preflight checks".
+- move from "production mode blocked by structured policy/checklist and
+  TLS/authn bootstrap material checks" to concrete TLS/authn enforcement and
+  runtime preflight checks.
 
 Required tests:
 

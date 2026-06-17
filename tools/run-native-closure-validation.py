@@ -211,6 +211,20 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "production_startup_preflight_reports_missing_security_bootstrap_material",
+        "security-bootstrap-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "production_startup_preflight_accepts_security_bootstrap_files_before_policy_gate",
+        "security-bootstrap-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "daemon_rejects_data_path_that_is_not_a_directory",
         "daemon-data-path-preflight",
         package="os-node",

@@ -31,6 +31,11 @@ boundary is moved to `Enforced`. `SecurityBoundaryPolicy::enforced()` exists
 only for tests and future wiring after the actual enforcement code is present.
 `ReleaseReadinessChecklist` separately keeps benchmark, load, chaos, packaging,
 and rolling-upgrade evidence out of the security-boundary state.
+Production startup preflight now also requires bootstrap material paths for
+HTTP TLS certificate/key, transport TLS certificate/key, and an authentication
+users file. Supplying readable files clears only the bootstrap-material
+blockers; production remains fail-closed until the corresponding enforcement
+boundaries are moved to `Enforced` and the release checklist is complete.
 
 ## Fail-Closed Rules
 
@@ -126,8 +131,10 @@ blocks production until all security boundaries are enforced, and that
 production startup preflight and startup readiness report the same production
 security/release gate blocker. The production gate is now structured by
 security boundary and release checklist item, with tests proving that partial
-enforcement removes only the satisfied blockers. These are baseline tests, not
-proof that TLS/authn/authz enforcement has been implemented.
+enforcement removes only the satisfied blockers. Startup preflight also has
+fixtures for missing and present TLS/authn bootstrap material. These are
+baseline tests, not proof that TLS/authn/authz enforcement has been
+implemented.
 
 ## Operator Evidence
 

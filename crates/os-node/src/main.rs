@@ -4295,6 +4295,7 @@ struct DaemonConfig {
     roles: Vec<String>,
     mode: DaemonMode,
     development_security_mode: DevelopmentSecurityMode,
+    production_security_bootstrap: ProductionSecurityBootstrapConfig,
     java_write_forwarding_validated: bool,
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
     seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
@@ -4302,6 +4303,15 @@ struct DaemonConfig {
     extension_registry: ExtensionBoundaryRegistry,
     extension_registry_overrides: ExtensionRegistryOverrideConfig,
     extension_manifest_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ProductionSecurityBootstrapConfig {
+    http_tls_certificate_path: Option<PathBuf>,
+    http_tls_private_key_path: Option<PathBuf>,
+    transport_tls_certificate_path: Option<PathBuf>,
+    transport_tls_private_key_path: Option<PathBuf>,
+    authentication_users_path: Option<PathBuf>,
 }
 
 impl DaemonConfig {
@@ -4556,6 +4566,21 @@ where
         .map(|value| parse_development_security_mode(value))
         .transpose()?
         .unwrap_or(DevelopmentSecurityMode::Disabled);
+    let mut production_security_bootstrap = ProductionSecurityBootstrapConfig {
+        http_tls_certificate_path: vars
+            .get("STEELSEARCH_HTTP_TLS_CERTIFICATE")
+            .map(PathBuf::from),
+        http_tls_private_key_path: vars.get("STEELSEARCH_HTTP_TLS_PRIVATE_KEY").map(PathBuf::from),
+        transport_tls_certificate_path: vars
+            .get("STEELSEARCH_TRANSPORT_TLS_CERTIFICATE")
+            .map(PathBuf::from),
+        transport_tls_private_key_path: vars
+            .get("STEELSEARCH_TRANSPORT_TLS_PRIVATE_KEY")
+            .map(PathBuf::from),
+        authentication_users_path: vars
+            .get("STEELSEARCH_AUTHENTICATION_USERS_FILE")
+            .map(PathBuf::from),
+    };
     let mut extension_manifest_path = vars.get("STEELSEARCH_EXTENSION_MANIFEST").map(PathBuf::from);
     let mut extension_registry_overrides = ExtensionRegistryOverrideConfig {
         knn_plugin_enabled: parse_bool_env(vars, "STEELSEARCH_ENABLE_KNN_PLUGIN")?,
@@ -4631,6 +4656,36 @@ where
                     .ok_or("--development.security_mode requires a value")?;
                 development_security_mode = parse_development_security_mode(&value)?;
             }
+            "--security.http_tls_certificate" => {
+                production_security_bootstrap.http_tls_certificate_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--security.http_tls_certificate requires a value")?,
+                ));
+            }
+            "--security.http_tls_private_key" => {
+                production_security_bootstrap.http_tls_private_key_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--security.http_tls_private_key requires a value")?,
+                ));
+            }
+            "--security.transport_tls_certificate" => {
+                production_security_bootstrap.transport_tls_certificate_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--security.transport_tls_certificate requires a value")?,
+                ));
+            }
+            "--security.transport_tls_private_key" => {
+                production_security_bootstrap.transport_tls_private_key_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--security.transport_tls_private_key requires a value")?,
+                ));
+            }
+            "--security.authentication_users_file" => {
+                production_security_bootstrap.authentication_users_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--security.authentication_users_file requires a value")?,
+                ));
+            }
             "--extensions.knn" => {
                 let value = args.next().ok_or("--extensions.knn requires a value")?;
                 let enabled = parse_bool_flag(&value)?;
@@ -4697,6 +4752,7 @@ where
         roles,
         mode,
         development_security_mode,
+        production_security_bootstrap,
         java_write_forwarding_validated,
         seed_peer_identity,
         seed_peer_identities,
@@ -4942,11 +4998,59 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         }
     }
     if config.mode == DaemonMode::Production {
+        blockers.extend(production_security_bootstrap_blockers(
+            &config.production_security_bootstrap,
+        ));
         if let Err(error) = validate_production_mode_request(
             &SecurityBoundaryPolicy::default(),
             ReleaseReadinessChecklist::default(),
         ) {
             blockers.push(format!("[production] {error}"));
+        }
+    }
+    blockers
+}
+
+fn production_security_bootstrap_blockers(
+    bootstrap: &ProductionSecurityBootstrapConfig,
+) -> Vec<String> {
+    let required_files = [
+        (
+            "HTTP TLS certificate",
+            bootstrap.http_tls_certificate_path.as_ref(),
+        ),
+        (
+            "HTTP TLS private key",
+            bootstrap.http_tls_private_key_path.as_ref(),
+        ),
+        (
+            "transport TLS certificate",
+            bootstrap.transport_tls_certificate_path.as_ref(),
+        ),
+        (
+            "transport TLS private key",
+            bootstrap.transport_tls_private_key_path.as_ref(),
+        ),
+        (
+            "authentication users file",
+            bootstrap.authentication_users_path.as_ref(),
+        ),
+    ];
+    let mut blockers = Vec::new();
+    for (name, path) in required_files {
+        match path {
+            None => blockers.push(format!("[security] production {name} is required")),
+            Some(path) => match fs::metadata(path) {
+                Ok(metadata) if metadata.is_file() => {}
+                Ok(_) => blockers.push(format!(
+                    "[security] production {name} must be a file: {}",
+                    path.display()
+                )),
+                Err(error) => blockers.push(format!(
+                    "[security] production {name} must be readable ({}): {error}",
+                    path.display()
+                )),
+            },
         }
     }
     blockers
@@ -5768,6 +5872,12 @@ Options:\n\
                                     Load actual Java seed peer identity manifest for same-cluster bootstrap\n\
   --development.security_mode <mode>\n\
                                     Development security mode, default disabled\n\
+  --security.http_tls_certificate <path>\n\
+  --security.http_tls_private_key <path>\n\
+  --security.transport_tls_certificate <path>\n\
+  --security.transport_tls_private_key <path>\n\
+  --security.authentication_users_file <path>\n\
+                                    Production security bootstrap material\n\
   --mode <development|production>  Runtime mode, default development\n\
 \n\
 Environment:\n\
@@ -5776,6 +5886,9 @@ Environment:\n\
   STEELSEARCH_NODE_ID, STEELSEARCH_NODE_NAME, STEELSEARCH_NODE_ROLES,\n\
   STEELSEARCH_CLUSTER_NAME, STEELSEARCH_DISCOVERY_SEED_HOSTS,\n\
   STEELSEARCH_DATA_PATH, STEELSEARCH_DEVELOPMENT_SECURITY_MODE,\n\
+  STEELSEARCH_HTTP_TLS_CERTIFICATE, STEELSEARCH_HTTP_TLS_PRIVATE_KEY,\n\
+  STEELSEARCH_TRANSPORT_TLS_CERTIFICATE, STEELSEARCH_TRANSPORT_TLS_PRIVATE_KEY,\n\
+  STEELSEARCH_AUTHENTICATION_USERS_FILE,\n\
   STEELSEARCH_ENABLE_KNN_PLUGIN, STEELSEARCH_ENABLE_ML_COMMONS,\n\
   STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED,\n\
   STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST,\n\
@@ -5801,6 +5914,7 @@ mod tests {
             roles: default_roles(),
             mode: DaemonMode::Development,
             development_security_mode: DevelopmentSecurityMode::Disabled,
+            production_security_bootstrap: ProductionSecurityBootstrapConfig::default(),
             java_write_forwarding_validated: false,
             seed_peer_identity: None,
             seed_peer_identities: Vec::new(),
@@ -6262,6 +6376,85 @@ mod tests {
         assert!(production_blocker.contains("authorization must be implemented and enforced"));
         assert!(production_blocker.contains("audit_logging must be implemented and enforced"));
         assert!(startup_error.contains(production_blocker));
+    }
+
+    #[test]
+    fn production_startup_preflight_reports_missing_security_bootstrap_material() {
+        let path = unique_test_path("steelsearch-production-security-missing");
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        assert!(!readiness.ready);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker == "[security] production HTTP TLS certificate is required"));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker == "[security] production HTTP TLS private key is required"));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker == "[security] production transport TLS certificate is required"
+        }));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker == "[security] production transport TLS private key is required"
+        }));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker == "[security] production authentication users file is required"
+        }));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[production]")));
+    }
+
+    #[test]
+    fn production_startup_preflight_accepts_security_bootstrap_files_before_policy_gate() {
+        let path = unique_test_path("steelsearch-production-security-present-data");
+        let material_root = unique_test_path("steelsearch-production-security-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        for file in [&http_cert, &http_key, &transport_cert, &transport_key, &users] {
+            fs::write(file, b"fixture").unwrap();
+        }
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+        };
+
+        let startup_error = validate_startup_preflight(&config)
+            .unwrap_err()
+            .to_string();
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(!readiness.ready);
+        assert!(
+            readiness
+                .blockers
+                .iter()
+                .all(|blocker| !blocker.starts_with("[security]")),
+            "security bootstrap blockers should be cleared: {:?}",
+            readiness.blockers
+        );
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[production]")));
+        assert!(startup_error.contains("production mode is blocked"));
     }
 
     #[test]
