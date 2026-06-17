@@ -9161,6 +9161,16 @@ impl SteelNode {
         };
         let requested_rate = self.requested_rethrottle_rate(request);
         if let Some(task) = self.find_task(task_id) {
+            let cancelled = task
+                .get("cancelled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if cancelled || !self.task_is_active(task_id) {
+                return RestResponse::json(
+                    400,
+                    tasks_route_registration::build_non_cancellable_task_error(task_id),
+                );
+            }
             if let Some(rate) = requested_rate {
                 self.rethrottled_task_rates
                     .lock()
@@ -11548,6 +11558,12 @@ impl SteelNode {
         let node = task.get("node").and_then(Value::as_str).unwrap_or_default();
         let id = task.get("id").and_then(Value::as_u64).unwrap_or_default();
         format!("{node}:{id}")
+    }
+
+    fn task_is_active(&self, task_id: &str) -> bool {
+        self.active_task_records()
+            .iter()
+            .any(|task| self.task_value_id(task) == task_id)
     }
 
     fn task_id_from_cancel_request<'a>(&self, request: &'a RestRequest) -> Option<&'a str> {
@@ -23254,6 +23270,93 @@ mod tests {
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         let _ = std::fs::remove_file(shared_state_path);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rethrottle_rejects_cancelled_and_terminal_tasks_without_mutating_rate() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 141,
+                task: ClusterManagerTask {
+                    source: "cancelled rethrottle probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            acknowledged: vec![ClusterManagerTaskRecord {
+                task_id: 142,
+                task: ClusterManagerTask {
+                    source: "terminal rethrottle probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Acknowledged,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:141/_cancel",
+        ));
+        assert_eq!(cancel.status, 200);
+
+        for task_id in ["node-a:141", "node-a:142"] {
+            let mut request =
+                RestRequest::new(RestMethod::Post, &format!("/_reindex/{task_id}/_rethrottle"));
+            request
+                .query_params
+                .insert("requests_per_second".to_string(), "9.5".to_string());
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 400, "task {task_id}");
+            assert_eq!(
+                response.body["error"]["type"],
+                Value::String("illegal_argument_exception".to_string()),
+                "task {task_id}"
+            );
+
+            let get =
+                node.handle_rest_request(RestRequest::new(RestMethod::Get, &format!("/_tasks/{task_id}")));
+            assert_eq!(get.status, 200, "task {task_id}");
+            assert_eq!(
+                get.body["task"]["status"]["requests_per_second"],
+                serde_json::json!(-1.0),
+                "task {task_id}"
+            );
+        }
+
+        assert!(
+            node.rethrottled_task_rates
+                .lock()
+                .expect("rethrottled task rates lock poisoned")
+                .is_empty()
+        );
     }
 
     #[test]

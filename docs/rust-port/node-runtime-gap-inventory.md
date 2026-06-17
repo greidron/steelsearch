@@ -203,10 +203,11 @@ Current Steelsearch evidence:
   rejection model, and by-query/reindex task-submission admission through the
   same runtime-owned waiting and rejection model;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
-  2026-06-17 with 3/3 tests and `zero_tests=0`, covering by-query rethrottle
+  2026-06-17 with 4/4 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, repeated
   last-write-wins rethrottle sequencing, follow-up task readback, and
-  shared-runtime restart readback for requested throttle rates;
+  shared-runtime restart readback for requested throttle rates, plus rejection
+  for cancelled or terminal tasks without mutating rate state;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

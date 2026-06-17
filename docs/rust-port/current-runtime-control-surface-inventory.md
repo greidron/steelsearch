@@ -157,12 +157,11 @@ internal subsystems, especially:
 | Parent-child propagation | there is no contract for whether rethrottle affects only a parent task, all child slices, or spawned worker sub-tasks consistently |
 | Persistence and restart | shared-runtime restart readback preserves requested throttle rates, but shutdown-window and partial-recovery behavior remain open |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
-| Terminal-state behavior | route-level errors exist, but not a full matrix for rethrottle-after-finish, rethrottle-after-cancel, or rethrottle-during-shutdown |
+| Terminal-state behavior | rethrottle-after-cancel and rethrottle-after-terminal-task are rejected without mutating rate state, but rethrottle-during-shutdown remains open |
 
 ### Required tests
 
 - add fixture-backed distinction for:
-  - rethrottle before task completion versus after task completion;
   - parent task rethrottle versus sliced child work visibility;
   - rethrottle race-with-completion behavior.
 - add restart-smoke coverage for:
