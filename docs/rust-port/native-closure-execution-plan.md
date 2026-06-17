@@ -187,6 +187,11 @@ Out of scope:
   propagation, background-worker descendant cancellation propagation, and
   same-node parent/child plus multi-level descendant
   rethrottle rate visibility.
+- The same runner now has a `module-registration` batch. It passed on
+  2026-06-17 with 3/3 tests and `zero_tests=0`, covering extension manifest
+  booleans feeding the effective runtime registry, malformed manifest
+  fail-closed rejection, plus `_cat/plugins` reporting registry-enabled
+  Steelsearch runtime, k-NN, and ML Commons module rows.
 
 ## Workstreams
 
@@ -365,13 +370,47 @@ Validation runner:
   propagation, background-worker descendant cancellation propagation, plus
   parent/child and multi-level descendant rethrottle rate visibility as
   runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch module-registration` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating
+  extension manifest registry loading and registry-derived `_cat/plugins`
+  module rows as module-boundary evidence.
 - `tools/run-native-closure-validation.py --batch mixed-shard-movement` must
   report `failed_count == 0` and `zero_test_count == 0`, and the probe artifact
   must have `summary.passed == true`, before treating interrupted mixed-cluster
   shard movement as final evidence. The batch passed on 2026-06-17 with 1/1
   validation cases and zero-test guard intact.
 
-### 3. Mixed-Cluster Movement Hardening
+### 3. Module And Feature Registration Boundary
+
+Goal: replace compiled-in route ambiguity with explicit runtime-visible module
+and feature registration.
+
+Already evidenced:
+
+- extension manifest booleans feed the effective runtime registry before route
+  construction;
+- malformed extension manifests fail closed instead of silently falling back to
+  default feature gates;
+- `_cat/plugins` reports registry-enabled Steelsearch runtime, k-NN, and ML
+  Commons module rows;
+- the `module-registration` validation batch guards the manifest merge and
+  runtime reporting surfaces.
+
+Remaining tests:
+
+- startup transcript showing registered modules/features per profile;
+- reject-path tests for unsupported/disabled modules and Java plugin ABI
+  manifests;
+- explicit route/action/module registration tables beyond the current boolean
+  feature gates.
+
+Exit evidence:
+
+- module-registration batch passes with zero-test guard;
+- runtime operator output can distinguish Rust-native registered features from
+  unsupported Java plugin ABI requests.
+
+### 4. Mixed-Cluster Movement Hardening
 
 Goal: turn the existing representative shard movement proof into interruption
 and retry evidence.
@@ -411,7 +450,7 @@ Exit evidence:
   surface exposes it;
 - unsupported cases fail closed with a captured allocation explanation.
 
-### 4. Production Runtime Controls
+### 5. Production Runtime Controls
 
 Goal: move from development runtime substitutes to a Rust-native runtime
 control model with OpenSearch-shaped API boundaries.
@@ -450,7 +489,7 @@ Exit evidence:
 - task cancellation probe mutates real task state;
 - telemetry and readiness outputs cite the same blocker categories.
 
-### 5. Production Security
+### 6. Production Security
 
 Goal: replace fail-closed production security blockers with enforced Rust-native
 security boundaries or explicit fail-closed compatibility decisions.

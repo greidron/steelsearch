@@ -299,7 +299,13 @@ Current Steelsearch evidence:
 
 - the workspace already has crate-level decomposition (`os-rest`, `os-engine`,
   `os-plugin-knn`, etc.);
-- daemon runtime assembly is still monolithic compared with OpenSearch `Node`.
+- `tools/run-native-closure-validation.py --batch module-registration` passed
+  on 2026-06-17 with 3/3 tests and `zero_tests=0`, covering extension manifest
+  booleans feeding the effective runtime registry, malformed manifest
+  fail-closed rejection, plus `_cat/plugins` reporting registry-enabled
+  Steelsearch runtime, k-NN, and ML Commons module rows;
+- daemon runtime assembly is still monolithic compared with OpenSearch `Node`,
+  but the first runtime-visible extension registry boundary is now explicit.
 
 Required next implementation direction:
 
@@ -308,7 +314,8 @@ Required next implementation direction:
 
 Required tests:
 
-- startup transcript showing registered modules/features per profile;
+- extend the current `_cat/plugins` registration probe into a startup
+  transcript showing registered modules/features per profile;
 - reject-path tests for unsupported/disabled modules;
 - explicit reporting tests for Rust-native feature registration versus missing
   Java plugin ABI.

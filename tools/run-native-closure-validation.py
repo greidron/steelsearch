@@ -1024,6 +1024,30 @@ RUNTIME_TASK_CHILDREN_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+MODULE_REGISTRATION_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "extension_manifest_values_feed_effective_registry",
+        "module-registration-boundary",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "extension_manifest_rejects_malformed_manifest_fail_closed",
+        "module-registration-boundary",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "cat_plugins_route_reports_extension_registry_modules",
+        "module-registration-boundary",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 MIXED_SHARD_MOVEMENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "three_node_shard_movement_exercises_both_interruption_directions",
@@ -1058,6 +1082,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,
     "runtime-task-children": RUNTIME_TASK_CHILDREN_BATCH,
+    "module-registration": MODULE_REGISTRATION_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")

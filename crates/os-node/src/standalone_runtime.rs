@@ -44,7 +44,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 const GENERATED_OPENAPI_JSON: &str =
@@ -88,11 +88,19 @@ pub struct ExtensionBoundaryRegistry {
 
 impl ExtensionBoundaryRegistry {
     pub fn load_manifest(path: impl AsRef<Path>) -> std::io::Result<Self> {
-        Ok(Self {
-            manifest_path: Some(path.as_ref().to_path_buf()),
-            knn_plugin_enabled: false,
-            ml_commons_enabled: false,
-        })
+        let path = path.as_ref();
+        let bytes = fs::read(path)?;
+        let mut registry: Self = serde_json::from_slice(&bytes).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "invalid extension manifest [{}]: {error}",
+                    path.display()
+                ),
+            )
+        })?;
+        registry.manifest_path = Some(path.to_path_buf());
+        Ok(registry)
     }
 }
 
@@ -14945,15 +14953,33 @@ impl SteelNode {
             .and_then(|view| view.nodes.first())
             .map(|node| node.node_name.clone())
             .unwrap_or_else(|| self.info.name.clone());
-        let rows = vec![
+        let mut rows = vec![
             serde_json::json!({
-                "name": node_name,
+                "name": node_name.clone(),
                 "component": "steelsearch-runtime",
                 "version": "1.0.0-dev",
                 "description": "Steelsearch development runtime plugin surface",
                 "classname": "org.steelsearch.runtime.Plugin"
             }),
         ];
+        if self.extension_registry.knn_plugin_enabled {
+            rows.push(serde_json::json!({
+                "name": node_name.clone(),
+                "component": "opensearch-knn",
+                "version": "1.0.0-dev",
+                "description": "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry",
+                "classname": "org.steelsearch.knn.KNNPlugin"
+            }));
+        }
+        if self.extension_registry.ml_commons_enabled {
+            rows.push(serde_json::json!({
+                "name": node_name.clone(),
+                "component": "opensearch-ml-commons",
+                "version": "1.0.0-dev",
+                "description": "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry",
+                "classname": "org.steelsearch.ml.MLCommonsPlugin"
+            }));
+        }
         if request.query_params.get("format").is_some_and(|value| value == "json") {
             return RestResponse::json(200, Value::Array(rows));
         }
@@ -20451,7 +20477,7 @@ mod tests {
     use std::sync::MutexGuard;
 
     fn security_env_lock() -> MutexGuard<'static, ()> {
-        static SECURITY_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        static SECURITY_ENV_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
         SECURITY_ENV_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
@@ -22531,6 +22557,56 @@ mod tests {
         assert!(thread_pool_text.contains("node_name name active queue rejected"));
         assert!(thread_pool_text.contains("search"));
         assert!(!thread_pool_text.contains("write"));
+    }
+
+    #[test]
+    fn cat_plugins_route_reports_extension_registry_modules() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        })
+        .with_extension_registry(ExtensionBoundaryRegistry {
+            manifest_path: Some(PathBuf::from("/tmp/steelsearch-extensions.json")),
+            knn_plugin_enabled: true,
+            ml_commons_enabled: true,
+        });
+
+        let mut plugins_json_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
+        plugins_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let plugins_json_response = node.handle_rest_request(plugins_json_request);
+        assert_eq!(plugins_json_response.status, 200);
+        let rows = plugins_json_response
+            .body
+            .as_array()
+            .expect("cat plugins array");
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().any(|row| {
+            row["component"] == "steelsearch-runtime"
+                && row["classname"] == "org.steelsearch.runtime.Plugin"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["component"] == "opensearch-knn"
+                && row["classname"] == "org.steelsearch.knn.KNNPlugin"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["component"] == "opensearch-ml-commons"
+                && row["classname"] == "org.steelsearch.ml.MLCommonsPlugin"
+        }));
+
+        let mut plugins_text_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
+        plugins_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        let plugins_text_response = node.handle_rest_request(plugins_text_request);
+        let plugins_text = plugins_text_response
+            .body
+            .as_str()
+            .expect("cat plugins text body");
+        assert!(plugins_text.contains("name component version description classname"));
+        assert!(plugins_text.contains("opensearch-knn"));
+        assert!(plugins_text.contains("opensearch-ml-commons"));
     }
 
     #[test]

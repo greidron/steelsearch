@@ -163,6 +163,18 @@ PROBES: tuple[Probe, ...] = (
         risk="production load/failure behavior is not fully OpenSearch-equivalent",
     ),
     Probe(
+        name="module and feature registration boundaries",
+        category="runtime",
+        path=RUNTIME_DOC,
+        patterns=(
+            r"module-registration",
+            r"extension manifest",
+            r"_cat/plugins",
+            r"Rust-native feature registration",
+        ),
+        risk="runtime feature/module loading must be visible and registry-derived rather than implied by compiled-in route stubs",
+    ),
+    Probe(
         name="production security fail-closed boundaries",
         category="security",
         path=SECURITY_DOC,
@@ -309,6 +321,14 @@ FAMILIES: tuple[Family, ...] = (
         evidence_pattern=r"RUNTIME_FAIRNESS_BATCH",
     ),
     Family(
+        name="module registration boundaries",
+        category="runtime",
+        status="module-registration batch is zero-test guarded; extension manifest booleans feed the effective runtime registry, malformed manifests fail closed, and _cat/plugins reports registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows",
+        next_action="extend the registry from boolean feature gates into explicit route/action/module registration tables and reject unsupported Java plugin ABI manifests fail-closed",
+        evidence_path=NATIVE_CLOSURE_VALIDATION,
+        evidence_pattern=r"MODULE_REGISTRATION_BATCH",
+    ),
+    Family(
         name="production security",
         category="security",
         status="structured fail-closed boundary/checklist gate with PEM-marker TLS, certificate/private-key role mismatch rejection, invalid bootstrap file-content redaction, and authn bootstrap material preflight, shared users/service-account subject parser with service-account-only authentication-users-file acceptance and malformed authentication-users-file rejection, runtime env credential loading through that subject model, shared admin/reader/writer permission evaluator, guarded root/ML/bulk/search/session authn/authz checks, service-account writer authz, bounded security audit event persistence including permission-evaluator read/write denials, ML connector secret redaction from REST responses and shared runtime persistence, and explicit OpenSearch Security plugin API fail-closed responses",
@@ -370,6 +390,7 @@ def build_report() -> dict[str, Any]:
                 "vector/hybrid fallback boundaries",
                 "mixed-cluster hardening",
                 "production runtime controls",
+                "module/feature registration boundaries",
                 "production security enforcement",
             ],
         },

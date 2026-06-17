@@ -6316,6 +6316,69 @@ mod tests {
     }
 
     #[test]
+    fn extension_manifest_values_feed_effective_registry() {
+        let manifest_path = std::env::temp_dir().join(format!(
+            "steelsearch-extension-values-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &manifest_path,
+            br#"{"knn_plugin_enabled":true,"ml_commons_enabled":true}"#,
+        )
+        .unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--path.data",
+                "/tmp/steelsearch-extension-values",
+                "--extensions.manifest",
+                manifest_path.to_str().unwrap(),
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        let registry = effective_extension_registry(&config).unwrap();
+        assert!(registry.knn_plugin_enabled);
+        assert!(registry.ml_commons_enabled);
+        assert_eq!(registry.manifest_path.as_deref(), Some(manifest_path.as_path()));
+
+        let _ = fs::remove_file(manifest_path);
+    }
+
+    #[test]
+    fn extension_manifest_rejects_malformed_manifest_fail_closed() {
+        let manifest_path = std::env::temp_dir().join(format!(
+            "steelsearch-extension-malformed-{}.json",
+            std::process::id()
+        ));
+        fs::write(&manifest_path, b"not-json").unwrap();
+
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--path.data",
+                "/tmp/steelsearch-extension-malformed",
+                "--extensions.manifest",
+                manifest_path.to_str().unwrap(),
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        let error = effective_extension_registry(&config).unwrap_err().to_string();
+        assert!(error.contains("invalid extension manifest"));
+        assert!(error.contains(manifest_path.to_str().unwrap()));
+
+        let _ = fs::remove_file(manifest_path);
+    }
+
+    #[test]
     fn extension_manifest_merge_policy_applies_manifest_then_flag_overrides() {
         let manifest_path = std::env::temp_dir().join(format!(
             "steelsearch-extension-merge-{}.json",
