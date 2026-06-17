@@ -289,7 +289,7 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="production security",
         category="security",
-        status="structured fail-closed boundary/checklist gate with TLS/authn bootstrap material preflight plus explicit OpenSearch Security plugin API fail-closed responses",
+        status="structured fail-closed boundary/checklist gate with TLS/authn bootstrap material preflight, malformed authentication-users-file rejection, and explicit OpenSearch Security plugin API fail-closed responses",
         next_action="wire HTTP/transport TLS and authentication enforcement into the structured production security gate before enabling production startup",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"PRODUCTION_SECURITY_BATCH",

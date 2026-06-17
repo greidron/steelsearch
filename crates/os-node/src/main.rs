@@ -29,7 +29,7 @@ use std::env;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -5053,7 +5053,69 @@ fn production_security_bootstrap_blockers(
             },
         }
     }
+    if let Some(path) = bootstrap.authentication_users_path.as_ref() {
+        if let Err(error) = validate_production_authentication_users_file(path) {
+            blockers.push(format!(
+                "[security] production authentication users file is invalid ({}): {error}",
+                path.display()
+            ));
+        }
+    }
     blockers
+}
+
+fn validate_production_authentication_users_file(path: &Path) -> Result<(), String> {
+    let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
+    if raw.trim().is_empty() {
+        return Err("must contain at least one user".to_owned());
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|error| format!("must be valid JSON: {error}"))?;
+    let users = parsed
+        .get("users")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("must contain a users array")?;
+    if users.is_empty() {
+        return Err("must contain at least one user".to_owned());
+    }
+    for (index, user) in users.iter().enumerate() {
+        let username = user
+            .get("username")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        if username.is_empty() {
+            return Err(format!("user[{index}].username must be a non-empty string"));
+        }
+        let password_hash = user
+            .get("password_hash")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let password = user
+            .get("password")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        if password_hash.is_empty() && password.is_empty() {
+            return Err(format!("user[{index}] must include password_hash or password"));
+        }
+        let roles = user
+            .get("roles")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| format!("user[{index}].roles must be a non-empty string array"))?;
+        if roles.is_empty()
+            || roles.iter().any(|role| {
+                role.as_str()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .is_empty()
+            })
+        {
+            return Err(format!("user[{index}].roles must be a non-empty string array"));
+        }
+    }
+    Ok(())
 }
 
 fn validate_seed_host(seed_host: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -6421,9 +6483,14 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
-        for file in [&http_cert, &http_key, &transport_cert, &transport_key, &users] {
+        for file in [&http_cert, &http_key, &transport_cert, &transport_key] {
             fs::write(file, b"fixture").unwrap();
         }
+        fs::write(
+            &users,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
+        )
+        .unwrap();
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
         config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
@@ -6455,6 +6522,70 @@ mod tests {
             .iter()
             .any(|blocker| blocker.starts_with("[production]")));
         assert!(startup_error.contains("production mode is blocked"));
+    }
+
+    #[test]
+    fn production_startup_preflight_rejects_empty_authentication_users_file() {
+        let readiness = production_readiness_with_authentication_users_fixture(b"");
+
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production authentication users file is invalid")
+                && blocker.contains("must contain at least one user")
+        }));
+    }
+
+    #[test]
+    fn production_startup_preflight_rejects_malformed_authentication_users_file() {
+        let readiness = production_readiness_with_authentication_users_fixture(b"not-json");
+
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production authentication users file is invalid")
+                && blocker.contains("must be valid JSON")
+        }));
+    }
+
+    #[test]
+    fn production_startup_preflight_rejects_authentication_users_without_roles() {
+        let readiness = production_readiness_with_authentication_users_fixture(
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":[]}]}"#,
+        );
+
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production authentication users file is invalid")
+                && blocker.contains("roles must be a non-empty string array")
+        }));
+    }
+
+    fn production_readiness_with_authentication_users_fixture(
+        users_fixture: &[u8],
+    ) -> StartupReadinessReport {
+        let path = unique_test_path("steelsearch-production-security-invalid-users-data");
+        let material_root = unique_test_path("steelsearch-production-security-invalid-users-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        for file in [&http_cert, &http_key, &transport_cert, &transport_key] {
+            fs::write(file, b"fixture").unwrap();
+        }
+        fs::write(&users, users_fixture).unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+        };
+
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        readiness
     }
 
     #[test]

@@ -52,7 +52,7 @@ following order:
 2. duplicate node-id or persisted metadata conflict;
 3. invalid config parse and incompatible setting combinations;
 4. port-in-use and malformed bind address;
-5. secure-profile missing TLS/authn material.
+5. secure-profile missing TLS/authn material and malformed authn users files.
 
 Current repo-local case fixture:
 
