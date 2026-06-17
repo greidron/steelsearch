@@ -27,7 +27,6 @@ class ReplacementGateScriptTests(unittest.TestCase):
         self.assertEqual(
             result.stdout.strip().splitlines(),
             [
-                "+ cargo build -p os-node --bin steelsearch",
                 "+ cargo build -p os-node --features standalone-runtime --bin steelsearch",
                 "+ cargo test --workspace --no-run",
                 "+ tools/run-steelsearch-smoke.sh",

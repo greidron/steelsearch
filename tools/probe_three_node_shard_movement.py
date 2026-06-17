@@ -287,6 +287,74 @@ def phase_result(name: str, **kwargs: Any) -> dict[str, Any]:
     return result
 
 
+def phase_names(report: dict[str, Any]) -> set[str]:
+    phases = report.get("phases", [])
+    if not isinstance(phases, list):
+        return set()
+    return {
+        phase["phase"]
+        for phase in phases
+        if isinstance(phase, dict) and isinstance(phase.get("phase"), str)
+    }
+
+
+def phase_passed(report: dict[str, Any], name: str) -> bool:
+    phases = report.get("phases", [])
+    if not isinstance(phases, list):
+        return False
+    return any(
+        isinstance(phase, dict) and phase.get("phase") == name and bool(phase.get("passed"))
+        for phase in phases
+    )
+
+
+def checkpoint_drift_passed(report: dict[str, Any]) -> bool:
+    phases = report.get("phases", [])
+    if not isinstance(phases, list):
+        return False
+    checkpoint_phases = [
+        phase
+        for phase in phases
+        if isinstance(phase, dict) and isinstance(phase.get("checkpoint_drift"), dict)
+    ]
+    return all(
+        all(value == 0 for value in phase["checkpoint_drift"].values())
+        for phase in checkpoint_phases
+    )
+
+
+def interruption_evidence_passed(report: dict[str, Any]) -> bool:
+    expected = {
+        "interrupt_java_to_steelsearch_recovery",
+        "resume_or_restart_java_to_steelsearch_recovery",
+        "finalize_java_to_steelsearch_recovery",
+        "interrupt_steelsearch_to_opensearch_recovery",
+        "resume_or_restart_steelsearch_to_opensearch_recovery",
+        "finalize_steelsearch_to_opensearch_recovery",
+    }
+    return expected.issubset(phase_names(report))
+
+
+def summarize_movement_report(
+    report: dict[str, Any], *, require_interruption: bool = False
+) -> dict[str, Any]:
+    opensearch_to_steelsearch_passed = phase_passed(report, "opensearch_to_steelsearch")
+    steelsearch_to_opensearch_passed = phase_passed(report, "steelsearch_to_opensearch")
+    checkpoint_drift_ok = checkpoint_drift_passed(report)
+    interruption_evidence_ok = interruption_evidence_passed(report)
+    return {
+        "passed": opensearch_to_steelsearch_passed
+        and steelsearch_to_opensearch_passed
+        and checkpoint_drift_ok
+        and (interruption_evidence_ok or not require_interruption),
+        "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
+        "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
+        "checkpoint_drift_ok": checkpoint_drift_ok,
+        "interruption_evidence_ok": interruption_evidence_ok,
+        "interruption_evidence_required": require_interruption,
+    }
+
+
 def collect_seed_identity(root: Path, java_transport_port: int, java_http_port: int, label: str) -> Path:
     identity_dir = root / "transport-identity"
     identity_dir.mkdir(parents=True, exist_ok=True)
@@ -595,23 +663,7 @@ def main() -> int:
             )
         )
 
-        opensearch_to_steelsearch_passed = bool(report["phases"][-3].get("passed"))
-        steelsearch_to_opensearch_passed = bool(report["phases"][-1].get("passed"))
-        checkpoint_phases = [
-            phase
-            for phase in report["phases"]
-            if isinstance(phase.get("checkpoint_drift"), dict)
-        ]
-        checkpoint_drift_ok = all(
-            all(value == 0 for value in phase["checkpoint_drift"].values())
-            for phase in checkpoint_phases
-        )
-        report["summary"] = {
-            "passed": opensearch_to_steelsearch_passed and steelsearch_to_opensearch_passed and checkpoint_drift_ok,
-            "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
-            "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
-            "checkpoint_drift_ok": checkpoint_drift_ok,
-        }
+        report["summary"] = summarize_movement_report(report)
     except Exception as exc:
         report["failure_context"] = {
             "java1_nodes": None if java1_client is None else safe_request(java1_client, "GET", "/_cat/nodes?format=json"),

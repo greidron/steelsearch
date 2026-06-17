@@ -104,8 +104,9 @@ PROBES: tuple[Probe, ...] = (
             r"checkpoint_drift",
             r"checkpoint_drift_ok",
             r"collect_checkpoint_observed",
+            r"interruption_evidence_passed",
         ),
-        risk="must stay present so mixed movement keeps seq/checkpoint evidence",
+        risk="must stay present so mixed movement keeps seq/checkpoint evidence and the interrupted/resumed phase contract",
     ),
     Probe(
         name="runtime control gaps",
@@ -241,10 +242,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="mixed shard movement interruption",
         category="mixed-cluster",
-        status="planned",
-        next_action="add interrupted and resumed recovery phases to the live shard movement probe",
-        evidence_path=PLAN_DOC,
-        evidence_pattern=r"interrupt Java to SteelSearch recovery",
+        status="summary contract wired; live interrupted recovery phases still pending",
+        next_action="add interrupted and resumed recovery phases to the live shard movement probe and require them in the final mixed-cluster gate",
+        evidence_path=SHARD_PROBE,
+        evidence_pattern=r"interruption_evidence_passed",
     ),
     Family(
         name="runtime search cache hooks",
