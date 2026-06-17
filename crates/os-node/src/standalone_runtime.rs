@@ -3043,6 +3043,11 @@ impl SteelNode {
             return Some(self.handle_alias_read_route(None, None));
         }
         if request.method == RestMethod::Put && request.path == "/_alias" {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+            {
+                return Some(response);
+            }
             return Some(self.handle_alias_bulk_mutation_route(request));
         }
         if request.method == RestMethod::Head && request.path.starts_with("/_alias/") {
@@ -3059,17 +3064,32 @@ impl SteelNode {
         if matches!(request.method, RestMethod::Put | RestMethod::Post)
             && request.path.starts_with("/_alias/")
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+            {
+                return Some(response);
+            }
             return Some(self.handle_alias_named_mutation_route(
                 request.path.trim_start_matches("/_alias/"),
                 request,
             ));
         }
         if request.method == RestMethod::Post && request.path == "/_aliases" {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+            {
+                return Some(response);
+            }
             return Some(self.handle_alias_bulk_mutation_route(request));
         }
         if matches!(request.method, RestMethod::Put | RestMethod::Post)
             && request.path.starts_with("/_aliases/")
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+            {
+                return Some(response);
+            }
             return Some(self.handle_alias_named_mutation_route(
                 request.path.trim_start_matches("/_aliases/"),
                 request,
@@ -4171,9 +4191,21 @@ impl SteelNode {
                 RestMethod::Get => Some(self.handle_alias_read_route(Some(index), Some(alias))),
                 RestMethod::Head => Some(self.handle_index_alias_named_head_route(index, alias)),
                 RestMethod::Put | RestMethod::Post => {
+                    if let Err(response) =
+                        require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                    {
+                        return Some(response);
+                    }
                     Some(self.handle_alias_single_mutation_route(index, alias, request))
                 }
-                RestMethod::Delete => Some(self.handle_alias_delete_route(index, alias)),
+                RestMethod::Delete => {
+                    if let Err(response) =
+                        require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                    {
+                        return Some(response);
+                    }
+                    Some(self.handle_alias_delete_route(index, alias))
+                }
                 _ => None,
             };
         }
@@ -4181,21 +4213,45 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_alias_read_route(Some(index), None)),
                 RestMethod::Head => Some(self.handle_index_alias_collection_head_route(index)),
-                RestMethod::Put => Some(self.handle_index_alias_collection_put_route(index, request)),
+                RestMethod::Put => {
+                    if let Err(response) =
+                        require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                    {
+                        return Some(response);
+                    }
+                    Some(self.handle_index_alias_collection_put_route(index, request))
+                }
                 _ => None,
             };
         }
         if let Some((index, alias)) = request.path.trim_matches('/').split_once("/_aliases/") {
             return match request.method {
                 RestMethod::Put | RestMethod::Post => {
+                    if let Err(response) =
+                        require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                    {
+                        return Some(response);
+                    }
                     Some(self.handle_alias_single_mutation_route(index, alias, request))
                 }
-                RestMethod::Delete => Some(self.handle_alias_delete_route(index, alias)),
+                RestMethod::Delete => {
+                    if let Err(response) =
+                        require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                    {
+                        return Some(response);
+                    }
+                    Some(self.handle_alias_delete_route(index, alias))
+                }
                 _ => None,
             };
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_aliases") {
             if request.method == RestMethod::Put {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_index_alias_collection_put_route(index, request));
             }
         }
@@ -5099,17 +5155,19 @@ impl SteelNode {
                 }),
             );
         }
+        let matched_targets = targets
+            .into_iter()
+            .flat_map(|target| {
+                self.resolve_index_metadata_targets(&target, false, false, "open")
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        for target in targets {
-            let matched = self
-                .resolve_index_metadata_targets(&target, false, false, "open")
-                .unwrap_or_default();
-            for matched_index in matched {
-                manifest["indices"][matched_index]["aliases"][alias] = subset.clone();
-            }
+        for matched_index in matched_targets {
+            manifest["indices"][matched_index]["aliases"][alias] = subset.clone();
         }
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
@@ -5232,14 +5290,13 @@ impl SteelNode {
     fn handle_alias_bulk_mutation_route(&self, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset = alias_mutation_route_registration::build_bulk_alias_actions_subset(&body);
-        let mut manifest = self
-            .metadata_manifest_state
-            .lock()
-            .expect("metadata manifest state lock poisoned");
+        let mut additions = Vec::new();
+        let mut removals = Vec::new();
+        let mut remove_indices = Vec::new();
         for action in subset["actions"].as_array().cloned().unwrap_or_default() {
             if let Some(add) = action.get("add") {
                 let index = add["index"].as_str().unwrap_or_default();
-                let alias = add["alias"].as_str().unwrap_or_default();
+                let alias = add["alias"].as_str().unwrap_or_default().to_string();
                 let mut alias_body = add.clone();
                 if let Some(object) = alias_body.as_object_mut() {
                     object.remove("index");
@@ -5249,36 +5306,58 @@ impl SteelNode {
                     .resolve_index_metadata_targets(index, false, false, "open")
                     .unwrap_or_default();
                 for matched_index in matched {
-                    manifest["indices"][matched_index]["aliases"][alias] =
-                        normalize_alias_metadata_for_readback(alias_body.clone());
+                    additions.push((
+                        matched_index,
+                        alias.clone(),
+                        normalize_alias_metadata_for_readback(alias_body.clone()),
+                    ));
                 }
             } else if let Some(remove) = action.get("remove") {
                 let index = remove["index"].as_str().unwrap_or_default();
-                let alias = remove["alias"].as_str().unwrap_or_default();
+                let alias = remove["alias"].as_str().unwrap_or_default().to_string();
                 let matched = self
                     .resolve_index_metadata_targets(index, false, false, "open")
                     .unwrap_or_default();
                 for matched_index in matched {
-                    manifest["indices"][matched_index]["aliases"]
-                        .as_object_mut()
-                        .map(|m| m.remove(alias));
+                    removals.push((matched_index, alias.clone()));
                 }
             } else if let Some(remove_index) = action.get("remove_index") {
                 let index = remove_index["index"].as_str().unwrap_or_default();
                 let matched = self
                     .resolve_index_metadata_targets(index, false, false, "open")
                     .unwrap_or_default();
-                self.created_indices_state
-                    .lock()
-                    .expect("created indices state lock poisoned")
-                    .retain(|created| !matched.iter().any(|candidate| candidate == created));
-                self.documents_state
-                    .lock()
-                    .expect("documents state lock poisoned")
-                    .retain(|key, _| !matched.iter().any(|candidate| key.starts_with(&format!("{candidate}:"))));
-                for matched_index in matched {
-                    manifest["indices"].as_object_mut().map(|m| m.remove(&matched_index));
-                }
+                remove_indices.extend(matched);
+            }
+        }
+        if !remove_indices.is_empty() {
+            self.created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .retain(|created| !remove_indices.iter().any(|candidate| candidate == created));
+            self.documents_state
+                .lock()
+                .expect("documents state lock poisoned")
+                .retain(|key, _| {
+                    !remove_indices
+                        .iter()
+                        .any(|candidate| key.starts_with(&format!("{candidate}:")))
+                });
+        }
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        for (matched_index, alias, alias_body) in additions {
+            manifest["indices"][matched_index]["aliases"][alias] = alias_body;
+        }
+        for (matched_index, alias) in removals {
+            manifest["indices"][matched_index]["aliases"]
+                .as_object_mut()
+                .map(|m| m.remove(&alias));
+        }
+        if let Some(indices) = manifest["indices"].as_object_mut() {
+            for matched_index in remove_indices {
+                indices.remove(&matched_index);
             }
         }
         drop(manifest);
@@ -24587,6 +24666,88 @@ mod tests {
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
             );
             assert_eq!(admin.status, admin_status, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_alias_management_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-alias-index")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let cases = [
+            RestRequest::new(RestMethod::Put, "/_alias").with_json_body(serde_json::json!({
+                "actions": [
+                    {"add": {"index": "sec-alias-index", "alias": "sec-root-bulk"}}
+                ]
+            })),
+            RestRequest::new(RestMethod::Post, "/_aliases").with_json_body(serde_json::json!({
+                "actions": [
+                    {"add": {"index": "sec-alias-index", "alias": "sec-root-bulk-plural"}}
+                ]
+            })),
+            RestRequest::new(RestMethod::Put, "/_alias/sec-root-named")
+                .with_json_body(serde_json::json!({"index": "sec-alias-index"})),
+            RestRequest::new(RestMethod::Put, "/sec-alias-index/_alias")
+                .with_json_body(serde_json::json!({"aliases": ["sec-index-collection"]})),
+            RestRequest::new(RestMethod::Put, "/sec-alias-index/_alias/sec-index-named"),
+            RestRequest::new(RestMethod::Delete, "/sec-alias-index/_alias/sec-index-named"),
+            RestRequest::new(RestMethod::Put, "/sec-alias-index/_aliases/sec-index-plural"),
+            RestRequest::new(RestMethod::Delete, "/sec-alias-index/_aliases/sec-index-plural"),
+            RestRequest::new(RestMethod::Put, "/sec-alias-index/_aliases").with_json_body(serde_json::json!({
+                "actions": [
+                    {"add": {"alias": "sec-index-collection-plural"}}
+                ]
+            })),
+        ];
+
+        for request in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("alias"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, 200, "path {path}");
+            assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
