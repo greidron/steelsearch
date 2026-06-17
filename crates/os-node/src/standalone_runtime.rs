@@ -30823,6 +30823,102 @@ mod tests {
     }
 
     #[test]
+    fn search_and_bulk_routes_drain_runtime_thread_pool_queue_after_queued_execution() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/runtime-thread-pool-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "search".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+            counters.insert(
+                "write".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {"match_all": {}}
+                })),
+        );
+        assert_eq!(search.status, 200);
+
+        let bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk").with_body(
+                "{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"queued runtime write\"}\n",
+            ),
+        );
+        assert_eq!(bulk.status, 200);
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["search"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["search"]["completed"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["rejected"], 0);
+        assert_eq!(first_node["thread_pool"]["write"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["write"]["completed"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["rejected"], 0);
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search,write");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows[0]["name"], "search");
+        assert_eq!(rows[0]["queue"], "0");
+        assert_eq!(rows[0]["completed"], "1");
+        assert_eq!(rows[1]["name"], "write");
+        assert_eq!(rows[1]["queue"], "0");
+        assert_eq!(rows[1]["completed"], "1");
+    }
+
+    #[test]
     fn search_and_bulk_routes_reject_when_runtime_thread_pools_are_saturated() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
