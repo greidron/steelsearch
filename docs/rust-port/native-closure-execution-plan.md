@@ -95,9 +95,10 @@ Out of scope:
   production-mode gate, and daemon-level data-path / occupied-port refusal
   cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
-  with 2/2 tests and `zero_tests=0`, covering shared startup preflight and
+  with 3/3 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal plus production
-  security/release gate refusal.
+  security/release gate refusal, and readiness blocker terminology that keeps
+  user-facing Steelsearch runtime categories distinct from internal crate names.
 - The same runner now has a `production-security` batch. It passed on
   2026-06-17 with 10/10 tests and `zero_tests=0`, covering runtime env user and
   service-account credentials loaded through the shared subject model, root
@@ -290,7 +291,8 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate
-  blockers, as runtime-control evidence.
+  blockers and Steelsearch runtime terminology smoke coverage, as
+  runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch production-security` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   users-file subject model loading for users and service accounts,

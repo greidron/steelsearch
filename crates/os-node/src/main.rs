@@ -5012,7 +5012,7 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             &SecurityBoundaryPolicy::default(),
             ReleaseReadinessChecklist::default(),
         ) {
-            blockers.push(format!("[production] {error}"));
+            blockers.push(format!("[production] Steelsearch {error}"));
         }
     }
     blockers
@@ -6490,6 +6490,28 @@ mod tests {
         assert!(production_blocker.contains("authorization must be implemented and enforced"));
         assert!(production_blocker.contains("audit_logging must be implemented and enforced"));
         assert!(startup_error.contains(production_blocker));
+    }
+
+    #[test]
+    fn startup_readiness_report_uses_steelsearch_runtime_terminology() {
+        let path = unique_test_path("steelsearch-readiness-terminology-data");
+        fs::write(&path, b"not a directory").unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+
+        let readiness = startup_readiness_report(&config);
+        let blockers = readiness.blockers.join("\n");
+
+        let _ = fs::remove_file(path);
+        assert!(!readiness.ready);
+        assert!(readiness.blockers.iter().any(|blocker| blocker.starts_with("[daemon]")));
+        assert!(readiness.blockers.iter().any(|blocker| blocker.starts_with("[security]")));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[production]")));
+        assert!(blockers.contains("Steelsearch"));
+        assert!(!blockers.contains("os-node"));
     }
 
     #[test]

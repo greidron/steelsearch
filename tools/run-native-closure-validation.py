@@ -463,6 +463,13 @@ STARTUP_READINESS_BATCH: tuple[ValidationTest, ...] = (
         target=("--bin", "steelsearch"),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "startup_readiness_report_uses_steelsearch_runtime_terminology",
+        "startup-readiness-terminology",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
 )
 
 PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (

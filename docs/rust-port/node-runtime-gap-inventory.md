@@ -146,9 +146,11 @@ Current Steelsearch evidence:
   OpenSearch `-E` config-setting rejection with the Steelsearch flag/env-var
   contract, role/bootstrap, and production-mode refusal cases;
 - `tools/run-native-closure-validation.py --batch startup-readiness` passed on
-  2026-06-17 with 2/2 tests and `zero_tests=0`, covering shared startup
+  2026-06-17 with 3/3 tests and `zero_tests=0`, covering shared startup
   preflight and readiness blocker reasons for concrete filesystem refusal plus
-  production security/release gate refusal;
+  production security/release gate refusal, and readiness blocker terminology
+  that keeps user-facing Steelsearch runtime categories distinct from internal
+  crate names;
 - development mode still starts with a reduced runtime and advisory warnings.
 
 Required next implementation direction:
@@ -163,8 +165,9 @@ Required tests:
   occupied-port, invalid bind/config, explicit OpenSearch `-E` rejection,
   duplicate node-id, role/bootstrap, and production-gate coverage into
   absent/readonly/locked data paths;
-- extend the startup/readiness consistency probe beyond filesystem refusal and
-  production security/release gate refusal into multi-node gate reasons.
+- extend the startup/readiness consistency probe beyond filesystem refusal,
+  terminology smoke coverage, and production security/release gate refusal into
+  multi-node gate reasons.
 
 ## Gap Class 2: Thread Pools, Task Tracking, And Runtime Controls
 
