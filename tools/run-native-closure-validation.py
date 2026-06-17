@@ -1388,6 +1388,13 @@ MODULE_REGISTRATION_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "extension_lifecycle_hooks_execute_for_activation_shutdown_and_recovery_boundaries",
+        "module-registration-boundary",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "plugin_exports_rust_native_extension_descriptor_surface",
         "module-registration-boundary",
         package="os-plugin-knn",

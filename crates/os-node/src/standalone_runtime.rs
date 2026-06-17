@@ -254,6 +254,15 @@ struct ExtensionPluginSpec {
     classname: &'static str,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ExtensionLifecycleExecution {
+    pub module: &'static str,
+    pub phase: &'static str,
+    pub hook: &'static str,
+    pub action: &'static str,
+    pub status: &'static str,
+}
+
 pub fn serve_rest_http_listener_until<F>(
     node: SteelNode,
     listener: TcpListener,
@@ -1992,6 +2001,7 @@ pub struct SteelNode {
     pub info: NodeInfo,
     pub rest_config: Option<RestServerConfig>,
     pub extension_registry: ExtensionBoundaryRegistry,
+    pub extension_lifecycle_executions: Arc<Mutex<Vec<ExtensionLifecycleExecution>>>,
     pub cluster_view: Option<DevelopmentClusterView>,
     pub membership_state: Option<ProductionMembershipState>,
     pub membership_state_path: Option<PathBuf>,
@@ -2220,10 +2230,11 @@ impl Drop for RuntimeThreadPoolExecution {
 
 impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
-        Self {
+        let node = Self {
             info,
             rest_config: None,
             extension_registry: ExtensionBoundaryRegistry::default(),
+            extension_lifecycle_executions: Arc::new(Mutex::new(Vec::new())),
             cluster_view: None,
             membership_state: None,
             membership_state_path: None,
@@ -2254,7 +2265,9 @@ impl SteelNode {
             pit_contexts: Arc::new(Mutex::new(BTreeMap::new())),
             next_pit_id: Arc::new(Mutex::new(0)),
             snapshot_restores_in_progress: Arc::new(Mutex::new(BTreeSet::new())),
-        }
+        };
+        node.activate_registered_extensions();
+        node
     }
 
     pub fn with_rest_config(mut self, config: RestServerConfig) -> Self {
@@ -2264,7 +2277,85 @@ impl SteelNode {
 
     pub fn with_extension_registry(mut self, registry: ExtensionBoundaryRegistry) -> Self {
         self.extension_registry = registry;
+        self.extension_lifecycle_executions
+            .lock()
+            .expect("extension lifecycle execution lock poisoned")
+            .clear();
+        self.activate_registered_extensions();
         self
+    }
+
+    pub fn extension_lifecycle_execution_transcript(&self) -> Vec<ExtensionLifecycleExecution> {
+        self.extension_lifecycle_executions
+            .lock()
+            .expect("extension lifecycle execution lock poisoned")
+            .clone()
+    }
+
+    fn activate_registered_extensions(&self) {
+        self.execute_registered_extension_lifecycle_phase("startup", "activate");
+        self.execute_registered_extension_lifecycle_phase("steady_state", "activate");
+    }
+
+    pub fn deactivate_registered_extensions_for_shutdown(&self) {
+        self.execute_registered_extension_lifecycle_phase("shutdown", "deactivate");
+    }
+
+    pub fn mark_registered_extensions_recovery_failed(&self) {
+        self.execute_registered_extension_lifecycle_phase("recovery", "recovery_failed");
+    }
+
+    fn execute_registered_extension_lifecycle_phase(
+        &self,
+        phase: &'static str,
+        action: &'static str,
+    ) {
+        for descriptor in self.extension_registry.rust_native_extension_descriptors() {
+            for hook in descriptor.lifecycle_hooks {
+                let Some(runtime_hook) = RUNTIME_LIFECYCLE_HOOKS
+                    .iter()
+                    .find(|runtime_hook| runtime_hook.phase == phase && runtime_hook.hook == *hook)
+                else {
+                    continue;
+                };
+                let status = self.execute_registered_extension_lifecycle_hook(runtime_hook.hook);
+                self.extension_lifecycle_executions
+                    .lock()
+                    .expect("extension lifecycle execution lock poisoned")
+                    .push(ExtensionLifecycleExecution {
+                        module: descriptor.module,
+                        phase,
+                        hook: runtime_hook.hook,
+                        action,
+                        status,
+                    });
+            }
+        }
+    }
+
+    fn execute_registered_extension_lifecycle_hook(&self, hook: &str) -> &'static str {
+        match hook {
+            "sync_shared_runtime_state_from_disk" => {
+                self.sync_shared_runtime_state_from_disk();
+                "executed"
+            }
+            "refuse_task_submission_if_unavailable" => {
+                if self.refuse_task_submission_if_unavailable().is_some() {
+                    "refused"
+                } else {
+                    "admitted"
+                }
+            }
+            "set_live_shutdown_in_progress" => {
+                self.set_live_shutdown_in_progress(true);
+                "executed"
+            }
+            "set_shared_runtime_state_recovery_failed" => {
+                self.set_shared_runtime_state_recovery_failed(true);
+                "executed"
+            }
+            _ => "unavailable",
+        }
     }
 
     pub fn with_gateway_backed_development_metadata_store(
@@ -23049,6 +23140,72 @@ mod tests {
                 && descriptor.transport_actions.is_empty()
                 && descriptor.lifecycle_hooks.is_empty()
         }));
+    }
+
+    #[test]
+    fn extension_lifecycle_hooks_execute_for_activation_shutdown_and_recovery_boundaries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        })
+        .with_extension_registry(ExtensionBoundaryRegistry {
+            manifest_path: Some(PathBuf::from("/tmp/steelsearch-extensions.json")),
+            knn_plugin_enabled: true,
+            ml_commons_enabled: true,
+        });
+
+        let activation = node.extension_lifecycle_execution_transcript();
+        assert_eq!(activation.len(), 2);
+        assert!(activation.iter().any(|entry| {
+            entry.module == "steelsearch-runtime"
+                && entry.phase == "startup"
+                && entry.hook == "sync_shared_runtime_state_from_disk"
+                && entry.action == "activate"
+                && entry.status == "executed"
+        }));
+        assert!(activation.iter().any(|entry| {
+            entry.module == "steelsearch-runtime"
+                && entry.phase == "steady_state"
+                && entry.hook == "refuse_task_submission_if_unavailable"
+                && entry.action == "activate"
+                && entry.status == "admitted"
+        }));
+        assert!(!activation
+            .iter()
+            .any(|entry| entry.module == "opensearch-knn"));
+        assert!(!activation
+            .iter()
+            .any(|entry| entry.module == "opensearch-ml-commons"));
+        assert!(node.refuse_task_submission_if_unavailable().is_none());
+
+        node.deactivate_registered_extensions_for_shutdown();
+        let shutdown = node.extension_lifecycle_execution_transcript();
+        assert!(shutdown.iter().any(|entry| {
+            entry.module == "steelsearch-runtime"
+                && entry.phase == "shutdown"
+                && entry.hook == "set_live_shutdown_in_progress"
+                && entry.action == "deactivate"
+                && entry.status == "executed"
+        }));
+        assert_eq!(node.runtime_lifecycle_snapshot().active_phase, "shutdown");
+        let shutdown_refusal = node
+            .refuse_task_submission_if_unavailable()
+            .expect("shutdown lifecycle should refuse task submission");
+        assert_eq!(shutdown_refusal.status, 503);
+
+        node.mark_registered_extensions_recovery_failed();
+        let recovery = node.extension_lifecycle_execution_transcript();
+        assert!(recovery.iter().any(|entry| {
+            entry.module == "steelsearch-runtime"
+                && entry.phase == "recovery"
+                && entry.hook == "set_shared_runtime_state_recovery_failed"
+                && entry.action == "recovery_failed"
+                && entry.status == "executed"
+        }));
+        assert!(node
+            .runtime_lifecycle_snapshot()
+            .blockers
+            .contains(&"shared_runtime_state_recovery_failed".to_string()));
     }
 
     #[test]

@@ -334,32 +334,36 @@ Current Steelsearch evidence:
 - the workspace already has crate-level decomposition (`os-rest`, `os-engine`,
   `os-plugin-knn`, etc.);
 - `tools/run-native-closure-validation.py --batch module-registration` passed
-  on 2026-06-17 with 10/10 tests and `zero_tests=0`, covering extension manifest
+  on 2026-06-17 with 11/11 tests and `zero_tests=0`, covering extension manifest
   booleans feeding the effective runtime registry, malformed manifest
   fail-closed rejection, unsupported Java plugin ABI manifest rejection,
   formal Rust-native extension API descriptors from owning crates feeding
   registry-derived route/action/module/lifecycle-hook registration tables and
-  startup transcript output per profile, plus `_cat/plugins` reporting
+  startup transcript output per profile, local activation/deactivation/recovery
+  lifecycle hook execution transcript evidence, plus `_cat/plugins` reporting
   registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while
   omitting disabled modules;
 - Rust-native feature registration is now visible through startup transcript
   and `_cat/plugins` output; the Steelsearch runtime extension descriptor also
   exposes startup/restart sync, task-admission, live-shutdown, and
-  partial-recovery lifecycle hook names while Java plugin ABI descriptors are
-  rejected before daemon runtime assembly;
+  partial-recovery lifecycle hook names, and local SteelNode activation,
+  shutdown deactivation, and recovery-failed transitions execute those
+  registered hook names while Java plugin ABI descriptors are rejected before
+  daemon runtime assembly;
 - daemon runtime assembly is still monolithic compared with OpenSearch `Node`,
   but the first runtime-visible extension registry boundary is now explicit.
 
 Required next implementation direction:
 
-- connect module activation/deactivation to runtime lifecycle hook execution at
-  daemon and multi-node runtime boundaries.
+- extend module lifecycle execution transcript evidence from local daemon
+  boundaries into live multi-node startup, shutdown, and recovery probes.
 
 Required tests:
 
 - none for the current Rust-native extension API descriptor and registration
-  table boundary; the next gap is lifecycle behavior at daemon and multi-node
-  runtime boundaries rather than more local descriptor evidence.
+  table boundary or local lifecycle execution transcript; the next gap is
+  lifecycle behavior at live multi-node runtime boundaries rather than more
+  local descriptor evidence.
 
 ## Gap Class 4: User-Facing Runtime Identity And Config Hygiene
 

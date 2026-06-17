@@ -232,12 +232,13 @@ Out of scope:
   live shutdown, and partial shared-runtime recovery, plus shutdown/recovery
   fail-closed task-submission boundaries and terminal task progress readback.
 - The same runner now has a `module-registration` batch. It passed on
-  2026-06-17 with 10/10 tests and `zero_tests=0`, covering extension manifest
+  2026-06-17 with 11/11 tests and `zero_tests=0`, covering extension manifest
   booleans feeding the effective runtime registry, malformed manifest
   fail-closed rejection, unsupported Java plugin ABI manifest rejection,
   formal Rust-native extension API descriptors from owning crates feeding
   registry-derived route/action/module/lifecycle-hook registration tables and
-  startup transcript output per profile, plus `_cat/plugins` reporting
+  startup transcript output per profile, local activation/deactivation/recovery
+  lifecycle hook execution transcript evidence, plus `_cat/plugins` reporting
   registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while
   omitting disabled modules.
 
@@ -470,6 +471,8 @@ Already evidenced:
   task-admission, live-shutdown, and partial-recovery lifecycle hook names,
   while compatibility-only k-NN and ML Commons descriptors report no lifecycle
   hooks;
+- SteelNode activation, shutdown deactivation, and recovery-failed transitions
+  execute the registered lifecycle hook names and record a runtime transcript;
 - `_cat/plugins` reports registry-enabled Steelsearch runtime, k-NN, and ML
   Commons module rows while omitting disabled modules;
 - the `module-registration` validation batch guards the manifest merge and
@@ -477,8 +480,8 @@ Already evidenced:
 
 Remaining tests:
 
-- none for the current Rust-native extension API descriptor and registration
-  table boundary.
+- none for the current Rust-native extension API descriptor, registration table,
+  and local lifecycle execution transcript boundary.
 
 Exit evidence:
 
