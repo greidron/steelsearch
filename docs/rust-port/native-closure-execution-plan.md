@@ -57,7 +57,7 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 15/15 tests and `zero_tests=0`, covering task cancellation through
+  with 16/16 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility including
@@ -67,11 +67,12 @@ Out of scope:
   without polluting pending-task queue depth, plus
   bounded terminal task retention/eviction with stale cancellation-marker
   pruning, cancelled-task completion and partial-progress status readback through
-  restart until eviction, persisted restart readback, and shared-runtime restart
-  readback for task queue state and cancelled task ids, including accepted
-  in-flight task readback/refusal without queued replay, partial shared-state
-  recovery error task-listing/cancel continuity, and cancel requests accepted
-  during the per-request shared-runtime sync window after restart.
+  restart until eviction, cancelled-terminal restart-sync refusal with progress
+  preservation, persisted restart readback, and shared-runtime restart readback
+  for task queue state and cancelled task ids, including accepted in-flight task
+  readback/refusal without queued replay, partial shared-state recovery error
+  task-listing/cancel continuity, and cancel requests accepted during the
+  per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
   with 3/3 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
@@ -211,11 +212,12 @@ Validation runner:
   without cancelled-marker pollution, terminal-state task readback, bounded
   terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
   completion and partial-progress status readback through restart until eviction,
-  and pending-depth separation as runtime-control evidence, including
-  shared-runtime restart readback for task queue state and cancelled ids,
-  accepted in-flight task readback/refusal without queued replay, partial
-  shared-state recovery error task-listing/cancel continuity, plus
-  cancel-request handling during the per-request sync window after restart.
+  cancelled-terminal restart-sync refusal with progress preservation, and
+  pending-depth separation as runtime-control evidence, including shared-runtime
+  restart readback for task queue state and cancelled ids, accepted in-flight
+  task readback/refusal without queued replay, partial shared-state recovery
+  error task-listing/cancel continuity, plus cancel-request handling during the
+  per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
   depth, pending-task metadata, and pending-task cancellation visibility as

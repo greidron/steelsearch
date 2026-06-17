@@ -87,18 +87,18 @@ internal subsystems, especially:
 | --- | --- |
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
 | Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
-| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, and cancelled-task completion plus partial-progress status readback until eviction; shutdown-window terminal transitions remain open |
+| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, cancelled-task completion plus partial-progress status readback until eviction, and cancelled-terminal restart-sync refusal with progress preservation; live shutdown-window terminal transitions remain open |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
-| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart; shutdown-window behavior remains open |
-| Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, and completion-race terminal refusal without cancelled-marker pollution exist, but shutdown-window error classification remains open |
+| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves cancelled-terminal progress when cancel is refused after restart sync, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart; live shutdown-window behavior remains open |
+| Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, completion-race terminal refusal without cancelled-marker pollution, and cancelled-terminal restart-sync refusal exist, but live shutdown-window error classification remains open |
 
 ### Required tests
 
 - add fixture-backed distinction for:
   - queued cancellation versus worker drain races;
-  - shutdown-window cancellation refusal versus preservation behavior.
+  - live shutdown-window cancellation refusal versus preservation behavior.
 - add operator-visible evidence for terminal-state retention:
-  - whether shutdown-window transitions preserve or evict cancelled-terminal
+  - whether live shutdown-window transitions preserve or evict cancelled-terminal
     task visibility beyond the current completion/restart/eviction coverage.
 
 ### Required implementation
@@ -106,7 +106,7 @@ internal subsystems, especially:
 - introduce an explicit cancellation coordinator or equivalent runtime owner for
   task state transitions.
 - tie queued-task cancellation into in-flight worker ownership and drain ordering.
-- define cancelled-terminal shutdown-window contracts for `GET /_tasks*`
+- define cancelled-terminal live shutdown-window contracts for `GET /_tasks*`
   beyond the current acknowledged/failed terminal eviction bound, stale
   cancellation-marker pruning, and completion/progress/restart/eviction readback.
 - tie cancellation state into shutdown-window and partial-recovery handling
