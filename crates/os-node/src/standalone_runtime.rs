@@ -128,17 +128,12 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
 impl RustNativeExtension for KnnCompatibilityExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor {
         RustNativeExtensionDescriptor {
-            module: "opensearch-knn",
-            feature: "knn-rest-compatibility",
-            description: "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry",
-            classname: "org.steelsearch.knn.KNNPlugin",
-            rest_routes: &[
-                "/_plugins/_knn/stats",
-                "/_plugins/_knn/settings",
-                "/_plugins/_knn/warmup",
-                "/_plugins/_knn/models",
-            ],
-            transport_actions: &[],
+            module: os_plugin_knn::KNN_PLUGIN_NAME,
+            feature: os_plugin_knn::KNN_EXTENSION_FEATURE,
+            description: os_plugin_knn::KNN_EXTENSION_DESCRIPTION,
+            classname: os_plugin_knn::KNN_EXTENSION_CLASSNAME,
+            rest_routes: os_plugin_knn::KNN_EXTENSION_REST_ROUTES,
+            transport_actions: os_plugin_knn::KNN_EXTENSION_TRANSPORT_ACTIONS,
         }
     }
 }
@@ -146,16 +141,12 @@ impl RustNativeExtension for KnnCompatibilityExtension {
 impl RustNativeExtension for MlCommonsCompatibilityExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor {
         RustNativeExtensionDescriptor {
-            module: "opensearch-ml-commons",
-            feature: "ml-commons-rest-compatibility",
-            description: "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry",
-            classname: "org.steelsearch.ml.MLCommonsPlugin",
-            rest_routes: &[
-                "/_plugins/_ml/models",
-                "/_plugins/_ml/tasks",
-                "/_plugins/_ml/connectors",
-            ],
-            transport_actions: &[],
+            module: os_ml_commons::ML_COMMONS_EXTENSION_MODULE,
+            feature: os_ml_commons::ML_COMMONS_EXTENSION_FEATURE,
+            description: os_ml_commons::ML_COMMONS_EXTENSION_DESCRIPTION,
+            classname: os_ml_commons::ML_COMMONS_EXTENSION_CLASSNAME,
+            rest_routes: os_ml_commons::ML_COMMONS_EXTENSION_REST_ROUTES,
+            transport_actions: os_ml_commons::ML_COMMONS_EXTENSION_TRANSPORT_ACTIONS,
         }
     }
 }
@@ -22825,14 +22816,18 @@ mod tests {
         }));
         assert!(descriptors.iter().any(|descriptor| {
             descriptor.module == "opensearch-knn"
+                && descriptor.module == os_plugin_knn::KNN_PLUGIN_NAME
                 && descriptor.feature == "knn-rest-compatibility"
+                && descriptor.feature == os_plugin_knn::KNN_EXTENSION_FEATURE
                 && descriptor.description.contains("Rust-native k-NN")
                 && descriptor.rest_routes.contains(&"/_plugins/_knn/settings")
                 && descriptor.transport_actions.is_empty()
         }));
         assert!(descriptors.iter().any(|descriptor| {
             descriptor.module == "opensearch-ml-commons"
+                && descriptor.module == os_ml_commons::ML_COMMONS_EXTENSION_MODULE
                 && descriptor.feature == "ml-commons-rest-compatibility"
+                && descriptor.feature == os_ml_commons::ML_COMMONS_EXTENSION_FEATURE
                 && descriptor.description.contains("Rust-native ML Commons")
                 && descriptor.rest_routes.contains(&"/_plugins/_ml/connectors")
                 && descriptor.transport_actions.is_empty()

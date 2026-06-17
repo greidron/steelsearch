@@ -6,6 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub const ML_COMMONS_PLUGIN_NAME: &str = "opensearch-ml";
+pub const ML_COMMONS_EXTENSION_MODULE: &str = "opensearch-ml-commons";
+pub const ML_COMMONS_EXTENSION_FEATURE: &str = "ml-commons-rest-compatibility";
+pub const ML_COMMONS_EXTENSION_DESCRIPTION: &str =
+    "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry";
+pub const ML_COMMONS_EXTENSION_CLASSNAME: &str = "org.steelsearch.ml.MLCommonsPlugin";
+pub const ML_COMMONS_EXTENSION_REST_ROUTES: &[&str] = &[
+    "/_plugins/_ml/models",
+    "/_plugins/_ml/tasks",
+    "/_plugins/_ml/connectors",
+];
+pub const ML_COMMONS_EXTENSION_TRANSPORT_ACTIONS: &[&str] = &[];
 pub const ML_MODEL_GROUP_RESOURCE: &str = "model_group";
 pub const ML_MODEL_RESOURCE: &str = "model";
 pub const ML_TASK_RESOURCE: &str = "task";
@@ -1050,6 +1061,23 @@ fn ensure_access(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn plugin_exports_rust_native_extension_descriptor_surface() {
+        assert_eq!(ML_COMMONS_EXTENSION_MODULE, "opensearch-ml-commons");
+        assert_eq!(
+            ML_COMMONS_EXTENSION_FEATURE,
+            "ml-commons-rest-compatibility"
+        );
+        assert_eq!(
+            ML_COMMONS_EXTENSION_CLASSNAME,
+            "org.steelsearch.ml.MLCommonsPlugin"
+        );
+        assert!(ML_COMMONS_EXTENSION_DESCRIPTION.contains("Rust-native ML Commons"));
+        assert!(ML_COMMONS_EXTENSION_REST_ROUTES.contains(&"/_plugins/_ml/models"));
+        assert!(ML_COMMONS_EXTENSION_REST_ROUTES.contains(&"/_plugins/_ml/connectors"));
+        assert!(ML_COMMONS_EXTENSION_TRANSPORT_ACTIONS.is_empty());
+    }
 
     #[test]
     fn registry_creates_group_and_registers_model_with_metadata_and_access() {

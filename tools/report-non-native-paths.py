@@ -324,8 +324,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="module registration boundaries",
         category="runtime",
-        status="module-registration batch is zero-test guarded; extension manifest booleans feed the effective runtime registry, malformed manifests and unsupported Java plugin ABI manifests fail closed, formal Rust-native extension API descriptors feed registry-derived route/action/module registration tables and startup transcript output per profile, and _cat/plugins reports registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while omitting disabled modules",
-        next_action="move built-in extension descriptors into their owning crates and keep unsupported Java plugin ABI rejection fail-closed",
+        status="module-registration batch is zero-test guarded; extension manifest booleans feed the effective runtime registry, malformed manifests and unsupported Java plugin ABI manifests fail closed, formal Rust-native extension API descriptors from owning crates feed registry-derived route/action/module registration tables and startup transcript output per profile, and _cat/plugins reports registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while omitting disabled modules",
+        next_action="extend the Rust-native extension API from static descriptors toward explicit lifecycle hooks while keeping unsupported Java plugin ABI rejection fail-closed",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"MODULE_REGISTRATION_BATCH",
     ),

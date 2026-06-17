@@ -188,13 +188,14 @@ Out of scope:
   same-node parent/child plus multi-level descendant
   rethrottle rate visibility.
 - The same runner now has a `module-registration` batch. It passed on
-  2026-06-17 with 8/8 tests and `zero_tests=0`, covering extension manifest
+  2026-06-17 with 10/10 tests and `zero_tests=0`, covering extension manifest
   booleans feeding the effective runtime registry, malformed manifest
   fail-closed rejection, unsupported Java plugin ABI manifest rejection,
-  formal Rust-native extension API descriptors feeding registry-derived
-  route/action/module registration tables and startup transcript output per
-  profile, plus `_cat/plugins` reporting registry-enabled Steelsearch runtime,
-  k-NN, and ML Commons module rows while omitting disabled modules.
+  formal Rust-native extension API descriptors from owning crates feeding
+  registry-derived route/action/module registration tables and startup
+  transcript output per profile, plus `_cat/plugins` reporting
+  registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while
+  omitting disabled modules.
 
 ## Workstreams
 
@@ -395,9 +396,9 @@ Already evidenced:
 - malformed extension manifests fail closed instead of silently falling back to
   default feature gates;
 - unsupported Java plugin ABI manifests fail closed;
-- formal Rust-native extension API descriptors feed registry-derived
-  route/action/module registration tables and startup transcript output per
-  profile;
+- formal Rust-native extension API descriptors from owning crates feed
+  registry-derived route/action/module registration tables and startup
+  transcript output per profile;
 - `_cat/plugins` reports registry-enabled Steelsearch runtime, k-NN, and ML
   Commons module rows while omitting disabled modules;
 - the `module-registration` validation batch guards the manifest merge and

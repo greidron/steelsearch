@@ -20,6 +20,17 @@ pub const KNN_MODEL_SEARCH_ACTION: &str = "cluster:admin/knn/model/search";
 pub const KNN_MODEL_TRAIN_ACTION: &str = "cluster:admin/knn/model/train";
 pub const KNN_MEMORY_CIRCUIT_BREAKER: &str = "knn.memory";
 pub const KNN_REMOTE_INDEX_BUILD_HOOK: &str = "knn.remote_index_build";
+pub const KNN_EXTENSION_FEATURE: &str = "knn-rest-compatibility";
+pub const KNN_EXTENSION_DESCRIPTION: &str =
+    "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry";
+pub const KNN_EXTENSION_CLASSNAME: &str = "org.steelsearch.knn.KNNPlugin";
+pub const KNN_EXTENSION_REST_ROUTES: &[&str] = &[
+    "/_plugins/_knn/stats",
+    "/_plugins/_knn/settings",
+    "/_plugins/_knn/warmup",
+    "/_plugins/_knn/models",
+];
+pub const KNN_EXTENSION_TRANSPORT_ACTIONS: &[&str] = &[];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct KnnVectorMapping {
@@ -1078,6 +1089,16 @@ mod tests {
             info["circuit_breakers"],
             serde_json::json!([KNN_MEMORY_CIRCUIT_BREAKER])
         );
+    }
+
+    #[test]
+    fn plugin_exports_rust_native_extension_descriptor_surface() {
+        assert_eq!(KNN_EXTENSION_FEATURE, "knn-rest-compatibility");
+        assert_eq!(KNN_EXTENSION_CLASSNAME, "org.steelsearch.knn.KNNPlugin");
+        assert!(KNN_EXTENSION_DESCRIPTION.contains("Rust-native k-NN"));
+        assert!(KNN_EXTENSION_REST_ROUTES.contains(&"/_plugins/_knn/settings"));
+        assert!(KNN_EXTENSION_REST_ROUTES.contains(&"/_plugins/_knn/models"));
+        assert!(KNN_EXTENSION_TRANSPORT_ACTIONS.is_empty());
     }
 
     #[test]
