@@ -1628,6 +1628,7 @@ pub struct SteelNode {
     pub task_queue_state: Arc<Mutex<Option<PersistedClusterManagerTaskQueueState>>>,
     pub cancelled_task_ids: Arc<Mutex<BTreeSet<String>>>,
     pub rethrottled_task_rates: Arc<Mutex<BTreeMap<String, f64>>>,
+    runtime_thread_pool_counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
@@ -1755,6 +1756,31 @@ pub struct PitContext {
     pub indices: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct RuntimeThreadPoolCounters {
+    active: u64,
+    queue: u64,
+    rejected: u64,
+    completed: u64,
+}
+
+struct RuntimeThreadPoolExecution {
+    counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
+    pool: &'static str,
+}
+
+impl Drop for RuntimeThreadPoolExecution {
+    fn drop(&mut self) {
+        let mut counters = self
+            .counters
+            .lock()
+            .expect("runtime thread pool counters lock poisoned");
+        let entry = counters.entry(self.pool.to_string()).or_default();
+        entry.active = entry.active.saturating_sub(1);
+        entry.completed = entry.completed.saturating_add(1);
+    }
+}
+
 impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
         Self {
@@ -1770,6 +1796,7 @@ impl SteelNode {
             task_queue_state: Arc::new(Mutex::new(None)),
             cancelled_task_ids: Arc::new(Mutex::new(BTreeSet::new())),
             rethrottled_task_rates: Arc::new(Mutex::new(BTreeMap::new())),
+            runtime_thread_pool_counters: Arc::new(Mutex::new(BTreeMap::new())),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
@@ -6813,6 +6840,7 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
+        let _thread_pool = self.enter_runtime_thread_pool("search");
         if let Some(search_type) = request.query_params.get("search_type") {
             if search_type != "query_then_fetch" && search_type != "dfs_query_then_fetch" {
                 return build_unsupported_search_response("unsupported search_type");
@@ -7224,6 +7252,7 @@ impl SteelNode {
             }
             Err(response) => return response,
         };
+        let _thread_pool = self.enter_runtime_thread_pool("write");
         let body = String::from_utf8_lossy(&request.body);
         let mut lines = body.lines();
         let mut items = Vec::new();
@@ -11264,8 +11293,34 @@ impl SteelNode {
         (active, queue)
     }
 
+    fn enter_runtime_thread_pool(&self, pool: &'static str) -> RuntimeThreadPoolExecution {
+        {
+            let mut counters = self
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            let entry = counters.entry(pool.to_string()).or_default();
+            entry.active = entry.active.saturating_add(1);
+        }
+        RuntimeThreadPoolExecution {
+            counters: Arc::clone(&self.runtime_thread_pool_counters),
+            pool,
+        }
+    }
+
+    fn runtime_thread_pool_counters(&self, pool: &str) -> RuntimeThreadPoolCounters {
+        self.runtime_thread_pool_counters
+            .lock()
+            .expect("runtime thread pool counters lock poisoned")
+            .get(pool)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     fn thread_pool_stats_body(&self) -> Value {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
+        let search = self.runtime_thread_pool_counters("search");
+        let write = self.runtime_thread_pool_counters("write");
         serde_json::json!({
             "management": {
                 "threads": 1,
@@ -11276,17 +11331,17 @@ impl SteelNode {
             },
             "search": {
                 "threads": 1,
-                "queue": 0,
-                "active": 0,
-                "rejected": 0,
-                "completed": 0
+                "queue": search.queue,
+                "active": search.active,
+                "rejected": search.rejected,
+                "completed": search.completed
             },
             "write": {
                 "threads": 1,
-                "queue": 0,
-                "active": 0,
-                "rejected": 0,
-                "completed": 0
+                "queue": write.queue,
+                "active": write.active,
+                "rejected": write.rejected,
+                "completed": write.completed
             }
         })
     }
@@ -14035,6 +14090,8 @@ impl SteelNode {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
         let management_active = management_active.to_string();
         let management_queue = management_queue.to_string();
+        let search = self.runtime_thread_pool_counters("search");
+        let write = self.runtime_thread_pool_counters("write");
         let mut rows = vec![
             serde_json::json!({
                 "node_name": node_name,
@@ -14070,13 +14127,13 @@ impl SteelNode {
                 "port": "19300",
                 "name": "search",
                 "type": "fixed",
-                "active": "0",
+                "active": search.active.to_string(),
                 "pool_size": "1",
-                "queue": "0",
+                "queue": search.queue.to_string(),
                 "queue_size": "1000",
-                "rejected": "0",
+                "rejected": search.rejected.to_string(),
                 "largest": "1",
-                "completed": "0",
+                "completed": search.completed.to_string(),
                 "total_wait_time": "0ms",
                 "core": "",
                 "max": "",
@@ -14094,13 +14151,13 @@ impl SteelNode {
                 "port": "19300",
                 "name": "write",
                 "type": "fixed",
-                "active": "0",
+                "active": write.active.to_string(),
                 "pool_size": "1",
-                "queue": "0",
+                "queue": write.queue.to_string(),
                 "queue_size": "10000",
-                "rejected": "0",
+                "rejected": write.rejected.to_string(),
                 "largest": "1",
-                "completed": "0",
+                "completed": write.completed.to_string(),
                 "total_wait_time": "0ms",
                 "core": "",
                 "max": "",
@@ -30639,6 +30696,73 @@ mod tests {
             .expect("node stats body to contain one node");
         assert_eq!(first_node["thread_pool"]["management"]["active"], 1);
         assert_eq!(first_node["thread_pool"]["management"]["queue"], 2);
+    }
+
+    #[test]
+    fn search_and_bulk_routes_update_runtime_thread_pool_counters() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/runtime-thread-pool-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {"match_all": {}}
+                })),
+        );
+        assert_eq!(search.status, 200);
+
+        let bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-000001/_bulk").with_body(
+                "{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"runtime write\"}\n",
+            ),
+        );
+        assert_eq!(bulk.status, 200);
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["search"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["search"]["completed"], 1);
+        assert_eq!(first_node["thread_pool"]["write"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["write"]["completed"], 1);
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search,write");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["name"], "search");
+        assert_eq!(rows[0]["completed"], "1");
+        assert_eq!(rows[1]["name"], "write");
+        assert_eq!(rows[1]["completed"], "1");
     }
 
     #[test]

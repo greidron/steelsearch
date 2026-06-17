@@ -257,10 +257,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="production runtime controls",
         category="runtime",
-        status="startup-preflight, startup-readiness, task-cancellation, task-queue, route-backpressure, task-throttle, task-parent-metadata, task-header, and same-node task-child grouping batches are zero-test guarded; broader child propagation and search/write scheduler backpressure remain partial",
-        next_action="extend task child probes into multi-level/cross-node propagation and route backpressure probes into search/write workloads",
+        status="startup-preflight, startup-readiness, task-cancellation, task-queue, route-backpressure, task-throttle, task-parent-metadata, task-header, and same-node task-child grouping batches are zero-test guarded; broader child propagation plus search/write overload admission and rejection semantics remain partial",
+        next_action="extend task child probes into multi-level/cross-node propagation and route backpressure probes into search/write overload admission, queued-work, and rejection behavior",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
-        evidence_pattern=r"RUNTIME_TASK_CHILDREN_BATCH",
+        evidence_pattern=r"search_and_bulk_routes_update_runtime_thread_pool_counters",
     ),
     Family(
         name="production security",
