@@ -192,10 +192,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="terms_set query",
         category="source-backed query",
-        status="source-backed",
-        next_action="split scalar exact-match candidate narrowing from minimum-match source fallback",
-        evidence_path=ENGINE_DOC,
-        evidence_pattern=r"source-backed `terms_set`",
+        status="native-candidate-narrowed for exact scalar terms_set leaves",
+        next_action="keep complex terms_set fallback visible in materialized telemetry and widen non-scalar coverage only with parity tests",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"build_tantivy_minimum_should_match_query",
     ),
     Family(
         name="query_string/simple_query_string",

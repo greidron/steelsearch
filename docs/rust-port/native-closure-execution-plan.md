@@ -60,6 +60,9 @@ Current narrowed families:
 - `nested` exact scalar leaves: child ordinal indexes now narrow term/terms and
   supported bool nested leaves before parent document lookup. Unsupported nested
   shapes still use the explicit source-validation fallback.
+- `terms_set` exact scalar leaves: Tantivy minimum-should-match query builders
+  and native candidate helpers cover scalar keyword/tag-style terms before
+  source fallback is needed.
 
 Exit evidence:
 
