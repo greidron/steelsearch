@@ -219,6 +219,10 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
+        "query_string_unsupported_field_type_fallback_updates_materialized_telemetry",
+        "source-backed-fallback-boundary",
+    ),
+    ValidationTest(
         "native_tantivy_path_executes_simple_query_string_query",
         "source-backed-native-query",
     ),
