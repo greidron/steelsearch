@@ -34601,6 +34601,131 @@ mod tests {
     }
 
     #[test]
+    fn remote_task_backlog_does_not_block_local_search_or_write_admission() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node-a".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-node-a".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-node-b".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            task_node_ids: BTreeMap::from([
+                (440, "node-b".to_string()),
+                (441, "node-b".to_string()),
+            ]),
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 440,
+                task: ClusterManagerTask {
+                    source: "remote queued peer recovery".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "peer-recovery".to_string(),
+                        action: "indices:data/write/recovery".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 441,
+                task: ClusterManagerTask {
+                    source: "remote executing peer recovery".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "peer-recovery".to_string(),
+                        action: "indices:data/write/recovery".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/remote-backlog-user-facing-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+        let bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/remote-backlog-user-facing-000001/_bulk")
+                .with_body(
+                    b"{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"local write remains admitted\"}\n"
+                        .to_vec(),
+                ),
+        );
+        assert_eq!(bulk.status, 200);
+        assert_eq!(bulk.body["errors"], Value::Bool(false));
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/remote-backlog-user-facing-000001/_search")
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})),
+        );
+        assert_eq!(search.status, 200);
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["search"]["completed"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["search"]["rejected"],
+            0
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["write"]["completed"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["write"]["rejected"],
+            0
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["management"]["active"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["management"]["queue"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["search"]["completed"],
+            0
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["write"]["completed"],
+            0
+        );
+    }
+
+    #[test]
     fn search_and_bulk_routes_update_runtime_thread_pool_counters() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

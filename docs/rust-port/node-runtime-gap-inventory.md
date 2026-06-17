@@ -205,14 +205,14 @@ Current Steelsearch evidence:
   execution visibility and multi-node queued/in-flight task visibility with
   remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 14/14 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 15/15 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
   active-slot queue waiting/drain under concurrent search/write requests,
   independent mixed search/maintenance backlog drain, remote task backlog not
-  blocking local task-submission admission, and bounded queue-full rejection for
-  search/write pools, plus maintenance
+  blocking local task-submission admission or local search/write admission, and
+  bounded queue-full rejection for search/write pools, plus maintenance
   refresh/flush/cache-clear/forcemerge admission through the same runtime-owned
   waiting and rejection model, and snapshot create/restore/cleanup admission
   plus cluster reroute admission through the same runtime-owned waiting and
@@ -258,8 +258,9 @@ Required next implementation direction:
 
 Required tests:
 
-- extend queue/backpressure smoke tests beyond bounded route admission into
-  broader multi-node fairness behavior;
+- extend queue/backpressure smoke tests beyond bounded route admission and
+  remote-backlog task-submission/search/write isolation into broader multi-node
+  fairness behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries
