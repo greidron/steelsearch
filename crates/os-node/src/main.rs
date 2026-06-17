@@ -4354,6 +4354,7 @@ struct ProductionSecurityBootstrapConfig {
     transport_tls_certificate_path: Option<PathBuf>,
     transport_tls_private_key_path: Option<PathBuf>,
     authentication_users_path: Option<PathBuf>,
+    secure_settings_path: Option<PathBuf>,
 }
 
 impl DaemonConfig {
@@ -4624,6 +4625,9 @@ where
         authentication_users_path: vars
             .get("STEELSEARCH_AUTHENTICATION_USERS_FILE")
             .map(PathBuf::from),
+        secure_settings_path: vars
+            .get("STEELSEARCH_SECURE_SETTINGS_FILE")
+            .map(PathBuf::from),
     };
     let mut extension_manifest_path = vars.get("STEELSEARCH_EXTENSION_MANIFEST").map(PathBuf::from);
     let mut extension_registry_overrides = ExtensionRegistryOverrideConfig {
@@ -4728,6 +4732,12 @@ where
                 production_security_bootstrap.authentication_users_path = Some(PathBuf::from(
                     args.next()
                         .ok_or("--security.authentication_users_file requires a value")?,
+                ));
+            }
+            "--security.secure_settings_file" => {
+                production_security_bootstrap.secure_settings_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--security.secure_settings_file requires a value")?,
                 ));
             }
             "--extensions.knn" => {
@@ -5086,10 +5096,18 @@ fn production_security_boundary_policy(config: &DaemonConfig) -> SecurityBoundar
         .authentication_users_path
         .as_ref()
         .is_some_and(|path| validate_production_authentication_users_file(path).is_ok());
+    let secure_settings_ready = config
+        .production_security_bootstrap
+        .secure_settings_path
+        .as_ref()
+        .is_some_and(|path| validate_production_secure_settings_file(path).is_ok());
     if runtime_security_ready && authentication_subjects_ready {
         policy.authentication = SecurityBoundaryState::Enforced;
         policy.authorization = SecurityBoundaryState::Enforced;
         policy.audit_logging = SecurityBoundaryState::Enforced;
+    }
+    if runtime_security_ready && secure_settings_ready {
+        policy.secure_settings = SecurityBoundaryState::Enforced;
     }
     policy
 }
@@ -5129,6 +5147,10 @@ fn production_security_bootstrap_blockers(
             "authentication users file",
             bootstrap.authentication_users_path.as_ref(),
         ),
+        (
+            "secure settings file",
+            bootstrap.secure_settings_path.as_ref(),
+        ),
     ];
     let mut blockers = Vec::new();
     for (name, path) in required_files {
@@ -5151,6 +5173,14 @@ fn production_security_bootstrap_blockers(
         if let Err(error) = validate_production_authentication_users_file(path) {
             blockers.push(format!(
                 "[security] production authentication users file is invalid ({}): {error}",
+                path.display()
+            ));
+        }
+    }
+    if let Some(path) = bootstrap.secure_settings_path.as_ref() {
+        if let Err(error) = validate_production_secure_settings_file(path) {
+            blockers.push(format!(
+                "[security] production secure settings file is invalid ({}): {error}",
                 path.display()
             ));
         }
@@ -5199,6 +5229,22 @@ fn production_security_bootstrap_blockers(
 fn validate_production_authentication_users_file(path: &Path) -> Result<(), String> {
     let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
     parse_authentication_users_json(&raw).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn validate_production_secure_settings_file(path: &Path) -> Result<(), String> {
+    let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|error| format!("must be valid JSON: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "must be a JSON object".to_string())?;
+    if object.is_empty() {
+        return Err("must contain at least one secure setting".to_string());
+    }
+    if object.keys().any(|key| key.trim().is_empty()) {
+        return Err("secure setting keys must be non-empty strings".to_string());
+    }
     Ok(())
 }
 
@@ -6081,6 +6127,7 @@ Options:\n\
   --security.transport_tls_certificate <path>\n\
   --security.transport_tls_private_key <path>\n\
   --security.authentication_users_file <path>\n\
+  --security.secure_settings_file <path>\n\
                                     Production security bootstrap material\n\
   --mode <development|production>  Runtime mode, default development\n\
 \n\
@@ -6096,7 +6143,7 @@ Environment:\n\
   STEELSEARCH_SECURITY_ENABLED,\n\
   STEELSEARCH_HTTP_TLS_CERTIFICATE, STEELSEARCH_HTTP_TLS_PRIVATE_KEY,\n\
   STEELSEARCH_TRANSPORT_TLS_CERTIFICATE, STEELSEARCH_TRANSPORT_TLS_PRIVATE_KEY,\n\
-  STEELSEARCH_AUTHENTICATION_USERS_FILE,\n\
+  STEELSEARCH_AUTHENTICATION_USERS_FILE, STEELSEARCH_SECURE_SETTINGS_FILE,\n\
   STEELSEARCH_ENABLE_KNN_PLUGIN, STEELSEARCH_ENABLE_ML_COMMONS,\n\
   STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED,\n\
   STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST,\n\
@@ -6859,6 +6906,9 @@ mod tests {
             blocker == "[security] production authentication users file is required"
         }));
         assert!(readiness.blockers.iter().any(|blocker| {
+            blocker == "[security] production secure settings file is required"
+        }));
+        assert!(readiness.blockers.iter().any(|blocker| {
             blocker
                 == "[security] production runtime security enforcement must be enabled with STEELSEARCH_SECURITY_ENABLED=true"
         }));
@@ -6879,7 +6929,9 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
             br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
@@ -6893,6 +6945,7 @@ mod tests {
             transport_tls_certificate_path: Some(transport_cert),
             transport_tls_private_key_path: Some(transport_key),
             authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
         };
 
         let readiness = startup_readiness_report(&config);
@@ -6910,6 +6963,10 @@ mod tests {
         assert!(readiness
             .blockers
             .iter()
+            .all(|blocker| !blocker.contains("secure settings file is required")));
+        assert!(readiness
+            .blockers
+            .iter()
             .any(|blocker| blocker.starts_with("[production]")));
     }
 
@@ -6923,7 +6980,9 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
             br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
@@ -6938,6 +6997,7 @@ mod tests {
             transport_tls_certificate_path: Some(transport_cert),
             transport_tls_private_key_path: Some(transport_key),
             authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
         };
 
         let startup_error = validate_startup_preflight(&config)
@@ -6971,7 +7031,7 @@ mod tests {
         assert!(!production_blocker.contains("authorization must be implemented and enforced"));
         assert!(!production_blocker.contains("audit_logging must be implemented and enforced"));
         assert!(production_blocker.contains("tenant_isolation must be implemented and enforced"));
-        assert!(production_blocker.contains("secure_settings must be implemented and enforced"));
+        assert!(!production_blocker.contains("secure_settings must be implemented and enforced"));
         assert!(startup_error.contains("production mode is blocked"));
     }
 
@@ -7007,10 +7067,12 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
         fs::write(&http_cert, b"not-a-pem-certificate").unwrap();
         fs::write(&http_key, b"not-a-pem-private-key").unwrap();
         fs::write(&transport_cert, b"not-a-pem-certificate").unwrap();
         fs::write(&transport_key, b"not-a-pem-private-key").unwrap();
+        write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
             br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
@@ -7024,6 +7086,7 @@ mod tests {
             transport_tls_certificate_path: Some(transport_cert),
             transport_tls_private_key_path: Some(transport_key),
             authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
         };
 
         let readiness = startup_readiness_report(&config);
@@ -7058,6 +7121,7 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
         fs::write(
             &http_cert,
             b"-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----\n",
@@ -7083,6 +7147,7 @@ mod tests {
             br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
         )
         .unwrap();
+        write_valid_secure_settings_bootstrap_material(&secure_settings);
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
         config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
@@ -7091,6 +7156,7 @@ mod tests {
             transport_tls_certificate_path: Some(transport_cert),
             transport_tls_private_key_path: Some(transport_key),
             authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
         };
 
         let readiness = startup_readiness_report(&config);
@@ -7125,6 +7191,7 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
         fs::write(
             &http_cert,
             b"not-a-pem-certificate STEELSEARCH_SECRET_CERT_PAYLOAD",
@@ -7150,6 +7217,11 @@ mod tests {
             br#"{"users":[{"username":"admin","password":"STEELSEARCH_SECRET_PASSWORD","roles":[]}]}"#,
         )
         .unwrap();
+        fs::write(
+            &secure_settings,
+            br#"{"keystore.password":"STEELSEARCH_SECRET_SECURE_SETTING", "": "bad-key"}"#,
+        )
+        .unwrap();
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
         config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
@@ -7158,6 +7230,7 @@ mod tests {
             transport_tls_certificate_path: Some(transport_cert),
             transport_tls_private_key_path: Some(transport_key),
             authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
         };
 
         let readiness = startup_readiness_report(&config);
@@ -7170,12 +7243,14 @@ mod tests {
         assert!(blockers.contains("[security] production transport TLS certificate is invalid"));
         assert!(blockers.contains("[security] production transport TLS private key is invalid"));
         assert!(blockers.contains("[security] production authentication users file is invalid"));
+        assert!(blockers.contains("[security] production secure settings file is invalid"));
         for secret in [
             "STEELSEARCH_SECRET_CERT_PAYLOAD",
             "STEELSEARCH_SECRET_PRIVATE_KEY_PAYLOAD",
             "STEELSEARCH_SECRET_TRANSPORT_CERT_PAYLOAD",
             "STEELSEARCH_SECRET_TRANSPORT_KEY_PAYLOAD",
             "STEELSEARCH_SECRET_PASSWORD",
+            "STEELSEARCH_SECRET_SECURE_SETTING",
         ] {
             assert!(
                 !blockers.contains(secret),
@@ -7217,6 +7292,24 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn production_startup_preflight_rejects_invalid_secure_settings_file() {
+        let readiness = production_readiness_with_secure_settings_fixture(
+            br#"{"keystore.password":"STEELSEARCH_SECRET_SECURE_SETTING", "": "bad-key"}"#,
+            true,
+        );
+        let blockers = readiness.blockers.join("\n");
+
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker.starts_with("[security] production secure settings file is invalid")
+                && blocker.contains("secure setting keys must be non-empty strings")
+        }));
+        assert!(
+            !blockers.contains("STEELSEARCH_SECRET_SECURE_SETTING"),
+            "startup/readiness blockers must not expose secure settings contents: {blockers}"
+        );
+    }
+
     fn production_readiness_with_authentication_users_fixture(
         users_fixture: &[u8],
         runtime_security_enabled: bool,
@@ -7229,7 +7322,9 @@ mod tests {
         let transport_cert = material_root.join("transport.crt");
         let transport_key = material_root.join("transport.key");
         let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(&users, users_fixture).unwrap();
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
@@ -7240,6 +7335,47 @@ mod tests {
             transport_tls_certificate_path: Some(transport_cert),
             transport_tls_private_key_path: Some(transport_key),
             authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
+        };
+
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        readiness
+    }
+
+    fn production_readiness_with_secure_settings_fixture(
+        secure_settings_fixture: &[u8],
+        runtime_security_enabled: bool,
+    ) -> StartupReadinessReport {
+        let path = unique_test_path("steelsearch-production-security-invalid-secure-settings-data");
+        let material_root =
+            unique_test_path("steelsearch-production-security-invalid-secure-settings-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
+        write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        fs::write(
+            &users,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
+        )
+        .unwrap();
+        fs::write(&secure_settings, secure_settings_fixture).unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_runtime_enforcement_enabled = runtime_security_enabled;
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
         };
 
         let readiness = startup_readiness_report(&config);
@@ -7261,6 +7397,10 @@ mod tests {
         fs::write(http_key, private_key).unwrap();
         fs::write(transport_cert, certificate).unwrap();
         fs::write(transport_key, private_key).unwrap();
+    }
+
+    fn write_valid_secure_settings_bootstrap_material(path: &Path) {
+        fs::write(path, br#"{"keystore.password":"fixture-secret"}"#).unwrap();
     }
 
     #[test]

@@ -100,7 +100,7 @@ Out of scope:
   wiring, so query-string compatibility materialization is visible through
   `_nodes/stats` rather than disappearing into the source-eval route.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 31/31 tests and `zero_tests=0`, covering missing, readonly, locked,
+  with 32/32 tests and `zero_tests=0`, covering missing, readonly, locked,
   file-backed, and daemon-level data-path refusal/creation checks, bind,
   duplicate node-id, invalid address/port, explicit OpenSearch `-E` config-setting
   rejection with the Steelsearch flag/env-var contract, role/bootstrap,
@@ -111,10 +111,13 @@ Out of scope:
   role mismatch rejection, invalid bootstrap file-content redaction, and the
   shared users-file subject parser including service-account-only
   authentication-users-file acceptance and malformed authentication-users-file
-  rejection, runtime security enforcement env-var refusal when
+  rejection, secure-settings-file JSON-object validation with secret redaction,
+  runtime security enforcement env-var refusal when
   `STEELSEARCH_SECURITY_ENABLED=true` is not set, production policy promotion
   for the authentication, authorization, and audit-logging boundaries once
-  runtime security and valid authentication subjects are present,
+  runtime security and valid authentication subjects are present, and
+  production policy promotion for secure settings once runtime security and a
+  valid secure-settings file are present,
   production-mode gate, secure multi-node TLS handshake matrix fixture
   validation, and daemon-level data-path / occupied-port refusal cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17

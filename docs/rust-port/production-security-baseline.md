@@ -34,12 +34,14 @@ after the actual enforcement code is present.
 `ReleaseReadinessChecklist` separately keeps benchmark, load, chaos, packaging,
 and rolling-upgrade evidence out of the security-boundary state.
 Production startup preflight now also requires bootstrap material paths for
-HTTP TLS certificate/key, transport TLS certificate/key, and an authentication
-users file. The authentication users file must be valid JSON with at least one
-user or service-account subject, password/password-hash or token/token-hash
-material, and at least one role. Supplying readable and structurally valid files
-clears only the bootstrap-material blockers. Production startup preflight also
-requires `STEELSEARCH_SECURITY_ENABLED=true` so the runtime authentication and
+HTTP TLS certificate/key, transport TLS certificate/key, an authentication
+users file, and a secure-settings file. The authentication users file must be
+valid JSON with at least one user or service-account subject,
+password/password-hash or token/token-hash material, and at least one role. The
+secure-settings file must be a non-empty JSON object with non-empty setting
+keys. Supplying readable and structurally valid files clears only the
+bootstrap-material blockers. Production startup preflight also requires
+`STEELSEARCH_SECURITY_ENABLED=true` so the runtime authentication and
 authorization path is explicitly enabled before production mode can pass the
 security category. The users-file subject parser lives in `os-node-rest-core`
 so startup preflight and future runtime authentication can share the same
@@ -146,9 +148,10 @@ enforcement removes only the satisfied blockers. Startup preflight also has
 fixtures for missing, present, and malformed TLS bootstrap material, including
 PEM-marker certificate/key validation and certificate/private-key role mismatch
 rejection, plus invalid bootstrap file-content redaction, user-backed and
-service-account-only authentication-users-file acceptance, and malformed
+service-account-only authentication-users-file acceptance, malformed
 authentication-users-file rejection through the shared users-file subject
-parser. It also now refuses production mode when the runtime security
+parser, and secure-settings-file JSON-object validation. It also now refuses
+production mode when the runtime security
 enforcement switch `STEELSEARCH_SECURITY_ENABLED=true` is absent, even if the
 TLS and authentication-users bootstrap files are structurally valid. Runtime
 security-profile env credentials and
@@ -159,8 +162,10 @@ of falling back to env credentials.
 When runtime security is enabled and the production authentication users file
 is valid, startup preflight now derives the production security policy from
 that concrete state and removes the authentication, authorization, and
-audit-logging blockers while keeping HTTP TLS, transport TLS, tenant isolation,
-secure settings, and release checklist blockers fail-closed.
+audit-logging blockers. When runtime security is enabled and the production
+secure-settings file is valid, it also removes the secure-settings blocker.
+HTTP TLS, transport TLS, tenant isolation, and release checklist blockers remain
+fail-closed until their concrete enforcement evidence is wired into the policy.
 The startup-preflight gate also validates the secure multi-node TLS handshake
 matrix fixture so success, client-certificate success, wrong-CA rejection, and
 expired-certificate rejection buckets remain present while the concrete TLS
