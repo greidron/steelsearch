@@ -209,18 +209,20 @@ Current Steelsearch evidence:
   task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
-  2026-06-17 with 5/5 tests and `zero_tests=0`, covering runtime task queue
+  2026-06-17 with 6/6 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
   cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
-  thread-pool routes, including cat thread-pool node rows derived from
+  thread-pool routes, including empty, non-empty, and terminal-drained queue
+  visibility transitions, cat thread-pool node rows derived from
   node-specific queued/in-flight runtime task state, queued cancellation state
   versus in-flight execution visibility, queued-cancelled worker drain into
   terminal readback without pending-depth pollution, and multi-node
   queued/in-flight task visibility with remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 17/17 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 18/18 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
-  state plus search/write thread-pool completion counters derived from real
+  state, including empty, non-empty, and terminal-drained queue visibility
+  transitions, plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
   active-slot queue waiting/drain under concurrent search/write requests,
   independent mixed search/maintenance and write/maintenance backlog drain,

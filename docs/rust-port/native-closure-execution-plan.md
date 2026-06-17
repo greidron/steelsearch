@@ -131,18 +131,20 @@ Out of scope:
   partial shared-state recovery error task-listing/cancel continuity, and cancel requests accepted during the
   per-request shared-runtime sync window after restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
-  with 5/5 tests and `zero_tests=0`, covering runtime task queue metadata plus
+  with 6/6 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
   tasks, cat pending tasks, cat thread-pool, and node-stats thread-pool routes,
-  including cat thread-pool node rows derived from node-specific queued/in-flight
-  runtime task state, queued cancellation state versus in-flight execution
-  visibility, queued-cancelled worker drain into terminal readback without
-  pending-depth pollution, and multi-node queued/in-flight task visibility with
-  remote node metadata.
+  including empty, non-empty, and terminal-drained queue visibility transitions,
+  cat thread-pool node rows derived from node-specific queued/in-flight runtime
+  task state, queued cancellation state versus in-flight execution visibility,
+  queued-cancelled worker drain into terminal readback without pending-depth
+  pollution, and multi-node queued/in-flight task visibility with remote node
+  metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
-  2026-06-17 with 17/17 tests and `zero_tests=0`, covering administrative
+  2026-06-17 with 18/18 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
-  state plus search/write thread-pool completion counters derived from real
+  state including empty, non-empty, and terminal-drained queue visibility
+  transitions, plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths,
   active-slot queue waiting/drain under concurrent search/write requests,
   independent mixed search/maintenance and write/maintenance backlog drain,
@@ -351,13 +353,15 @@ Validation runner:
   per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
-  depth, pending-task metadata, pending-task cancellation visibility,
+  depth, empty/non-empty/terminal-drained queue visibility transitions,
+  pending-task metadata, pending-task cancellation visibility,
   node-specific cat thread-pool management telemetry, and multi-node remote task
   metadata visibility as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   administrative and search/write workload thread-pool telemetry plus
-  active-slot queue waiting/drain, independent mixed search/maintenance and
+  empty/non-empty/terminal-drained queue visibility transitions, active-slot
+  queue waiting/drain, independent mixed search/maintenance and
   write/maintenance backlog drain, remote task backlog admission isolation for
   task-submission, local search/write routes, and local
   maintenance/snapshot/cluster-manager control-plane routes, queue-full rejection, and

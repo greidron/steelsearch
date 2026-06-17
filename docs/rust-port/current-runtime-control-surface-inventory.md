@@ -214,13 +214,12 @@ internal subsystems, especially:
 | Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, mixed search/maintenance and write/maintenance backlog drain independently, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal, accepted queued task-submission no-replay after shared-runtime restart and partial shared-state recovery errors, partial-recovery task-submission refusal, live-shutdown task-submission refusal, partial shared-state recovery error task-listing/cancel continuity, multi-node queued/in-flight task visibility with remote node metadata, remote task backlog admission isolation for task-submission, local search/write, and local maintenance/snapshot/cluster-manager control-plane routes, and local overload counter isolation from remote task metadata are covered, while live multi-node fairness contracts are still missing |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
-| Queue visibility | `pending_tasks` surfaces exist and now preserve remote node metadata for multi-node queued/in-flight task records, local task submission remains admissible under remote-only backlog, and `_nodes/stats` no longer copies local overload counters onto remote nodes, but the production mapping between visible entries and real internal queue owners remains bounded |
+| Queue visibility | `pending_tasks` surfaces exist and now distinguish empty, non-empty, and terminal-drained runtime queues, preserve remote node metadata for multi-node queued/in-flight task records, local task submission remains admissible under remote-only backlog, and `_nodes/stats` no longer copies local overload counters onto remote nodes, but the production mapping between visible entries and real internal queue owners remains bounded |
 | Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, accepted queued task-submission work is not replayed into a restarted runtime view or during partial shared-state recovery errors, and new task-submission admission is refused while partial shared-state recovery is incomplete or live shutdown is in progress; node-role transitions remain open |
 
 ### Required tests
 
 - add fixture-backed distinction for:
-  - empty queue versus non-empty queue visibility;
   - queued reroute/maintenance work versus immediately executed work;
   - overload refusal versus accepted-but-pending behavior.
 - add harness coverage for:

@@ -36197,6 +36197,211 @@ mod tests {
     }
 
     #[test]
+    fn empty_and_non_empty_runtime_queue_visibility_transitions_are_distinct() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        assert_runtime_queue_visibility(
+            &node,
+            0,
+            0,
+            0,
+            &[],
+            "empty runtime queue should stay invisible as pending work",
+        );
+
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 631,
+                task: ClusterManagerTask {
+                    source: "queued visibility transition probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 632,
+                task: ClusterManagerTask {
+                    source: "in-flight visibility transition probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "maintenance-refresh".to_string(),
+                        action: "indices:admin/refresh".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        assert_runtime_queue_visibility(
+            &node,
+            2,
+            1,
+            1,
+            &["node-a:631", "node-a:632"],
+            "non-empty runtime queue should surface queued and in-flight work",
+        );
+
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            acknowledged: vec![ClusterManagerTaskRecord {
+                task_id: 631,
+                task: ClusterManagerTask {
+                    source: "queued visibility transition probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Acknowledged,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            failed: vec![ClusterManagerTaskRecord {
+                task_id: 632,
+                task: ClusterManagerTask {
+                    source: "in-flight visibility transition probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "maintenance-refresh".to_string(),
+                        action: "indices:admin/refresh".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Failed,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: Some("simulated drain failure".to_string()),
+            }],
+            ..Default::default()
+        });
+
+        assert_runtime_queue_visibility(
+            &node,
+            0,
+            0,
+            0,
+            &["node-a:631", "node-a:632"],
+            "terminal records should remain task-visible without pending depth",
+        );
+    }
+
+    fn assert_runtime_queue_visibility(
+        node: &SteelNode,
+        expected_pending: usize,
+        expected_active: u64,
+        expected_queued: u64,
+        expected_task_ids: &[&str],
+        context: &str,
+    ) {
+        let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200, "{context}");
+        assert_eq!(
+            health.body["number_of_pending_tasks"],
+            serde_json::json!(expected_pending),
+            "{context}"
+        );
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200, "{context}");
+        assert_eq!(
+            pending.body["tasks"]
+                .as_array()
+                .expect("pending tasks array")
+                .len(),
+            expected_pending,
+            "{context}"
+        );
+
+        let mut cat_pending = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        cat_pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_pending = node.handle_rest_request(cat_pending);
+        assert_eq!(cat_pending.status, 200, "{context}");
+        assert_eq!(
+            cat_pending
+                .body
+                .as_array()
+                .expect("cat pending tasks array")
+                .len(),
+            expected_pending,
+            "{context}"
+        );
+
+        let mut cat_thread_pool =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/management");
+        cat_thread_pool
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_thread_pool = node.handle_rest_request(cat_thread_pool);
+        assert_eq!(cat_thread_pool.status, 200, "{context}");
+        let thread_pool_rows = cat_thread_pool
+            .body
+            .as_array()
+            .expect("cat thread pool rows");
+        assert_eq!(thread_pool_rows.len(), 1, "{context}");
+        assert_eq!(
+            thread_pool_rows[0]["active"],
+            Value::String(expected_active.to_string()),
+            "{context}"
+        );
+        assert_eq!(
+            thread_pool_rows[0]["queue"],
+            Value::String(expected_queued.to_string()),
+            "{context}"
+        );
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200, "{context}");
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["management"]["active"],
+            serde_json::json!(expected_active),
+            "{context}"
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["management"]["queue"],
+            serde_json::json!(expected_queued),
+            "{context}"
+        );
+
+        let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks.status, 200, "{context}");
+        let task_map = tasks.body["nodes"]["node-a"]["tasks"].as_object();
+        for task_id in expected_task_ids {
+            let task_map = task_map.expect("task map");
+            assert!(task_map.contains_key(*task_id), "{context}: missing {task_id}");
+        }
+        if expected_task_ids.is_empty() {
+            assert!(task_map.map_or(true, |tasks| tasks.is_empty()), "{context}");
+        }
+    }
+
+    #[test]
     fn multi_node_task_queue_visibility_uses_remote_node_metadata() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node-a".to_string(),

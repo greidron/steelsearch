@@ -718,6 +718,13 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "empty_and_non_empty_runtime_queue_visibility_transitions_are_distinct",
+        "task-queue-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "multi_node_task_queue_visibility_uses_remote_node_metadata",
         "task-queue-runtime-state",
         package="os-node",
@@ -743,6 +750,13 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
 RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "cluster_health_tasks_and_cat_pending_tasks_share_runtime_queue_depth",
+        "route-backpressure-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "empty_and_non_empty_runtime_queue_visibility_transitions_are_distinct",
         "route-backpressure-runtime-state",
         package="os-node",
         target=("--lib",),
