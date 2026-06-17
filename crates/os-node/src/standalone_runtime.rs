@@ -9174,6 +9174,10 @@ impl SteelNode {
                 }),
             );
         };
+        let _thread_pool = match self.enter_runtime_thread_pool("task_submission", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
 
         let resolved_dest = match self.resolve_write_target(dest_index, true) {
             Ok(index) => index,
@@ -9253,6 +9257,10 @@ impl SteelNode {
     }
 
     fn handle_delete_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("task_submission", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
         let mut deleted = 0_u64;
@@ -9305,6 +9313,10 @@ impl SteelNode {
     }
 
     fn handle_update_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("task_submission", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
         let mut total = 0_u64;
@@ -11400,6 +11412,7 @@ impl SteelNode {
         let maintenance = self.runtime_thread_pool_counters("maintenance");
         let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
+        let task_submission = self.runtime_thread_pool_counters("task_submission");
         let write = self.runtime_thread_pool_counters("write");
         serde_json::json!({
             "management": {
@@ -11436,6 +11449,13 @@ impl SteelNode {
                 "active": search.active,
                 "rejected": search.rejected,
                 "completed": search.completed
+            },
+            "task_submission": {
+                "threads": 1,
+                "queue": task_submission.queue,
+                "active": task_submission.active,
+                "rejected": task_submission.rejected,
+                "completed": task_submission.completed
             },
             "write": {
                 "threads": 1,
@@ -14195,6 +14215,7 @@ impl SteelNode {
         let maintenance = self.runtime_thread_pool_counters("maintenance");
         let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
+        let task_submission = self.runtime_thread_pool_counters("task_submission");
         let write = self.runtime_thread_pool_counters("write");
         let mut rows = vec![
             serde_json::json!({
@@ -14238,6 +14259,30 @@ impl SteelNode {
                 "rejected": cluster_manager.rejected.to_string(),
                 "largest": "1",
                 "completed": cluster_manager.completed.to_string(),
+                "total_wait_time": "0ms",
+                "core": "",
+                "max": "",
+                "size": "1",
+                "keep_alive": "",
+                "parallelism": ""
+            }),
+            serde_json::json!({
+                "node_name": self.info.name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "task_submission",
+                "type": "fixed",
+                "active": task_submission.active.to_string(),
+                "pool_size": "1",
+                "queue": task_submission.queue.to_string(),
+                "queue_size": "1000",
+                "rejected": task_submission.rejected.to_string(),
+                "largest": "1",
+                "completed": task_submission.completed.to_string(),
                 "total_wait_time": "0ms",
                 "core": "",
                 "max": "",
@@ -21744,7 +21789,7 @@ mod tests {
                 .as_array()
                 .expect("cat thread_pool array")
                 .len(),
-            6
+            7
         );
 
         let mut thread_pool_text_request =
@@ -31575,6 +31620,137 @@ mod tests {
         assert_eq!(first_node["thread_pool"]["cluster_manager"]["queue"], 1000);
         assert_eq!(first_node["thread_pool"]["cluster_manager"]["rejected"], 1);
         assert_eq!(first_node["thread_pool"]["cluster_manager"]["completed"], 1);
+    }
+
+    #[test]
+    fn task_submission_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        for index in ["task-submit-source", "task-submit-dest"] {
+            let create = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_json_body(serde_json::json!({})),
+            );
+            assert_eq!(create.status, 200);
+        }
+        let put_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/task-submit-source/_doc/doc-1")
+                .with_json_body(serde_json::json!({"message": "delete me"})),
+        );
+        assert_eq!(put_doc.status, 201);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_delete_node = node.clone();
+        let queued_delete = std::thread::spawn(move || {
+            queued_delete_node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/task-submit-source/_delete_by_query")
+                    .with_json_body(serde_json::json!({
+                        "query": {"match_all": {}}
+                    })),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "task_submission", 1);
+
+        let stats_while_queued =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_queued.status, 200);
+        let first_node = stats_while_queued.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["task_submission"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["completed"], 0);
+
+        release_runtime_thread_pool_active_slot(&node, "task_submission");
+        let delete = queued_delete
+            .join()
+            .expect("queued delete-by-query request thread should not panic");
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["deleted"], 1);
+
+        let mut cat_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/task_submission");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "task_submission");
+        assert_eq!(rows[0]["active"], "0");
+        assert_eq!(rows[0]["queue"], "0");
+        assert_eq!(rows[0]["completed"], "1");
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let rejected = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": {"index": "task-submit-source"},
+                "dest": {"index": "task-submit-dest"}
+            })),
+        );
+        assert_eq!(rejected.status, 429);
+        assert_eq!(
+            rejected.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let stats_after_reject =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_reject.status, 200);
+        let first_node = stats_after_reject.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["task_submission"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["queue"], 1000);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["task_submission"]["completed"], 1);
     }
 
     #[test]
