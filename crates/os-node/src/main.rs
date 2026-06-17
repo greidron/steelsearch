@@ -6779,6 +6779,7 @@ mod tests {
                 },
                 state: os_node::ClusterManagerTaskState::Queued,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
@@ -6791,6 +6792,7 @@ mod tests {
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             acknowledged: Vec::new(),
@@ -10310,6 +10312,7 @@ mod pending_tasks_live_route_parity_tests {
                 },
                 state: os_node::ClusterManagerTaskState::Queued,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
@@ -10322,6 +10325,7 @@ mod pending_tasks_live_route_parity_tests {
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             acknowledged: Vec::new(),
@@ -10400,6 +10404,10 @@ mod tasks_live_route_parity_tests {
                 },
                 state: os_node::ClusterManagerTaskState::Queued,
                 parent_task_id: Some("node-a:99".to_string()),
+                headers: BTreeMap::from([(
+                    "x-opaque-id".to_string(),
+                    "task-request-123".to_string(),
+                )]),
                 failure_reason: None,
             }],
             in_flight: vec![os_node::ClusterManagerTaskRecord {
@@ -10412,6 +10420,7 @@ mod tasks_live_route_parity_tests {
                 },
                 state: os_node::ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             acknowledged: Vec::new(),
@@ -10466,6 +10475,10 @@ mod tasks_live_route_parity_tests {
             .unwrap()
             .values()
             .any(|node_entry| node_entry["tasks"].as_object().is_some()));
+        assert_eq!(
+            list.body["nodes"]["node-a"]["tasks"]["node-a:1"]["headers"]["x-opaque-id"],
+            serde_json::json!("task-request-123")
+        );
 
         let get = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
@@ -10478,6 +10491,10 @@ mod tasks_live_route_parity_tests {
             get.body["task"]["parent_task_id"],
             serde_json::json!("node-a:99")
         );
+        assert_eq!(
+            get.body["task"]["headers"]["x-opaque-id"],
+            serde_json::json!("task-request-123")
+        );
 
         let cancel = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Post,
@@ -10487,6 +10504,10 @@ mod tasks_live_route_parity_tests {
         assert_eq!(
             cancel.body["nodes"]["node-a"]["tasks"]["node-a:1"]["cancelled"],
             serde_json::json!(true)
+        );
+        assert_eq!(
+            cancel.body["nodes"]["node-a"]["tasks"]["node-a:1"]["headers"]["x-opaque-id"],
+            serde_json::json!("task-request-123")
         );
         assert!(cancel.body["node_failures"].is_array());
         let cancelled_get = node.handle_rest_request(os_rest::RestRequest::new(

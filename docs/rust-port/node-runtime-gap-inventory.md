@@ -197,6 +197,10 @@ Current Steelsearch evidence:
   on 2026-06-17 with 3/3 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
   bounded task route surface;
+- `tools/run-native-closure-validation.py --batch runtime-task-headers` passed
+  on 2026-06-17 with 2/2 tests and `zero_tests=0`, covering persisted
+  `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
+  task cancellation, and `_cat/tasks` JSON rows;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 
@@ -208,8 +212,8 @@ Required next implementation direction:
 
 Required tests:
 
-- extend the current task cancellation, throttling, and parent metadata probes
-  into broader child-task and request-header propagation coverage;
+- extend the current task cancellation, throttling, parent metadata, and task
+  header probes into broader child-task propagation coverage;
 - extend queue/backpressure smoke tests from administrative task telemetry into
   search/write workloads;
 - telemetry probes that verify task and runtime status is not merely synthetic.

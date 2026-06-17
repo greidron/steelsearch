@@ -669,6 +669,8 @@ pub struct ClusterManagerTaskRecord {
     pub state: ClusterManagerTaskState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
     pub failure_reason: Option<String>,
 }
 
@@ -11184,7 +11186,7 @@ impl SteelNode {
                         "parent_task_id": record.parent_task_id.unwrap_or_else(|| "-".to_string()),
                         "cancellable": cancellable,
                         "cancelled": cancelled,
-                        "headers": {},
+                        "headers": record.headers,
                         "insert_order": record.task_id,
                         "priority": "URGENT",
                         "source": record.task.source,
@@ -13867,7 +13869,11 @@ impl SteelNode {
                     "port": "9300",
                     "node": self.info.name.clone(),
                     "version": "3.7.0",
-                    "x_opaque_id": "-",
+                    "x_opaque_id": task
+                        .get("headers")
+                        .and_then(|headers| headers.get("x-opaque-id"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("-"),
                     "description": task.get("source").and_then(Value::as_str).unwrap_or(""),
                     "resource_stats": ""
                 })
@@ -21025,6 +21031,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::Queued,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             ..Default::default()
@@ -21369,6 +21376,10 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::Queued,
                 parent_task_id: Some("node-a:1".to_string()),
+                headers: BTreeMap::from([(
+                    "x-opaque-id".to_string(),
+                    "cat-task-request-1".to_string(),
+                )]),
                 failure_reason: None,
             }],
             ..Default::default()
@@ -21382,6 +21393,7 @@ mod tests {
         assert_eq!(tasks_json_response.status, 200);
         assert_eq!(tasks_json_response.body[0]["action"], "cluster:admin/reroute");
         assert_eq!(tasks_json_response.body[0]["parent_task_id"], "node-a:1");
+        assert_eq!(tasks_json_response.body[0]["x_opaque_id"], "cat-task-request-1");
 
         let mut tasks_text_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
         tasks_text_request
@@ -21917,6 +21929,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::Queued,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             in_flight: vec![ClusterManagerTaskRecord {
@@ -21927,6 +21940,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             ..Default::default()
@@ -21987,6 +22001,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::Queued,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             ..Default::default()
@@ -30468,6 +30483,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::Queued,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             in_flight: vec![ClusterManagerTaskRecord {
@@ -30478,6 +30494,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             ..Default::default()
@@ -30530,6 +30547,7 @@ mod tests {
                     },
                     state: ClusterManagerTaskState::Queued,
                     parent_task_id: None,
+                    headers: BTreeMap::new(),
                     failure_reason: None,
                 },
                 ClusterManagerTaskRecord {
@@ -30540,6 +30558,7 @@ mod tests {
                     },
                     state: ClusterManagerTaskState::Queued,
                     parent_task_id: None,
+                    headers: BTreeMap::new(),
                     failure_reason: None,
                 },
             ],
@@ -30551,6 +30570,7 @@ mod tests {
                 },
                 state: ClusterManagerTaskState::InFlight,
                 parent_task_id: None,
+                headers: BTreeMap::new(),
                 failure_reason: None,
             }],
             ..Default::default()

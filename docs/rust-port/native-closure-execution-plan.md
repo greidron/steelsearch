@@ -76,6 +76,10 @@ Out of scope:
   2026-06-17 with 3/3 tests and `zero_tests=0`, covering runtime parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
   bounded task route surface.
+- The same runner now has a `runtime-task-headers` batch. It passed on
+  2026-06-17 with 2/2 tests and `zero_tests=0`, covering persisted
+  `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
+  task cancellation, and `_cat/tasks` JSON rows.
 
 ## Workstreams
 
@@ -179,6 +183,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
   report `failed_count == 0` and `zero_test_count == 0` before treating parent
   task metadata and cat task readback as runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch runtime-task-headers` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating task
+  request-header readback as runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -220,7 +227,8 @@ Initial targets:
    mode settings. Guarded batch evidence now exists for this slice;
 2. task registry model with cancellation and parent/child metadata. Runtime
    mutation evidence now exists for bounded cancellation/readback and by-query
-   rethrottle/readback; parent task metadata readback now has guarded coverage;
+   rethrottle/readback; parent task metadata and task header readback now have
+   guarded coverage;
 3. queue/backpressure smoke tests for search/write/admin routes. Runtime queue
    depth evidence now exists for cluster-manager task visibility and
    administrative thread-pool telemetry;
