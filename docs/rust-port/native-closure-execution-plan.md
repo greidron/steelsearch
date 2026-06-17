@@ -91,7 +91,7 @@ Out of scope:
   cache bypass counters for hybrid vector, unsupported vector, highlight, and
   explain request surfaces.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 25/25 tests and `zero_tests=0`, covering data-path, bind, duplicate
+  with 26/26 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, explicit OpenSearch `-E` config-setting
   rejection with the Steelsearch flag/env-var contract, role/bootstrap,
   structured production
@@ -100,7 +100,8 @@ Out of scope:
   role mismatch rejection, invalid bootstrap file-content redaction, and the
   shared users-file subject parser including service-account-only
   authentication-users-file acceptance and malformed authentication-users-file
-  rejection,
+  rejection, runtime security enforcement env-var refusal when
+  `STEELSEARCH_SECURITY_ENABLED=true` is not set,
   production-mode gate, and daemon-level data-path / occupied-port refusal
   cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
@@ -347,8 +348,9 @@ Validation runner:
   gate, including explicit OpenSearch `-E` config-setting rejection, PEM-marker
   TLS bootstrap material, certificate/private-key role mismatch rejection,
   invalid bootstrap file-content redaction, authn bootstrap material,
-  service-account-only authn bootstrap material, and malformed users-file
-  checks, as runtime-control evidence.
+  service-account-only authn bootstrap material, malformed users-file checks,
+  and runtime security enforcement env-var refusal, as runtime-control
+  evidence.
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate
@@ -576,10 +578,11 @@ security boundaries or explicit fail-closed compatibility decisions.
 Initial targets:
 
 1. TLS bootstrap policy and certificate validation fixtures;
-2. authentication subject model for users and service accounts;
-3. role and index permission evaluator;
-4. audit log entries for allowed and denied sensitive operations;
-5. redaction tests for responses, logs, readiness, snapshots, and migration
+2. production startup refusal unless runtime security enforcement is enabled;
+3. authentication subject model for users and service accounts;
+4. role and index permission evaluator;
+5. audit log entries for allowed and denied sensitive operations;
+6. redaction tests for responses, logs, readiness, snapshots, and migration
    manifests.
 
 Current narrowed fail-closed evidence:
@@ -591,6 +594,8 @@ Current narrowed fail-closed evidence:
 Exit evidence:
 
 - secure standalone harness passes authn/authz and redaction fixtures;
+- production startup preflight refuses runtime security-disabled production
+  mode even when TLS/authn bootstrap material is present;
 - production mode starts only when every required security boundary is
   `Enforced`;
 - unsupported OpenSearch Security plugin APIs fail closed with documented

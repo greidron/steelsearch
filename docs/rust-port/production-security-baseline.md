@@ -36,9 +36,12 @@ HTTP TLS certificate/key, transport TLS certificate/key, and an authentication
 users file. The authentication users file must be valid JSON with at least one
 user or service-account subject, password/password-hash or token/token-hash
 material, and at least one role. Supplying readable and structurally valid files
-clears only the bootstrap-material blockers. The users-file subject parser
-lives in `os-node-rest-core` so startup preflight and future runtime
-authentication can share the same schema.
+clears only the bootstrap-material blockers. Production startup preflight also
+requires `STEELSEARCH_SECURITY_ENABLED=true` so the runtime authentication and
+authorization path is explicitly enabled before production mode can pass the
+security category. The users-file subject parser lives in `os-node-rest-core`
+so startup preflight and future runtime authentication can share the same
+schema.
 Production remains fail-closed until the corresponding enforcement boundaries
 are moved to `Enforced` and the release checklist is complete.
 
@@ -142,7 +145,10 @@ PEM-marker certificate/key validation and certificate/private-key role mismatch
 rejection, plus invalid bootstrap file-content redaction, user-backed and
 service-account-only authentication-users-file acceptance, and malformed
 authentication-users-file rejection through the shared users-file subject
-parser. Runtime security-profile env credentials and
+parser. It also now refuses production mode when the runtime security
+enforcement switch `STEELSEARCH_SECURITY_ENABLED=true` is absent, even if the
+TLS and authentication-users bootstrap files are structurally valid. Runtime
+security-profile env credentials and
 `SECURITY_AUTHENTICATION_USERS_FILE` credentials for users and service accounts
 are also loaded through that shared subject model before route-level Basic auth
 and role checks; unreadable or malformed runtime users files fail closed instead

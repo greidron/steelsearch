@@ -138,13 +138,15 @@ Current Steelsearch evidence:
 
 - production mode is explicitly gated and can fail closed;
 - `tools/run-native-closure-validation.py --batch startup-preflight` passed on
-  2026-06-17 with 25/25 tests and `zero_tests=0`, covering structured
+  2026-06-17 with 26/26 tests and `zero_tests=0`, covering structured
   production security/release policy gates, production security bootstrap
   material through the shared users-file subject parser including malformed
-  authentication-users-file rejection, plus config-level and daemon-level
-  data-path, bind, duplicate node-id, invalid address/port, explicit
-  OpenSearch `-E` config-setting rejection with the Steelsearch flag/env-var
-  contract, role/bootstrap, and production-mode refusal cases;
+  authentication-users-file rejection, runtime security enforcement env-var
+  refusal when `STEELSEARCH_SECURITY_ENABLED=true` is not set, plus
+  config-level and daemon-level data-path, bind, duplicate node-id, invalid
+  address/port, explicit OpenSearch `-E` config-setting rejection with the
+  Steelsearch flag/env-var contract, role/bootstrap, and production-mode
+  refusal cases;
 - `tools/run-native-closure-validation.py --batch startup-readiness` passed on
   2026-06-17 with 3/3 tests and `zero_tests=0`, covering shared startup
   preflight and readiness blocker reasons for concrete filesystem refusal plus

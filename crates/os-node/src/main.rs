@@ -4336,6 +4336,7 @@ struct DaemonConfig {
     roles: Vec<String>,
     mode: DaemonMode,
     development_security_mode: DevelopmentSecurityMode,
+    production_security_runtime_enforcement_enabled: bool,
     production_security_bootstrap: ProductionSecurityBootstrapConfig,
     java_write_forwarding_validated: bool,
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
@@ -4607,6 +4608,8 @@ where
         .map(|value| parse_development_security_mode(value))
         .transpose()?
         .unwrap_or(DevelopmentSecurityMode::Disabled);
+    let production_security_runtime_enforcement_enabled =
+        parse_bool_env(vars, "STEELSEARCH_SECURITY_ENABLED")?.unwrap_or(false);
     let mut production_security_bootstrap = ProductionSecurityBootstrapConfig {
         http_tls_certificate_path: vars
             .get("STEELSEARCH_HTTP_TLS_CERTIFICATE")
@@ -4799,6 +4802,7 @@ where
         roles,
         mode,
         development_security_mode,
+        production_security_runtime_enforcement_enabled,
         production_security_bootstrap,
         java_write_forwarding_validated,
         seed_peer_identity,
@@ -5054,6 +5058,9 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         }
     }
     if config.mode == DaemonMode::Production {
+        blockers.extend(production_security_runtime_enforcement_blockers(
+            config.production_security_runtime_enforcement_enabled,
+        ));
         blockers.extend(production_security_bootstrap_blockers(
             &config.production_security_bootstrap,
         ));
@@ -5065,6 +5072,17 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
         }
     }
     blockers
+}
+
+fn production_security_runtime_enforcement_blockers(enabled: bool) -> Vec<String> {
+    if enabled {
+        Vec::new()
+    } else {
+        vec![
+            "[security] production runtime security enforcement must be enabled with STEELSEARCH_SECURITY_ENABLED=true"
+                .to_string(),
+        ]
+    }
 }
 
 fn production_security_bootstrap_blockers(
@@ -6030,6 +6048,7 @@ Environment:\n\
   STEELSEARCH_NODE_ID, STEELSEARCH_NODE_NAME, STEELSEARCH_NODE_ROLES,\n\
   STEELSEARCH_CLUSTER_NAME, STEELSEARCH_DISCOVERY_SEED_HOSTS,\n\
   STEELSEARCH_DATA_PATH, STEELSEARCH_DEVELOPMENT_SECURITY_MODE,\n\
+  STEELSEARCH_SECURITY_ENABLED,\n\
   STEELSEARCH_HTTP_TLS_CERTIFICATE, STEELSEARCH_HTTP_TLS_PRIVATE_KEY,\n\
   STEELSEARCH_TRANSPORT_TLS_CERTIFICATE, STEELSEARCH_TRANSPORT_TLS_PRIVATE_KEY,\n\
   STEELSEARCH_AUTHENTICATION_USERS_FILE,\n\
@@ -6058,6 +6077,7 @@ mod tests {
             roles: default_roles(),
             mode: DaemonMode::Development,
             development_security_mode: DevelopmentSecurityMode::Disabled,
+            production_security_runtime_enforcement_enabled: false,
             production_security_bootstrap: ProductionSecurityBootstrapConfig::default(),
             java_write_forwarding_validated: false,
             seed_peer_identity: None,
@@ -6166,6 +6186,10 @@ mod tests {
                 "STEELSEARCH_ENABLE_ML_COMMONS".to_string(),
                 "true".to_string(),
             ),
+            (
+                "STEELSEARCH_SECURITY_ENABLED".to_string(),
+                "true".to_string(),
+            ),
         ]);
 
         let config = daemon_config_from_sources(&vars, std::iter::empty()).unwrap();
@@ -6180,6 +6204,7 @@ mod tests {
             config.development_security_mode,
             DevelopmentSecurityMode::Disabled
         );
+        assert!(config.production_security_runtime_enforcement_enabled);
         assert!(!config.java_write_forwarding_validated);
         assert!(!config.extension_registry.knn_plugin_enabled);
         assert!(config.extension_registry.ml_commons_enabled);
@@ -6723,6 +6748,55 @@ mod tests {
         assert!(readiness.blockers.iter().any(|blocker| {
             blocker == "[security] production authentication users file is required"
         }));
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker
+                == "[security] production runtime security enforcement must be enabled with STEELSEARCH_SECURITY_ENABLED=true"
+        }));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[production]")));
+    }
+
+    #[test]
+    fn production_startup_preflight_requires_runtime_security_enforcement() {
+        let path = unique_test_path("steelsearch-production-security-runtime-disabled-data");
+        let material_root =
+            unique_test_path("steelsearch-production-security-runtime-disabled-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        fs::write(
+            &users,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
+        )
+        .unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+        };
+
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(readiness.blockers.iter().any(|blocker| {
+            blocker
+                == "[security] production runtime security enforcement must be enabled with STEELSEARCH_SECURITY_ENABLED=true"
+        }));
+        assert!(readiness
+            .blockers
+            .iter()
+            .all(|blocker| !blocker.contains("TLS certificate is required")));
         assert!(readiness
             .blockers
             .iter()
@@ -6747,6 +6821,7 @@ mod tests {
         .unwrap();
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
+        config.production_security_runtime_enforcement_enabled = true;
         config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
             http_tls_certificate_path: Some(http_cert),
             http_tls_private_key_path: Some(http_key),
@@ -6782,6 +6857,7 @@ mod tests {
     fn production_startup_preflight_accepts_service_account_only_authentication_users_file() {
         let readiness = production_readiness_with_authentication_users_fixture(
             br#"{"service_accounts":[{"name":"svc-indexer","token_hash":"fixture-token-hash","roles":["writer"]}]}"#,
+            true,
         );
 
         assert!(!readiness.ready);
@@ -6988,7 +7064,7 @@ mod tests {
 
     #[test]
     fn production_startup_preflight_rejects_empty_authentication_users_file() {
-        let readiness = production_readiness_with_authentication_users_fixture(b"");
+        let readiness = production_readiness_with_authentication_users_fixture(b"", false);
 
         assert!(readiness.blockers.iter().any(|blocker| {
             blocker.starts_with("[security] production authentication users file is invalid")
@@ -6998,7 +7074,7 @@ mod tests {
 
     #[test]
     fn production_startup_preflight_rejects_malformed_authentication_users_file() {
-        let readiness = production_readiness_with_authentication_users_fixture(b"not-json");
+        let readiness = production_readiness_with_authentication_users_fixture(b"not-json", false);
 
         assert!(readiness.blockers.iter().any(|blocker| {
             blocker.starts_with("[security] production authentication users file is invalid")
@@ -7010,6 +7086,7 @@ mod tests {
     fn production_startup_preflight_rejects_authentication_users_without_roles() {
         let readiness = production_readiness_with_authentication_users_fixture(
             br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":[]}]}"#,
+            false,
         );
 
         assert!(readiness.blockers.iter().any(|blocker| {
@@ -7020,6 +7097,7 @@ mod tests {
 
     fn production_readiness_with_authentication_users_fixture(
         users_fixture: &[u8],
+        runtime_security_enabled: bool,
     ) -> StartupReadinessReport {
         let path = unique_test_path("steelsearch-production-security-invalid-users-data");
         let material_root = unique_test_path("steelsearch-production-security-invalid-users-material");
@@ -7033,6 +7111,7 @@ mod tests {
         fs::write(&users, users_fixture).unwrap();
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
+        config.production_security_runtime_enforcement_enabled = runtime_security_enabled;
         config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
             http_tls_certificate_path: Some(http_cert),
             http_tls_private_key_path: Some(http_key),
