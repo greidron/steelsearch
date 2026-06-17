@@ -89,7 +89,7 @@ internal subsystems, especially:
 | Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, cancelled-task completion plus partial-progress status readback until eviction, cancelled-terminal restart-sync/live-shutdown/node-role-transition refusal with progress preservation, and acknowledged/failed terminal readback across node-role transition |
 | Queue interaction | queued cancellation state, in-flight refusal, and queued-cancelled worker drain into terminal readback are visible through task and pending-task routes, including active queued/in-flight node-role-transition cancellation/refusal; broader worker-owned drain/refusal ordering is still bounded |
-| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves cancelled-terminal progress when cancel is refused after restart sync, live shutdown, or node-role transition, preserves active queued/in-flight task cancellation/refusal across node-role transition, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart |
+| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves cancelled-terminal progress when cancel is refused after restart sync, live shutdown, or node-role transition, preserves active queued/in-flight task cancellation/refusal across node-role transition and restart-smoke reload, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart |
 | Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, completion-race terminal refusal without cancelled-marker pollution, and cancelled-terminal restart-sync/live-shutdown/node-role-transition refusal exist |
 
 ### Required tests
@@ -115,7 +115,8 @@ internal subsystems, especially:
    ownership do not stay conflated.
 2. document queue/backpressure semantics separately so queued-task cancellation
    has a clear owner.
-3. add restart-smoke backlog entries once the node restart harness exists.
+3. extend restart-smoke backlog entries from shared-runtime harness coverage
+   toward daemon-level worker drain contracts.
 
 ## Throttling Lifecycle Gap
 
@@ -177,7 +178,8 @@ internal subsystems, especially:
    admission-control behavior instead of only route-level envelopes.
 2. document maintenance task lifecycle separately so background work that is not
    task-id-addressable has an explicit owner.
-3. add restart-smoke backlog entries once the node restart harness exists.
+3. extend restart-smoke backlog entries from shared-runtime harness coverage
+   toward daemon-level throttle scheduler ownership.
 
 ## Queue / Backpressure Gap
 
@@ -215,14 +217,13 @@ internal subsystems, especially:
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist and now distinguish empty, non-empty, and terminal-drained runtime queues, preserve remote node metadata for multi-node queued/in-flight task records, local task submission remains admissible under remote-only backlog, and `_nodes/stats` no longer copies local overload counters onto remote nodes, but the production mapping between visible entries and real internal queue owners remains bounded |
-| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, accepted queued task-submission work is not replayed into a restarted runtime view or during partial shared-state recovery errors, and new task-submission admission is refused while partial shared-state recovery is incomplete or live shutdown is in progress; node-role transitions remain open |
+| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, accepted queued task-submission work is not replayed into a restarted runtime view or during partial shared-state recovery errors, new task-submission admission is refused while partial shared-state recovery is incomplete or live shutdown is in progress, and active queued/in-flight node-role transition visibility/refusal survives restart-smoke reload |
 
 ### Required tests
 
 - add harness coverage for:
   - broader daemon-level pending-task visibility beyond bounded route admission
     guards.
-- add restart-smoke coverage for node-role transitions.
 
 ### Required implementation
 

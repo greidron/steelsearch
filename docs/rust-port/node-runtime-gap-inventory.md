@@ -187,7 +187,7 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 21/21 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 22/22 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
   task readback, repeated cancel idempotency with post-cancel readback,
   parent-task-id child cancellation visibility including same-node, cross-node,
@@ -202,7 +202,8 @@ Current Steelsearch evidence:
   readback through restart until eviction, cancelled-terminal restart-sync,
   live-shutdown, and node-role-transition refusal with progress preservation,
   acknowledged/failed terminal readback across node-role transition, active
-  queued/in-flight node-role-transition cancellation/refusal, and
+  queued/in-flight node-role-transition cancellation/refusal and restart-smoke
+  reload, and
   shared-runtime restart readback for task queue state plus cancelled task ids,
   including accepted in-flight task readback/refusal without queued replay,
   partial shared-state recovery error

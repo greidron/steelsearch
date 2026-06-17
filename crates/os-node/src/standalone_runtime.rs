@@ -25683,6 +25683,179 @@ mod tests {
     }
 
     #[test]
+    fn node_role_transition_restart_smoke_preserves_queue_visibility_and_refusal() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        env::set_var("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-role-transition-restart-smoke-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut writer = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        writer.shared_runtime_state_path = Some(shared_state_path.clone());
+        writer.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *writer
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 571,
+                task: ClusterManagerTask {
+                    source: "queued role transition restart smoke".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 572,
+                task: ClusterManagerTask {
+                    source: "in-flight role transition restart smoke".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "maintenance-flush".to_string(),
+                        action: "indices:admin/flush".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+        writer.persist_shared_runtime_state_to_disk();
+
+        let mut data_only = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        data_only.shared_runtime_state_path = Some(shared_state_path.clone());
+        data_only.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let queued_cancel = data_only.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:571/_cancel",
+        ));
+        assert_eq!(queued_cancel.status, 200);
+        assert_eq!(
+            queued_cancel.body["nodes"]["node-a"]["roles"],
+            serde_json::json!(["data"])
+        );
+        assert_eq!(
+            queued_cancel.body["nodes"]["node-a"]["tasks"]["node-a:571"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.cluster_view = data_only.cluster_view.clone();
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let tasks = restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks.status, 200);
+        assert_eq!(
+            tasks.body["nodes"]["node-a"]["roles"],
+            serde_json::json!(["data"])
+        );
+        assert_eq!(
+            tasks.body["nodes"]["node-a"]["tasks"]["node-a:571"]["cancelled"],
+            Value::Bool(true)
+        );
+        assert_eq!(
+            tasks.body["nodes"]["node-a"]["tasks"]["node-a:572"]["cancelled"],
+            Value::Bool(false)
+        );
+
+        let queued_get =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:571"));
+        assert_eq!(queued_get.status, 200);
+        assert_eq!(queued_get.body["task"]["cancellable"], Value::Bool(true));
+        assert_eq!(queued_get.body["task"]["cancelled"], Value::Bool(true));
+        let running_get =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:572"));
+        assert_eq!(running_get.status, 200);
+        assert_eq!(running_get.body["task"]["cancellable"], Value::Bool(false));
+        assert_eq!(running_get.body["task"]["cancelled"], Value::Bool(false));
+        assert_eq!(
+            running_get.body["task"]["status"]["background_worker"],
+            Value::String("maintenance-flush".to_string())
+        );
+
+        let running_cancel = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:572/_cancel",
+        ));
+        assert_eq!(running_cancel.status, 400);
+        assert_eq!(
+            running_cancel.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let pending = restarted
+            .handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 2);
+        let queued = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 571)
+            .expect("queued task");
+        assert_eq!(queued["cancelled"], Value::Bool(true));
+        assert_eq!(queued["executing"], Value::Bool(false));
+        let running = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 572)
+            .expect("running task");
+        assert_eq!(running["cancelled"], Value::Bool(false));
+        assert_eq!(running["executing"], Value::Bool(true));
+
+        env::remove_var("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST");
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn task_queue_state_and_cancelled_ids_persist_across_shared_runtime_restart() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");

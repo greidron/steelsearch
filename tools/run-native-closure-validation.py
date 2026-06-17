@@ -680,6 +680,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "node_role_transition_restart_smoke_preserves_queue_visibility_and_refusal",
+        "task-restart-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "task_queue_state_and_cancelled_ids_persist_across_shared_runtime_restart",
         "task-restart-runtime-state",
         package="os-node",
