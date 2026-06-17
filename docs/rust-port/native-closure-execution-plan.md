@@ -34,6 +34,12 @@ Out of scope:
   Java primary to SteelSearch replica, SteelSearch primary promotion, Java
   replica rejoin, and failback to Java. The probe now records shard checkpoint
   drift and requires zero drift.
+- Native-closure runtime validation now has a guarded compact runner,
+  `tools/run-native-closure-validation.py --batch compact`, that rejects
+  zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
+  four malformed wrapper placeholder seats (`bucket_sort`, `derivative`,
+  `serial_diff`, `bucket_count`) and four multi-index `date_histogram`
+  rebucketing wrapper seats for the same wrapper shapes.
 
 ## Workstreams
 
@@ -103,6 +109,15 @@ Exit evidence:
 - E2E semantic comparison remains green;
 - benchmark matrix keeps vector and hybrid throughput within the accepted
   envelope.
+
+Validation runner:
+
+- `tools/run-native-closure-validation.py --batch compact` must report
+  `failed_count == 0` and `zero_test_count == 0` before treating the compact
+  malformed-wrapper / `date_histogram` rebucketing slice as runtime evidence.
+- The next validation widening should reuse the same runner shape for the
+  corresponding `auto_date_histogram`, `histogram`, and
+  `variable_width_histogram` rebucketing wrapper seats.
 
 ### 3. Mixed-Cluster Movement Hardening
 

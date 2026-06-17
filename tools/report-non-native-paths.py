@@ -19,6 +19,7 @@ SECURITY_DOC = ROOT / "docs" / "rust-port" / "production-security-baseline.md"
 SHARD_PROBE = ROOT / "tools" / "probe_three_node_shard_movement.py"
 ENGINE_SOURCE = ROOT / "crates" / "os-engine-tantivy" / "src" / "lib.rs"
 BENCHMARK_MATRIX = ROOT / "tools" / "run-search-benchmark-matrix.py"
+NATIVE_CLOSURE_VALIDATION = ROOT / "tools" / "run-native-closure-validation.py"
 
 
 @dataclass(frozen=True)
@@ -212,6 +213,14 @@ FAMILIES: tuple[Family, ...] = (
         next_action="set closure thresholds and reduce high-delta materialized fallback families",
         evidence_path=BENCHMARK_MATRIX,
         evidence_pattern=r"STEELSEARCH_NATIVE_TELEMETRY_COUNTERS",
+    ),
+    Family(
+        name="malformed wrapper and rebucketing validation",
+        category="materialization",
+        status="compact runtime batch passed for malformed wrappers and date_histogram rebucketing wrappers",
+        next_action="widen the same zero-test-guarded validation to auto_date_histogram, histogram, and variable_width_histogram wrapper seats",
+        evidence_path=NATIVE_CLOSURE_VALIDATION,
+        evidence_pattern=r"COMPACT_BATCH",
     ),
     Family(
         name="pure knn",
