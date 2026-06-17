@@ -4419,16 +4419,49 @@ impl SteelNode {
         }
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_doc/") {
             return match request.method {
-                RestMethod::Put => Some(self.handle_put_doc_route(index, doc_path, request)),
-                RestMethod::Post => Some(self.handle_put_doc_route(index, doc_path, request)),
-                RestMethod::Get => Some(self.handle_get_doc_route(index, doc_path, request)),
-                RestMethod::Delete => Some(self.handle_delete_doc_route(index, doc_path, request)),
+                RestMethod::Put | RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexWrite,
+                        "single document write",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_put_doc_route(index, doc_path, request))
+                }
+                RestMethod::Get => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "single document read",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_get_doc_route(index, doc_path, request))
+                }
+                RestMethod::Delete => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexWrite,
+                        "single document write",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_delete_doc_route(index, doc_path, request))
+                }
                 _ => None,
             };
         }
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_create/") {
             return match request.method {
                 RestMethod::Put | RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexWrite,
+                        "single document write",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_create_doc_route(index, doc_path, request))
                 }
                 _ => None,
@@ -4436,8 +4469,26 @@ impl SteelNode {
         }
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_source/") {
             return match request.method {
-                RestMethod::Get => Some(self.handle_get_source_route(index, doc_path, request)),
-                RestMethod::Head => Some(self.handle_head_source_route(index, doc_path, request)),
+                RestMethod::Get => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "single document read",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_get_source_route(index, doc_path, request))
+                }
+                RestMethod::Head => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "single document read",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_head_source_route(index, doc_path, request))
+                }
                 _ => None,
             };
         }
@@ -4530,11 +4581,25 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_doc") {
             if request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexWrite,
+                    "single document write",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_post_doc_route(index, request));
             }
         }
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_update/") {
             if request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexWrite,
+                    "single document write",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_update_doc_route(index, id, request));
             }
         }
@@ -38195,22 +38260,160 @@ mod tests {
         let copied = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/sec-reindex-dest/_doc/doc-1",
-        ));
+        )
+        .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="));
         assert_eq!(copied.status, 200);
         assert_eq!(copied.body["_source"]["message"], "copy me");
 
         let deleted = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/sec-delete-query/_doc/doc-1",
-        ));
+        )
+        .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="));
         assert_eq!(deleted.status, 404);
 
         let updated = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/sec-update-query/_doc/doc-1",
-        ));
+        )
+        .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="));
         assert_eq!(updated.status, 200);
         assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_single_document_routes_require_read_or_write_roles() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-single-doc")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        for (id, message) in [
+            ("read-doc", "read me"),
+            ("update-doc", "update me"),
+            ("delete-doc", "delete me"),
+        ] {
+            let seed = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/sec-single-doc/_doc/{id}"))
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg==")
+                    .with_json_body(serde_json::json!({ "message": message, "updated": false })),
+            );
+            assert_eq!(seed.status, 201, "doc {id}");
+        }
+
+        for request in [
+            RestRequest::new(RestMethod::Get, "/sec-single-doc/_doc/read-doc"),
+            RestRequest::new(RestMethod::Get, "/sec-single-doc/_source/read-doc"),
+            RestRequest::new(RestMethod::Head, "/sec-single-doc/_source/read-doc"),
+        ] {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let writer = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, 403, "path {path}");
+            assert_eq!(writer.body["error"]["type"], "security_exception");
+            assert!(writer.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("single document read"));
+
+            let reader = node.handle_rest_request(
+                request.with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 200, "path {path}");
+        }
+
+        let write_cases = [
+            (
+                "put doc",
+                RestRequest::new(RestMethod::Put, "/sec-single-doc/_doc/put-doc")
+                    .with_json_body(serde_json::json!({ "message": "put" })),
+                201,
+            ),
+            (
+                "post doc with id",
+                RestRequest::new(RestMethod::Post, "/sec-single-doc/_doc/post-doc")
+                    .with_json_body(serde_json::json!({ "message": "post" })),
+                201,
+            ),
+            (
+                "create doc",
+                RestRequest::new(RestMethod::Put, "/sec-single-doc/_create/create-doc")
+                    .with_json_body(serde_json::json!({ "message": "create" })),
+                201,
+            ),
+            (
+                "post doc generated id",
+                RestRequest::new(RestMethod::Post, "/sec-single-doc/_doc")
+                    .with_json_body(serde_json::json!({ "message": "generated" })),
+                201,
+            ),
+            (
+                "update doc",
+                RestRequest::new(RestMethod::Post, "/sec-single-doc/_update/update-doc")
+                    .with_json_body(serde_json::json!({ "doc": { "updated": true } })),
+                200,
+            ),
+            (
+                "delete doc",
+                RestRequest::new(RestMethod::Delete, "/sec-single-doc/_doc/delete-doc"),
+                200,
+            ),
+        ];
+
+        for (route_family, request, writer_status) in write_cases {
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "route {route_family}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "route {route_family}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("single document write"));
+
+            let writer = node.handle_rest_request(
+                request.with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, writer_status, "route {route_family}");
+        }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
         env::remove_var("SECURITY_ADMIN_USERNAME");
@@ -38309,6 +38512,7 @@ mod tests {
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-security-search-000001/_doc/doc-1?refresh=true")
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg==")
                     .with_json_body(serde_json::json!({ "message": "reader visible" })),
             )
             .status,

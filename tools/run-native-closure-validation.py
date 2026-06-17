@@ -637,6 +637,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_single_document_routes_require_read_or_write_roles",
+        "production-security-authorization",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_service_account_subject_can_authorize_writer_route",
         "production-security-service-account",
         package="os-node",
