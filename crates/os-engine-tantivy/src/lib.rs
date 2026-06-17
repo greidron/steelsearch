@@ -135594,6 +135594,110 @@ mod tests {
     }
 
     #[test]
+    fn multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible() {
+        let engine = TantivyEngine::default();
+        for index in ["vectors", "vectors-alt"] {
+            engine
+                .create_index(CreateIndexRequest {
+                    index: index.to_string(),
+                    settings: serde_json::json!({}),
+                    mappings: serde_json::json!({
+                        "properties": {
+                            "service": { "type": "keyword" },
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 3,
+                                "space_type": "l2"
+                            }
+                        }
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "vectors".to_string(),
+                id: "1".to_string(),
+                source: serde_json::json!({
+                    "service": "api",
+                    "embedding": [1.0, 0.0, 0.0]
+                }),
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "vectors-alt".to_string(),
+                id: "2".to_string(),
+                source: serde_json::json!({
+                    "service": "worker",
+                    "embedding": [0.0, 1.0, 0.0]
+                }),
+            })
+            .unwrap();
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
+            })
+            .unwrap();
+
+        let unsupported_hybrid_request = || SearchRequest {
+            indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
+            query: serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "term": { "service": "api" } },
+                        {
+                            "knn": {
+                                "embedding": {
+                                    "vector": [1.0, 0.0, 0.0],
+                                    "k": 5
+                                }
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: vec![],
+            from: 0,
+            size: 10,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_excludes: None,
+            source_include: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+
+        let first_response = engine.search(unsupported_hybrid_request()).unwrap();
+        let second_response = engine.search(unsupported_hybrid_request()).unwrap();
+        let mut first_ids = search_hit_ids(&first_response.hits);
+        let mut second_ids = search_hit_ids(&second_response.hits);
+        first_ids.sort();
+        second_ids.sort();
+        assert_eq!(first_ids, vec!["1", "2"]);
+        assert_eq!(second_ids, vec!["1", "2"]);
+
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.request_result_cache_entries, 0);
+        assert_eq!(telemetry.request_result_cache_hits, 0);
+        assert_eq!(
+            telemetry.request_result_cache_hybrid_vector_bypasses,
+            2
+        );
+        assert_eq!(
+            telemetry.request_result_cache_unsupported_vector_bypasses,
+            2
+        );
+        assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
+    }
+
+    #[test]
     fn engine_builds_native_tantivy_search_state_on_refresh() {
         let engine = TantivyEngine::default();
         engine

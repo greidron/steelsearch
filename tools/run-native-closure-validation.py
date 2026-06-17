@@ -151,6 +151,10 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
         "multi_index_knn_uses_vector_native_page_and_aggregation_reduce_with_fast_field_sort",
         "multi-index-vector-native-sort",
     ),
+    ValidationTest(
+        "multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible",
+        "vector-hybrid-fallback-boundary",
+    ),
 )
 
 SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
