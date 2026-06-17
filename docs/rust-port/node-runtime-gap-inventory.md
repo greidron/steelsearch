@@ -202,12 +202,13 @@ Current Steelsearch evidence:
   execution visibility and multi-node queued/in-flight task visibility with
   remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 12/12 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 13/13 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
-  active-slot queue waiting/drain under concurrent search/write requests and
-  bounded queue-full rejection for search/write pools, plus maintenance
+  active-slot queue waiting/drain under concurrent search/write requests,
+  independent mixed search/maintenance backlog drain, and bounded queue-full
+  rejection for search/write pools, plus maintenance
   refresh/flush/cache-clear/forcemerge admission through the same runtime-owned
   waiting and rejection model, and snapshot create/restore/cleanup admission
   plus cluster reroute admission through the same runtime-owned waiting and
