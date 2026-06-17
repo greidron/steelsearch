@@ -138,10 +138,10 @@ security/release gate blocker. The production gate is now structured by
 security boundary and release checklist item, with tests proving that partial
 enforcement removes only the satisfied blockers. Startup preflight also has
 fixtures for missing, present, and malformed TLS bootstrap material, including
-PEM-marker certificate/key validation, plus user-backed and
-service-account-only authentication-users-file acceptance and malformed
-authentication-users-file rejection through the shared users-file subject
-parser. Runtime
+PEM-marker certificate/key validation and certificate/private-key role mismatch
+rejection, plus user-backed and service-account-only authentication-users-file
+acceptance and malformed authentication-users-file rejection through the shared
+users-file subject parser. Runtime
 security-profile env credentials for users and service accounts are also loaded
 through that shared subject model before route-level Basic auth and role checks.
 The guarded production-security batch covers root authentication plus ML, bulk,
