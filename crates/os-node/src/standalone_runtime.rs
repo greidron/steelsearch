@@ -681,6 +681,8 @@ pub struct PersistedClusterManagerTaskQueueState {
     pub next_task_id: u64,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub task_node_ids: BTreeMap<u64, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub task_statuses: BTreeMap<u64, serde_json::Map<String, Value>>,
     pub pending: Vec<ClusterManagerTaskRecord>,
     pub in_flight: Vec<ClusterManagerTaskRecord>,
     pub acknowledged: Vec<ClusterManagerTaskRecord>,
@@ -711,6 +713,20 @@ fn pruned_task_queue_state(
     mut state: PersistedClusterManagerTaskQueueState,
 ) -> PersistedClusterManagerTaskQueueState {
     state.prune_terminal_records(TERMINAL_TASK_RETENTION_LIMIT);
+    let retained_task_ids: BTreeSet<u64> = state
+        .pending
+        .iter()
+        .chain(state.in_flight.iter())
+        .chain(state.acknowledged.iter())
+        .chain(state.failed.iter())
+        .map(|record| record.task_id)
+        .collect();
+    state
+        .task_node_ids
+        .retain(|task_id, _| retained_task_ids.contains(task_id));
+    state
+        .task_statuses
+        .retain(|task_id, _| retained_task_ids.contains(task_id));
     state
 }
 
@@ -11387,9 +11403,14 @@ impl SteelNode {
                         .copied()
                         .unwrap_or(-1.0);
                     let action = self.task_action_for_kind(&record.task.kind);
-                    let mut status = serde_json::json!({
-                        "requests_per_second": requests_per_second
-                    });
+                    let mut status = Value::Object(
+                        queue
+                            .task_statuses
+                            .get(&record.task_id)
+                            .cloned()
+                            .unwrap_or_default(),
+                    );
+                    status["requests_per_second"] = serde_json::json!(requests_per_second);
                     if let ClusterManagerTaskKind::BackgroundWorker { worker, .. } =
                         &record.task.kind
                     {
@@ -15138,6 +15159,10 @@ impl SteelNode {
             .cancelled_task_ids
             .lock()
             .expect("cancelled task ids lock poisoned") = cancelled_task_ids.clone();
+        *self
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = task_queue_state.clone();
         let state = SharedRuntimeState {
             created_indices: self
                 .created_indices_state
@@ -23656,6 +23681,16 @@ mod tests {
             .task_queue_state
             .lock()
             .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            task_statuses: BTreeMap::from([(
+                501,
+                serde_json::Map::from_iter([
+                    ("phase".to_string(), Value::String("cancelled_after_partial_work".to_string())),
+                    ("created".to_string(), serde_json::json!(37)),
+                    ("updated".to_string(), serde_json::json!(11)),
+                    ("deleted".to_string(), serde_json::json!(3)),
+                    ("batches".to_string(), serde_json::json!(5)),
+                ]),
+            )]),
             acknowledged: vec![ClusterManagerTaskRecord {
                 task_id: 501,
                 task: ClusterManagerTask {
@@ -23676,6 +23711,14 @@ mod tests {
         assert_eq!(completed.status, 200);
         assert_eq!(completed.body["task"]["cancellable"], Value::Bool(false));
         assert_eq!(completed.body["task"]["cancelled"], Value::Bool(true));
+        assert_eq!(
+            completed.body["task"]["status"]["phase"],
+            Value::String("cancelled_after_partial_work".to_string())
+        );
+        assert_eq!(completed.body["task"]["status"]["created"], serde_json::json!(37));
+        assert_eq!(completed.body["task"]["status"]["updated"], serde_json::json!(11));
+        assert_eq!(completed.body["task"]["status"]["deleted"], serde_json::json!(3));
+        assert_eq!(completed.body["task"]["status"]["batches"], serde_json::json!(5));
 
         let repeated_cancel = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -23711,6 +23754,26 @@ mod tests {
             restarted_completed.body["task"]["cancelled"],
             Value::Bool(true)
         );
+        assert_eq!(
+            restarted_completed.body["task"]["status"]["phase"],
+            Value::String("cancelled_after_partial_work".to_string())
+        );
+        assert_eq!(
+            restarted_completed.body["task"]["status"]["created"],
+            serde_json::json!(37)
+        );
+        assert_eq!(
+            restarted_completed.body["task"]["status"]["updated"],
+            serde_json::json!(11)
+        );
+        assert_eq!(
+            restarted_completed.body["task"]["status"]["deleted"],
+            serde_json::json!(3)
+        );
+        assert_eq!(
+            restarted_completed.body["task"]["status"]["batches"],
+            serde_json::json!(5)
+        );
 
         let acknowledged: Vec<ClusterManagerTaskRecord> = (0..TERMINAL_TASK_RETENTION_LIMIT + 1)
             .map(|offset| ClusterManagerTaskRecord {
@@ -23729,6 +23792,10 @@ mod tests {
             .task_queue_state
             .lock()
             .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            task_statuses: BTreeMap::from([(
+                501,
+                serde_json::Map::from_iter([("created".to_string(), serde_json::json!(37))]),
+            )]),
             acknowledged,
             ..Default::default()
         });
@@ -23744,6 +23811,16 @@ mod tests {
         let evicted =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:501"));
         assert_eq!(evicted.status, 404);
+        assert!(
+            !restarted
+                .task_queue_state
+                .lock()
+                .expect("task queue state lock poisoned")
+                .as_ref()
+                .expect("task queue state")
+                .task_statuses
+                .contains_key(&501)
+        );
 
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         let _ = std::fs::remove_file(shared_state_path);

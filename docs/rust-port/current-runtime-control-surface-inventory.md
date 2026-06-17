@@ -87,7 +87,7 @@ internal subsystems, especially:
 | --- | --- |
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
 | Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
-| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, and cancelled-task completion readback until eviction; partial-progress contracts remain bounded |
+| Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, and cancelled-task completion plus partial-progress status readback until eviction; shutdown-window terminal transitions remain open |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, and cancel requests are accepted after per-request shared-runtime sync on restart; shutdown-window and partial-recovery behavior remain open |
 | Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, and completion-race terminal refusal without cancelled-marker pollution exist, but shutdown-window error classification remains open |
@@ -100,7 +100,6 @@ internal subsystems, especially:
 - add restart-smoke coverage for:
   - post-restart partial-recovery/error-path task listing continuity.
 - add operator-visible evidence for terminal-state retention:
-  - whether partial progress fields are stable;
   - whether shutdown-window transitions preserve or evict cancelled-terminal
     task visibility beyond the current completion/restart/eviction coverage.
 
@@ -109,9 +108,9 @@ internal subsystems, especially:
 - introduce an explicit cancellation coordinator or equivalent runtime owner for
   task state transitions.
 - tie queued-task cancellation into in-flight worker ownership and drain ordering.
-- define cancelled-terminal partial-progress contracts for `GET /_tasks*`
+- define cancelled-terminal shutdown-window contracts for `GET /_tasks*`
   beyond the current acknowledged/failed terminal eviction bound, stale
-  cancellation-marker pruning, and completion/restart/eviction readback.
+  cancellation-marker pruning, and completion/progress/restart/eviction readback.
 - tie cancellation state into shutdown-window and partial-recovery handling
   rather than treating those paths as stateless route-level responses.
 

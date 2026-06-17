@@ -187,10 +187,10 @@ Current Steelsearch evidence:
   plus acknowledged/failed terminal task readback without polluting pending-task
   queue depth, bounded terminal task
   retention/eviction with stale cancellation-marker pruning and persisted
-  restart readback, cancelled-task completion readback through restart until
-  eviction, and shared-runtime restart readback for task queue state plus
-  cancelled task ids, including cancel requests accepted during the per-request
-  shared-runtime sync window after restart;
+  restart readback, cancelled-task completion and partial-progress status
+  readback through restart until eviction, and shared-runtime restart readback
+  for task queue state plus cancelled task ids, including cancel requests
+  accepted during the per-request shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 3/3 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
@@ -247,8 +247,8 @@ Required next implementation direction:
 Required tests:
 
 - extend queue/backpressure smoke tests beyond bounded route admission into
-  cancelled-terminal partial-progress/shutdown windows and broader multi-node
-  propagation behavior;
+  cancelled-terminal shutdown windows and broader multi-node propagation
+  behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries

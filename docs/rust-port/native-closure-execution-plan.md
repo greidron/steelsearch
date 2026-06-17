@@ -66,10 +66,11 @@ Out of scope:
   without cancelled-marker pollution, and acknowledged/failed terminal task readback
   without polluting pending-task queue depth, plus
   bounded terminal task retention/eviction with stale cancellation-marker
-  pruning, cancelled-task completion readback through restart until eviction,
-  and persisted restart readback, and shared-runtime restart readback for task
-  queue state and cancelled task ids, including cancel requests accepted during
-  the per-request shared-runtime sync window after restart.
+  pruning, cancelled-task completion and partial-progress status readback through
+  restart until eviction, and persisted restart readback, and shared-runtime
+  restart readback for task queue state and cancelled task ids, including cancel
+  requests accepted during the per-request shared-runtime sync window after
+  restart.
 - The same runner now has a `runtime-queue` batch. It passed on 2026-06-17
   with 3/3 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
@@ -208,8 +209,8 @@ Validation runner:
   queued-versus-in-flight cancellation distinction, completion-race refusal
   without cancelled-marker pollution, terminal-state task readback, bounded
   terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
-  completion readback through restart until eviction, and pending-depth separation
-  as runtime-control evidence, including
+  completion and partial-progress status readback through restart until eviction,
+  and pending-depth separation as runtime-control evidence, including
   shared-runtime restart readback for task queue state and cancelled ids plus
   cancel-request handling during the per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
