@@ -441,6 +441,22 @@ fn forbidden_security_response(reason: impl Into<String>) -> RestResponse {
     )
 }
 
+fn unsupported_security_plugin_api_response(path: &str) -> RestResponse {
+    RestResponse::json(
+        501,
+        serde_json::json!({
+            "error": {
+                "type": "security_exception",
+                "reason": format!(
+                    "OpenSearch Security plugin API [{}] is not implemented; request fails closed",
+                    path
+                )
+            },
+            "status": 501
+        }),
+    )
+}
+
 fn authenticated_security_role(request: &RestRequest) -> Result<Option<&'static str>, RestResponse> {
     if !security_profile_enabled() {
         return Ok(None);
@@ -2034,6 +2050,11 @@ impl SteelNode {
     }
 
     fn handle_root_cluster_node_request(&self, request: &RestRequest) -> Option<RestResponse> {
+        if request.path == "/_plugins/_security"
+            || request.path.starts_with("/_plugins/_security/")
+        {
+            return Some(unsupported_security_plugin_api_response(&request.path));
+        }
         if request.method == RestMethod::Get && request.path.starts_with("/_cluster/health/") {
             return Some(self.handle_cluster_health_route(request));
         }
@@ -21363,6 +21384,33 @@ mod tests {
             env::remove_var("STEELSEARCH_SECURITY_ENABLED");
             env::remove_var("SECURITY_ADMIN_USERNAME");
             env::remove_var("SECURITY_ADMIN_PASSWORD");
+        }
+    }
+
+    #[test]
+    fn opensearch_security_plugin_apis_fail_closed_with_documented_error() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for request in [
+            RestRequest::new(RestMethod::Get, "/_plugins/_security/api/account"),
+            RestRequest::new(RestMethod::Put, "/_plugins/_security/api/internalusers/alice")
+                .with_json_body(serde_json::json!({"password": "secret"})),
+            RestRequest::new(
+                RestMethod::Post,
+                "/_plugins/_security/api/ssl/transport/reloadcerts",
+            ),
+        ] {
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 501);
+            assert_eq!(response.body["error"]["type"], "security_exception");
+            let reason = response.body["error"]["reason"]
+                .as_str()
+                .expect("security error reason");
+            assert!(reason.contains("OpenSearch Security plugin API"));
+            assert!(reason.contains("request fails closed"));
         }
     }
 

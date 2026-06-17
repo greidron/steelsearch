@@ -135,6 +135,9 @@ enforcement removes only the satisfied blockers. Startup preflight also has
 fixtures for missing and present TLS/authn bootstrap material. These are
 baseline tests, not proof that TLS/authn/authz enforcement has been
 implemented.
+The guarded production-security batch also proves that OpenSearch Security
+plugin API routes fail closed with a documented `security_exception` instead of
+falling through to an ambiguous 404-only response.
 
 ## Operator Evidence
 

@@ -268,6 +268,16 @@ STARTUP_READINESS_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "opensearch_security_plugin_apis_fail_closed_with_documented_error",
+        "production-security-fail-closed",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "tasks_live_route_supports_list_get_and_cancel_shapes",
@@ -732,6 +742,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,
+    "production-security": PRODUCTION_SECURITY_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
     "runtime-backpressure": RUNTIME_BACKPRESSURE_BATCH,

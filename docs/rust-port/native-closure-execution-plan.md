@@ -77,6 +77,10 @@ Out of scope:
   with 2/2 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal plus production
   security/release gate refusal.
+- The same runner now has a `production-security` batch. It passed on
+  2026-06-17 with 1/1 tests and `zero_tests=0`, covering explicit
+  fail-closed OpenSearch Security plugin API responses with documented
+  `security_exception` bodies instead of 404-only ambiguity.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
   with 19/19 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
@@ -237,6 +241,10 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate
   blockers, as runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch production-security` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating
+  OpenSearch Security plugin API fail-closed responses as production-security
+  evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
@@ -386,6 +394,11 @@ Initial targets:
 4. audit log entries for allowed and denied sensitive operations;
 5. redaction tests for responses, logs, readiness, snapshots, and migration
    manifests.
+
+Current narrowed fail-closed evidence:
+
+- unsupported OpenSearch Security plugin API routes return documented
+  `security_exception` responses instead of ambiguous 404-only fallthrough.
 
 Exit evidence:
 
