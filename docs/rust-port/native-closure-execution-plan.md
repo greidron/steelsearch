@@ -120,7 +120,7 @@ Out of scope:
   security/release gate refusal, and readiness blocker terminology that keeps
   user-facing Steelsearch runtime categories distinct from internal crate names.
 - The same runner now has a `production-security` batch. It passed on
-  2026-06-17 with 12/12 tests and `zero_tests=0`, covering runtime env user,
+  2026-06-17 with 13/13 tests and `zero_tests=0`, covering runtime env user,
   authentication-users-file user, and service-account credentials loaded
   through the shared subject model, root route Basic auth, the shared
   admin/reader/writer permission evaluator, ML
@@ -128,9 +128,11 @@ Out of scope:
   shared runtime persistence, authn/authz/fail-closed decisions including
   shared permission-evaluator read/write denials persisted as bounded security
   audit events, bulk/search/session allow/deny checks, service-account writer
-  authz, secure-settings reload admin-role enforcement, and explicit
-  fail-closed OpenSearch Security plugin API responses across account,
-  internal-user mutation, and transport-cert reload route shapes with
+  authz, secure-settings reload admin-role enforcement, cluster-admin control
+  route enforcement for settings/reroute/decommission and task
+  cancel/rethrottle surfaces, and explicit fail-closed OpenSearch Security
+  plugin API responses across account, internal-user mutation, and
+  transport-cert reload route shapes with
   documented `security_exception` bodies and persisted audit
   events instead of 404-only ambiguity or secret leakage.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
@@ -379,10 +381,10 @@ Validation runner:
   users-file subject model loading for users and service accounts,
   root/ML/bulk/search/session authn/authz checks, the shared
   admin/reader/writer permission evaluator, service-account writer authz,
-  secure-settings reload admin-role enforcement, bounded security audit event
-  persistence for authn/authz/fail-closed and shared permission-evaluator
-  read/write denials, ML connector secret redaction, and OpenSearch Security
-  plugin API fail-closed responses plus persisted audit
+  secure-settings reload and cluster-admin control route enforcement, bounded
+  security audit event persistence for authn/authz/fail-closed and shared
+  permission-evaluator read/write denials, ML connector secret redaction, and
+  OpenSearch Security plugin API fail-closed responses plus persisted audit
   events without request password material as production-security evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task

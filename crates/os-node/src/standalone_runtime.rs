@@ -2596,12 +2596,33 @@ impl SteelNode {
                 Some(self.handle_cluster_settings_get_route(request))
             }
             (RestMethod::Put, "/_cluster/settings") => {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "cluster settings",
+                ) {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_settings_put_route(request))
             }
             (RestMethod::Delete, "/_cluster/decommission/awareness") => {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "cluster decommission",
+                ) {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_decommission_delete_route())
             }
             (RestMethod::Post, "/_cluster/reroute") => {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "cluster reroute",
+                ) {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_reroute_route(request))
             }
             (RestMethod::Get, "/_cluster/pending_tasks") => Some(RestResponse::json(
@@ -2612,6 +2633,13 @@ impl SteelNode {
             )),
             (RestMethod::Get, "/_tasks") => Some(self.handle_tasks_list_route(request)),
             (RestMethod::Post, "/_tasks/_cancel") => {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::ClusterAdmin,
+                    "task cancellation",
+                ) {
+                    return Some(response);
+                }
                 Some(self.handle_tasks_cancel_route(request))
             }
             (RestMethod::Get, "/_nodes/stats") => Some(RestResponse::json(
@@ -2757,10 +2785,24 @@ impl SteelNode {
             && request.path.ends_with("/_cancel")
             && request.path != "/_tasks/_cancel"
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "task cancellation",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_tasks_cancel_route(request));
         }
         if request.method == RestMethod::Post && self.rethrottle_task_id_from_request(request).is_some()
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "task rethrottle",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_tasks_rethrottle_route(request));
         }
         if request.method == RestMethod::Get
@@ -23805,6 +23847,91 @@ mod tests {
             );
             assert_eq!(admin.status, 200, "path {path}");
             assert_eq!(admin.body["_nodes"]["failed"], 0, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_cluster_admin_control_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let cases = [
+            (
+                "cluster settings",
+                RestRequest::new(RestMethod::Put, "/_cluster/settings")
+                    .with_json_body(serde_json::json!({"persistent": {"cluster.max_shards_per_node": "1000"}})),
+                200,
+            ),
+            (
+                "cluster reroute",
+                RestRequest::new(RestMethod::Post, "/_cluster/reroute")
+                    .with_json_body(serde_json::json!({})),
+                200,
+            ),
+            (
+                "cluster decommission",
+                RestRequest::new(RestMethod::Delete, "/_cluster/decommission/awareness"),
+                200,
+            ),
+            (
+                "task cancellation",
+                RestRequest::new(RestMethod::Post, "/_tasks/_cancel"),
+                200,
+            ),
+            (
+                "task cancellation",
+                RestRequest::new(RestMethod::Post, "/_tasks/node-a:99/_cancel"),
+                200,
+            ),
+            (
+                "task rethrottle",
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_reindex/node-a:99/_rethrottle?requests_per_second=10",
+                ),
+                404,
+            ),
+        ];
+
+        for (route_family, request, admin_status) in cases {
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "route {route_family}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "route {route_family}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains(route_family));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, admin_status, "route {route_family}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
