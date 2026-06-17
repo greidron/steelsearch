@@ -177,11 +177,12 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 4/4 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
-  task readback, plus acknowledged/failed terminal task readback without
-  polluting pending-task queue depth and shared-runtime restart readback for
-  task queue state plus cancelled task ids;
+  task readback, repeated cancel idempotency with post-cancel readback, plus
+  acknowledged/failed terminal task readback without polluting pending-task
+  queue depth and shared-runtime restart readback for task queue state plus
+  cancelled task ids;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,

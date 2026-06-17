@@ -90,15 +90,14 @@ internal subsystems, especially:
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, but retention/eviction and partial-progress contracts are still bounded |
 | Queue interaction | there is no explicit distinction between cancelling queued work versus cancelling already-running work, and no refusal/backpressure interaction is documented |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, but shutdown-window and partial-recovery behavior remain open |
-| Error classification | route-level `404`/bounded success exists, but not a full matrix for already-finished, already-cancelled, or race-with-completion states |
+| Error classification | route-level `404`, bounded repeated-cancel success, and terminal non-cancellable refusal exist, but not a full matrix for race-with-completion states |
 
 ### Required tests
 
 - add fixture-backed distinction for:
   - queued-versus-running cancellation;
-  - repeated cancel behavior for already-cancelled task ids;
   - parent task cancel versus child task visibility;
-  - repeated cancel idempotency with post-cancel readback.
+  - race-with-completion cancellation behavior.
 - add restart-smoke coverage for:
   - cancel-during-restart;
   - post-restart partial-recovery/error-path task listing continuity.

@@ -22322,6 +22322,100 @@ mod tests {
     }
 
     #[test]
+    fn tasks_repeated_cancel_is_idempotent_with_post_cancel_readback() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 81,
+                task: ClusterManagerTask {
+                    source: "repeat cancel probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        for attempt in 1..=2 {
+            let cancel = node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/_tasks/node-a:81/_cancel",
+            ));
+            assert_eq!(cancel.status, 200, "attempt {attempt}");
+            assert_eq!(
+                cancel.body["nodes"]["node-a"]["tasks"]["node-a:81"]["cancelled"],
+                Value::Bool(true),
+                "attempt {attempt}"
+            );
+            assert_eq!(
+                cancel.body["nodes"]["node-a"]["tasks"]["node-a:81"]["cancellable"],
+                Value::Bool(true),
+                "attempt {attempt}"
+            );
+            assert_eq!(
+                cancel.body["task_failures"],
+                Value::Array(vec![]),
+                "attempt {attempt}"
+            );
+            assert_eq!(
+                cancel.body["node_failures"],
+                Value::Array(vec![]),
+                "attempt {attempt}"
+            );
+        }
+
+        assert_eq!(
+            node.cancelled_task_ids
+                .lock()
+                .expect("cancelled task ids lock poisoned")
+                .len(),
+            1
+        );
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:81"));
+        assert_eq!(get.status, 200);
+        assert_eq!(get.body["task"]["id"], 81);
+        assert_eq!(get.body["task"]["cancelled"], Value::Bool(true));
+
+        let list = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(list.status, 200);
+        assert_eq!(
+            list.body["nodes"]["node-a"]["tasks"]["node-a:81"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 1);
+        assert_eq!(pending_tasks[0]["id"], 81);
+    }
+
+    #[test]
     fn tasks_terminal_states_remain_readable_without_polluting_pending_queue_depth() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
