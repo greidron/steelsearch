@@ -156,8 +156,9 @@ of falling back to env credentials.
 The guarded production-security batch covers root authentication, the shared
 admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, single-document read/write role
-checks, reindex, delete-by-query, and update-by-query writer-route checks,
-secure-settings reload admin-role
+checks, multi-document/document-analysis read role checks, reindex,
+delete-by-query, and update-by-query writer-route checks, secure-settings
+reload admin-role
 enforcement, cluster-admin control route enforcement for settings, reroute,
 decommission, weighted routing, voting config exclusions, snapshot
 mutation/control routes, template management mutation routes, search/ingest

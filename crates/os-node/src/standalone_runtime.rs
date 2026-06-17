@@ -4111,41 +4111,81 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_mget") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "multi document read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_mget_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_mtermvectors") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "multi document read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_mtermvectors_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "multi search")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_msearch_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch/template") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "search template")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_msearch_template_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search/template") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "search template")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_search_template_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_validate/query") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_validate_query_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_count") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_count_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_field_caps") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_field_caps_route(Some(index)));
             }
         }
@@ -4161,6 +4201,11 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_rank_eval") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_rank_eval_route(Some(index), request));
             }
         }
@@ -4182,22 +4227,47 @@ impl SteelNode {
             return Some(self.handle_index_search_route("_all", request));
         }
         if request.path == "/_mget" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "multi document read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_mget_route(None, request));
         }
         if request.path == "/_mtermvectors" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "multi document read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_mtermvectors_route(None, request));
         }
         if request.path == "/_msearch" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "multi search")
+            {
+                return Some(response);
+            }
             return Some(self.handle_msearch_route(None, request));
         }
         if request.path == "/_msearch/template"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "search template")
+            {
+                return Some(response);
+            }
             return Some(self.handle_msearch_template_route(None, request));
         }
         if request.path == "/_search/template"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "search template")
+            {
+                return Some(response);
+            }
             return Some(self.handle_search_template_route(None, request));
         }
         if request.path == "/_search/pipeline" && request.method == RestMethod::Get {
@@ -4282,21 +4352,41 @@ impl SteelNode {
         if request.path == "/_validate/query"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_validate_query_route(None, request));
         }
         if request.path == "/_count"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_count_route(None, request));
         }
         if request.path == "/_field_caps"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_field_caps_route(None));
         }
         if request.path == "/_rank_eval"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+            {
+                return Some(response);
+            }
             return Some(self.handle_rank_eval_route(None, request));
         }
         if request.path == "/_render/template"
@@ -4494,16 +4584,31 @@ impl SteelNode {
         }
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_explain/") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_explain_route(index, id, request));
             }
         }
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_termvectors/") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "multi document read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_termvectors_route(index, Some(id), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_termvectors") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Err(response) =
+                    require_security_permission(request, SecurityPermission::IndexRead, "multi document read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_termvectors_route(index, None, request));
             }
         }
@@ -7098,10 +7203,11 @@ impl SteelNode {
                     .into_iter()
                     .map(|(header_target, body)| {
                         let effective_target = header_target.as_deref().or(target).unwrap_or("_all");
-                        let request =
+                        let mut search_request =
                             RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
                                 .with_json_body(body);
-                        self.handle_index_search_route(effective_target, &request).body
+                        search_request.headers = request.headers.clone();
+                        self.handle_index_search_route(effective_target, &search_request).body
                     })
                     .collect::<Vec<_>>();
                 return RestResponse::json(200, serde_json::json!({ "responses": responses }));
@@ -7113,13 +7219,14 @@ impl SteelNode {
             200,
             {
                 let effective_target = target.unwrap_or("_all");
-                let request =
+                let mut search_request =
                     RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
                         .with_json_body(serde_json::json!({
                             "query": { "match_all": {} }
                         }));
+                search_request.headers = request.headers.clone();
                 serde_json::json!({
-                    "responses": [self.handle_index_search_route(effective_target, &request).body]
+                    "responses": [self.handle_index_search_route(effective_target, &search_request).body]
                 })
             },
         )
@@ -7671,9 +7778,10 @@ impl SteelNode {
         };
         let body = self.resolve_template_source(template_id, &payload)?;
         let requested_target = target.unwrap_or("_all");
-        let request = RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
+        let mut search_request = RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
             .with_json_body(body);
-        let response = self.handle_index_search_route(requested_target, &request);
+        search_request.headers = request.headers.clone();
+        let response = self.handle_index_search_route(requested_target, &search_request);
         if response.status == 200 {
             Ok(response.body)
         } else {
@@ -38413,6 +38521,156 @@ mod tests {
                 request.with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
             );
             assert_eq!(writer.status, writer_status, "route {route_family}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_multi_document_read_routes_require_reader_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-read-apis")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "keyword" }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let seed = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-read-apis/_doc/doc-1?refresh=true")
+                .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg==")
+                .with_json_body(serde_json::json!({
+                    "message": "reader visible",
+                    "tenant": "tenant-a"
+                })),
+        );
+        assert_eq!(seed.status, 201);
+
+        let cases = [
+            (
+                "root mget",
+                "multi document read",
+                RestRequest::new(RestMethod::Post, "/_mget").with_json_body(serde_json::json!({
+                    "docs": [{ "_index": "sec-read-apis", "_id": "doc-1" }]
+                })),
+            ),
+            (
+                "index mget",
+                "multi document read",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_mget")
+                    .with_json_body(serde_json::json!({ "ids": ["doc-1"] })),
+            ),
+            (
+                "root mtermvectors",
+                "multi document read",
+                RestRequest::new(RestMethod::Post, "/_mtermvectors").with_json_body(serde_json::json!({
+                    "docs": [{ "_index": "sec-read-apis", "_id": "doc-1" }]
+                })),
+            ),
+            (
+                "index termvectors",
+                "multi document read",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_termvectors/doc-1"),
+            ),
+            (
+                "multi search",
+                "multi search",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_msearch"),
+            ),
+            (
+                "explain",
+                "index read",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_explain/doc-1")
+                    .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+            ),
+            (
+                "validate query",
+                "index read",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_validate/query")
+                    .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+            ),
+            (
+                "count",
+                "index read",
+                RestRequest::new(RestMethod::Post, "/_count")
+                    .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+            ),
+            (
+                "field caps",
+                "index read",
+                RestRequest::new(RestMethod::Get, "/sec-read-apis/_field_caps"),
+            ),
+            (
+                "rank eval",
+                "index read",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_rank_eval")
+                    .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+            ),
+            (
+                "search template",
+                "search template",
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_search/template")
+                    .with_json_body(serde_json::json!({
+                        "source": { "query": { "match_all": {} } }
+                    })),
+            ),
+            (
+                "msearch template",
+                "search template",
+                RestRequest::new(RestMethod::Post, "/_msearch/template")
+                    .with_json_body(serde_json::json!({
+                        "source": { "query": { "match_all": {} } }
+                    })),
+            ),
+        ];
+
+        for (route_family, reason, request) in cases {
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "route {route_family}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let writer = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, 403, "route {route_family}");
+            assert_eq!(writer.body["error"]["type"], "security_exception");
+            assert!(writer.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains(reason));
+
+            let reader = node.handle_rest_request(
+                request.with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 200, "route {route_family}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
