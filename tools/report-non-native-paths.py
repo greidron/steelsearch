@@ -110,11 +110,12 @@ PROBES: tuple[Probe, ...] = (
         category="runtime",
         path=ENGINE_SOURCE,
         patterns=(
-            r"runtime KNN request-result cache hooks are present but not wired into search execution",
+            r"search_cached_single_index_knn_response",
+            r"search_hits_page_for_knn_query_cached",
             r"cache_knn_search_result",
             r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
         ),
-        risk="request-result cache structures exist, but search execution currently bypasses them",
+        risk="request-result cache is wired for pure single-index KNN, but broader aggregation/highlight/explain combinations still bypass it",
     ),
     Probe(
         name="production runtime controls",
@@ -235,10 +236,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="runtime search cache hooks",
         category="runtime",
-        status="partially wired",
-        next_action="wire request-result cache hooks into search execution or remove the dead request-result cache surface",
+        status="wired for pure single-index KNN",
+        next_action="extend request-result cache coverage to aggregation, highlight, explain, and hybrid vector combinations",
         evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
+        evidence_pattern=r"search_hits_page_for_knn_query_cached",
     ),
     Family(
         name="production runtime controls",

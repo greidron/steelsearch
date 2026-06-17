@@ -1903,6 +1903,30 @@ impl IndexEngine for TantivyEngine {
             },
         ];
 
+        let mut store = self
+            .store
+            .write()
+            .expect("tantivy engine store rwlock poisoned");
+        let cached_response = if request.highlight.is_none() && !request.explain {
+            store.search_cached_single_index_knn_response(
+                single_index_name.as_deref(),
+                &query,
+                &request.sort,
+                &aggregation_map,
+                request.from,
+                request.size,
+                fetch_subphases.clone(),
+                source_projection_fields.as_deref(),
+            )?
+        } else {
+            None
+        };
+        drop(store);
+
+        if let Some(response) = cached_response {
+            return Ok(response);
+        }
+
         let store = self
             .store
             .read()
@@ -3814,6 +3838,49 @@ impl EngineStore {
                     .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
             })
             .collect()
+    }
+
+    fn search_cached_single_index_knn_response(
+        &mut self,
+        single_index_name: Option<&str>,
+        query: &Query,
+        sort_specs: &[SortSpec],
+        aggregation_map: &AggregationMap,
+        from: usize,
+        size: usize,
+        fetch_subphases: Vec<FetchSubphaseResult>,
+        source_projection_fields: Option<&[String]>,
+    ) -> EngineResult<Option<SearchResponse>> {
+        if !aggregation_map.is_empty() {
+            return Ok(None);
+        }
+        let Some(index_name) = single_index_name else {
+            return Ok(None);
+        };
+        let Query::Knn(knn) = query else {
+            return Ok(None);
+        };
+        let Some(index) = self.indices.get_mut(index_name) else {
+            return Err(EngineError::IndexNotFound {
+                index: index_name.to_string(),
+            });
+        };
+        let Some((total_hits, page_hits)) =
+            index.search_hits_page_for_knn_query_cached(index_name, knn, sort_specs, from, size)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self::standard_requested_page_search_response(
+            total_hits,
+            page_hits,
+            serde_json::json!({}),
+            "matched refreshed documents with vector-native cached page fetch",
+            "vector-native cached page fetch skipped hit materialization because size=0",
+            "materialized only the requested vector-native cached page",
+            size,
+            source_projection_fields,
+            fetch_subphases,
+        )))
     }
 
     fn reusable_query_context_for_documents_with_optional_total_hits<'a>(
@@ -6436,6 +6503,49 @@ impl StoredIndex {
             }
         }
         self.search_hits_page_for_query_native(index_name, query, sort, from, size)
+    }
+
+    fn search_hits_page_for_knn_query_cached(
+        &mut self,
+        index_name: &str,
+        knn: &KnnQuery,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        if self.search_state.is_none() {
+            return Ok(None);
+        }
+        if sort_uses_default_relevance_order(sort) {
+            if let Some(cached) = self.lookup_cached_knn_search_page(knn, from, size) {
+                return Ok(Some(cached));
+            }
+            let hits = self.full_knn_hits_index_aware(index_name, knn)?;
+            let total_hits = hits.len() as u64;
+            self.cache_knn_search_result(knn, &hits);
+            let page_hits = if size == 0 {
+                Vec::new()
+            } else {
+                hits.into_iter().skip(from).take(size).collect()
+            };
+            return Ok(Some((total_hits, page_hits)));
+        }
+        if let Some(cached) = self.lookup_cached_knn_search_sorted_page(knn, sort, from, size) {
+            return Ok(Some(cached));
+        }
+        let hits = self.full_knn_hits_index_aware(index_name, knn)?;
+        let total_hits = hits.len() as u64;
+        self.cache_knn_search_result(knn, &hits);
+        let mut page_hits = Vec::new();
+        let page_limit = from.saturating_add(size);
+        if page_limit > 0 {
+            for hit in &hits {
+                Self::insert_bounded_page_hit(&mut page_hits, hit.clone(), sort, page_limit);
+            }
+            page_hits = page_hits.into_iter().skip(from).take(size).collect();
+            materialize_search_hit_sort_values_in_place(&mut page_hits, sort);
+        }
+        Ok(Some((total_hits, page_hits)))
     }
 
     fn search_hits_window_for_query_index_aware(
@@ -121253,7 +121363,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runtime KNN request-result cache hooks are present but not wired into search execution"]
     fn engine_bounds_and_invalidates_knn_runtime_cache_entries() {
         let (engine, _) = vector_engine_with_documents();
         engine
@@ -121304,6 +121413,16 @@ mod tests {
         }
 
         engine
+            .index_document(IndexDocumentRequest {
+                index: "vectors".to_string(),
+                id: "refresh-boundary".to_string(),
+                source: serde_json::json!({
+                    "embedding": [0.0, 0.0, 1.0],
+                    "name": "refresh-boundary"
+                }),
+            })
+            .unwrap();
+        engine
             .refresh(RefreshRequest {
                 indices: vec!["vectors".to_string()],
             })
@@ -121341,7 +121460,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runtime KNN request-result cache hooks are present but not wired into search execution"]
     fn stale_knn_cache_drops_are_tracked_separately_from_refresh_and_capacity() {
         let (engine, _) = vector_engine_with_documents();
         engine
@@ -134622,7 +134740,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runtime cache touch hooks are present but not wired into search execution"]
     fn knn_result_cache_is_bounded_and_cleared_on_refresh() {
         let (engine, _) = vector_engine_with_documents();
         engine
@@ -134677,6 +134794,16 @@ mod tests {
             assert!(!field_cache.entries.is_empty());
         }
 
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "vectors".to_string(),
+                id: "refresh-boundary".to_string(),
+                source: serde_json::json!({
+                    "embedding": [0.0, 0.0, 1.0],
+                    "name": "refresh-boundary"
+                }),
+            })
+            .unwrap();
         engine
             .refresh(RefreshRequest {
                 indices: vec!["vectors".to_string()],

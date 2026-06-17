@@ -770,10 +770,11 @@ Hybrid/vector focused rerun after idle baseline:
 Vector distance hot-loop follow-up:
 
 - Pain point: vector and hybrid paths both rely on exact vector scan over the
-  refreshed document set. The k-NN request-result cache helpers exist, but the
-  benchmark query vectors are randomized and the read-only search path does not
-  rely on cache mutation for the hot path. The common cost is therefore the
-  per-document distance loop.
+  refreshed document set. The k-NN request-result cache is wired for pure
+  single-index KNN requests, but these benchmark query vectors are randomized
+  and broader aggregation/highlight/explain and hybrid combinations still bypass
+  that request-result cache surface. The common cost in this benchmark remains
+  the per-document distance loop.
 - Fix: `squared_l2_distance` and `dot_product` now use explicit indexed loops
   with four-lane unrolling instead of iterator/zip/map/sum chains. This keeps
   vector scoring semantics unchanged while reducing tight-loop overhead.
