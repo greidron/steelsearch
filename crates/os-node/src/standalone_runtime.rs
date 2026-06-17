@@ -2828,6 +2828,11 @@ impl SteelNode {
             return Some(RestResponse::json(200, self.search_shards_body(None)));
         }
         if request.path == "/_reindex" && request.method == RestMethod::Post {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexWrite, "reindex")
+            {
+                return Some(response);
+            }
             return Some(self.handle_reindex_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_remote/info" {
@@ -4453,6 +4458,13 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_delete_by_query") {
             if request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexWrite,
+                    "delete by query",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_delete_by_query_route(index, request));
             }
         }
@@ -4528,6 +4540,13 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_update_by_query") {
             if request.method == RestMethod::Post {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexWrite,
+                    "update by query",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_update_by_query_route(index, request));
             }
         }
@@ -38070,6 +38089,136 @@ mod tests {
             env::remove_var("SECURITY_WRITER_USERNAME");
             env::remove_var("SECURITY_WRITER_PASSWORD");
         }
+    }
+
+    #[test]
+    fn secure_task_style_write_routes_require_writer_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for index in [
+            "/sec-reindex-source",
+            "/sec-reindex-dest",
+            "/sec-delete-query",
+            "/sec-update-query",
+        ] {
+            let create = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, index)
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                    .with_json_body(serde_json::json!({})),
+            );
+            assert_eq!(create.status, 200, "index {index}");
+        }
+
+        for (path, body) in [
+            (
+                "/sec-reindex-source/_doc/doc-1",
+                serde_json::json!({"tenant": "tenant-a", "message": "copy me"}),
+            ),
+            (
+                "/sec-delete-query/_doc/doc-1",
+                serde_json::json!({"tenant": "tenant-a", "message": "delete me"}),
+            ),
+            (
+                "/sec-update-query/_doc/doc-1",
+                serde_json::json!({"tenant": "tenant-a", "processed": false}),
+            ),
+        ] {
+            let index_doc = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, path)
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg==")
+                    .with_json_body(body),
+            );
+            assert_eq!(index_doc.status, 201, "path {path}");
+        }
+
+        let reindex = RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(
+            serde_json::json!({
+                "source": { "index": "sec-reindex-source" },
+                "dest": { "index": "sec-reindex-dest" }
+            }),
+        );
+        let delete_by_query =
+            RestRequest::new(RestMethod::Post, "/sec-delete-query/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": { "term": { "tenant": "tenant-a" } }
+                }));
+        let update_by_query =
+            RestRequest::new(RestMethod::Post, "/sec-update-query/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": { "term": { "tenant": "tenant-a" } },
+                    "script": { "source": "ctx._source.processed = true" }
+                }));
+
+        let cases = [
+            ("reindex", reindex, "created"),
+            ("delete by query", delete_by_query, "deleted"),
+            ("update by query", update_by_query, "updated"),
+        ];
+
+        for (route_family, request, mutation_counter) in cases {
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "route {route_family}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "route {route_family}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains(route_family));
+
+            let writer = node.handle_rest_request(
+                request.with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, 200, "route {route_family}");
+            assert_eq!(writer.body[mutation_counter], 1, "route {route_family}");
+        }
+
+        let copied = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/sec-reindex-dest/_doc/doc-1",
+        ));
+        assert_eq!(copied.status, 200);
+        assert_eq!(copied.body["_source"]["message"], "copy me");
+
+        let deleted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/sec-delete-query/_doc/doc-1",
+        ));
+        assert_eq!(deleted.status, 404);
+
+        let updated = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/sec-update-query/_doc/doc-1",
+        ));
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
     }
 
     #[test]
