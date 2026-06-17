@@ -269,6 +269,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "cancel_after_completion_race_does_not_create_cancelled_marker",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "tasks_terminal_states_remain_readable_without_polluting_pending_queue_depth",
         "task-terminal-runtime-state",
         package="os-node",

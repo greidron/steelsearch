@@ -57,13 +57,13 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 12/12 tests and `zero_tests=0`, covering task cancellation through
+  with 13/13 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility including
   same-node and cross-node multi-level descendant propagation,
-  queued-versus-in-flight cancellation distinction, and acknowledged/failed
-  terminal task readback
+  queued-versus-in-flight cancellation distinction, completion-race refusal
+  without cancelled-marker pollution, and acknowledged/failed terminal task readback
   without polluting pending-task queue depth, plus
   bounded terminal task retention/eviction with stale cancellation-marker
   pruning, cancelled-task completion readback through restart until eviction,
@@ -204,10 +204,11 @@ Validation runner:
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
   same-node and cross-node multi-level descendant cancellation propagation,
-  queued-versus-in-flight cancellation distinction, terminal-state task
-  readback, bounded terminal retention/eviction, stale cancellation-marker
-  pruning, cancelled-task completion readback through restart until eviction,
-  and pending-depth separation as runtime-control evidence, including
+  queued-versus-in-flight cancellation distinction, completion-race refusal
+  without cancelled-marker pollution, terminal-state task readback, bounded
+  terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
+  completion readback through restart until eviction, and pending-depth separation
+  as runtime-control evidence, including
   shared-runtime restart readback for task queue state and cancelled ids plus
   cancel-request handling during the per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
