@@ -559,15 +559,51 @@ fn authenticated_security_role(request: &RestRequest) -> Result<Option<&'static 
     Ok(Some(role))
 }
 
-fn require_admin_ml_role(request: &RestRequest) -> Result<(), RestResponse> {
-    match authenticated_security_role(request) {
-        Ok(Some("admin")) | Ok(None) => Ok(()),
-        Ok(Some(role)) => Err(forbidden_security_response(format!(
-            "role [{role}] is not allowed to access ML Commons route [{}]",
-            request.path
-        ))),
-        Err(response) => Err(response),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SecurityPermission {
+    ClusterAdmin,
+    IndexRead,
+    IndexWrite,
+}
+
+fn security_role_has_permission(role: Option<&str>, permission: SecurityPermission) -> bool {
+    match (role, permission) {
+        (None, _) => true,
+        (Some("admin"), _) => true,
+        (Some("reader"), SecurityPermission::IndexRead) => true,
+        (Some("writer"), SecurityPermission::IndexWrite) => true,
+        _ => false,
     }
+}
+
+fn require_security_permission(
+    request: &RestRequest,
+    permission: SecurityPermission,
+    route_family: &str,
+) -> Result<Option<&'static str>, RestResponse> {
+    let role = authenticated_security_role(request)?;
+    if security_role_has_permission(role, permission) {
+        Ok(role)
+    } else {
+        Err(forbidden_security_response(format!(
+            "role [{}] has no permissions for {route_family} request [{}]",
+            role.unwrap_or("anonymous"),
+            request.path
+        )))
+    }
+}
+
+fn security_role_can_write_target(role: Option<&str>, restricted_target: bool) -> bool {
+    match role {
+        None | Some("admin") => true,
+        Some("writer") => !restricted_target,
+        _ => false,
+    }
+}
+
+fn require_admin_ml_role(request: &RestRequest) -> Result<(), RestResponse> {
+    require_security_permission(request, SecurityPermission::ClusterAdmin, "ML Commons")
+        .map(|_| ())
 }
 
 fn bounded_text_embedding(text: &str) -> Value {
@@ -7101,13 +7137,7 @@ impl SteelNode {
     }
 
     fn handle_index_search_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for search request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "search") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7514,16 +7544,12 @@ impl SteelNode {
     }
 
     fn handle_bulk_route(&self, default_index: Option<&str>, request: &RestRequest) -> RestResponse {
-        let security_role = match authenticated_security_role(request) {
-            Ok(role) => {
-                if role == Some("reader") {
-                    return forbidden_security_response(format!(
-                        "no permissions for bulk write request [{}]",
-                        request.path
-                    ));
-                }
-                role
-            }
+        let security_role = match require_security_permission(
+            request,
+            SecurityPermission::IndexWrite,
+            "bulk write",
+        ) {
+            Ok(role) => role,
             Err(response) => return response,
         };
         let _thread_pool = match self.enter_runtime_thread_pool("write", 10000) {
@@ -7619,7 +7645,10 @@ impl SteelNode {
                 "delete" => Value::Null,
                 _ => Value::Null,
             };
-            let item = if security_role == Some("writer") && self.is_restricted_write_target(&index) {
+            let item = if !security_role_can_write_target(
+                security_role,
+                self.is_restricted_write_target(&index),
+            ) {
                 serde_json::json!({
                     action: {
                         "_index": index,
@@ -7734,13 +7763,7 @@ impl SteelNode {
     }
 
     fn handle_search_scroll_route(&self, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for search scroll request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7776,13 +7799,7 @@ impl SteelNode {
     }
 
     fn handle_search_scroll_with_id_route(&self, scroll_id: &str, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for search scroll request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7849,13 +7866,7 @@ impl SteelNode {
     }
 
     fn handle_clear_scroll_ids_route(&self, scroll_ids: Vec<String>, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for search scroll request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7879,13 +7890,7 @@ impl SteelNode {
     }
 
     fn handle_list_all_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for point in time request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7901,13 +7906,7 @@ impl SteelNode {
     }
 
     fn handle_clear_all_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for point in time request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7927,13 +7926,7 @@ impl SteelNode {
     }
 
     fn handle_open_point_in_time_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for point in time request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -7991,13 +7984,7 @@ impl SteelNode {
     }
 
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
-        match authenticated_security_role(request) {
-            Ok(Some("writer")) => {
-                return forbidden_security_response(format!(
-                    "no permissions for point in time request [{}]",
-                    request.path
-                ));
-            }
+        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -21520,6 +21507,59 @@ mod tests {
     }
 
     #[test]
+    fn secure_role_permission_evaluator_enforces_admin_reader_writer_matrix() {
+        assert!(security_role_has_permission(
+            None,
+            SecurityPermission::ClusterAdmin
+        ));
+        assert!(security_role_has_permission(
+            Some("admin"),
+            SecurityPermission::ClusterAdmin
+        ));
+        assert!(security_role_has_permission(
+            Some("admin"),
+            SecurityPermission::IndexRead
+        ));
+        assert!(security_role_has_permission(
+            Some("admin"),
+            SecurityPermission::IndexWrite
+        ));
+        assert!(security_role_has_permission(
+            Some("reader"),
+            SecurityPermission::IndexRead
+        ));
+        assert!(!security_role_has_permission(
+            Some("reader"),
+            SecurityPermission::IndexWrite
+        ));
+        assert!(!security_role_has_permission(
+            Some("reader"),
+            SecurityPermission::ClusterAdmin
+        ));
+        assert!(security_role_has_permission(
+            Some("writer"),
+            SecurityPermission::IndexWrite
+        ));
+        assert!(!security_role_has_permission(
+            Some("writer"),
+            SecurityPermission::IndexRead
+        ));
+        assert!(!security_role_has_permission(
+            Some("writer"),
+            SecurityPermission::ClusterAdmin
+        ));
+        assert!(!security_role_has_permission(
+            Some("unknown"),
+            SecurityPermission::IndexRead
+        ));
+        assert!(security_role_can_write_target(None, true));
+        assert!(security_role_can_write_target(Some("admin"), true));
+        assert!(security_role_can_write_target(Some("writer"), false));
+        assert!(!security_role_can_write_target(Some("writer"), true));
+        assert!(!security_role_can_write_target(Some("reader"), false));
+    }
+
+    #[test]
     fn secure_root_route_requires_valid_basic_auth_credentials() {
         let _lock = security_env_lock();
         unsafe {
@@ -33809,6 +33849,20 @@ mod tests {
         );
         assert_eq!(reader_response.status, 403);
         assert_eq!(reader_response.body["error"]["type"], "security_exception");
+
+        let admin_restricted = concat!(
+            "{\"index\":{\"_index\":\".opensearch-security-bulk-000001\",\"_id\":\"doc-admin\"}}\n",
+            "{\"message\":\"admin restricted write allowed\"}\n"
+        );
+        let admin_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(admin_restricted.as_bytes().to_vec()),
+        );
+        assert_eq!(admin_response.status, 200);
+        assert_eq!(admin_response.body["errors"], Value::Bool(false));
+        assert_eq!(admin_response.body["items"][0]["index"]["status"], 201);
 
         unsafe {
             env::remove_var("STEELSEARCH_SECURITY_ENABLED");

@@ -442,6 +442,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_role_permission_evaluator_enforces_admin_reader_writer_matrix",
+        "production-security-permission-evaluator",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_ml_routes_require_admin_role_and_connector_state_persists",
         "production-security-authorization",
         package="os-node",

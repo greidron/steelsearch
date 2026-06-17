@@ -96,14 +96,15 @@ Out of scope:
   readiness blocker reasons for concrete filesystem refusal plus production
   security/release gate refusal.
 - The same runner now has a `production-security` batch. It passed on
-  2026-06-17 with 9/9 tests and `zero_tests=0`, covering runtime env user and
+  2026-06-17 with 10/10 tests and `zero_tests=0`, covering runtime env user and
   service-account credentials loaded through the shared subject model, root
-  route Basic auth, ML admin-only routes, ML connector secret redaction from
-  REST responses and shared runtime persistence, authn/authz/fail-closed
-  decisions persisted as bounded security audit events, bulk/search/session
-  allow/deny checks, service-account writer authz, and explicit fail-closed
-  OpenSearch Security plugin API responses with documented `security_exception`
-  bodies instead of 404-only ambiguity.
+  route Basic auth, the shared admin/reader/writer permission evaluator, ML
+  admin-only routes, ML connector secret redaction from REST responses and
+  shared runtime persistence, authn/authz/fail-closed decisions persisted as
+  bounded security audit events, bulk/search/session allow/deny checks,
+  service-account writer authz, and explicit fail-closed OpenSearch Security
+  plugin API responses with documented `security_exception` bodies instead of
+  404-only ambiguity.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
   with 19/19 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
@@ -282,10 +283,11 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch production-security` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   users-file subject model loading for users and service accounts,
-  root/ML/bulk/search/session authn/authz checks, service-account writer
-  authz, bounded security audit event persistence, ML connector secret
-  redaction, and OpenSearch Security plugin API fail-closed responses as
-  production-security evidence.
+  root/ML/bulk/search/session authn/authz checks, the shared
+  admin/reader/writer permission evaluator, service-account writer authz,
+  bounded security audit event persistence, ML connector secret redaction, and
+  OpenSearch Security plugin API fail-closed responses as production-security
+  evidence.
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
