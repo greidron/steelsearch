@@ -65,6 +65,12 @@ def main() -> int:
                 "case_count": len(cases),
                 "connected_cases": counts["connected"],
                 "rejected_cases": counts["rejected"],
+                "summary": {
+                    "passed": True,
+                    "case_count": len(cases),
+                    "connected_cases": counts["connected"],
+                    "rejected_cases": counts["rejected"],
+                },
                 "status": "ok",
             },
             indent=2,

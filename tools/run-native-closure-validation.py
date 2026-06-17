@@ -552,6 +552,14 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         target=("--test", "dev_cluster_daemons"),
         features=("standalone-runtime",),
     ),
+    ExternalValidation(
+        "secure_multinode_tls_handshake_matrix_fixture_is_guarded",
+        "security-bootstrap-preflight",
+        (
+            "python3",
+            "tools/check-secure-multinode-tls.py",
+        ),
+    ),
 )
 
 STARTUP_READINESS_BATCH: tuple[ValidationTest, ...] = (

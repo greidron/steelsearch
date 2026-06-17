@@ -156,6 +156,10 @@ security-profile env credentials and
 are also loaded through that shared subject model before route-level Basic auth
 and role checks; unreadable or malformed runtime users files fail closed instead
 of falling back to env credentials.
+The startup-preflight gate also validates the secure multi-node TLS handshake
+matrix fixture so success, client-certificate success, wrong-CA rejection, and
+expired-certificate rejection buckets remain present while the concrete TLS
+listener wiring is still pending.
 The guarded production-security batch covers root authentication, the shared
 admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, single-document read/write role
