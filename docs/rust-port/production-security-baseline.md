@@ -27,8 +27,10 @@ Production security readiness requires all of these boundaries to be enforced:
 
 `SecurityBoundaryPolicy::steelsearch_native_required()` is the default. It
 marks every boundary as required and reports production blockers until the
-boundary is moved to `Enforced`. `SecurityBoundaryPolicy::enforced()` exists
-only for tests and future wiring after the actual enforcement code is present.
+boundary is moved to `Enforced`; HTTP TLS and transport TLS are tracked as
+separate blockers so one socket family cannot mask the other.
+`SecurityBoundaryPolicy::enforced()` exists only for tests and future wiring
+after the actual enforcement code is present.
 `ReleaseReadinessChecklist` separately keeps benchmark, load, chaos, packaging,
 and rolling-upgrade evidence out of the security-boundary state.
 Production startup preflight now also requires bootstrap material paths for
@@ -135,7 +137,8 @@ Production security is not complete until tests cover:
 - production readiness and startup failures when any boundary is stubbed.
 
 Existing production mode and readiness tests already assert that the daemon
-blocks production until all security boundaries are enforced, and that
+blocks production until all security boundaries are enforced, that HTTP TLS and
+transport TLS are distinct boundary blockers, and that
 production startup preflight and startup readiness report the same production
 security/release gate blocker. The production gate is now structured by
 security boundary and release checklist item, with tests proving that partial

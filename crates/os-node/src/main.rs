@@ -6785,7 +6785,8 @@ mod tests {
             .find(|blocker| blocker.starts_with("[production]"))
             .expect("production blocker should be reported");
         assert!(production_blocker.contains("production mode is blocked"));
-        assert!(production_blocker.contains("tls must be implemented and enforced"));
+        assert!(production_blocker.contains("http_tls must be implemented and enforced"));
+        assert!(production_blocker.contains("transport_tls must be implemented and enforced"));
         assert!(production_blocker.contains("authentication must be implemented and enforced"));
         assert!(production_blocker.contains("authorization must be implemented and enforced"));
         assert!(production_blocker.contains("audit_logging must be implemented and enforced"));
@@ -7330,7 +7331,8 @@ mod tests {
         .to_string();
 
         assert!(error.contains("production mode is blocked"));
-        assert!(error.contains("tls must be implemented and enforced"));
+        assert!(error.contains("http_tls must be implemented and enforced"));
+        assert!(error.contains("transport_tls must be implemented and enforced"));
         assert!(error.contains("authentication must be implemented and enforced"));
         assert!(error.contains("authorization must be implemented and enforced"));
         assert!(error.contains("audit_logging must be implemented and enforced"));

@@ -100,12 +100,13 @@ Out of scope:
   wiring, so query-string compatibility materialization is visible through
   `_nodes/stats` rather than disappearing into the source-eval route.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 29/29 tests and `zero_tests=0`, covering missing, readonly, locked,
+  with 30/30 tests and `zero_tests=0`, covering missing, readonly, locked,
   file-backed, and daemon-level data-path refusal/creation checks, bind,
   duplicate node-id, invalid address/port, explicit OpenSearch `-E` config-setting
   rejection with the Steelsearch flag/env-var contract, role/bootstrap,
   structured production
-  security/release policy gates, production security bootstrap material
+  security/release policy gates with distinct HTTP TLS and transport TLS
+  boundary blockers, production security bootstrap material
   through PEM-marker TLS certificate/key validation, certificate/private-key
   role mismatch rejection, invalid bootstrap file-content redaction, and the
   shared users-file subject parser including service-account-only

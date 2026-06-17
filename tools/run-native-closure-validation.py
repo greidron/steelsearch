@@ -368,6 +368,12 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
     ),
     ValidationTest(
+        "production_mode_request_tracks_http_and_transport_tls_independently",
+        "production-gate-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
         "authentication_users_file_parser_accepts_subjects_with_roles",
         "security-bootstrap-preflight",
         package="os-node-rest-core",

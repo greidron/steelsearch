@@ -37,7 +37,8 @@ pub struct RestServerConfig {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SecurityBoundaryPolicy {
-    pub tls: SecurityBoundaryState,
+    pub http_tls: SecurityBoundaryState,
+    pub transport_tls: SecurityBoundaryState,
     pub authentication: SecurityBoundaryState,
     pub authorization: SecurityBoundaryState,
     pub audit_logging: SecurityBoundaryState,
@@ -68,7 +69,8 @@ impl SecurityBoundaryPolicy {
 
     pub fn enforced() -> Self {
         Self {
-            tls: SecurityBoundaryState::Enforced,
+            http_tls: SecurityBoundaryState::Enforced,
+            transport_tls: SecurityBoundaryState::Enforced,
             authentication: SecurityBoundaryState::Enforced,
             authorization: SecurityBoundaryState::Enforced,
             audit_logging: SecurityBoundaryState::Enforced,
@@ -79,7 +81,11 @@ impl SecurityBoundaryPolicy {
 
     fn blockers(&self) -> Vec<&'static str> {
         let boundaries = [
-            (self.tls, "tls must be implemented and enforced"),
+            (self.http_tls, "http_tls must be implemented and enforced"),
+            (
+                self.transport_tls,
+                "transport_tls must be implemented and enforced",
+            ),
             (
                 self.authentication,
                 "authentication must be implemented and enforced",
@@ -241,7 +247,8 @@ mod tests {
         .to_string();
 
         assert!(error.contains("production mode is blocked"));
-        assert!(error.contains("tls must be implemented and enforced"));
+        assert!(error.contains("http_tls must be implemented and enforced"));
+        assert!(error.contains("transport_tls must be implemented and enforced"));
         assert!(error.contains("authentication must be implemented and enforced"));
         assert!(error.contains("authorization must be implemented and enforced"));
         assert!(error.contains("audit_logging must be implemented and enforced"));
@@ -266,7 +273,8 @@ mod tests {
     #[test]
     fn production_mode_request_keeps_release_and_security_blockers_distinct() {
         let policy = SecurityBoundaryPolicy {
-            tls: SecurityBoundaryState::Enforced,
+            http_tls: SecurityBoundaryState::Enforced,
+            transport_tls: SecurityBoundaryState::Enforced,
             authentication: SecurityBoundaryState::Enforced,
             ..SecurityBoundaryPolicy::steelsearch_native_required()
         };
@@ -279,11 +287,29 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(!error.contains("tls must be implemented and enforced"));
+        assert!(!error.contains("http_tls must be implemented and enforced"));
+        assert!(!error.contains("transport_tls must be implemented and enforced"));
         assert!(!error.contains("authentication must be implemented and enforced"));
         assert!(error.contains("authorization must be implemented and enforced"));
         assert!(!error.contains("benchmark coverage is missing"));
         assert!(error.contains("load test coverage is missing"));
+    }
+
+    #[test]
+    fn production_mode_request_tracks_http_and_transport_tls_independently() {
+        let policy = SecurityBoundaryPolicy {
+            http_tls: SecurityBoundaryState::Enforced,
+            ..SecurityBoundaryPolicy::steelsearch_native_required()
+        };
+
+        let error = validate_production_mode_request(&policy, ReleaseReadinessChecklist::complete())
+            .unwrap_err()
+            .to_string();
+
+        assert!(!error.contains("http_tls must be implemented and enforced"));
+        assert!(error.contains("transport_tls must be implemented and enforced"));
+        assert!(error.contains("authentication must be implemented and enforced"));
+        assert!(!error.contains("benchmark coverage is missing"));
     }
 
     #[test]
