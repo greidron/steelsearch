@@ -1024,6 +1024,44 @@ RUNTIME_TASK_CHILDREN_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_LIFECYCLE_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "runtime_lifecycle_hooks_describe_shutdown_and_recovery_admission_boundaries",
+        "runtime-lifecycle-hooks",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "cancelled_terminal_live_shutdown_preserves_progress_and_refuses_cancel",
+        "runtime-lifecycle-shutdown",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "cancelled_terminal_cancel_after_restart_sync_preserves_progress",
+        "runtime-lifecycle-restart",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "task_submission_is_refused_during_live_shutdown_window",
+        "runtime-lifecycle-task-admission",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "accepted_queued_task_submission_is_not_replayed_during_partial_recovery_error",
+        "runtime-lifecycle-recovery",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 MODULE_REGISTRATION_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "extension_manifest_values_feed_effective_registry",
@@ -1129,6 +1167,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,
     "runtime-task-children": RUNTIME_TASK_CHILDREN_BATCH,
+    "runtime-lifecycle": RUNTIME_LIFECYCLE_BATCH,
     "module-registration": MODULE_REGISTRATION_BATCH,
 }
 

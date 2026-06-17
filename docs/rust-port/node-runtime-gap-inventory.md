@@ -264,6 +264,11 @@ Current Steelsearch evidence:
   propagation, background-worker descendant cancellation propagation, and
   same-node parent/child plus multi-level descendant
   rethrottle rate visibility;
+- `tools/run-native-closure-validation.py --batch runtime-lifecycle` passed on
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering explicit runtime
+  lifecycle hook descriptors for startup/restart sync, steady-state admission,
+  live shutdown, and partial shared-runtime recovery, plus shutdown/recovery
+  fail-closed task-submission boundaries and terminal task progress readback;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 
@@ -279,6 +284,8 @@ Required tests:
   mixed-class search/write versus maintenance drain, and remote-backlog
   task-submission/search/write isolation into broader multi-node fairness behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
+- broaden lifecycle probes from explicit local hook descriptors into daemon-level
+  signal, listener-drain, and multi-node lifecycle transitions.
 
 ## Gap Class 3: Plugin And Module Boundaries
 
@@ -317,12 +324,14 @@ Current Steelsearch evidence:
 Required next implementation direction:
 
 - expose module/feature registration as runtime wiring, not just crate
-  composition.
+  composition, and connect module activation/deactivation to the runtime
+  lifecycle hook surface.
 
 Required tests:
 
 - none for the current Rust-native extension API descriptor boundary; the next
-  gap is explicit lifecycle hooks rather than more boolean-gate evidence.
+  gap is lifecycle behavior at daemon and multi-node runtime boundaries rather
+  than more local descriptor evidence.
 
 ## Gap Class 4: User-Facing Runtime Identity And Config Hygiene
 

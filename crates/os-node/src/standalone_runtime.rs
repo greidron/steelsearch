@@ -2001,6 +2001,44 @@ pub struct SteelNode {
     pub snapshot_restores_in_progress: Arc<Mutex<BTreeSet<String>>>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeLifecycleHookDescriptor {
+    pub phase: &'static str,
+    pub hook: &'static str,
+    pub behavior: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeLifecycleSnapshot {
+    pub active_phase: String,
+    pub task_submission_available: bool,
+    pub blockers: Vec<String>,
+    pub hooks: Vec<RuntimeLifecycleHookDescriptor>,
+}
+
+pub const RUNTIME_LIFECYCLE_HOOKS: &[RuntimeLifecycleHookDescriptor] = &[
+    RuntimeLifecycleHookDescriptor {
+        phase: "startup",
+        hook: "sync_shared_runtime_state_from_disk",
+        behavior: "reload restart-safe runtime state before per-request mutations when enabled",
+    },
+    RuntimeLifecycleHookDescriptor {
+        phase: "steady_state",
+        hook: "refuse_task_submission_if_unavailable",
+        behavior: "admit task-submission routes only while lifecycle blockers are absent",
+    },
+    RuntimeLifecycleHookDescriptor {
+        phase: "shutdown",
+        hook: "set_live_shutdown_in_progress",
+        behavior: "fail closed for new task submissions while preserving terminal task readback",
+    },
+    RuntimeLifecycleHookDescriptor {
+        phase: "recovery",
+        hook: "set_shared_runtime_state_recovery_failed",
+        behavior: "fail closed for mutating task submissions until shared runtime state is readable",
+    },
+];
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StoredDocument {
     pub source: Value,
@@ -15503,6 +15541,36 @@ impl SteelNode {
             .expect("live shutdown flag lock poisoned")
     }
 
+    pub fn runtime_lifecycle_hooks(&self) -> Vec<RuntimeLifecycleHookDescriptor> {
+        RUNTIME_LIFECYCLE_HOOKS.to_vec()
+    }
+
+    pub fn runtime_lifecycle_snapshot(&self) -> RuntimeLifecycleSnapshot {
+        let mut blockers = Vec::new();
+        if self.live_shutdown_in_progress() {
+            blockers.push("live_shutdown_in_progress".to_string());
+        }
+        if self.shared_runtime_state_recovery_failed() {
+            blockers.push("shared_runtime_state_recovery_failed".to_string());
+        }
+        let active_phase = if blockers.iter().any(|blocker| blocker == "live_shutdown_in_progress") {
+            "shutdown"
+        } else if blockers
+            .iter()
+            .any(|blocker| blocker == "shared_runtime_state_recovery_failed")
+        {
+            "recovery"
+        } else {
+            "steady_state"
+        };
+        RuntimeLifecycleSnapshot {
+            active_phase: active_phase.to_string(),
+            task_submission_available: blockers.is_empty(),
+            blockers,
+            hooks: self.runtime_lifecycle_hooks(),
+        }
+    }
+
     fn refuse_task_submission_if_unavailable(&self) -> Option<RestResponse> {
         if self.live_shutdown_in_progress() {
             return Some(build_live_shutdown_task_submission_unavailable_response());
@@ -24813,6 +24881,67 @@ mod tests {
                 .expect("pending tasks array")
                 .len(),
             0
+        );
+    }
+
+    #[test]
+    fn runtime_lifecycle_hooks_describe_shutdown_and_recovery_admission_boundaries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let steady = node.runtime_lifecycle_snapshot();
+        assert_eq!(steady.active_phase, "steady_state");
+        assert!(steady.task_submission_available);
+        assert!(steady.blockers.is_empty());
+        assert_eq!(steady.hooks, RUNTIME_LIFECYCLE_HOOKS);
+        assert!(steady
+            .hooks
+            .iter()
+            .any(|hook| hook.phase == "shutdown" && hook.hook == "set_live_shutdown_in_progress"));
+        assert!(steady.hooks.iter().any(|hook| {
+            hook.phase == "recovery" && hook.hook == "set_shared_runtime_state_recovery_failed"
+        }));
+        assert!(node.refuse_task_submission_if_unavailable().is_none());
+
+        node.set_shared_runtime_state_recovery_failed(true);
+        let recovery = node.runtime_lifecycle_snapshot();
+        assert_eq!(recovery.active_phase, "recovery");
+        assert!(!recovery.task_submission_available);
+        assert_eq!(
+            recovery.blockers,
+            vec!["shared_runtime_state_recovery_failed".to_string()]
+        );
+        let recovery_refusal = node
+            .refuse_task_submission_if_unavailable()
+            .expect("recovery should refuse task submission");
+        assert_eq!(recovery_refusal.status, 503);
+        assert_eq!(
+            recovery_refusal.body["error"]["reason"],
+            Value::String(
+                "task submission rejected while shared runtime state recovery is incomplete"
+                    .to_string()
+            )
+        );
+
+        node.set_live_shutdown_in_progress(true);
+        let shutdown = node.runtime_lifecycle_snapshot();
+        assert_eq!(shutdown.active_phase, "shutdown");
+        assert_eq!(
+            shutdown.blockers,
+            vec![
+                "live_shutdown_in_progress".to_string(),
+                "shared_runtime_state_recovery_failed".to_string(),
+            ]
+        );
+        let shutdown_refusal = node
+            .refuse_task_submission_if_unavailable()
+            .expect("shutdown should refuse task submission");
+        assert_eq!(shutdown_refusal.status, 503);
+        assert_eq!(
+            shutdown_refusal.body["error"]["reason"],
+            Value::String("task submission rejected while node shutdown is in progress".to_string())
         );
     }
 

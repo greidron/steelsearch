@@ -187,6 +187,11 @@ Out of scope:
   propagation, background-worker descendant cancellation propagation, and
   same-node parent/child plus multi-level descendant
   rethrottle rate visibility.
+- The same runner now has a `runtime-lifecycle` batch. It passed on
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering explicit runtime
+  lifecycle hook descriptors for startup/restart sync, steady-state admission,
+  live shutdown, and partial shared-runtime recovery, plus shutdown/recovery
+  fail-closed task-submission boundaries and terminal task progress readback.
 - The same runner now has a `module-registration` batch. It passed on
   2026-06-17 with 10/10 tests and `zero_tests=0`, covering extension manifest
   booleans feeding the effective runtime registry, malformed manifest
@@ -374,6 +379,11 @@ Validation runner:
   propagation, background-worker descendant cancellation propagation, plus
   parent/child and multi-level descendant rethrottle rate visibility as
   runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch runtime-lifecycle` must report
+  `failed_count == 0` and `zero_test_count == 0` before treating explicit
+  runtime lifecycle hook descriptors, shutdown/recovery admission blockers,
+  terminal progress preservation, and partial-recovery task-submission refusal
+  as runtime-lifecycle evidence.
 - `tools/run-native-closure-validation.py --batch module-registration` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   extension manifest registry loading and registry-derived `_cat/plugins`

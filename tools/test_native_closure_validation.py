@@ -38,6 +38,16 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--exercise-interruption", command)
         self.assertIn("--require-interruption", command)
 
+    def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
+        batch = self.runner.BATCHES["runtime-lifecycle"]
+
+        self.assertTrue(any(
+            case.name == "runtime_lifecycle_hooks_describe_shutdown_and_recovery_admission_boundaries"
+            for case in batch
+        ))
+        self.assertTrue(any(case.group == "runtime-lifecycle-shutdown" for case in batch))
+        self.assertTrue(any(case.group == "runtime-lifecycle-recovery" for case in batch))
+
     def test_external_validation_reads_summary_passed(self):
         case = self.runner.ExternalValidation(
             "synthetic_external_validation",
