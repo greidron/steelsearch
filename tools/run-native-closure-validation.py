@@ -1409,6 +1409,13 @@ MODULE_REGISTRATION_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "three_local_daemons_form_development_cluster_and_handle_index_smoke",
+        "module-registration-boundary-live-daemon",
+        package="os-node",
+        target=("--test", "dev_cluster_daemons"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "plugin_exports_rust_native_extension_descriptor_surface",
         "module-registration-boundary",
         package="os-plugin-knn",

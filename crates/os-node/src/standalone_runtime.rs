@@ -102,7 +102,7 @@ pub trait RustNativeExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct ExtensionRegistrationEntry {
     pub module: &'static str,
     pub feature: &'static str,
@@ -122,7 +122,7 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
             feature: "runtime-observability",
             description: "Steelsearch development runtime plugin surface",
             classname: "org.steelsearch.runtime.Plugin",
-            rest_routes: &["/_cat/plugins"],
+            rest_routes: &["/_cat/plugins", "/_steelsearch/dev/extensions"],
             transport_actions: &[],
             lifecycle_hooks: &[
                 "sync_shared_runtime_state_from_disk",
@@ -2566,6 +2566,9 @@ impl SteelNode {
                 Some(self.handle_swagger_ui_bundle_route())
             }
             (RestMethod::Get, "/_steelsearch/dev/cluster") => Some(self.handle_dev_cluster_route()),
+            (RestMethod::Get, "/_steelsearch/dev/extensions") => {
+                Some(self.handle_dev_extensions_route())
+            }
             (RestMethod::Head, "/_all") => Some(RestResponse::opensearch_error_kind(
                 os_rest::RestErrorKind::IllegalArgument,
                 "unsupported broad selector",
@@ -4059,10 +4062,26 @@ impl SteelNode {
     }
 
     fn handle_dev_cluster_route(&self) -> RestResponse {
+        let cluster_view = self.cluster_view.clone().unwrap_or_default();
+        let node_count = cluster_view.nodes.len() as u64;
+        let mut body =
+            serde_json::to_value(cluster_view).unwrap_or_else(|_| Value::Object(Default::default()));
+        if let Some(object) = body.as_object_mut() {
+            object.insert("number_of_nodes".to_string(), Value::from(node_count));
+            object.insert("formed".to_string(), Value::Bool(node_count > 0));
+        }
+        RestResponse::json(200, body)
+    }
+
+    fn handle_dev_extensions_route(&self) -> RestResponse {
         RestResponse::json(
             200,
-            serde_json::to_value(self.cluster_view.clone().unwrap_or_default())
-                .unwrap_or_else(|_| Value::Object(Default::default())),
+            serde_json::json!({
+                "components": self.extension_registry.registered_components(),
+                "registration_table": self.extension_registry.registration_table(),
+                "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
+                "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
+            }),
         )
     }
 
@@ -23078,7 +23097,7 @@ mod tests {
         assert!(entries.iter().any(|entry| {
             entry.module == "steelsearch-runtime"
                 && entry.feature == "runtime-observability"
-                && entry.rest_routes == &["/_cat/plugins"]
+                && entry.rest_routes == &["/_cat/plugins", "/_steelsearch/dev/extensions"]
                 && entry.transport_actions.is_empty()
                 && entry
                     .lifecycle_hooks
@@ -23111,7 +23130,7 @@ mod tests {
         assert!(descriptors.iter().any(|descriptor| {
             descriptor.module == "steelsearch-runtime"
                 && descriptor.classname == "org.steelsearch.runtime.Plugin"
-                && descriptor.rest_routes == &["/_cat/plugins"]
+                && descriptor.rest_routes == &["/_cat/plugins", "/_steelsearch/dev/extensions"]
                 && descriptor.transport_actions.is_empty()
                 && descriptor
                     .lifecycle_hooks
