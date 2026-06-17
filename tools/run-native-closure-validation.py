@@ -224,6 +224,18 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+BENCHMARK_TELEMETRY_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "benchmark_telemetry_scripts_expose_native_counters",
+        "benchmark-telemetry",
+        (
+            "python3",
+            "-c",
+            "import json, subprocess, sys; result = subprocess.run([sys.executable, '-m', 'unittest', 'tools/test_benchmark_telemetry_scripts.py']); print(json.dumps({'summary': {'passed': result.returncode == 0}})); sys.exit(result.returncode)",
+        ),
+    ),
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -885,6 +897,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
     "source-backed-query": SOURCE_BACKED_QUERY_BATCH,
+    "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,

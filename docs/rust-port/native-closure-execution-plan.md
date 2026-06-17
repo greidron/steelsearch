@@ -73,6 +73,12 @@ Out of scope:
   nested child ordinals, `geo_distance`, `distance_feature`, `rank_feature`,
   `more_like_this`, `terms_set`, `query_string`, `simple_query_string`, and
   `combined_fields`.
+- The same runner now has a `benchmark-telemetry` batch. It passed on
+  2026-06-17 with 1/1 external validation and `zero_tests=0`, covering
+  benchmark/load JSON and Markdown exposure for materialized response fetches,
+  avoided materialization, compatibility materialization, and request-result
+  cache bypass counters for hybrid vector, unsupported vector, highlight, and
+  explain request surfaces.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
   with 20/20 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, role/bootstrap, structured production
@@ -245,6 +251,10 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating
   source-backed query native execution and hybrid candidate-reduction surfaces
   as closure evidence.
+- `tools/run-native-closure-validation.py --batch benchmark-telemetry` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating
+  materialized response and request-result cache bypass counters as benchmark
+  evidence.
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release

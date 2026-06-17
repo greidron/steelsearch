@@ -857,6 +857,8 @@ STEELSEARCH_NATIVE_TELEMETRY_COUNTERS = (
     "compatibility_materialized_response_fetches",
     "request_result_cache_hybrid_vector_bypasses",
     "request_result_cache_unsupported_vector_bypasses",
+    "request_result_cache_highlight_bypasses",
+    "request_result_cache_explain_bypasses",
 )
 
 

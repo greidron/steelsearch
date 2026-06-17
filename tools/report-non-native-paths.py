@@ -241,10 +241,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="materialized SearchHit boundary",
         category="materialization",
-        status="present with runtime and benchmark telemetry counters",
-        next_action="set closure thresholds and reduce high-delta materialized fallback families",
-        evidence_path=BENCHMARK_MATRIX,
-        evidence_pattern=r"STEELSEARCH_NATIVE_TELEMETRY_COUNTERS",
+        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, and request-result cache bypass causes",
+        next_action="set closure thresholds from benchmark deltas and reduce high-delta materialized fallback families",
+        evidence_path=NATIVE_CLOSURE_VALIDATION,
+        evidence_pattern=r"BENCHMARK_TELEMETRY_BATCH",
     ),
     Family(
         name="malformed wrapper and rebucketing validation",

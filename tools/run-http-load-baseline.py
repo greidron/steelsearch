@@ -111,6 +111,12 @@ def main() -> int:
                     "request_result_cache_unsupported_vector_bypasses": {
                         "source": args.metrics_path,
                     },
+                    "request_result_cache_highlight_bypasses": {
+                        "source": args.metrics_path,
+                    },
+                    "request_result_cache_explain_bypasses": {
+                        "source": args.metrics_path,
+                    },
                 },
             },
             args.output,
@@ -569,6 +575,14 @@ class ResourceProbes:
                 metrics,
                 "request_result_cache_unsupported_vector_bypasses",
             ),
+            "request_result_cache_highlight_bypasses": metric_counter(
+                metrics,
+                "request_result_cache_highlight_bypasses",
+            ),
+            "request_result_cache_explain_bypasses": metric_counter(
+                metrics,
+                "request_result_cache_explain_bypasses",
+            ),
         }
 
     def start_peak_sampling(self, interval_seconds: float = 0.25) -> None:
@@ -713,6 +727,8 @@ def compare_resource_samples(
             "compatibility_materialized_response_fetches",
             "request_result_cache_hybrid_vector_bypasses",
             "request_result_cache_unsupported_vector_bypasses",
+            "request_result_cache_highlight_bypasses",
+            "request_result_cache_explain_bypasses",
         )
     }
 
