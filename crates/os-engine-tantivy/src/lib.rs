@@ -158,6 +158,7 @@ struct NestedPathChildIndex {
     children: Vec<NestedChildDocument>,
     field_terms: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
     field_string_terms: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
+    field_scalar_values: BTreeMap<String, Vec<(Value, usize)>>,
     field_exists: BTreeMap<String, std::collections::BTreeSet<usize>>,
 }
 
@@ -211,6 +212,7 @@ impl NestedPathChildIndex {
             ordinal,
             &mut self.field_terms,
             &mut self.field_string_terms,
+            &mut self.field_scalar_values,
             &mut self.field_exists,
         );
         self.children.push(child);
@@ -14641,6 +14643,7 @@ fn index_nested_child_terms(
     ordinal: usize,
     field_terms: &mut BTreeMap<String, BTreeMap<String, Vec<usize>>>,
     field_string_terms: &mut BTreeMap<String, BTreeMap<String, Vec<usize>>>,
+    field_scalar_values: &mut BTreeMap<String, Vec<(Value, usize)>>,
     field_exists: &mut BTreeMap<String, std::collections::BTreeSet<usize>>,
 ) {
     if !field_prefix.is_empty() && value_matches_exists_query(value) {
@@ -14663,6 +14666,7 @@ fn index_nested_child_terms(
                     ordinal,
                     field_terms,
                     field_string_terms,
+                    field_scalar_values,
                     field_exists,
                 );
             }
@@ -14675,11 +14679,20 @@ fn index_nested_child_terms(
                     ordinal,
                     field_terms,
                     field_string_terms,
+                    field_scalar_values,
                     field_exists,
                 );
             }
         }
         _ => {
+            if !field_prefix.is_empty()
+                && matches!(value, Value::Bool(_) | Value::Number(_) | Value::String(_))
+            {
+                field_scalar_values
+                    .entry(field_prefix.to_string())
+                    .or_default()
+                    .push((value.clone(), ordinal));
+            }
             if let Some(term) = nested_child_term_key(value) {
                 field_terms
                     .entry(field_prefix.to_string())
@@ -16399,6 +16412,7 @@ fn native_nested_child_ordinals_for_query(
 ) -> Option<std::collections::BTreeSet<usize>> {
     match query {
         Query::Term { field, value } => nested_child_term_ordinals(path_index, path, field, value),
+        Query::Range { field, bounds } => nested_child_range_ordinals(path_index, path, field, bounds),
         Query::Exists { field } => nested_child_exists_ordinals(path_index, path, field),
         Query::Prefix {
             field,
@@ -16461,6 +16475,31 @@ fn nested_child_term_ordinals(
             .copied()
             .collect(),
     )
+}
+
+fn nested_child_range_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    field: &str,
+    bounds: &RangeBounds,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let mut ordinals = std::collections::BTreeSet::new();
+    if field == "_id" {
+        for (ordinal, child) in path_index.children.iter().enumerate() {
+            if matches_range_query(&Value::String(child.parent_id.clone()), bounds) {
+                ordinals.insert(ordinal);
+            }
+        }
+        return Some(ordinals);
+    }
+
+    let field = nested_child_local_field_name(path, field);
+    for (value, ordinal) in path_index.field_scalar_values.get(&field)? {
+        if matches_range_query(value, bounds) {
+            ordinals.insert(*ordinal);
+        }
+    }
+    Some(ordinals)
 }
 
 fn nested_child_prefix_ordinals(
@@ -137725,6 +137764,79 @@ mod tests {
             .unwrap()
             .expect("native nested prefix hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_range_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "score": 7, "tag": "x" },
+                { "score": 1, "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "score": 9, "tag": "y" },
+                { "score": 2, "tag": "x" }
+            ])),
+            ("3", serde_json::json!([
+                { "score": "8", "tag": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "score": [4, 6], "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            { "range": { "comments.score": { "gte": 5 } } },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native nested range hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1", "4"]);
     }
 
     #[test]
