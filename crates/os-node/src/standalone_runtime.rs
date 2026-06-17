@@ -16233,9 +16233,6 @@ fn build_unsupported_search_response(reason: &str) -> RestResponse {
 }
 
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
-    if value_contains_any_key(&body["query"], &["query_string", "simple_query_string"]) {
-        return false;
-    }
     ![
         "collapse",
         "profile",
@@ -23613,6 +23610,91 @@ mod tests {
                 "path {path}"
             );
         }
+    }
+
+    #[test]
+    fn query_string_native_http_path_updates_materialized_search_cache_stats() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-query-string-telemetry").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "signal": { "type": "float" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        for (id, signal) in [
+            ("1", serde_json::json!("api")),
+            ("2", serde_json::json!("worker")),
+            ("3", serde_json::json!(["api", "checkout"])),
+        ] {
+            let index = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    format!("/logs-query-string-telemetry/_doc/{id}"),
+                )
+                .with_json_body(serde_json::json!({ "signal": signal })),
+            );
+            assert_eq!(index.status, 201);
+        }
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-query-string-telemetry/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-query-string-telemetry/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 10,
+                    "query": {
+                        "query_string": {
+                            "query": "api",
+                            "fields": ["signal"]
+                        }
+                    }
+                })),
+        );
+        assert_eq!(search.status, 200);
+        assert_eq!(search.body["hits"]["total"]["value"], 2);
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(
+            first_node["steelsearch"]["search_cache"]["materialized_response_fetches"],
+            1
+        );
+        assert_eq!(
+            first_node["steelsearch"]["search_cache"]
+                ["compatibility_materialized_response_fetches"],
+            1
+        );
     }
 
     #[test]

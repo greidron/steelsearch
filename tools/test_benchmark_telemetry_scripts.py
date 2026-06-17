@@ -53,6 +53,34 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         resource_usage = payload["resource_usage"]
         for counter in EXPECTED_NATIVE_COUNTERS:
             self.assertEqual(resource_usage[counter]["source"], "/_nodes/stats")
+        self.assertNotIn(
+            "fallback_query_string",
+            [operation["operation"] for operation in payload["operations"]],
+        )
+
+    def test_http_load_baseline_dry_run_exposes_opt_in_fallback_operation(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(BASELINE_PATH),
+                "--dry-run",
+                "--duration-seconds",
+                "1",
+                "--query-mix",
+                "fallback_query_string=1",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            payload["operations"],
+            [{"operation": "fallback_query_string", "weight": 1, "share": 1.0}],
+        )
 
     def test_benchmark_matrix_report_exposes_all_native_telemetry_counters(self):
         matrix = load_matrix_module()
@@ -118,6 +146,7 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             "| lexical | `materialized_response_fetches` | 1 | 4 | 0.25 | 1.00 | `pass` |",
             report,
         )
+        self.assertIn("`fallback_query_string`: opt-in diagnostic query-string fallback case", report)
 
     def test_benchmark_matrix_json_marks_materialization_budget_failures(self):
         matrix = load_matrix_module()

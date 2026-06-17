@@ -20,7 +20,18 @@ from typing import Any
 
 
 DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5"
-OPERATIONS = ("write", "lexical", "ranking", "facet", "sort_filter", "nested", "vector", "hybrid", "refresh")
+OPERATIONS = (
+    "write",
+    "lexical",
+    "ranking",
+    "facet",
+    "sort_filter",
+    "nested",
+    "vector",
+    "hybrid",
+    "refresh",
+    "fallback_query_string",
+)
 NATIVE_TELEMETRY_COUNTERS = (
     "materialized_response_fetches",
     "materialized_response_avoided_fetches",
@@ -276,6 +287,7 @@ class LoadRunner:
             self.config["query_mix"].get("vector", 0) > 0
             or self.config["query_mix"].get("hybrid", 0) > 0
         )
+        fallback_diagnostics_enabled = self.config["query_mix"].get("fallback_query_string", 0) > 0
         settings = {
             "index": {
                 "number_of_shards": self.config["number_of_shards"],
@@ -303,6 +315,8 @@ class LoadRunner:
             "latency": {"type": "long"},
             "event_time": {"type": "date"},
         }
+        if fallback_diagnostics_enabled:
+            properties["signal"] = {"type": "float"}
         if vector_enabled:
             properties["embedding"] = {
                 "type": "knn_vector",
@@ -323,8 +337,16 @@ class LoadRunner:
             raise RuntimeError(f"failed to create {index}: {response}")
 
     def seed_corpus(self) -> None:
+        fallback_diagnostics_enabled = self.config["query_mix"].get("fallback_query_string", 0) > 0
         for doc_id in range(self.config["corpus_size"]):
-            response = self.index_document(f"seed-{doc_id}", document_for(doc_id, self.config["vector_dimension"]))
+            response = self.index_document(
+                f"seed-{doc_id}",
+                document_for(
+                    doc_id,
+                    self.config["vector_dimension"],
+                    fallback_diagnostics_enabled=fallback_diagnostics_enabled,
+                ),
+            )
             if response["status"] not in (200, 201):
                 raise RuntimeError(f"failed to seed document {doc_id}: {response}")
         response = self.http("POST", f"/{self.config['index']}/_refresh", {})
@@ -355,7 +377,14 @@ class LoadRunner:
     def run_operation(self, operation: str, client_id: int, counter: int, rng: random.Random) -> dict[str, Any]:
         if operation == "write":
             doc_id = self.config["corpus_size"] + client_id * 1_000_000 + counter
-            return self.index_document(f"live-{client_id}-{counter}", document_for(doc_id, self.config["vector_dimension"]))
+            return self.index_document(
+                f"live-{client_id}-{counter}",
+                document_for(
+                    doc_id,
+                    self.config["vector_dimension"],
+                    fallback_diagnostics_enabled=self.config["query_mix"].get("fallback_query_string", 0) > 0,
+                ),
+            )
         if operation == "lexical":
             return self.search(
                 {
@@ -486,6 +515,18 @@ class LoadRunner:
             )
         if operation == "refresh":
             return self.http("POST", f"/{self.config['index']}/_refresh", {})
+        if operation == "fallback_query_string":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "query_string": {
+                            "query": "api",
+                            "fields": ["signal"],
+                        }
+                    },
+                }
+            )
         raise RuntimeError(f"unsupported operation: {operation}")
 
     def index_document(self, doc_id: str, document: dict[str, Any]) -> dict[str, Any]:
@@ -758,7 +799,7 @@ def choose_operation(rng: random.Random, cumulative: list[tuple[int, str]]) -> s
     return cumulative[-1][1]
 
 
-def document_for(doc_id: int, dimension: int) -> dict[str, Any]:
+def document_for(doc_id: int, dimension: int, *, fallback_diagnostics_enabled: bool = False) -> dict[str, Any]:
     terms = ("alpha", "bravo", "charlie", "delta", "checkout", "catalog", "premium", "analytics")
     services = ("checkout", "catalog", "payments", "search")
     categories = ("commerce", "search", "analytics")
@@ -766,7 +807,7 @@ def document_for(doc_id: int, dimension: int) -> dict[str, Any]:
     day = (doc_id % 28) + 1
     service = services[doc_id % len(services)]
     category = categories[doc_id % len(categories)]
-    return {
+    document = {
         "title": f"{category} {service} summary {doc_id}",
         "message": f"{terms[doc_id % len(terms)]} service event {doc_id}",
         "category": category,
@@ -789,6 +830,19 @@ def document_for(doc_id: int, dimension: int) -> dict[str, Any]:
         "event_time": f"2026-01-{day:02d}T12:00:00Z",
         "embedding": vector_for(doc_id, dimension),
     }
+    if fallback_diagnostics_enabled:
+        document["signal"] = fallback_signal_for(doc_id)
+    return document
+
+
+def fallback_signal_for(doc_id: int) -> Any:
+    match doc_id % 3:
+        case 0:
+            return "api"
+        case 1:
+            return "worker"
+        case _:
+            return ["api", "checkout"]
 
 
 def vector_for(doc_id: int, dimension: int) -> list[float]:

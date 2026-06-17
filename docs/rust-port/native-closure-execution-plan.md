@@ -94,8 +94,11 @@ Out of scope:
   `compatibility_materialized_response_fetches` by successful-operation
   threshold. The load and matrix runners also support opt-in operation-level
   native counter deltas for exact single-client materialization attribution,
-  and the benchmark Markdown report renders operation-level materialization
-  budget rows when those deltas are present.
+  an opt-in `fallback_query_string` diagnostic workload, and benchmark Markdown
+  operation-level materialization budget rows when those deltas are present.
+  The same gate now covers standalone HTTP query-string native-path stats
+  wiring, so query-string compatibility materialization is visible through
+  `_nodes/stats` rather than disappearing into the source-eval route.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
   with 26/26 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, explicit OpenSearch `-E` config-setting
@@ -352,8 +355,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch benchmark-telemetry` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   materialized response counters, successful-operation materialization budget
-  thresholds, operation-level native counter deltas, and request-result cache
-  bypass counters as benchmark evidence.
+  thresholds, operation-level native counter deltas, standalone HTTP
+  query-string stats wiring, and request-result cache bypass counters as
+  benchmark evidence.
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release

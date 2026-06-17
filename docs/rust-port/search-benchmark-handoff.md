@@ -63,6 +63,13 @@ Interpretation:
   `--clients 1` when the goal is exact per-case materialization attribution;
   the matrix runner forwards the same flag and renders operation-level
   materialization budget rows when those deltas are present.
+- The load runner also has an opt-in `fallback_query_string` workload for
+  materialization diagnostics. It is not in the default comparison mix; run it
+  explicitly with `--query-mix fallback_query_string=1 --clients 1
+  --operation-resource-deltas` to attribute query-string compatibility
+  materialization. The matrix runner now clears a scenario output directory
+  before a fresh run so stale gateway manifests from previous ports do not
+  poison repeat local slices.
 
 Functional OpenSearch E2E comparison status:
 

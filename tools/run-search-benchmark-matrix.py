@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -195,7 +196,6 @@ def main() -> int:
     try:
         for scenario in scenarios:
             scenario_dir = output_dir / scenario.key
-            scenario_dir.mkdir(parents=True, exist_ok=True)
             baseline_output = scenario_dir / "baseline.json"
             if args.aggregate_only or (args.skip_existing and baseline_output.exists()):
                 if not baseline_output.exists():
@@ -207,6 +207,9 @@ def main() -> int:
                 continue
             if args.aggregate_only:
                 continue
+            if scenario_dir.exists():
+                shutil.rmtree(scenario_dir)
+            scenario_dir.mkdir(parents=True, exist_ok=True)
             handle = start_cluster(scenario, scenario_dir)
             handles.append(handle)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
@@ -971,6 +974,7 @@ def render_report(results: dict[str, Any]) -> str:
             "- `sort_filter`: filtered search with explicit sort keys.",
             "- `vector`: k-NN query against the vector field.",
             "- `hybrid`: lexical + k-NN + filter combined query.",
+            "- `fallback_query_string`: opt-in diagnostic query-string fallback case for materialization attribution.",
             "",
         ]
     )
