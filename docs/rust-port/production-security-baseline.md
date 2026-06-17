@@ -164,7 +164,8 @@ decommission, weighted routing, voting config exclusions, snapshot
 mutation/control routes, template management mutation routes, search/ingest
 pipeline management routes, stored script management routes, data stream
 management/rollover routes, alias metadata mutation routes, and task
-cancel/rethrottle surfaces, plus index settings/mapping mutation routes and
+cancel/rethrottle surfaces, plus index settings/mapping mutation routes, index
+metadata read route checks, and
 index maintenance open/close/cache controls plus index structure delete/block
 and resize controls plus root index create/read routes, k-NN
 settings/model/cache mutation routes,

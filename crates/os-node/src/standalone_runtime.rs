@@ -2714,13 +2714,38 @@ impl SteelNode {
             (RestMethod::Post, "/_forcemerge") => Some(self.handle_forcemerge_route(None)),
             (RestMethod::Get, "/_stats") => Some(RestResponse::json(
                 200,
-                stats_route_registration::invoke_index_stats_live_route(&self.index_stats_body()),
+                {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
+                    stats_route_registration::invoke_index_stats_live_route(&self.index_stats_body())
+                },
             )),
             (RestMethod::Get, "/_analyze") | (RestMethod::Post, "/_analyze") => {
                 Some(self.handle_analyze_route(None, request))
             }
-            (RestMethod::Get, "/_shard_stores") => Some(self.handle_shard_stores_route(None)),
+            (RestMethod::Get, "/_shard_stores") => {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
+                Some(self.handle_shard_stores_route(None))
+            }
             (RestMethod::Get, "/_upgrade") | (RestMethod::Post, "/_upgrade") => {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 Some(self.handle_upgrade_route(None))
             }
             _ => self.handle_dynamic_root_cluster_node_request(request),
@@ -2732,24 +2757,51 @@ impl SteelNode {
         request: &RestRequest,
     ) -> Option<RestResponse> {
         if request.path == "/_mapping" && request.method == RestMethod::Get {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index metadata")
+            {
+                return Some(response);
+            }
             return Some(self.handle_mapping_get_route(None));
         }
         if request.path == "/_mappings" && request.method == RestMethod::Get {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index metadata")
+            {
+                return Some(response);
+            }
             return Some(self.handle_mapping_get_route(None));
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_resolve/index/") {
             let name = request.path.trim_start_matches("/_resolve/index/");
             if !name.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_resolve_index_route(name));
             }
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_mapping/field/") {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index metadata")
+            {
+                return Some(response);
+            }
             return Some(self.handle_mapping_field_get_route(
                 None,
                 request.path.trim_start_matches("/_mapping/field/"),
             ));
         }
         if request.path == "/_settings" && request.method == RestMethod::Get {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::IndexRead, "index metadata")
+            {
+                return Some(response);
+            }
             return Some(self.handle_settings_get_route(
                 None,
                 None,
@@ -2772,6 +2824,13 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path.starts_with("/_settings/") {
             let setting_name = request.path.trim_start_matches("/_settings/");
             if !setting_name.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_settings_get_route(
                     None,
                     Some(setting_name),
@@ -2870,6 +2929,13 @@ impl SteelNode {
         }
         if request.method == RestMethod::Get && self.index_stats_variant_path_supported(&request.path)
         {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::IndexRead,
+                "index metadata",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_index_stats_route(None));
         }
         if request.path == "/_search_shards"
@@ -3938,7 +4004,16 @@ impl SteelNode {
         if let Some(index) = request.path.strip_suffix("/_mapping") {
             let target = index.trim_matches('/');
             return match request.method {
-                RestMethod::Get => Some(self.handle_mapping_get_route(Some(target))),
+                RestMethod::Get => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_mapping_get_route(Some(target)))
+                }
                 RestMethod::Put | RestMethod::Post => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -3955,7 +4030,16 @@ impl SteelNode {
         if let Some(index) = request.path.strip_suffix("/_mappings") {
             let target = index.trim_matches('/');
             return match request.method {
-                RestMethod::Get => Some(self.handle_mapping_get_route(Some(target))),
+                RestMethod::Get => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_mapping_get_route(Some(target)))
+                }
                 RestMethod::Put | RestMethod::Post => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -3974,24 +4058,40 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let fields = parts.next().unwrap_or_default();
             if !target.is_empty() && !fields.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_mapping_field_get_route(Some(target), fields));
             }
         }
         if let Some(index) = request.path.strip_suffix("/_settings") {
             let target = index.trim_matches('/');
             return match request.method {
-                RestMethod::Get => Some(self.handle_settings_get_route(
-                    Some(target),
-                    None,
-                    query_param_is_true(request.query_params.get("flat_settings")),
-                    query_param_is_true(request.query_params.get("ignore_unavailable")),
-                    query_param_is_true(request.query_params.get("allow_no_indices")),
-                    request
-                        .query_params
-                        .get("expand_wildcards")
-                        .map(String::as_str)
-                        .unwrap_or("open"),
-                )),
+                RestMethod::Get => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_settings_get_route(
+                        Some(target),
+                        None,
+                        query_param_is_true(request.query_params.get("flat_settings")),
+                        query_param_is_true(request.query_params.get("ignore_unavailable")),
+                        query_param_is_true(request.query_params.get("allow_no_indices")),
+                        request
+                            .query_params
+                            .get("expand_wildcards")
+                            .map(String::as_str)
+                            .unwrap_or("open"),
+                    ))
+                }
                 RestMethod::Put => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -4010,6 +4110,13 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_settings_get_route(
                     Some(target),
                     Some(setting_name),
@@ -4029,6 +4136,13 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_settings_get_route(
                     Some(target),
                     Some(setting_name),
@@ -4045,6 +4159,13 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_stats") {
             if request.method == RestMethod::Get && !index.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_stats_route(Some(index)));
             }
         }
@@ -4053,6 +4174,13 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let metric = parts.next().unwrap_or_default();
             if !target.is_empty() && !metric.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_stats_route(Some(target)));
             }
         }
@@ -4113,6 +4241,13 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_shard_stores") {
             if request.method == RestMethod::Get && !index.is_empty() {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_shard_stores_route(Some(index)));
             }
         }
@@ -4120,6 +4255,13 @@ impl SteelNode {
             if (request.method == RestMethod::Get || request.method == RestMethod::Post)
                 && !index.is_empty()
             {
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index metadata",
+                ) {
+                    return Some(response);
+                }
                 return Some(self.handle_upgrade_route(Some(index)));
             }
         }
@@ -25552,6 +25694,97 @@ mod tests {
             RestRequest::new(RestMethod::Get, "/sec-index-root"),
             RestRequest::new(RestMethod::Head, "/sec-index-root"),
         ] {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let writer = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+            );
+            assert_eq!(writer.status, 403, "path {path}");
+            assert_eq!(writer.body["error"]["type"], "security_exception");
+            assert!(writer.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("index metadata"));
+
+            let reader = node.handle_rest_request(
+                request.with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 200, "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_index_metadata_read_routes_require_reader_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-meta-read")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 1
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "keyword" }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let cases = [
+            RestRequest::new(RestMethod::Get, "/_mapping"),
+            RestRequest::new(RestMethod::Get, "/_mappings"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_mapping"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_mappings"),
+            RestRequest::new(RestMethod::Get, "/_mapping/field/message"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_mapping/field/message"),
+            RestRequest::new(RestMethod::Get, "/_resolve/index/sec-meta-read"),
+            RestRequest::new(RestMethod::Get, "/_settings"),
+            RestRequest::new(RestMethod::Get, "/_settings/index.number_of_shards"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_settings"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_settings/index.number_of_shards"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_setting/index.number_of_shards"),
+            RestRequest::new(RestMethod::Get, "/_stats"),
+            RestRequest::new(RestMethod::Get, "/_stats/docs"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_stats"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_stats/docs"),
+            RestRequest::new(RestMethod::Get, "/_shard_stores"),
+            RestRequest::new(RestMethod::Get, "/sec-meta-read/_shard_stores"),
+            RestRequest::new(RestMethod::Get, "/_upgrade"),
+            RestRequest::new(RestMethod::Post, "/sec-meta-read/_upgrade"),
+        ];
+
+        for request in cases {
             let path = request.path.clone();
             let missing = node.handle_rest_request(request.clone());
             assert_eq!(missing.status, 401, "path {path}");

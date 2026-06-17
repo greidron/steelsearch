@@ -120,7 +120,7 @@ Out of scope:
   security/release gate refusal, and readiness blocker terminology that keeps
   user-facing Steelsearch runtime categories distinct from internal crate names.
 - The same runner now has a `production-security` batch. It passed on
-  2026-06-17 with 30/30 tests and `zero_tests=0`, covering runtime env user,
+  2026-06-17 with 31/31 tests and `zero_tests=0`, covering runtime env user,
   authentication-users-file user, and service-account credentials loaded
   through the shared subject model, root route Basic auth, the shared
   admin/reader/writer permission evaluator, ML
@@ -137,7 +137,8 @@ Out of scope:
   snapshot mutation/control routes, template
   management mutation routes, search/ingest pipeline management routes, and
   stored script management routes, data stream management and rollover routes,
-  alias metadata mutation routes, index settings/mapping mutation routes, and
+  alias metadata mutation routes, index settings/mapping mutation routes, index
+  metadata read route checks, and
   index maintenance control routes, index structure mutation and root
   create/read routes, ingestion control routes, and task cancel/rethrottle
   surfaces, k-NN operational mutation routes, recovery mutation routes, and explicit
