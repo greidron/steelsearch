@@ -153,6 +153,77 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "native_tantivy_path_executes_nested_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_nested_child_index_avoids_flatten_tuple_false_positive",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_geo_distance_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_distance_feature_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_rank_feature_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_more_like_this_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_terms_set_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_query_string_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_simple_query_string_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "native_tantivy_path_executes_combined_fields_query",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_geo_distance_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_terms_set_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_rank_feature_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_distance_feature_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_more_like_this_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_query_string_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+    ValidationTest(
+        "grouped_hybrid_bool_simple_query_string_leaf_reduces_candidate_ids_directly",
+        "source-backed-hybrid-candidate-reduction",
+    ),
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -813,6 +884,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
+    "source-backed-query": SOURCE_BACKED_QUERY_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,

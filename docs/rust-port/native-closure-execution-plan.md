@@ -67,6 +67,12 @@ Out of scope:
   single-index vector-native page plus aggregation fetch, multi-index
   vector-native page plus aggregation reduce, and `_id`, `_score`, and
   fast-field sort reduce variants.
+- The same runner now has a `source-backed-query` batch. It passed on
+  2026-06-17 with 17/17 tests and `zero_tests=0`, covering native execution
+  and hybrid candidate reduction for the current source-backed query families:
+  nested child ordinals, `geo_distance`, `distance_feature`, `rank_feature`,
+  `more_like_this`, `terms_set`, `query_string`, `simple_query_string`, and
+  `combined_fields`.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
   with 20/20 tests and `zero_tests=0`, covering data-path, bind, duplicate
   node-id, invalid address/port, role/bootstrap, structured production
@@ -235,6 +241,10 @@ Validation runner:
   `failed_count == 0` and `zero_test_count == 0` before treating the direct
   vector/KNN page, aggregation, cache, refresh-correctness, and sort slices as
   runtime evidence.
+- `tools/run-native-closure-validation.py --batch source-backed-query` must
+  report `failed_count == 0` and `zero_test_count == 0` before treating
+  source-backed query native execution and hybrid candidate-reduction surfaces
+  as closure evidence.
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release

@@ -231,6 +231,14 @@ FAMILIES: tuple[Family, ...] = (
         evidence_pattern=r"build_tantivy_tokenized_field_set_query",
     ),
     Family(
+        name="source-backed query validation gate",
+        category="source-backed query",
+        status="zero-test-guarded source-backed-query batch passed for current native execution and hybrid candidate-reduction surfaces",
+        next_action="keep the source-backed-query batch in the closure gate while widening only with parity tests and fallback telemetry",
+        evidence_path=NATIVE_CLOSURE_VALIDATION,
+        evidence_pattern=r"SOURCE_BACKED_QUERY_BATCH",
+    ),
+    Family(
         name="materialized SearchHit boundary",
         category="materialization",
         status="present with runtime and benchmark telemetry counters",
