@@ -181,6 +181,10 @@ Current Steelsearch evidence:
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
   cluster pending tasks, and cat pending tasks;
+- `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
+  2026-06-17 with 1/1 tests and `zero_tests=0`, covering by-query rethrottle
+  state mutation from query-parameter and request-body rates plus follow-up task
+  readback;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 

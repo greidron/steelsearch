@@ -242,6 +242,16 @@ RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "rethrottle_routes_support_task_id_path_variants",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
@@ -249,6 +259,7 @@ BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
+    "runtime-throttle": RUNTIME_THROTTLE_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")

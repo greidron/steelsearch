@@ -61,6 +61,10 @@ Out of scope:
   with 2/2 tests and `zero_tests=0`, covering runtime task queue metadata plus
   shared queue-depth visibility across cluster health, `_tasks`, cluster pending
   tasks, and cat pending tasks.
+- The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
+  with 1/1 tests and `zero_tests=0`, covering by-query rethrottle state
+  mutation from both query-parameter and request-body rates plus follow-up
+  `_tasks/{task_id}` readback.
 
 ## Workstreams
 
@@ -152,6 +156,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-queue` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task queue
   depth and pending-task metadata as runtime-control evidence.
+- `tools/run-native-closure-validation.py --batch runtime-throttle` must report
+  `failed_count == 0` and `zero_test_count == 0` before treating by-query
+  task rethrottle state and readback as runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -192,7 +199,8 @@ Initial targets:
 1. bootstrap/preflight refusal tests for data-path, bind, role, and production
    mode settings. Guarded batch evidence now exists for this slice;
 2. task registry model with cancellation and parent/child metadata. Runtime
-   mutation evidence now exists for bounded cancellation/readback;
+   mutation evidence now exists for bounded cancellation/readback and by-query
+   rethrottle/readback;
 3. queue/backpressure smoke tests for search/write/admin routes. Runtime queue
    depth evidence now exists for cluster-manager task visibility;
 4. telemetry rows that are derived from runtime state rather than static route

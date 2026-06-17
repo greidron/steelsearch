@@ -5,7 +5,7 @@ pub const TASKS_LIST_ROUTE_PATH: &str = "/_tasks";
 pub const TASKS_GET_ROUTE_PATH: &str = "/_tasks/{task_id}";
 pub const TASKS_CANCEL_ROUTE_PATH: &str = "/_tasks/_cancel";
 
-pub const TASKS_ENVELOPE_FIELDS: [&str; 9] = [
+pub const TASKS_ENVELOPE_FIELDS: [&str; 10] = [
     "node",
     "id",
     "type",
@@ -15,6 +15,7 @@ pub const TASKS_ENVELOPE_FIELDS: [&str; 9] = [
     "cancellable",
     "cancelled",
     "headers",
+    "status",
 ];
 pub const TASKS_NODE_FIELDS: [&str; 6] = [
     "name",
@@ -122,6 +123,10 @@ fn normalize_bounded_task_value(task: &serde_json::Value) -> serde_json::Value {
             .unwrap_or(serde_json::Value::Null),
         "headers": task
             .get("headers")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        "status": task
+            .get("status")
             .cloned()
             .unwrap_or_else(|| serde_json::json!({})),
     })
@@ -271,6 +276,7 @@ mod tests {
                 "cancellable",
                 "cancelled",
                 "headers",
+                "status",
             ]
         );
     }

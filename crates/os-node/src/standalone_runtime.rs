@@ -1623,6 +1623,7 @@ pub struct SteelNode {
     pub metadata_manifest_state: Arc<Mutex<Value>>,
     pub task_queue_state: Arc<Mutex<Option<PersistedClusterManagerTaskQueueState>>>,
     pub cancelled_task_ids: Arc<Mutex<BTreeSet<String>>>,
+    pub rethrottled_task_rates: Arc<Mutex<BTreeMap<String, f64>>>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
@@ -1764,6 +1765,7 @@ impl SteelNode {
             metadata_manifest_state: Arc::new(Mutex::new(default_cluster_metadata_manifest())),
             task_queue_state: Arc::new(Mutex::new(None)),
             cancelled_task_ids: Arc::new(Mutex::new(BTreeSet::new())),
+            rethrottled_task_rates: Arc::new(Mutex::new(BTreeMap::new())),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
@@ -9036,7 +9038,22 @@ impl SteelNode {
         let Some(task_id) = self.rethrottle_task_id_from_request(request) else {
             return RestResponse::not_found_for(request.method, &request.path);
         };
+        let requested_rate = self.requested_rethrottle_rate(request);
         if let Some(task) = self.find_task(task_id) {
+            if let Some(rate) = requested_rate {
+                self.rethrottled_task_rates
+                    .lock()
+                    .expect("rethrottled task rates lock poisoned")
+                    .insert(task_id.to_string(), rate);
+                if let Some(task) = self.find_task(task_id) {
+                    return RestResponse::json(
+                        200,
+                        serde_json::json!({
+                            "task": task
+                        }),
+                    );
+                }
+            }
             return RestResponse::json(
                 200,
                 serde_json::json!({
@@ -11126,6 +11143,11 @@ impl SteelNode {
             .lock()
             .expect("cancelled task ids lock poisoned")
             .clone();
+        let rethrottled_task_rates = self
+            .rethrottled_task_rates
+            .lock()
+            .expect("rethrottled task rates lock poisoned")
+            .clone();
         if let Some(queue) = self
             .task_queue_state
             .lock()
@@ -11145,6 +11167,10 @@ impl SteelNode {
                     let task_id = format!("{node_id}:{}", record.task_id);
                     let cancellable = record.state == ClusterManagerTaskState::Queued;
                     let cancelled = cancelled_task_ids.contains(&task_id);
+                    let requests_per_second = rethrottled_task_rates
+                        .get(&task_id)
+                        .copied()
+                        .unwrap_or(-1.0);
                     serde_json::json!({
                         "node": node_id,
                         "node_name": self.cluster_view.as_ref().and_then(|v| {
@@ -11169,7 +11195,10 @@ impl SteelNode {
                         "source": record.task.source,
                         "executing": record.state == ClusterManagerTaskState::InFlight,
                         "time_in_queue_millis": 0,
-                        "time_in_queue": "0ms"
+                        "time_in_queue": "0ms",
+                        "status": {
+                            "requests_per_second": requests_per_second
+                        }
                     })
                 })
                 .collect();
@@ -11256,6 +11285,19 @@ impl SteelNode {
             }
         }
         None
+    }
+
+    fn requested_rethrottle_rate(&self, request: &RestRequest) -> Option<f64> {
+        request
+            .query_params
+            .get("requests_per_second")
+            .and_then(|value| value.parse::<f64>().ok())
+            .or_else(|| {
+                serde_json::from_slice::<Value>(&request.body)
+                    .ok()
+                    .and_then(|body| body.get("requests_per_second").cloned())
+                    .and_then(|value| value.as_f64())
+            })
     }
 
     fn unknown_task_cancel_body(&self, task_id: &str) -> Value {
@@ -21889,10 +21931,38 @@ mod tests {
             "/_reindex/node-a:11/_rethrottle",
             "/_update_by_query/node-a:11/_rethrottle",
         ] {
-            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            let mut request = RestRequest::new(RestMethod::Post, path);
+            request
+                .query_params
+                .insert("requests_per_second".to_string(), "3.5".to_string());
+            let response = node.handle_rest_request(request);
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(response.body["task"]["id"], 11, "path {path}");
+            assert_eq!(
+                response.body["task"]["status"]["requests_per_second"],
+                serde_json::json!(3.5),
+                "path {path}"
+            );
+
+            let get =
+                node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:11"));
+            assert_eq!(get.status, 200, "path {path}");
+            assert_eq!(
+                get.body["task"]["status"]["requests_per_second"],
+                serde_json::json!(3.5),
+                "path {path}"
+            );
         }
+
+        let mut body_request =
+            RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:11/_rethrottle");
+        body_request.body = br#"{"requests_per_second":7.25}"#.to_vec();
+        let body_response = node.handle_rest_request(body_request);
+        assert_eq!(body_response.status, 200);
+        assert_eq!(
+            body_response.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(7.25)
+        );
 
         for path in [
             "/_delete_by_query/node-a:999/_rethrottle",
