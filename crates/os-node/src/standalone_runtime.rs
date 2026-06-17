@@ -33875,6 +33875,132 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_restore_conflict_surfaces_rollback_readback_for_existing_target() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-restore-rollback")
+                    .with_json_body(serde_json::json!({
+                        "type": "fs",
+                        "settings": {"location": "/tmp/repo-restore-rollback"}
+                    })),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-restore-rollback-source")
+                    .with_json_body(serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "source_marker": {"type": "keyword"}
+                            }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-restore-rollback-target")
+                    .with_json_body(serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "existing_marker": {"type": "keyword"}
+                            }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        let target_before = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-restore-rollback-target",
+        ));
+        assert_eq!(target_before.status, 200);
+        assert!(
+            target_before.body["logs-restore-rollback-target"]["mappings"]["properties"]
+                .get("existing_marker")
+                .is_some()
+        );
+        assert!(
+            target_before.body["logs-restore-rollback-target"]["mappings"]["properties"]
+                .get("source_marker")
+                .is_none()
+        );
+
+        let snapshot = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-restore-rollback/snap-restore-rollback",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-rollback-source"
+            })),
+        );
+        assert_eq!(snapshot.status, 200);
+
+        let restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-rollback/snap-restore-rollback/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-rollback-source",
+                "rename_pattern": "logs-restore-rollback-source",
+                "rename_replacement": "logs-restore-rollback-target"
+            })),
+        );
+        assert_eq!(restore.status, 409);
+        assert_eq!(
+            restore.body["error"]["type"],
+            "resource_already_exists_exception"
+        );
+
+        let snapshot_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-restore-rollback/snap-restore-rollback",
+        ));
+        assert_eq!(snapshot_readback.status, 200);
+        assert_eq!(
+            snapshot_readback.body["snapshots"][0]["state"],
+            "SUCCESS"
+        );
+        let target_after = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-restore-rollback-target",
+        ));
+        assert_eq!(target_after.status, 200);
+        assert!(
+            target_after.body["logs-restore-rollback-target"]["mappings"]["properties"]
+                .get("existing_marker")
+                .is_some()
+        );
+        assert!(
+            target_after.body["logs-restore-rollback-target"]["mappings"]["properties"]
+                .get("source_marker")
+                .is_none()
+        );
+        let source_after = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-restore-rollback-source",
+        ));
+        assert_eq!(source_after.status, 200);
+        assert!(
+            source_after.body["logs-restore-rollback-source"]["mappings"]["properties"]
+                .get("source_marker")
+                .is_some()
+        );
+    }
+
+    #[test]
     fn snapshot_create_routes_surface_incremental_second_snapshot_stats() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
