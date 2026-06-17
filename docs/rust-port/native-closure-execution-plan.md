@@ -188,9 +188,10 @@ Out of scope:
   same-node parent/child plus multi-level descendant
   rethrottle rate visibility.
 - The same runner now has a `module-registration` batch. It passed on
-  2026-06-17 with 3/3 tests and `zero_tests=0`, covering extension manifest
+  2026-06-17 with 4/4 tests and `zero_tests=0`, covering extension manifest
   booleans feeding the effective runtime registry, malformed manifest
-  fail-closed rejection, plus `_cat/plugins` reporting registry-enabled
+  fail-closed rejection, startup transcript output listing registry-derived
+  components per profile, plus `_cat/plugins` reporting registry-enabled
   Steelsearch runtime, k-NN, and ML Commons module rows.
 
 ## Workstreams
@@ -391,6 +392,7 @@ Already evidenced:
   construction;
 - malformed extension manifests fail closed instead of silently falling back to
   default feature gates;
+- startup transcript output lists registry-derived components per profile;
 - `_cat/plugins` reports registry-enabled Steelsearch runtime, k-NN, and ML
   Commons module rows;
 - the `module-registration` validation batch guards the manifest merge and
@@ -398,7 +400,6 @@ Already evidenced:
 
 Remaining tests:
 
-- startup transcript showing registered modules/features per profile;
 - reject-path tests for unsupported/disabled modules and Java plugin ABI
   manifests;
 - explicit route/action/module registration tables beyond the current boolean

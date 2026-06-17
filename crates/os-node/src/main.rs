@@ -291,6 +291,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let membership_path = gateway_paths.membership_path;
     let membership_state = production_membership_from_cluster_view(&cluster_view)?;
 
+    let extension_registry = effective_extension_registry(&config)?;
     let mut node = SteelNode::new(NodeInfo {
         name: config.node_name.clone(),
         version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -299,7 +300,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         bind_host: config.host.to_string(),
         port: config.port,
     })
-    .with_extension_registry(effective_extension_registry(&config)?)
+    .with_extension_registry(extension_registry.clone())
     .with_gateway_backed_development_metadata_store(
         metadata_path.clone(),
         gateway_manifest_path.clone(),
@@ -360,6 +361,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!(
         "production membership manifest: {}",
         membership_path.display()
+    );
+    eprintln!(
+        "{}",
+        startup_extension_registry_transcript(&config, &extension_registry)
     );
     if config.mixed_java_native_transport_join_participation_enabled() {
         eprintln!(
@@ -4260,6 +4265,23 @@ fn effective_extension_registry(
     Ok(registry)
 }
 
+fn startup_extension_registry_transcript(
+    config: &DaemonConfig,
+    registry: &ExtensionBoundaryRegistry,
+) -> String {
+    let manifest = registry
+        .manifest_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "inline/default".to_string());
+    format!(
+        "extension registry startup transcript: profile={}, manifest={}, registered_components={}",
+        config.mode.as_str(),
+        manifest,
+        registry.registered_components().join(",")
+    )
+}
+
 #[cfg(unix)]
 fn install_shutdown_signal_handlers() {
     const SIGINT: i32 = 2;
@@ -4775,6 +4797,15 @@ where
 enum DaemonMode {
     Development,
     Production,
+}
+
+impl DaemonMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Development => "development",
+            Self::Production => "production",
+        }
+    }
 }
 
 fn parse_daemon_mode(value: &str) -> Result<DaemonMode, Box<dyn std::error::Error>> {
@@ -6411,6 +6442,34 @@ mod tests {
         assert!(!registry.ml_commons_enabled);
 
         let _ = fs::remove_file(manifest_path);
+    }
+
+    #[test]
+    fn startup_extension_registry_transcript_lists_registered_components_by_profile() {
+        let mut config = minimal_daemon_config(PathBuf::from("/tmp/steelsearch-extension-startup"));
+        let registry = ExtensionBoundaryRegistry {
+            manifest_path: Some(PathBuf::from("/tmp/steelsearch-extensions.json")),
+            knn_plugin_enabled: true,
+            ml_commons_enabled: true,
+        };
+
+        let development_transcript = startup_extension_registry_transcript(&config, &registry);
+        assert!(development_transcript.contains("profile=development"));
+        assert!(development_transcript.contains("manifest=/tmp/steelsearch-extensions.json"));
+        assert!(development_transcript.contains(
+            "registered_components=steelsearch-runtime,opensearch-knn,opensearch-ml-commons"
+        ));
+
+        config.mode = DaemonMode::Production;
+        let production_transcript = startup_extension_registry_transcript(
+            &config,
+            &ExtensionBoundaryRegistry::default(),
+        );
+        assert!(production_transcript.contains("profile=production"));
+        assert!(production_transcript.contains("manifest=inline/default"));
+        assert!(production_transcript.contains("registered_components=steelsearch-runtime"));
+        assert!(!production_transcript.contains("opensearch-knn"));
+        assert!(!production_transcript.contains("opensearch-ml-commons"));
     }
 
     #[test]

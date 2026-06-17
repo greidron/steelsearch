@@ -102,6 +102,47 @@ impl ExtensionBoundaryRegistry {
         registry.manifest_path = Some(path.to_path_buf());
         Ok(registry)
     }
+
+    pub fn registered_components(&self) -> Vec<&'static str> {
+        let mut components = vec!["steelsearch-runtime"];
+        if self.knn_plugin_enabled {
+            components.push("opensearch-knn");
+        }
+        if self.ml_commons_enabled {
+            components.push("opensearch-ml-commons");
+        }
+        components
+    }
+
+    fn registered_plugin_specs(&self) -> Vec<ExtensionPluginSpec> {
+        let mut specs = vec![ExtensionPluginSpec {
+            component: "steelsearch-runtime",
+            description: "Steelsearch development runtime plugin surface",
+            classname: "org.steelsearch.runtime.Plugin",
+        }];
+        if self.knn_plugin_enabled {
+            specs.push(ExtensionPluginSpec {
+                component: "opensearch-knn",
+                description: "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry",
+                classname: "org.steelsearch.knn.KNNPlugin",
+            });
+        }
+        if self.ml_commons_enabled {
+            specs.push(ExtensionPluginSpec {
+                component: "opensearch-ml-commons",
+                description: "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry",
+                classname: "org.steelsearch.ml.MLCommonsPlugin",
+            });
+        }
+        specs
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ExtensionPluginSpec {
+    component: &'static str,
+    description: &'static str,
+    classname: &'static str,
 }
 
 pub fn serve_rest_http_listener_until<F>(
@@ -14953,33 +14994,20 @@ impl SteelNode {
             .and_then(|view| view.nodes.first())
             .map(|node| node.node_name.clone())
             .unwrap_or_else(|| self.info.name.clone());
-        let mut rows = vec![
-            serde_json::json!({
-                "name": node_name.clone(),
-                "component": "steelsearch-runtime",
-                "version": "1.0.0-dev",
-                "description": "Steelsearch development runtime plugin surface",
-                "classname": "org.steelsearch.runtime.Plugin"
-            }),
-        ];
-        if self.extension_registry.knn_plugin_enabled {
-            rows.push(serde_json::json!({
-                "name": node_name.clone(),
-                "component": "opensearch-knn",
-                "version": "1.0.0-dev",
-                "description": "Rust-native k-NN compatibility routes enabled through Steelsearch extension registry",
-                "classname": "org.steelsearch.knn.KNNPlugin"
-            }));
-        }
-        if self.extension_registry.ml_commons_enabled {
-            rows.push(serde_json::json!({
-                "name": node_name.clone(),
-                "component": "opensearch-ml-commons",
-                "version": "1.0.0-dev",
-                "description": "Rust-native ML Commons compatibility routes enabled through Steelsearch extension registry",
-                "classname": "org.steelsearch.ml.MLCommonsPlugin"
-            }));
-        }
+        let rows = self
+            .extension_registry
+            .registered_plugin_specs()
+            .into_iter()
+            .map(|spec| {
+                serde_json::json!({
+                    "name": node_name.clone(),
+                    "component": spec.component,
+                    "version": "1.0.0-dev",
+                    "description": spec.description,
+                    "classname": spec.classname
+                })
+            })
+            .collect::<Vec<_>>();
         if request.query_params.get("format").is_some_and(|value| value == "json") {
             return RestResponse::json(200, Value::Array(rows));
         }

@@ -1040,6 +1040,13 @@ MODULE_REGISTRATION_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "startup_extension_registry_transcript_lists_registered_components_by_profile",
+        "module-registration-boundary",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "cat_plugins_route_reports_extension_registry_modules",
         "module-registration-boundary",
         package="os-node",

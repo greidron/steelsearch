@@ -170,6 +170,7 @@ PROBES: tuple[Probe, ...] = (
             r"module-registration",
             r"extension manifest",
             r"_cat/plugins",
+            r"startup transcript",
             r"Rust-native feature registration",
         ),
         risk="runtime feature/module loading must be visible and registry-derived rather than implied by compiled-in route stubs",
@@ -323,7 +324,7 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="module registration boundaries",
         category="runtime",
-        status="module-registration batch is zero-test guarded; extension manifest booleans feed the effective runtime registry, malformed manifests fail closed, and _cat/plugins reports registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows",
+        status="module-registration batch is zero-test guarded; extension manifest booleans feed the effective runtime registry, malformed manifests fail closed, startup transcript lists registry-derived components per profile, and _cat/plugins reports registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows",
         next_action="extend the registry from boolean feature gates into explicit route/action/module registration tables and reject unsupported Java plugin ABI manifests fail-closed",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"MODULE_REGISTRATION_BATCH",
