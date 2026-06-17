@@ -122,7 +122,12 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
             feature: "runtime-observability",
             description: "Steelsearch development runtime plugin surface",
             classname: "org.steelsearch.runtime.Plugin",
-            rest_routes: &["/_cat/plugins", "/_steelsearch/dev/extensions"],
+            rest_routes: &[
+                "/_cat/plugins",
+                "/_steelsearch/dev/extensions",
+                "/_steelsearch/dev/extensions/_shutdown",
+                "/_steelsearch/dev/extensions/_recovery_failed",
+            ],
             transport_actions: &[],
             lifecycle_hooks: &[
                 "sync_shared_runtime_state_from_disk",
@@ -2569,6 +2574,12 @@ impl SteelNode {
             (RestMethod::Get, "/_steelsearch/dev/extensions") => {
                 Some(self.handle_dev_extensions_route())
             }
+            (RestMethod::Post, "/_steelsearch/dev/extensions/_shutdown") => {
+                Some(self.handle_dev_extensions_shutdown_probe_route())
+            }
+            (RestMethod::Post, "/_steelsearch/dev/extensions/_recovery_failed") => {
+                Some(self.handle_dev_extensions_recovery_failed_probe_route())
+            }
             (RestMethod::Head, "/_all") => Some(RestResponse::opensearch_error_kind(
                 os_rest::RestErrorKind::IllegalArgument,
                 "unsupported broad selector",
@@ -4083,6 +4094,16 @@ impl SteelNode {
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
             }),
         )
+    }
+
+    fn handle_dev_extensions_shutdown_probe_route(&self) -> RestResponse {
+        self.deactivate_registered_extensions_for_shutdown();
+        self.handle_dev_extensions_route()
+    }
+
+    fn handle_dev_extensions_recovery_failed_probe_route(&self) -> RestResponse {
+        self.mark_registered_extensions_recovery_failed();
+        self.handle_dev_extensions_route()
     }
 
     fn handle_cluster_health_route(&self, request: &RestRequest) -> RestResponse {
@@ -23097,7 +23118,13 @@ mod tests {
         assert!(entries.iter().any(|entry| {
             entry.module == "steelsearch-runtime"
                 && entry.feature == "runtime-observability"
-                && entry.rest_routes == &["/_cat/plugins", "/_steelsearch/dev/extensions"]
+                && entry.rest_routes
+                    == &[
+                        "/_cat/plugins",
+                        "/_steelsearch/dev/extensions",
+                        "/_steelsearch/dev/extensions/_shutdown",
+                        "/_steelsearch/dev/extensions/_recovery_failed",
+                    ]
                 && entry.transport_actions.is_empty()
                 && entry
                     .lifecycle_hooks
@@ -23130,7 +23157,13 @@ mod tests {
         assert!(descriptors.iter().any(|descriptor| {
             descriptor.module == "steelsearch-runtime"
                 && descriptor.classname == "org.steelsearch.runtime.Plugin"
-                && descriptor.rest_routes == &["/_cat/plugins", "/_steelsearch/dev/extensions"]
+                && descriptor.rest_routes
+                    == &[
+                        "/_cat/plugins",
+                        "/_steelsearch/dev/extensions",
+                        "/_steelsearch/dev/extensions/_shutdown",
+                        "/_steelsearch/dev/extensions/_recovery_failed",
+                    ]
                 && descriptor.transport_actions.is_empty()
                 && descriptor
                     .lifecycle_hooks

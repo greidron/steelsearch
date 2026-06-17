@@ -357,22 +357,23 @@ Current Steelsearch evidence:
   daemon runtime assembly;
 - a live three-daemon development cluster now exposes registry-enabled
   Steelsearch runtime, k-NN, and ML Commons module rows plus startup and
-  steady-state lifecycle execution transcript through the runtime dev extension
-  surface on every node;
+  steady-state lifecycle execution transcript and shutdown/recovery lifecycle
+  transition transcripts through the runtime dev extension surface on every
+  node;
 - daemon runtime assembly is still monolithic compared with OpenSearch `Node`,
   but the first runtime-visible extension registry boundary is now explicit.
 
 Required next implementation direction:
 
-- extend module lifecycle execution transcript evidence into live multi-node
-  shutdown and recovery probes.
+- none for the current Rust-native extension API descriptor, registration
+  table, local lifecycle, and live multi-node lifecycle transcript boundaries;
+  remaining native-closure work is tracked under runtime fairness,
+  materialization budget, cache-key expansion, and production security controls.
 
 Required tests:
 
 - none for the current Rust-native extension API descriptor and registration
-  table boundary or local and live-startup lifecycle transcript; the next gap
-  is live multi-node shutdown and recovery behavior rather than more descriptor
-  evidence.
+  table boundary or local and live lifecycle transcript coverage.
 
 ## Gap Class 4: User-Facing Runtime Identity And Config Hygiene
 

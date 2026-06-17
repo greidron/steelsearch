@@ -330,6 +330,152 @@ fn three_local_daemons_form_development_cluster_and_handle_index_smoke() {
 }
 
 #[test]
+fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcripts() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(&root).unwrap();
+    let http_ports = [free_port(), free_port(), free_port()];
+    let transport_ports = [free_port(), free_port(), free_port()];
+    let seed_hosts = transport_ports
+        .iter()
+        .map(|port| format!("127.0.0.1:{port}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut children = Vec::new();
+
+    for index in 0..3 {
+        let node_dir = root.join(format!("node-{}", index + 1));
+        fs::create_dir_all(node_dir.join("data")).unwrap();
+        fs::create_dir_all(node_dir.join("logs")).unwrap();
+        let stdout = fs::File::create(node_dir.join("logs/stdout.log")).unwrap();
+        let stderr = fs::File::create(node_dir.join("logs/stderr.log")).unwrap();
+        children.push(
+            Command::new(&binary)
+                .arg("--http.host")
+                .arg("127.0.0.1")
+                .arg("--http.port")
+                .arg(http_ports[index].to_string())
+                .arg("--transport.host")
+                .arg("127.0.0.1")
+                .arg("--transport.port")
+                .arg(transport_ports[index].to_string())
+                .arg("--node.id")
+                .arg(format!("steel-node-{}", index + 1))
+                .arg("--node.name")
+                .arg(format!("steel-node-{}", index + 1))
+                .arg("--cluster.name")
+                .arg("steel-dev-extension-lifecycle-it")
+                .arg("--node.roles")
+                .arg("cluster_manager,data,ingest")
+                .arg("--discovery.seed_hosts")
+                .arg(&seed_hosts)
+                .arg("--extensions.knn")
+                .arg("true")
+                .arg("--extensions.ml_commons")
+                .arg("true")
+                .arg("--path.data")
+                .arg(node_dir.join("data"))
+                .stdout(Stdio::from(stdout))
+                .stderr(Stdio::from(stderr))
+                .spawn()
+                .unwrap(),
+        );
+    }
+    let _guard = ChildGuard { children };
+
+    let mut probed_nodes = BTreeSet::new();
+    for (index, port) in http_ports.iter().copied().enumerate() {
+        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        assert_eq!(
+            cluster["cluster_name"],
+            "steel-dev-extension-lifecycle-it"
+        );
+        assert_eq!(cluster["number_of_nodes"], 3);
+        assert_eq!(
+            cluster["local_node_id"],
+            format!("steel-node-{}", index + 1)
+        );
+        probed_nodes.insert(cluster["local_node_id"].as_str().unwrap().to_string());
+
+        let recovery = http_response(
+            port,
+            "POST",
+            "/_steelsearch/dev/extensions/_recovery_failed",
+            Some(b"{}"),
+        );
+        assert_eq!(recovery["status"], 200);
+        assert_extension_lifecycle_entry(
+            &recovery["body"],
+            "steelsearch-runtime",
+            "recovery",
+            "set_shared_runtime_state_recovery_failed",
+            "recovery_failed",
+            "executed",
+        );
+        assert_eq!(
+            recovery["body"]["runtime_lifecycle"]["active_phase"],
+            "recovery"
+        );
+        assert_eq!(
+            recovery["body"]["runtime_lifecycle"]["task_submission_available"],
+            false
+        );
+        assert_runtime_lifecycle_blocker(
+            &recovery["body"],
+            "shared_runtime_state_recovery_failed",
+        );
+
+        let shutdown = http_response(
+            port,
+            "POST",
+            "/_steelsearch/dev/extensions/_shutdown",
+            Some(b"{}"),
+        );
+        assert_eq!(shutdown["status"], 200);
+        assert_extension_lifecycle_entry(
+            &shutdown["body"],
+            "steelsearch-runtime",
+            "shutdown",
+            "set_live_shutdown_in_progress",
+            "deactivate",
+            "executed",
+        );
+        assert_extension_lifecycle_entry(
+            &shutdown["body"],
+            "steelsearch-runtime",
+            "recovery",
+            "set_shared_runtime_state_recovery_failed",
+            "recovery_failed",
+            "executed",
+        );
+        assert_eq!(
+            shutdown["body"]["runtime_lifecycle"]["active_phase"],
+            "shutdown"
+        );
+        assert_eq!(
+            shutdown["body"]["runtime_lifecycle"]["task_submission_available"],
+            false
+        );
+        assert_runtime_lifecycle_blocker(&shutdown["body"], "live_shutdown_in_progress");
+        assert_runtime_lifecycle_blocker(
+            &shutdown["body"],
+            "shared_runtime_state_recovery_failed",
+        );
+    }
+
+    assert_eq!(
+        probed_nodes,
+        BTreeSet::from([
+            "steel-node-1".to_string(),
+            "steel-node-2".to_string(),
+            "steel-node-3".to_string()
+        ])
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_state() {
     let binary = os_node_binary();
     let root = unique_work_dir();
@@ -5347,6 +5493,39 @@ fn assert_opensearch_error_shape(response: &Value, status: u16, error_type: &str
         .as_str()
         .is_some());
     assert_eq!(response["headers"]["content-type"], "application/json", "{response}");
+}
+
+fn assert_extension_lifecycle_entry(
+    body: &Value,
+    module: &str,
+    phase: &str,
+    hook: &str,
+    action: &str,
+    status: &str,
+) {
+    let transcript = body["lifecycle_transcript"]
+        .as_array()
+        .expect("lifecycle transcript");
+    assert!(
+        transcript.iter().any(|entry| {
+            entry["module"] == module
+                && entry["phase"] == phase
+                && entry["hook"] == hook
+                && entry["action"] == action
+                && entry["status"] == status
+        }),
+        "missing lifecycle entry module={module} phase={phase} hook={hook} action={action} status={status}: {body}"
+    );
+}
+
+fn assert_runtime_lifecycle_blocker(body: &Value, blocker: &str) {
+    let blockers = body["runtime_lifecycle"]["blockers"]
+        .as_array()
+        .expect("runtime lifecycle blockers");
+    assert!(
+        blockers.iter().any(|value| value == blocker),
+        "missing runtime lifecycle blocker {blocker}: {body}"
+    );
 }
 
 fn assert_refresh_success(response: &Value) {
