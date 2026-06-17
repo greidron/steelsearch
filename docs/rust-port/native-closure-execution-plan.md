@@ -111,7 +111,7 @@ Out of scope:
   authz, and explicit fail-closed OpenSearch Security plugin API responses with
   documented `security_exception` bodies instead of 404-only ambiguity.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 20/20 tests and `zero_tests=0`, covering task cancellation through
+  with 21/21 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility including
@@ -123,8 +123,9 @@ Out of scope:
   bounded terminal task retention/eviction with stale cancellation-marker
   pruning, cancelled-task completion and partial-progress status readback through
   restart until eviction, cancelled-terminal restart-sync, live-shutdown, and
-  node-role-transition refusal with progress preservation, persisted restart
-  readback, active queued/in-flight node-role-transition cancellation/refusal,
+  node-role-transition refusal with progress preservation, acknowledged/failed
+  terminal readback across node-role transition, persisted restart readback,
+  active queued/in-flight node-role-transition cancellation/refusal,
   and shared-runtime restart readback for task queue state and cancelled task
   ids, including accepted in-flight task readback/refusal without queued replay,
   partial shared-state recovery error task-listing/cancel continuity, and cancel requests accepted during the
@@ -340,7 +341,8 @@ Validation runner:
   terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
   completion and partial-progress status readback through restart until eviction,
   cancelled-terminal restart-sync, live-shutdown, and node-role-transition
-  refusal with progress preservation, active queued/in-flight
+  refusal with progress preservation, acknowledged/failed terminal readback
+  across node-role transition, active queued/in-flight
   node-role-transition cancellation/refusal, and pending-depth separation as
   runtime-control evidence, including shared-runtime restart readback for task
   queue state and cancelled ids, accepted in-flight

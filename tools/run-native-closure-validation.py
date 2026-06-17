@@ -666,6 +666,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "terminal_task_node_role_transition_preserves_acknowledged_and_failed_readback",
+        "task-terminal-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "active_task_node_role_transition_preserves_cancel_and_in_flight_refusal",
         "task-restart-runtime-state",
         package="os-node",
