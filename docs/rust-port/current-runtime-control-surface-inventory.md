@@ -225,8 +225,8 @@ internal subsystems, especially:
 
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
-| Queue ownership | search/write and maintenance route admission now have active-slot queue waiting and drain evidence, but there is no authoritative runtime-owned queue model for pending cluster-manager work, snapshot work, or broader long-running task admission |
-| Admission control | search/write and maintenance routes now have bounded queue-full refusal and queued execution evidence; the same overload contract is still missing for cluster-manager, snapshot, and task-submission routes |
+| Queue ownership | search/write, maintenance, and snapshot route admission now have active-slot queue waiting and drain evidence, but there is no authoritative runtime-owned queue model for pending cluster-manager work or broader long-running task admission |
+| Admission control | search/write, maintenance, and snapshot routes now have bounded queue-full refusal and queued execution evidence; the same overload contract is still missing for cluster-manager and task-submission routes |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist, but there is no authoritative mapping between visible entries and the real internal queue owners or queue depth |
@@ -241,8 +241,8 @@ internal subsystems, especially:
 - add harness coverage for:
   - burst submission of maintenance/task-control requests;
   - pending-task visibility during backlog growth;
-  - backlog drain after load subsides beyond the current search/write and
-    maintenance active-slot queueing guard.
+  - backlog drain after load subsides beyond the current search/write,
+    maintenance, and snapshot active-slot queueing guards.
 - add restart-smoke coverage for:
   - queued work before shutdown;
   - queue state after restart;
@@ -253,7 +253,7 @@ internal subsystems, especially:
 - introduce an explicit queue owner for cluster-manager tasks, maintenance work,
   and other background admission-controlled actions.
 - extend overload thresholds and refusal semantics beyond the current
-  search/write and maintenance queue-full guards.
+  search/write, maintenance, and snapshot queue-full guards.
 - connect visible pending-task surfaces to authoritative internal queue state.
 - define restart/drain handling for queued work rather than leaving it implicit.
 

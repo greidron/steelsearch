@@ -257,10 +257,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="production runtime controls",
         category="runtime",
-        status="startup-preflight, startup-readiness, task-cancellation, task-queue, route-backpressure, task-throttle, task-parent-metadata, task-header, and same-node task-child grouping batches are zero-test guarded; search/write success, request-error accounting, active-slot queue waiting/drain, bounded queue-full rejection, and maintenance route admission are runtime-derived, while broader child propagation plus cluster-manager/snapshot/task-submission scheduling semantics remain partial",
-        next_action="extend task child probes into multi-level/cross-node propagation and route backpressure probes beyond search/write/maintenance into cluster-manager, snapshot, and task-submission scheduling behavior",
+        status="startup-preflight, startup-readiness, task-cancellation, task-queue, route-backpressure, task-throttle, task-parent-metadata, task-header, and same-node task-child grouping batches are zero-test guarded; search/write success, request-error accounting, active-slot queue waiting/drain, bounded queue-full rejection, maintenance route admission, and snapshot route admission are runtime-derived, while broader child propagation plus cluster-manager/task-submission scheduling semantics remain partial",
+        next_action="extend task child probes into multi-level/cross-node propagation and route backpressure probes beyond search/write/maintenance/snapshot into cluster-manager and task-submission scheduling behavior",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
-        evidence_pattern=r"maintenance_routes_wait_drain_and_reject_when_runtime_pool_is_saturated",
+        evidence_pattern=r"snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated",
     ),
     Family(
         name="production security",

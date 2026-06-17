@@ -5155,6 +5155,10 @@ impl SteelNode {
                 format!("repository [{repository}] is read-only"),
             );
         }
+        let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset =
             snapshot_lifecycle_route_registration::build_snapshot_create_body_subset(&body);
@@ -5274,6 +5278,10 @@ impl SteelNode {
         if let Err(response) = self.apply_snapshot_restore_options(&snapshot_record, &body) {
             return response;
         }
+        let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let response =
             snapshot_lifecycle_route_registration::invoke_validated_snapshot_restore_live_route(
                 &body,
@@ -5504,6 +5512,10 @@ impl SteelNode {
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
+        let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         RestResponse::json(
             200,
             snapshot_cleanup_route_registration::build_snapshot_cleanup_response(
@@ -11381,6 +11393,7 @@ impl SteelNode {
     fn thread_pool_stats_body(&self) -> Value {
         let (management_active, management_queue) = self.task_queue_runtime_counts();
         let maintenance = self.runtime_thread_pool_counters("maintenance");
+        let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
         let write = self.runtime_thread_pool_counters("write");
         serde_json::json!({
@@ -11397,6 +11410,13 @@ impl SteelNode {
                 "active": maintenance.active,
                 "rejected": maintenance.rejected,
                 "completed": maintenance.completed
+            },
+            "snapshot": {
+                "threads": 1,
+                "queue": snapshot.queue,
+                "active": snapshot.active,
+                "rejected": snapshot.rejected,
+                "completed": snapshot.completed
             },
             "search": {
                 "threads": 1,
@@ -14160,6 +14180,7 @@ impl SteelNode {
         let management_active = management_active.to_string();
         let management_queue = management_queue.to_string();
         let maintenance = self.runtime_thread_pool_counters("maintenance");
+        let snapshot = self.runtime_thread_pool_counters("snapshot");
         let search = self.runtime_thread_pool_counters("search");
         let write = self.runtime_thread_pool_counters("write");
         let mut rows = vec![
@@ -14204,6 +14225,30 @@ impl SteelNode {
                 "rejected": maintenance.rejected.to_string(),
                 "largest": "1",
                 "completed": maintenance.completed.to_string(),
+                "total_wait_time": "0ms",
+                "core": "",
+                "max": "",
+                "size": "1",
+                "keep_alive": "",
+                "parallelism": ""
+            }),
+            serde_json::json!({
+                "node_name": self.info.name,
+                "node_id": "steelsearch-dev-node",
+                "ephemeral_node_id": "steelsearch-dev-node-ephemeral",
+                "pid": "0",
+                "host": "127.0.0.1",
+                "ip": "127.0.0.1",
+                "port": "19300",
+                "name": "snapshot",
+                "type": "fixed",
+                "active": snapshot.active.to_string(),
+                "pool_size": "1",
+                "queue": snapshot.queue.to_string(),
+                "queue_size": "1000",
+                "rejected": snapshot.rejected.to_string(),
+                "largest": "1",
+                "completed": snapshot.completed.to_string(),
                 "total_wait_time": "0ms",
                 "core": "",
                 "max": "",
@@ -21662,7 +21707,7 @@ mod tests {
                 .as_array()
                 .expect("cat thread_pool array")
                 .len(),
-            4
+            5
         );
 
         let mut thread_pool_text_request =
@@ -31260,6 +31305,128 @@ mod tests {
         assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1000);
         assert_eq!(first_node["thread_pool"]["maintenance"]["rejected"], 1);
         assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 1);
+    }
+
+    #[test]
+    fn snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        let repository = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-runtime-snapshot").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-runtime-snapshot"}
+                }),
+            ),
+        );
+        assert_eq!(repository.status, 200);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "snapshot".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_cleanup_node = node.clone();
+        let queued_cleanup = std::thread::spawn(move || {
+            queued_cleanup_node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-runtime-snapshot/_cleanup",
+            ))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "snapshot", 1);
+
+        let stats_while_queued =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_queued.status, 200);
+        let first_node = stats_while_queued.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["snapshot"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["snapshot"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["snapshot"]["completed"], 0);
+
+        release_runtime_thread_pool_active_slot(&node, "snapshot");
+        let cleanup = queued_cleanup
+            .join()
+            .expect("queued snapshot cleanup request thread should not panic");
+        assert_eq!(cleanup.status, 200);
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool/snapshot");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "snapshot");
+        assert_eq!(rows[0]["active"], "0");
+        assert_eq!(rows[0]["queue"], "0");
+        assert_eq!(rows[0]["completed"], "1");
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "snapshot".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_snapshot/repo-runtime-snapshot/snap-overload")
+                .with_json_body(serde_json::json!({"indices": "logs-runtime-snapshot"})),
+        );
+        assert_eq!(create.status, 429);
+        assert_eq!(
+            create.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+
+        let stats_after_reject =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_reject.status, 200);
+        let first_node = stats_after_reject.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["snapshot"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["snapshot"]["queue"], 1000);
+        assert_eq!(first_node["thread_pool"]["snapshot"]["rejected"], 1);
+        assert_eq!(first_node["thread_pool"]["snapshot"]["completed"], 1);
     }
 
     #[test]

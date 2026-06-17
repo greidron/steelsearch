@@ -186,14 +186,15 @@ Current Steelsearch evidence:
   cluster pending tasks, cat pending tasks, cat thread-pool, and node-stats
   thread-pool routes;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 5/5 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 6/6 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
   active-slot queue waiting/drain under concurrent search/write requests and
   bounded queue-full rejection for search/write pools, plus maintenance
   refresh/flush/cache-clear/forcemerge admission through the same runtime-owned
-  waiting and rejection model;
+  waiting and rejection model, and snapshot create/restore/cleanup admission
+  through the same runtime-owned waiting and rejection model;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 1/1 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates plus follow-up task
@@ -224,8 +225,8 @@ Required tests:
   header, and same-node child grouping probes into broader multi-level and
   cross-node child-task propagation coverage;
 - extend queue/backpressure smoke tests from search/write and maintenance
-  active-slot queueing into cluster-manager, snapshot, and task-submission
-  scheduling behavior;
+  active-slot queueing plus snapshot admission into cluster-manager and
+  task-submission scheduling behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries
