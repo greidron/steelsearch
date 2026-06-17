@@ -686,6 +686,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_tenant_scoped_subjects_cannot_cross_index_tenant_boundaries",
+        "production-security-tenant-isolation",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_reload_secure_settings_requires_admin_role",
         "production-security-authorization",
         package="os-node",

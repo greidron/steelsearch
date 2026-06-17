@@ -17,6 +17,8 @@ pub struct AuthenticationUser {
     #[serde(default)]
     pub password: Option<String>,
     pub roles: Vec<String>,
+    #[serde(default)]
+    pub tenants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -27,6 +29,8 @@ pub struct AuthenticationServiceAccount {
     #[serde(default)]
     pub token: Option<String>,
     pub roles: Vec<String>,
+    #[serde(default)]
+    pub tenants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -195,6 +199,9 @@ pub fn validate_authentication_users_file(
         if user.roles.is_empty() || user.roles.iter().any(|role| role.trim().is_empty()) {
             return Err(format!("user[{index}].roles must be a non-empty string array").into());
         }
+        if user.tenants.iter().any(|tenant| tenant.trim().is_empty()) {
+            return Err(format!("user[{index}].tenants must contain non-empty strings").into());
+        }
     }
     for (index, service_account) in users_file.service_accounts.iter().enumerate() {
         if service_account.name.trim().is_empty() {
@@ -218,12 +225,25 @@ pub fn validate_authentication_users_file(
             );
         }
         if service_account.roles.is_empty()
-            || service_account.roles.iter().any(|role| role.trim().is_empty())
+            || service_account
+                .roles
+                .iter()
+                .any(|role| role.trim().is_empty())
         {
-            return Err(
-                format!("service_accounts[{index}].roles must be a non-empty string array")
-                    .into(),
-            );
+            return Err(format!(
+                "service_accounts[{index}].roles must be a non-empty string array"
+            )
+            .into());
+        }
+        if service_account
+            .tenants
+            .iter()
+            .any(|tenant| tenant.trim().is_empty())
+        {
+            return Err(format!(
+                "service_accounts[{index}].tenants must contain non-empty strings"
+            )
+            .into());
         }
     }
     Ok(())
@@ -302,9 +322,10 @@ mod tests {
             ..SecurityBoundaryPolicy::steelsearch_native_required()
         };
 
-        let error = validate_production_mode_request(&policy, ReleaseReadinessChecklist::complete())
-            .unwrap_err()
-            .to_string();
+        let error =
+            validate_production_mode_request(&policy, ReleaseReadinessChecklist::complete())
+                .unwrap_err()
+                .to_string();
 
         assert!(!error.contains("http_tls must be implemented and enforced"));
         assert!(error.contains("transport_tls must be implemented and enforced"));
@@ -315,21 +336,23 @@ mod tests {
     #[test]
     fn authentication_users_file_parser_accepts_subjects_with_roles() {
         let parsed = parse_authentication_users_json(
-            r#"{"users":[{"username":"admin","password_hash":"hash","roles":["admin"]}],"service_accounts":[{"name":"svc-indexer","token_hash":"service-hash","roles":["writer"]}]}"#,
+            r#"{"users":[{"username":"admin","password_hash":"hash","roles":["admin"],"tenants":["tenant-a"]}],"service_accounts":[{"name":"svc-indexer","token_hash":"service-hash","roles":["writer"],"tenants":["tenant-a","tenant-b"]}]}"#,
         )
         .unwrap();
 
         assert_eq!(parsed.users[0].username, "admin");
         assert_eq!(parsed.users[0].password_hash.as_deref(), Some("hash"));
         assert_eq!(parsed.users[0].roles, vec!["admin".to_string()]);
+        assert_eq!(parsed.users[0].tenants, vec!["tenant-a".to_string()]);
         assert_eq!(parsed.service_accounts[0].name, "svc-indexer");
         assert_eq!(
             parsed.service_accounts[0].token_hash.as_deref(),
             Some("service-hash")
         );
+        assert_eq!(parsed.service_accounts[0].roles, vec!["writer".to_string()]);
         assert_eq!(
-            parsed.service_accounts[0].roles,
-            vec!["writer".to_string()]
+            parsed.service_accounts[0].tenants,
+            vec!["tenant-a".to_string(), "tenant-b".to_string()]
         );
     }
 
@@ -400,6 +423,14 @@ mod tests {
             .unwrap_err()
             .to_string(),
             "service_accounts[0].roles must be a non-empty string array"
+        );
+        assert_eq!(
+            parse_authentication_users_json(
+                r#"{"users":[{"username":"admin","password_hash":"hash","roles":["admin"],"tenants":[""]}]}"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "user[0].tenants must contain non-empty strings"
         );
     }
 }

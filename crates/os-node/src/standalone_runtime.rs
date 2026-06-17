@@ -505,12 +505,27 @@ fn security_profile_enabled() -> bool {
 
 fn security_authentication_users_file_from_env() -> AuthenticationUsersFile {
     let users: Vec<_> = [
-        ("SECURITY_ADMIN_USERNAME", "SECURITY_ADMIN_PASSWORD", "admin"),
-        ("SECURITY_READER_USERNAME", "SECURITY_READER_PASSWORD", "reader"),
-        ("SECURITY_WRITER_USERNAME", "SECURITY_WRITER_PASSWORD", "writer"),
+        (
+            "SECURITY_ADMIN_USERNAME",
+            "SECURITY_ADMIN_PASSWORD",
+            "admin",
+            "SECURITY_ADMIN_TENANTS",
+        ),
+        (
+            "SECURITY_READER_USERNAME",
+            "SECURITY_READER_PASSWORD",
+            "reader",
+            "SECURITY_READER_TENANTS",
+        ),
+        (
+            "SECURITY_WRITER_USERNAME",
+            "SECURITY_WRITER_PASSWORD",
+            "writer",
+            "SECURITY_WRITER_TENANTS",
+        ),
     ]
     .into_iter()
-    .filter_map(|(username_env, password_env, role)| {
+    .filter_map(|(username_env, password_env, role, tenants_env)| {
         let username = env::var(username_env).ok()?;
         let password = env::var(password_env).ok()?;
         Some(AuthenticationUser {
@@ -518,6 +533,7 @@ fn security_authentication_users_file_from_env() -> AuthenticationUsersFile {
             password_hash: None,
             password: Some(password),
             roles: vec![role.to_string()],
+            tenants: parse_security_tenants_env(tenants_env),
         })
     })
     .collect();
@@ -526,10 +542,11 @@ fn security_authentication_users_file_from_env() -> AuthenticationUsersFile {
             "SECURITY_SERVICE_ACCOUNT_USERNAME",
             "SECURITY_SERVICE_ACCOUNT_TOKEN",
             "SECURITY_SERVICE_ACCOUNT_ROLE",
+            "SECURITY_SERVICE_ACCOUNT_TENANTS",
         ),
     ]
     .into_iter()
-    .filter_map(|(username_env, token_env, role_env)| {
+    .filter_map(|(username_env, token_env, role_env, tenants_env)| {
         let name = env::var(username_env).ok()?;
         let token = env::var(token_env).ok()?;
         let role = env::var(role_env).unwrap_or_else(|_| "writer".to_string());
@@ -538,6 +555,7 @@ fn security_authentication_users_file_from_env() -> AuthenticationUsersFile {
             token_hash: None,
             token: Some(token),
             roles: vec![role],
+            tenants: parse_security_tenants_env(tenants_env),
         })
     })
     .collect();
@@ -545,6 +563,22 @@ fn security_authentication_users_file_from_env() -> AuthenticationUsersFile {
         users,
         service_accounts,
     }
+}
+
+fn parse_security_tenants_env(key: &str) -> Vec<String> {
+    env::var(key)
+        .ok()
+        .map(|value| parse_csv_values(&value))
+        .unwrap_or_default()
+}
+
+fn parse_csv_values(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn security_authentication_users_file() -> Result<AuthenticationUsersFile, String> {
@@ -573,7 +607,15 @@ fn security_expected_basic_credentials() -> Result<Vec<(String, String)>, String
     Ok(credentials)
 }
 
-fn security_basic_credentials_with_roles() -> Result<Vec<(String, String, &'static str)>, String> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SecuritySubject {
+    username: String,
+    role: &'static str,
+    tenants: Vec<String>,
+}
+
+fn security_basic_credentials_with_roles(
+) -> Result<Vec<(String, String, SecuritySubject)>, String> {
     let users_file = security_authentication_users_file()?;
     let mut credentials = users_file
         .users
@@ -586,7 +628,12 @@ fn security_basic_credentials_with_roles() -> Result<Vec<(String, String, &'stat
                 "writer" => Some("writer"),
                 _ => None,
             })?;
-            Some((user.username, password, role))
+            let subject = SecuritySubject {
+                username: user.username.clone(),
+                role,
+                tenants: user.tenants,
+            };
+            Some((user.username, password, subject))
         })
         .collect::<Vec<_>>();
     credentials.extend(users_file.service_accounts.into_iter().filter_map(
@@ -601,7 +648,12 @@ fn security_basic_credentials_with_roles() -> Result<Vec<(String, String, &'stat
                     "writer" => Some("writer"),
                     _ => None,
                 })?;
-            Some((service_account.name, token, role))
+            let subject = SecuritySubject {
+                username: service_account.name.clone(),
+                role,
+                tenants: service_account.tenants,
+            };
+            Some((service_account.name, token, subject))
         },
     ));
     Ok(credentials)
@@ -706,7 +758,9 @@ fn unsupported_security_plugin_api_response(path: &str) -> RestResponse {
     )
 }
 
-fn authenticated_security_role(request: &RestRequest) -> Result<Option<&'static str>, RestResponse> {
+fn authenticated_security_subject(
+    request: &RestRequest,
+) -> Result<Option<SecuritySubject>, RestResponse> {
     if !security_profile_enabled() {
         return Ok(None);
     }
@@ -728,7 +782,7 @@ fn authenticated_security_role(request: &RestRequest) -> Result<Option<&'static 
         )));
     };
     let credentials = security_basic_credentials_with_roles().map_err(unauthorized_security_response)?;
-    let Some((_, _, role)) = credentials
+    let Some((_, _, subject)) = credentials
         .into_iter()
         .find(|(expected_username, expected_password, _)| {
             *expected_username == username && *expected_password == password
@@ -739,7 +793,7 @@ fn authenticated_security_role(request: &RestRequest) -> Result<Option<&'static 
             username, request.path
         )));
     };
-    Ok(Some(role))
+    Ok(Some(subject))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -764,22 +818,79 @@ fn require_security_permission(
     permission: SecurityPermission,
     route_family: &str,
 ) -> Result<Option<&'static str>, RestResponse> {
-    let role = authenticated_security_role(request)?;
-    if security_role_has_permission(role, permission) {
-        Ok(role)
-    } else {
-        Err(forbidden_security_response(format!(
+    let subject = authenticated_security_subject(request)?;
+    let role = subject.as_ref().map(|subject| subject.role);
+    if !security_role_has_permission(role, permission) {
+        return Err(forbidden_security_response(format!(
             "role [{}] has no permissions for {route_family} request [{}]",
             role.unwrap_or("anonymous"),
             request.path
-        )))
+        )));
+    }
+    if let Some(subject) = subject.as_ref() {
+        if let Some(target) = security_index_target_from_request_path(&request.path) {
+            if !security_subject_can_access_index_target(subject, target) {
+                return Err(forbidden_security_response(format!(
+                    "subject [{}] has no tenant permissions for {route_family} target [{}]",
+                    subject.username, target
+                )));
+            }
+        }
+    }
+    Ok(role)
+}
+
+fn security_index_target_from_request_path(path: &str) -> Option<&str> {
+    let target = path.trim_matches('/').split('/').next()?.trim();
+    if target.is_empty() || target.starts_with('_') {
+        None
+    } else {
+        Some(target)
     }
 }
 
-fn security_role_can_write_target(role: Option<&str>, restricted_target: bool) -> bool {
+fn security_subject_can_access_index_target(subject: &SecuritySubject, target: &str) -> bool {
+    if subject.tenants.is_empty() || subject.role == "admin" {
+        return true;
+    }
+    target
+        .split(',')
+        .filter(|index| !index.trim().is_empty())
+        .all(|index| {
+            subject
+                .tenants
+                .iter()
+                .any(|tenant| index_name_matches_tenant(index, tenant))
+        })
+}
+
+fn index_name_matches_tenant(index: &str, tenant: &str) -> bool {
+    let Some(offset) = index.find(tenant) else {
+        return false;
+    };
+    let before = index[..offset].chars().next_back();
+    let after = index[offset + tenant.len()..].chars().next();
+    before.map_or(true, is_index_name_boundary) && after.map_or(true, is_index_name_boundary)
+}
+
+fn is_index_name_boundary(ch: char) -> bool {
+    matches!(ch, '-' | '_' | '.')
+}
+
+fn security_role_can_write_target(
+    role: Option<&str>,
+    subject: Option<&SecuritySubject>,
+    target: &str,
+    restricted_target: bool,
+) -> bool {
     match role {
         None | Some("admin") => true,
-        Some("writer") => !restricted_target,
+        Some("writer") => {
+            !restricted_target
+                && subject
+                    .map(|subject| security_subject_can_access_index_target(subject, target))
+                    .unwrap_or(true)
+        }
         _ => false,
     }
 }
@@ -8869,6 +8980,10 @@ impl SteelNode {
             Ok(role) => role,
             Err(response) => return response,
         };
+        let security_subject = match authenticated_security_subject(request) {
+            Ok(subject) => subject,
+            Err(response) => return response,
+        };
         let _thread_pool = match self.enter_runtime_thread_pool("write", 10000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -8964,6 +9079,8 @@ impl SteelNode {
             };
             let item = if !security_role_can_write_target(
                 security_role,
+                security_subject.as_ref(),
+                &index,
                 self.is_restricted_write_target(&index),
             ) {
                 serde_json::json!({
@@ -22773,12 +22890,15 @@ mod tests {
         env::set_var("SECURITY_ADMIN_PASSWORD", "admin-password");
         env::set_var("SECURITY_READER_USERNAME", "reader");
         env::set_var("SECURITY_READER_PASSWORD", "reader-password");
+        env::set_var("SECURITY_READER_TENANTS", "tenant-a,tenant-b");
         env::remove_var("SECURITY_WRITER_USERNAME");
         env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_TENANTS");
         env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
         env::set_var("SECURITY_SERVICE_ACCOUNT_USERNAME", "svc-indexer");
         env::set_var("SECURITY_SERVICE_ACCOUNT_TOKEN", "svc-token");
         env::set_var("SECURITY_SERVICE_ACCOUNT_ROLE", "writer");
+        env::set_var("SECURITY_SERVICE_ACCOUNT_TENANTS", "tenant-a");
 
         let users_file = security_authentication_users_file().expect("env subjects parse");
 
@@ -22790,6 +22910,10 @@ mod tests {
         assert_eq!(users_file.users[1].username, "reader");
         assert_eq!(users_file.users[1].password.as_deref(), Some("reader-password"));
         assert_eq!(users_file.users[1].roles, vec!["reader".to_string()]);
+        assert_eq!(
+            users_file.users[1].tenants,
+            vec!["tenant-a".to_string(), "tenant-b".to_string()]
+        );
         assert_eq!(users_file.service_accounts[0].name, "svc-indexer");
         assert_eq!(
             users_file.service_accounts[0].token.as_deref(),
@@ -22800,11 +22924,39 @@ mod tests {
             vec!["writer".to_string()]
         );
         assert_eq!(
+            users_file.service_accounts[0].tenants,
+            vec!["tenant-a".to_string()]
+        );
+        assert_eq!(
             security_basic_credentials_with_roles().expect("env credentials with roles"),
             vec![
-                ("admin".to_string(), "admin-password".to_string(), "admin"),
-                ("reader".to_string(), "reader-password".to_string(), "reader"),
-                ("svc-indexer".to_string(), "svc-token".to_string(), "writer"),
+                (
+                    "admin".to_string(),
+                    "admin-password".to_string(),
+                    SecuritySubject {
+                        username: "admin".to_string(),
+                        role: "admin",
+                        tenants: Vec::new(),
+                    },
+                ),
+                (
+                    "reader".to_string(),
+                    "reader-password".to_string(),
+                    SecuritySubject {
+                        username: "reader".to_string(),
+                        role: "reader",
+                        tenants: vec!["tenant-a".to_string(), "tenant-b".to_string()],
+                    },
+                ),
+                (
+                    "svc-indexer".to_string(),
+                    "svc-token".to_string(),
+                    SecuritySubject {
+                        username: "svc-indexer".to_string(),
+                        role: "writer",
+                        tenants: vec!["tenant-a".to_string()],
+                    },
+                ),
             ]
         );
 
@@ -22813,9 +22965,11 @@ mod tests {
         env::remove_var("SECURITY_ADMIN_PASSWORD");
         env::remove_var("SECURITY_READER_USERNAME");
         env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_READER_TENANTS");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_TENANTS");
     }
 
     #[test]
@@ -22831,6 +22985,7 @@ mod tests {
         env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_TENANTS");
 
         let root = std::env::temp_dir().join(format!(
             "steelsearch-authentication-users-runtime-{}",
@@ -22865,17 +23020,29 @@ mod tests {
                 (
                     "file-admin".to_string(),
                     "file-admin-password".to_string(),
-                    "admin"
+                    SecuritySubject {
+                        username: "file-admin".to_string(),
+                        role: "admin",
+                        tenants: Vec::new(),
+                    },
                 ),
                 (
                     "file-reader".to_string(),
                     "file-reader-password".to_string(),
-                    "reader"
+                    SecuritySubject {
+                        username: "file-reader".to_string(),
+                        role: "reader",
+                        tenants: Vec::new(),
+                    },
                 ),
                 (
                     "file-indexer".to_string(),
                     "file-indexer-token".to_string(),
-                    "writer"
+                    SecuritySubject {
+                        username: "file-indexer".to_string(),
+                        role: "writer",
+                        tenants: Vec::new(),
+                    },
                 ),
             ]
         );
@@ -22970,11 +23137,141 @@ mod tests {
             Some("unknown"),
             SecurityPermission::IndexRead
         ));
-        assert!(security_role_can_write_target(None, true));
-        assert!(security_role_can_write_target(Some("admin"), true));
-        assert!(security_role_can_write_target(Some("writer"), false));
-        assert!(!security_role_can_write_target(Some("writer"), true));
-        assert!(!security_role_can_write_target(Some("reader"), false));
+        let tenant_writer = SecuritySubject {
+            username: "writer-a".to_string(),
+            role: "writer",
+            tenants: vec!["tenant-a".to_string()],
+        };
+        assert!(security_role_can_write_target(None, None, "logs-tenant-b", true));
+        assert!(security_role_can_write_target(
+            Some("admin"),
+            None,
+            ".opensearch-security",
+            true
+        ));
+        assert!(security_role_can_write_target(
+            Some("writer"),
+            None,
+            "logs-tenant-b",
+            false
+        ));
+        assert!(!security_role_can_write_target(
+            Some("writer"),
+            None,
+            ".opensearch-security",
+            true
+        ));
+        assert!(security_role_can_write_target(
+            Some("writer"),
+            Some(&tenant_writer),
+            "logs-tenant-a-000001",
+            false
+        ));
+        assert!(!security_role_can_write_target(
+            Some("writer"),
+            Some(&tenant_writer),
+            "logs-tenant-b-000001",
+            false
+        ));
+        assert!(!security_role_can_write_target(
+            Some("reader"),
+            None,
+            "logs-tenant-b",
+            false
+        ));
+    }
+
+    #[test]
+    fn secure_tenant_scoped_subjects_cannot_cross_index_tenant_boundaries() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::remove_var("SECURITY_ADMIN_TENANTS");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::set_var("SECURITY_READER_TENANTS", "tenant-a");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
+        env::set_var("SECURITY_WRITER_TENANTS", "tenant-a");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let admin = "Basic YWRtaW46YWRtaW4=";
+        let reader = "Basic cmVhZGVyOnJlYWRlcg==";
+        let writer = "Basic d3JpdGVyOndyaXRlcg==";
+
+        for index in ["logs-tenant-a-000001", "logs-tenant-b-000001"] {
+            let create = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/{index}"))
+                    .with_header("Authorization", admin),
+            );
+            assert_eq!(create.status, 200, "create {index}");
+            let seed = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/{index}/_doc/admin-seed"))
+                    .with_header("Authorization", admin)
+                    .with_json_body(serde_json::json!({"message": index})),
+            );
+            assert_eq!(seed.status, 201, "seed {index}");
+        }
+
+        let same_tenant_read = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-tenant-a-000001/_search")
+                .with_header("Authorization", reader)
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})),
+        );
+        assert_eq!(same_tenant_read.status, 200);
+
+        let cross_tenant_read = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-tenant-b-000001/_search")
+                .with_header("Authorization", reader)
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})),
+        );
+        assert_eq!(cross_tenant_read.status, 403);
+
+        let same_tenant_write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-tenant-a-000001/_doc/writer-doc")
+                .with_header("Authorization", writer)
+                .with_json_body(serde_json::json!({"message": "same tenant"})),
+        );
+        assert_eq!(same_tenant_write.status, 201);
+
+        let cross_tenant_write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-tenant-b-000001/_doc/writer-doc")
+                .with_header("Authorization", writer)
+                .with_json_body(serde_json::json!({"message": "cross tenant"})),
+        );
+        assert_eq!(cross_tenant_write.status, 403);
+
+        let cross_tenant_bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("Authorization", writer)
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    concat!(
+                        "{\"index\":{\"_index\":\"logs-tenant-b-000001\",\"_id\":\"bulk-cross\"}}\n",
+                        "{\"message\":\"cross tenant bulk\"}\n"
+                    )
+                    .as_bytes()
+                    .to_vec(),
+                ),
+        );
+        assert_eq!(cross_tenant_bulk.status, 200);
+        assert_eq!(cross_tenant_bulk.body["errors"], Value::Bool(true));
+        assert_eq!(cross_tenant_bulk.body["items"][0]["index"]["status"], 403);
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_READER_TENANTS");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_TENANTS");
     }
 
     #[test]

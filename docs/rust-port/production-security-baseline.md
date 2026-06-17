@@ -39,8 +39,10 @@ users file, and a secure-settings file. The authentication users file must be
 valid JSON with at least one user or service-account subject,
 password/password-hash or token/token-hash material, and at least one role. The
 secure-settings file must be a non-empty JSON object with non-empty setting
-keys. Supplying readable and structurally valid files clears only the
-bootstrap-material blockers. Production startup preflight also requires
+keys. Subjects may also carry explicit tenant scopes through a `tenants` array;
+production policy only promotes tenant isolation when every bootstrap subject
+has at least one tenant scope. Supplying readable and structurally valid files
+clears only the bootstrap-material blockers. Production startup preflight also requires
 `STEELSEARCH_SECURITY_ENABLED=true` so the runtime authentication and
 authorization path is explicitly enabled before production mode can pass the
 security category. The users-file subject parser lives in `os-node-rest-core`
@@ -162,10 +164,12 @@ of falling back to env credentials.
 When runtime security is enabled and the production authentication users file
 is valid, startup preflight now derives the production security policy from
 that concrete state and removes the authentication, authorization, and
-audit-logging blockers. When runtime security is enabled and the production
-secure-settings file is valid, it also removes the secure-settings blocker.
-HTTP TLS, transport TLS, tenant isolation, and release checklist blockers remain
-fail-closed until their concrete enforcement evidence is wired into the policy.
+audit-logging blockers. When all production authentication subjects also carry
+tenant scopes, it removes the tenant-isolation blocker. When runtime security is
+enabled and the production secure-settings file is valid, it also removes the
+secure-settings blocker. HTTP TLS, transport TLS, and release checklist
+blockers remain fail-closed until their concrete enforcement evidence is wired
+into the policy.
 The startup-preflight gate also validates the secure multi-node TLS handshake
 matrix fixture so success, client-certificate success, wrong-CA rejection, and
 expired-certificate rejection buckets remain present while the concrete TLS
@@ -175,7 +179,8 @@ admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, single-document read/write role
 checks, multi-document/document-analysis read role checks, cluster
 observability reader-route checks, reindex, delete-by-query, and
-update-by-query writer-route checks, secure-settings reload admin-role
+update-by-query writer-route checks, tenant-scoped subject same-tenant
+read/write allow and cross-tenant read/write/bulk denial, secure-settings reload admin-role
 enforcement, cluster-admin control route enforcement for settings, reroute,
 decommission, weighted routing, voting config exclusions, snapshot
 mutation/control routes, template management mutation routes, search/ingest

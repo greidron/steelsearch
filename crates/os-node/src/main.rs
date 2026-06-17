@@ -21,7 +21,9 @@ use os_node::{
     SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest,
     persist_gateway_state_manifest,
 };
-use os_node_rest_core::{parse_authentication_users_json, SecurityBoundaryState};
+use os_node_rest_core::{
+    parse_authentication_users_json, AuthenticationUsersFile, SecurityBoundaryState,
+};
 use os_stream::StreamInput;
 use os_transport::compression::decompress_deflate_body;
 use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
@@ -5096,6 +5098,13 @@ fn production_security_boundary_policy(config: &DaemonConfig) -> SecurityBoundar
         .authentication_users_path
         .as_ref()
         .is_some_and(|path| validate_production_authentication_users_file(path).is_ok());
+    let tenant_scoped_subjects_ready = config
+        .production_security_bootstrap
+        .authentication_users_path
+        .as_ref()
+        .is_some_and(|path| {
+            validate_production_tenant_scoped_authentication_users_file(path).is_ok()
+        });
     let secure_settings_ready = config
         .production_security_bootstrap
         .secure_settings_path
@@ -5105,6 +5114,9 @@ fn production_security_boundary_policy(config: &DaemonConfig) -> SecurityBoundar
         policy.authentication = SecurityBoundaryState::Enforced;
         policy.authorization = SecurityBoundaryState::Enforced;
         policy.audit_logging = SecurityBoundaryState::Enforced;
+        if tenant_scoped_subjects_ready {
+            policy.tenant_isolation = SecurityBoundaryState::Enforced;
+        }
     }
     if runtime_security_ready && secure_settings_ready {
         policy.secure_settings = SecurityBoundaryState::Enforced;
@@ -5230,6 +5242,26 @@ fn validate_production_authentication_users_file(path: &Path) -> Result<(), Stri
     let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
     parse_authentication_users_json(&raw).map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn validate_production_tenant_scoped_authentication_users_file(path: &Path) -> Result<(), String> {
+    let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
+    let users_file = parse_authentication_users_json(&raw).map_err(|error| error.to_string())?;
+    if authentication_users_file_has_tenant_scopes(&users_file) {
+        Ok(())
+    } else {
+        Err("all authentication subjects must declare at least one tenant scope".to_string())
+    }
+}
+
+fn authentication_users_file_has_tenant_scopes(users_file: &AuthenticationUsersFile) -> bool {
+    let subject_count = users_file.users.len() + users_file.service_accounts.len();
+    subject_count > 0
+        && users_file.users.iter().all(|user| !user.tenants.is_empty())
+        && users_file
+            .service_accounts
+            .iter()
+            .all(|service_account| !service_account.tenants.is_empty())
 }
 
 fn validate_production_secure_settings_file(path: &Path) -> Result<(), String> {
@@ -6934,7 +6966,7 @@ mod tests {
         write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
-            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"],"tenants":["tenant-a"]}]}"#,
         )
         .unwrap();
         let mut config = minimal_daemon_config(path.clone());
@@ -6985,7 +7017,7 @@ mod tests {
         write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
-            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"]}]}"#,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"],"tenants":["tenant-a"]}]}"#,
         )
         .unwrap();
         let mut config = minimal_daemon_config(path.clone());
@@ -7030,7 +7062,7 @@ mod tests {
         assert!(!production_blocker.contains("authentication must be implemented and enforced"));
         assert!(!production_blocker.contains("authorization must be implemented and enforced"));
         assert!(!production_blocker.contains("audit_logging must be implemented and enforced"));
-        assert!(production_blocker.contains("tenant_isolation must be implemented and enforced"));
+        assert!(!production_blocker.contains("tenant_isolation must be implemented and enforced"));
         assert!(!production_blocker.contains("secure_settings must be implemented and enforced"));
         assert!(startup_error.contains("production mode is blocked"));
     }
