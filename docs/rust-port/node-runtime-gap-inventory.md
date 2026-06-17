@@ -177,9 +177,10 @@ Current Steelsearch evidence:
   warning headers, and `X-Opaque-Id`;
 - readiness and selected operational endpoints exist;
 - `tools/run-native-closure-validation.py --batch runtime-tasks` passed on
-  2026-06-17 with 2/2 tests and `zero_tests=0`, covering bounded task
+  2026-06-17 with 3/3 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
-  task readback;
+  task readback, plus acknowledged/failed terminal task readback without
+  polluting pending-task queue depth;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,
@@ -227,7 +228,8 @@ Required tests:
   header, and same-node child grouping probes into broader multi-level and
   cross-node child-task propagation coverage;
 - extend queue/backpressure smoke tests beyond bounded route admission into
-  terminal task lifecycle, restart, and multi-node propagation behavior;
+  terminal task retention/eviction, restart, and multi-node propagation
+  behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 
 ## Gap Class 3: Plugin And Module Boundaries

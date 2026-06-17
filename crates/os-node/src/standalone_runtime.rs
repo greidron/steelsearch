@@ -9743,7 +9743,7 @@ impl SteelNode {
 
     fn pending_tasks_body(&self) -> Value {
         serde_json::json!({
-            "tasks": self.task_records()
+            "tasks": self.active_task_records()
         })
     }
 
@@ -11230,6 +11230,14 @@ impl SteelNode {
     }
 
     fn task_records(&self) -> Vec<Value> {
+        self.task_records_from_queue(true)
+    }
+
+    fn active_task_records(&self) -> Vec<Value> {
+        self.task_records_from_queue(false)
+    }
+
+    fn task_records_from_queue(&self, include_terminal: bool) -> Vec<Value> {
         let cancelled_task_ids = self
             .cancelled_task_ids
             .lock()
@@ -11246,10 +11254,14 @@ impl SteelNode {
             .expect("task queue state lock poisoned")
             .clone()
         {
-            return queue
-                .pending
+            let mut records = queue.pending;
+            records.extend(queue.in_flight);
+            if include_terminal {
+                records.extend(queue.acknowledged);
+                records.extend(queue.failed);
+            }
+            return records
                 .into_iter()
-                .chain(queue.in_flight)
                 .map(|record| {
                     let node_id = self
                         .cluster_view
@@ -11339,11 +11351,11 @@ impl SteelNode {
     }
 
     fn tasks_len(&self) -> u64 {
-        self.task_records().len() as u64
+        self.active_task_records().len() as u64
     }
 
     fn task_queue_runtime_counts(&self) -> (u64, u64) {
-        let records = self.task_records();
+        let records = self.active_task_records();
         let active = records
             .iter()
             .filter(|task| task.get("executing").and_then(Value::as_bool).unwrap_or(false))
@@ -13626,7 +13638,7 @@ impl SteelNode {
 
     fn handle_cat_pending_tasks_route(&self, request: &RestRequest) -> RestResponse {
         let mut rows = self
-            .task_records()
+            .active_task_records()
             .into_iter()
             .map(|task| {
                 serde_json::json!({
@@ -22284,6 +22296,134 @@ mod tests {
             missing.body["node_failures"][0]["type"],
             Value::String("failed_node_exception".to_string())
         );
+    }
+
+    #[test]
+    fn tasks_terminal_states_remain_readable_without_polluting_pending_queue_depth() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 21,
+                task: ClusterManagerTask {
+                    source: "queued terminal probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            acknowledged: vec![ClusterManagerTaskRecord {
+                task_id: 31,
+                task: ClusterManagerTask {
+                    source: "acknowledged terminal probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Acknowledged,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            failed: vec![ClusterManagerTaskRecord {
+                task_id: 41,
+                task: ClusterManagerTask {
+                    source: "failed terminal probe".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::Failed,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: Some("simulated terminal failure".to_string()),
+            }],
+            ..Default::default()
+        });
+
+        let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["number_of_pending_tasks"], 1);
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 1);
+        assert_eq!(pending_tasks[0]["id"], 21);
+
+        let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks.status, 200);
+        let node_tasks = tasks.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("node task map");
+        assert_eq!(node_tasks.len(), 3);
+        assert_eq!(node_tasks["node-a:31"]["id"], 31);
+        assert_eq!(
+            node_tasks["node-a:31"]["action"],
+            "cluster:admin/reroute"
+        );
+        assert_eq!(node_tasks["node-a:41"]["id"], 41);
+        assert_eq!(
+            node_tasks["node-a:41"]["action"],
+            "cluster:admin/reroute"
+        );
+        assert_eq!(node_tasks["node-a:31"]["cancellable"], Value::Bool(false));
+        assert_eq!(node_tasks["node-a:41"]["cancellable"], Value::Bool(false));
+
+        let acknowledged_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:31"));
+        assert_eq!(acknowledged_get.status, 200);
+        assert_eq!(acknowledged_get.body["task"]["id"], 31);
+        assert_eq!(acknowledged_get.body["task"]["cancellable"], Value::Bool(false));
+
+        let terminal_cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/node-a:31/_cancel",
+        ));
+        assert_eq!(terminal_cancel.status, 400);
+        assert_eq!(
+            terminal_cancel.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let mut cat_pending = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        cat_pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_pending = node.handle_rest_request(cat_pending);
+        assert_eq!(cat_pending.status, 200);
+        let rows = cat_pending.body.as_array().expect("cat pending task rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], "21");
+
+        let mut cat_tasks = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        cat_tasks
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_tasks = node.handle_rest_request(cat_tasks);
+        assert_eq!(cat_tasks.status, 200);
+        let rows = cat_tasks.body.as_array().expect("cat task rows");
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().any(|row| row["task_id"] == "node-a:31"));
+        assert!(rows.iter().any(|row| row["task_id"] == "node-a:41"));
     }
 
     #[test]
