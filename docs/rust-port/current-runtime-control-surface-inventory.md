@@ -89,7 +89,7 @@ internal subsystems, especially:
 | Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, and cancelled-task completion plus partial-progress status readback until eviction; shutdown-window terminal transitions remain open |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
-| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, and accepts cancel requests after per-request shared-runtime sync on restart; shutdown-window and partial-recovery behavior remain open |
+| Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, keeps accepted in-flight tasks visible without queued replay, refuses cancelling those in-flight records, preserves task listing/cancel continuity when per-request sync sees a partial shared-state recovery error, and accepts cancel requests after per-request shared-runtime sync on restart; shutdown-window behavior remains open |
 | Error classification | route-level `404`, bounded repeated-cancel success, in-flight refusal, and completion-race terminal refusal without cancelled-marker pollution exist, but shutdown-window error classification remains open |
 
 ### Required tests
@@ -97,8 +97,6 @@ internal subsystems, especially:
 - add fixture-backed distinction for:
   - queued cancellation versus worker drain races;
   - shutdown-window cancellation refusal versus preservation behavior.
-- add restart-smoke coverage for:
-  - post-restart partial-recovery/error-path task listing continuity.
 - add operator-visible evidence for terminal-state retention:
   - whether shutdown-window transitions preserve or evict cancelled-terminal
     task visibility beyond the current completion/restart/eviction coverage.
@@ -220,7 +218,7 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Queue ownership | search/write, maintenance, snapshot, cluster-reroute, and task-submission route admission now have active-slot queue waiting and drain evidence, but terminal long-running task lifecycle ownership is still bounded |
-| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal after shared-runtime restart is covered, while shutdown/partial-recovery replay/refusal and multi-node overload contracts are still missing |
+| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted in-flight task readback/refusal after shared-runtime restart and partial shared-state recovery error task-listing/cancel continuity are covered, while queued-work shutdown/partial-recovery replay/refusal and multi-node overload contracts are still missing |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist, but there is no authoritative mapping between visible entries and the real internal queue owners or queue depth |

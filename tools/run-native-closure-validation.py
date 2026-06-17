@@ -317,6 +317,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "task_listing_survives_partial_shared_runtime_state_recovery_error",
+        "task-restart-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
