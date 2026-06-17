@@ -142,9 +142,11 @@ PEM-marker certificate/key validation and certificate/private-key role mismatch
 rejection, plus invalid bootstrap file-content redaction, user-backed and
 service-account-only authentication-users-file acceptance, and malformed
 authentication-users-file rejection through the shared users-file subject
-parser. Runtime
-security-profile env credentials for users and service accounts are also loaded
-through that shared subject model before route-level Basic auth and role checks.
+parser. Runtime security-profile env credentials and
+`SECURITY_AUTHENTICATION_USERS_FILE` credentials for users and service accounts
+are also loaded through that shared subject model before route-level Basic auth
+and role checks; unreadable or malformed runtime users files fail closed instead
+of falling back to env credentials.
 The guarded production-security batch covers root authentication, the shared
 admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, and now verifies that ML connector

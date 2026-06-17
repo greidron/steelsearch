@@ -33,7 +33,8 @@ use os_engine::{
 use os_engine_tantivy::TantivyEngine;
 use os_core::Version;
 use os_node_rest_core::{
-    AuthenticationServiceAccount, AuthenticationUser, AuthenticationUsersFile, RestServerConfig,
+    parse_authentication_users_json, AuthenticationServiceAccount, AuthenticationUser,
+    AuthenticationUsersFile, RestServerConfig,
 };
 use os_rest::{RestMethod, RestRequest, RestResponse};
 use serde::{Deserialize, Serialize};
@@ -477,7 +478,7 @@ fn security_profile_enabled() -> bool {
         .unwrap_or(false)
 }
 
-fn security_authentication_users_file() -> AuthenticationUsersFile {
+fn security_authentication_users_file_from_env() -> AuthenticationUsersFile {
     let users: Vec<_> = [
         ("SECURITY_ADMIN_USERNAME", "SECURITY_ADMIN_PASSWORD", "admin"),
         ("SECURITY_READER_USERNAME", "SECURITY_READER_PASSWORD", "reader"),
@@ -521,8 +522,18 @@ fn security_authentication_users_file() -> AuthenticationUsersFile {
     }
 }
 
-fn security_expected_basic_credentials() -> Vec<(String, String)> {
-    let users_file = security_authentication_users_file();
+fn security_authentication_users_file() -> Result<AuthenticationUsersFile, String> {
+    if let Ok(path) = env::var("SECURITY_AUTHENTICATION_USERS_FILE") {
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("unable to read authentication users file [{path}]: {error}"))?;
+        return parse_authentication_users_json(&raw)
+            .map_err(|error| format!("invalid authentication users file [{path}]: {error}"));
+    }
+    Ok(security_authentication_users_file_from_env())
+}
+
+fn security_expected_basic_credentials() -> Result<Vec<(String, String)>, String> {
+    let users_file = security_authentication_users_file()?;
     let mut credentials = users_file
         .users
         .into_iter()
@@ -534,11 +545,11 @@ fn security_expected_basic_credentials() -> Vec<(String, String)> {
             .into_iter()
             .filter_map(|service_account| Some((service_account.name, service_account.token?))),
     );
-    credentials
+    Ok(credentials)
 }
 
-fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)> {
-    let users_file = security_authentication_users_file();
+fn security_basic_credentials_with_roles() -> Result<Vec<(String, String, &'static str)>, String> {
+    let users_file = security_authentication_users_file()?;
     let mut credentials = users_file
         .users
         .into_iter()
@@ -568,7 +579,7 @@ fn security_basic_credentials_with_roles() -> Vec<(String, String, &'static str)
             Some((service_account.name, token, role))
         },
     ));
-    credentials
+    Ok(credentials)
 }
 
 fn decode_basic_authorization_credentials(header_value: &str) -> Option<(String, String)> {
@@ -691,7 +702,8 @@ fn authenticated_security_role(request: &RestRequest) -> Result<Option<&'static 
             request.path
         )));
     };
-    let Some((_, _, role)) = security_basic_credentials_with_roles()
+    let credentials = security_basic_credentials_with_roles().map_err(unauthorized_security_response)?;
+    let Some((_, _, role)) = credentials
         .into_iter()
         .find(|(expected_username, expected_password, _)| {
             *expected_username == username && *expected_password == password
@@ -2427,12 +2439,13 @@ impl SteelNode {
                         "unable to authenticate user for REST request [/]",
                     ));
                 };
-                if !security_expected_basic_credentials()
-                    .into_iter()
-                    .any(|(expected_username, expected_password)| {
-                        expected_username == username && expected_password == password
-                    })
-                {
+                let credentials = match security_expected_basic_credentials() {
+                    Ok(credentials) => credentials,
+                    Err(error) => return Some(unauthorized_security_response(error)),
+                };
+                if !credentials.into_iter().any(|(expected_username, expected_password)| {
+                    expected_username == username && expected_password == password
+                }) {
                     return Some(unauthorized_security_response(
                         "unable to authenticate user for REST request [/]",
                     ));
@@ -21642,11 +21655,12 @@ mod tests {
         env::set_var("SECURITY_READER_PASSWORD", "reader-password");
         env::remove_var("SECURITY_WRITER_USERNAME");
         env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
         env::set_var("SECURITY_SERVICE_ACCOUNT_USERNAME", "svc-indexer");
         env::set_var("SECURITY_SERVICE_ACCOUNT_TOKEN", "svc-token");
         env::set_var("SECURITY_SERVICE_ACCOUNT_ROLE", "writer");
 
-        let users_file = security_authentication_users_file();
+        let users_file = security_authentication_users_file().expect("env subjects parse");
 
         assert_eq!(users_file.users.len(), 2);
         assert_eq!(users_file.service_accounts.len(), 1);
@@ -21666,7 +21680,7 @@ mod tests {
             vec!["writer".to_string()]
         );
         assert_eq!(
-            security_basic_credentials_with_roles(),
+            security_basic_credentials_with_roles().expect("env credentials with roles"),
             vec![
                 ("admin".to_string(), "admin-password".to_string(), "admin"),
                 ("reader".to_string(), "reader-password".to_string(), "reader"),
@@ -21682,6 +21696,112 @@ mod tests {
         env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
         env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
+    }
+
+    #[test]
+    fn secure_authentication_users_file_drives_runtime_basic_auth_and_service_accounts() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_USERNAME");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_TOKEN");
+        env::remove_var("SECURITY_SERVICE_ACCOUNT_ROLE");
+
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-authentication-users-runtime-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let users_path = root.join("authentication-users.json");
+        std::fs::write(
+            &users_path,
+            r#"{
+                "users": [
+                    {"username": "file-admin", "password": "file-admin-password", "roles": ["admin"]},
+                    {"username": "file-reader", "password": "file-reader-password", "roles": ["reader"]}
+                ],
+                "service_accounts": [
+                    {"name": "file-indexer", "token": "file-indexer-token", "roles": ["writer"]}
+                ]
+            }"#,
+        )
+        .expect("write authentication users file");
+        env::set_var("SECURITY_AUTHENTICATION_USERS_FILE", &users_path);
+
+        let users_file = security_authentication_users_file().expect("users file should parse");
+        assert_eq!(users_file.users.len(), 2);
+        assert_eq!(users_file.service_accounts.len(), 1);
+        assert_eq!(
+            security_basic_credentials_with_roles().expect("file credentials with roles"),
+            vec![
+                (
+                    "file-admin".to_string(),
+                    "file-admin-password".to_string(),
+                    "admin"
+                ),
+                (
+                    "file-reader".to_string(),
+                    "file-reader-password".to_string(),
+                    "reader"
+                ),
+                (
+                    "file-indexer".to_string(),
+                    "file-indexer-token".to_string(),
+                    "writer"
+                ),
+            ]
+        );
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let admin_root = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/")
+                .with_header("Authorization", "Basic ZmlsZS1hZG1pbjpmaWxlLWFkbWluLXBhc3N3b3Jk"),
+        );
+        assert_eq!(admin_root.status, 200);
+
+        let service_account_write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("Authorization", "Basic ZmlsZS1pbmRleGVyOmZpbGUtaW5kZXhlci10b2tlbg==")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    concat!(
+                        "{\"index\":{\"_index\":\"runtime-users-file-000001\",\"_id\":\"doc-1\"}}\n",
+                        "{\"message\":\"indexed by service account\"}\n"
+                    )
+                    .as_bytes()
+                    .to_vec(),
+                ),
+        );
+        assert_eq!(service_account_write.status, 200);
+
+        env::set_var("SECURITY_AUTHENTICATION_USERS_FILE", root.join("missing-users.json"));
+        let missing_file = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/")
+                .with_header("Authorization", "Basic ZmlsZS1hZG1pbjpmaWxlLWFkbWluLXBhc3N3b3Jk"),
+        );
+        assert_eq!(missing_file.status, 401);
+        assert_eq!(missing_file.body["error"]["type"], "security_exception");
+        assert!(missing_file.body["error"]["reason"]
+            .as_str()
+            .expect("security reason")
+            .contains("unable to read authentication users file"));
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+        let _ = std::fs::remove_file(users_path);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

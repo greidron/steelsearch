@@ -481,6 +481,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "secure_authentication_users_file_drives_runtime_basic_auth_and_service_accounts",
+        "production-security-auth-subjects",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_root_route_requires_valid_basic_auth_credentials",
         "production-security-authentication",
         package="os-node",
