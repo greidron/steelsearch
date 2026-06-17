@@ -151,7 +151,7 @@ internal subsystems, especially:
 | --- | --- |
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
 | Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
-| Parent-child propagation | same-node parent/child and multi-level descendant rethrottle rate readback is independent without implicit propagation, but cross-node and spawned worker sub-task propagation remain open |
+| Parent-child propagation | same-node, cross-node, and multi-level descendant rethrottle rate readback is independent without implicit propagation, but spawned worker sub-task propagation remains open |
 | Persistence and restart | shared-runtime restart readback preserves requested throttle rates, rethrottle requests are accepted after per-request shared-runtime sync on restart, and shutdown-window plus partial-recovery rethrottle requests now fail closed without mutating rate state |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
 | Terminal-state behavior | rethrottle-after-cancel, rethrottle-after-terminal-task, rethrottle-during-shutdown, and rethrottle-during-partial-recovery are rejected without mutating rate state |
@@ -159,11 +159,11 @@ internal subsystems, especially:
 ### Required tests
 
 - add fixture-backed distinction for:
-  - cross-node parent task rethrottle versus sliced child work visibility;
+  - spawned worker sub-task rethrottle visibility;
   - rethrottle race-with-completion behavior.
 - add operator-visible evidence for:
   - whether the last requested throttle rate is observable;
-  - whether cross-node child work inherits or diverges from the parent rate;
+  - whether spawned worker child work inherits or diverges from the parent rate;
   - whether overload/backpressure changes task admission under throttling.
 
 ### Required implementation

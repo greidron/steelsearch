@@ -164,14 +164,14 @@ Out of scope:
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
-  with 8/8 tests and `zero_tests=0`, covering by-query rethrottle state
+  with 9/9 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
   mutating rate state, repeated last-write-wins rethrottle sequencing,
   follow-up `/_tasks` list/get readback, shared-runtime restart readback for
   requested throttle rates, and rejection for cancelled or terminal tasks
   without mutating rate state, plus shutdown/partial-recovery rethrottle
-  refusal without mutating rate state, same-node parent/child and multi-level
+  refusal without mutating rate state, same-node, cross-node, and multi-level
   descendant rethrottle rate readback without implicit rate propagation, and
   rethrottle requests accepted during the per-request shared-runtime sync window
   after restart.
@@ -184,12 +184,12 @@ Out of scope:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows.
 - The same runner now has a `runtime-task-children` batch. It passed on
-  2026-06-17 with 8/8 tests and `zero_tests=0`, covering same-node
+  2026-06-17 with 9/9 tests and `zero_tests=0`, covering same-node
   `/_tasks?group_by=parents` child nesting from runtime task state plus
   parent-task-id child cancellation visibility, same-node multi-level
   descendant cancellation propagation, cross-node descendant cancellation
   propagation, background-worker descendant cancellation propagation, and
-  same-node parent/child plus multi-level descendant
+  same-node, cross-node, and multi-level descendant
   rethrottle rate visibility.
 - The same runner now has a `runtime-lifecycle` batch. It passed on
   2026-06-17 with 5/5 tests and `zero_tests=0`, covering explicit runtime
@@ -370,7 +370,7 @@ Validation runner:
   sequencing, and readback as runtime-control evidence, including
   shared-runtime restart readback for requested throttle rates,
   cancelled/terminal task refusal, shutdown/partial-recovery refusal without
-  rate mutation, and same-node parent/child plus multi-level descendant
+  rate mutation, and same-node, cross-node, and multi-level descendant
   independent rate readback, plus rethrottle-request handling during the
   per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
