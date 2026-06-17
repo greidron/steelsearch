@@ -196,7 +196,7 @@ Current Steelsearch evidence:
   thread-pool routes, including queued cancellation state versus in-flight
   execution visibility;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 8/8 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 9/9 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
@@ -206,7 +206,8 @@ Current Steelsearch evidence:
   waiting and rejection model, and snapshot create/restore/cleanup admission
   plus cluster reroute admission through the same runtime-owned waiting and
   rejection model, and by-query/reindex task-submission admission through the
-  same runtime-owned waiting and rejection model;
+  same runtime-owned waiting and rejection model, plus restart reset evidence
+  for runtime thread-pool queue/counter state;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 7/7 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, repeated

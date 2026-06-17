@@ -222,11 +222,11 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Queue ownership | search/write, maintenance, snapshot, cluster-reroute, and task-submission route admission now have active-slot queue waiting and drain evidence, but terminal long-running task lifecycle ownership is still bounded |
-| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence; broader restart and multi-node overload contracts are still missing |
+| Admission control | search/write, maintenance, snapshot, cluster-reroute, and task-submission routes now have bounded queue-full refusal and queued execution evidence, and runtime thread-pool queue/counter state resets after shared-runtime restart; accepted-work replay/refusal during recovery and multi-node overload contracts are still missing |
 | Backpressure propagation | there is no contract for how overload feeds back into reroute, maintenance, snapshot, or task-submission routes |
 | Priority and fairness | there is no evidence for task class prioritisation, starvation avoidance, or separation between user-facing writes and maintenance work |
 | Queue visibility | `pending_tasks` surfaces exist, but there is no authoritative mapping between visible entries and the real internal queue owners or queue depth |
-| Restart and drain behavior | there is no evidence for what queued work does on shutdown, restart, partial recovery, or node-role transitions |
+| Restart and drain behavior | runtime thread-pool queue/counter state is proven ephemeral across shared-runtime restart, but there is no evidence for what accepted queued work does on shutdown, partial recovery, or node-role transitions |
 
 ### Required tests
 
@@ -241,7 +241,7 @@ internal subsystems, especially:
     route admission guards.
 - add restart-smoke coverage for:
   - queued work before shutdown;
-  - queue state after restart;
+  - accepted queued-work replay/refusal after shutdown or partial recovery;
   - refusal versus replay behavior during recovery.
 
 ### Required implementation

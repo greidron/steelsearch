@@ -33707,6 +33707,113 @@ mod tests {
     }
 
     #[test]
+    fn runtime_thread_pool_queue_state_resets_across_shared_runtime_restart() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-thread-pool-restart-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let shared_state_path = root.join("shared-runtime-state.json");
+
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.shared_runtime_state_path = Some(shared_state_path.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            for pool in [
+                "search",
+                "write",
+                "maintenance",
+                "snapshot",
+                "cluster_manager",
+                "task_submission",
+            ] {
+                counters.insert(
+                    pool.to_string(),
+                    RuntimeThreadPoolCounters {
+                        active: 1,
+                        queue: 1000,
+                        rejected: 7,
+                        completed: 11,
+                    },
+                );
+            }
+        }
+        node.persist_shared_runtime_state_to_disk();
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.shared_runtime_state_path = Some(shared_state_path.clone());
+        restarted.cluster_view = node.cluster_view.clone();
+        restarted.sync_shared_runtime_state_from_disk();
+
+        let stats =
+            restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        let first_node = stats.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        for pool in [
+            "search",
+            "write",
+            "maintenance",
+            "snapshot",
+            "cluster_manager",
+            "task_submission",
+        ] {
+            assert_eq!(first_node["thread_pool"][pool]["active"], 0, "pool {pool}");
+            assert_eq!(first_node["thread_pool"][pool]["queue"], 0, "pool {pool}");
+            assert_eq!(first_node["thread_pool"][pool]["rejected"], 0, "pool {pool}");
+            assert_eq!(first_node["thread_pool"][pool]["completed"], 0, "pool {pool}");
+        }
+
+        let create_index = restarted.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/runtime-thread-pool-restart-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let search = restarted.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/runtime-thread-pool-restart-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {"match_all": {}}
+                })),
+        );
+        assert_eq!(search.status, 200);
+
+        env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        let _ = std::fs::remove_file(shared_state_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn committed_publication_rounds_do_not_surface_as_pending_tasks() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
