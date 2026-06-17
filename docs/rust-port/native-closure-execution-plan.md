@@ -102,14 +102,15 @@ Out of scope:
   including queued cancellation state versus in-flight execution visibility and
   multi-node queued/in-flight task visibility with remote node metadata.
 - The same runner now has a `runtime-backpressure` batch. It passed on
-  2026-06-17 with 15/15 tests and `zero_tests=0`, covering administrative
+  2026-06-17 with 16/16 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths,
   active-slot queue waiting/drain under concurrent search/write requests,
-  independent mixed search/maintenance backlog drain, remote task backlog not
-  blocking local task-submission admission or local search/write admission, and
-  bounded queue-full rejection for saturated search/write pools, plus
+  independent mixed search/maintenance and write/maintenance backlog drain,
+  remote task backlog not blocking local task-submission admission or local
+  search/write admission, and bounded queue-full rejection for saturated
+  search/write pools, plus
   maintenance refresh/flush/cache-clear/forcemerge admission through the same
   runtime-owned waiting and rejection model, and snapshot create/restore/cleanup
   admission plus cluster reroute admission through the same runtime-owned
@@ -259,9 +260,9 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   administrative and search/write workload thread-pool telemetry plus
-  active-slot queue waiting/drain, independent mixed search/maintenance backlog
-  drain, remote task backlog admission isolation for task-submission and local
-  search/write routes, queue-full rejection, and
+  active-slot queue waiting/drain, independent mixed search/maintenance and
+  write/maintenance backlog drain, remote task backlog admission isolation for
+  task-submission and local search/write routes, queue-full rejection, and
   maintenance route plus snapshot/cluster-manager/task-submission route admission as
   runtime-control evidence, including accepted queued task-submission no-replay
   across shared-runtime restart and partial shared-state recovery errors, and
@@ -354,8 +355,8 @@ Initial targets:
    administrative thread-pool telemetry, and search/write route completion
    counters are derived from runtime-owned thread-pool state for both success
    and request-error paths; active-slot queue waiting/drain, independent mixed
-   search/maintenance backlog drain, and queue-full overload rejection are now
-   guarded for search/write, maintenance, and snapshot pools, plus cluster
+   search/maintenance and write/maintenance backlog drain, and queue-full
+   overload rejection are now guarded for search/write, maintenance, and snapshot pools, plus cluster
    reroute and task-submission admission, with
    accepted queued task-submission no-replay covered across shared-runtime
    restart and partial shared-state recovery errors, partial-recovery

@@ -465,6 +465,13 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "runtime_write_and_maintenance_pools_drain_independently_under_mixed_backlog",
+        "route-backpressure-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "remote_task_backlog_does_not_block_local_task_submission_admission",
         "route-backpressure-runtime-state",
         package="os-node",
