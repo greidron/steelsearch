@@ -189,13 +189,15 @@ Out of scope:
   consuming task-submission backpressure capacity while saturated pools still
   reject new task submissions.
 - The same runner now has a `runtime-fairness` batch. It passed on
-  2026-06-17 with 6/6 tests and `zero_tests=0`, covering multi-node remote
+  2026-06-17 with 7/7 tests and `zero_tests=0`, covering multi-node remote
   task metadata visibility including node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
   backlog, local task-submission/search/write and local
   maintenance/snapshot/cluster-manager control-plane admission under remote
   backlog, local overload counter isolation from remote task metadata, and
-  independent search/write versus maintenance drain behavior.
+  independent search/write versus maintenance drain behavior, plus a restarted
+  three-daemon REST path that restores persisted remote backlog telemetry while
+  local search and write routes remain admitted.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -412,7 +414,7 @@ Validation runner:
   backpressure capacity while saturated pools still reject new task submissions.
 - `tools/run-native-closure-validation.py --batch runtime-fairness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
-  simulated multi-node remote task metadata isolation, local
+  simulated and restarted-daemon multi-node remote task metadata isolation, local
   task-submission/search/write and maintenance/snapshot/cluster-manager
   admission under remote backlog, node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
@@ -564,7 +566,8 @@ Initial targets:
    and with
    local overload counters and local search/write admission isolated from
    remote task metadata in multi-node task visibility, including node-specific
-   cat thread-pool management telemetry;
+   cat thread-pool management telemetry and a restarted three-daemon REST path
+   with persisted remote backlog telemetry;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 

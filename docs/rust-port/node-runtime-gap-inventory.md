@@ -253,13 +253,15 @@ Current Steelsearch evidence:
   task-submission backpressure capacity while saturated pools still reject new
   task submissions;
 - `tools/run-native-closure-validation.py --batch runtime-fairness` passed on
-  2026-06-17 with 6/6 tests and `zero_tests=0`, covering simulated multi-node
+  2026-06-17 with 7/7 tests and `zero_tests=0`, covering simulated multi-node
   remote task metadata visibility including node-specific cat thread-pool
   management telemetry, node-scoped cat thread-pool control-plane telemetry
   under remote backlog, local task-submission/search/write and local
   maintenance/snapshot/cluster-manager control-plane admission under remote
   backlog, local overload counter isolation from remote task metadata, and
-  independent search/write versus maintenance drain behavior;
+  independent search/write versus maintenance drain behavior, plus a restarted
+  three-daemon REST path that restores persisted remote backlog telemetry while
+  local search and write routes remain admitted;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
   2026-06-17 with 15/15 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, `-1` unlimited
@@ -310,8 +312,9 @@ Required next implementation direction:
 Required tests:
 
 - extend queue/backpressure smoke tests beyond bounded route admission,
-  mixed-class search/write versus maintenance drain, and remote-backlog
-  task-submission/search/write isolation into broader multi-node fairness behavior;
+  mixed-class search/write versus maintenance drain, and the current simulated
+  plus restarted-daemon remote-backlog task-submission/search/write isolation
+  into broader live transport-backed multi-node fairness behavior;
 - telemetry probes that verify task and runtime status is not merely synthetic.
 - broaden lifecycle probes from explicit local hook descriptors into daemon-level
   signal, listener-drain, and multi-node lifecycle transitions.

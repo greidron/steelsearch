@@ -2,7 +2,7 @@ use os_engine::{shard_manifest_checksum, ShardManifest, SHARD_MANIFEST_FILE_NAME
 use os_node::{
     load_gateway_state_manifest, persist_gateway_state_manifest, ClusterManagerTask,
     ClusterManagerTaskKind, ClusterManagerTaskRecord, ClusterManagerTaskState,
-    PersistedClusterManagerTaskQueueState,
+    PersistedClusterManagerTaskQueueState, PersistedGatewayState,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -461,6 +461,261 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
     );
 
     guard.children[restarted_index] = restarted;
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admitted() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(&root).unwrap();
+    let http_ports = [free_port(), free_port(), free_port()];
+    let transport_ports = [free_port(), free_port(), free_port()];
+    let seed_hosts = transport_ports
+        .iter()
+        .map(|port| format!("127.0.0.1:{port}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut children = Vec::new();
+
+    for index in 0..3 {
+        let node_dir = root.join(format!("node-{}", index + 1));
+        fs::create_dir_all(node_dir.join("data")).unwrap();
+        fs::create_dir_all(node_dir.join("logs")).unwrap();
+        let stdout = fs::File::create(node_dir.join("logs/stdout.log")).unwrap();
+        let stderr = fs::File::create(node_dir.join("logs/stderr.log")).unwrap();
+        children.push(
+            Command::new(&binary)
+                .arg("--http.host")
+                .arg("127.0.0.1")
+                .arg("--http.port")
+                .arg(http_ports[index].to_string())
+                .arg("--transport.host")
+                .arg("127.0.0.1")
+                .arg("--transport.port")
+                .arg(transport_ports[index].to_string())
+                .arg("--node.id")
+                .arg(format!("steel-node-{}", index + 1))
+                .arg("--node.name")
+                .arg(format!("steel-node-{}", index + 1))
+                .arg("--cluster.name")
+                .arg("steel-dev-live-fairness-it")
+                .arg("--node.roles")
+                .arg("cluster_manager,data,ingest")
+                .arg("--discovery.seed_hosts")
+                .arg(&seed_hosts)
+                .arg("--path.data")
+                .arg(node_dir.join("data"))
+                .stdout(Stdio::from(stdout))
+                .stderr(Stdio::from(stderr))
+                .spawn()
+                .unwrap(),
+        );
+    }
+    let mut guard = ChildGuard { children };
+
+    for port in http_ports {
+        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        assert_eq!(cluster["cluster_name"], "steel-dev-live-fairness-it");
+        assert_eq!(cluster["nodes"].as_array().expect("cluster nodes").len(), 3);
+        assert_eq!(cluster["coordination"]["publication_committed"], true);
+    }
+
+    let restarted_index = 0;
+    let restarted_node_dir = root.join(format!("node-{}", restarted_index + 1));
+    let restarted_node_data = restarted_node_dir.join("data");
+    let gateway_path = restarted_node_data.join("gateway-state.json");
+
+    terminate_child(&guard.children[restarted_index]);
+    let exited = wait_for_child_exit(&mut guard.children[restarted_index]);
+    assert!(exited.success(), "daemon did not exit cleanly: {exited}");
+
+    let mut gateway: PersistedGatewayState = load_gateway_state_manifest(&gateway_path)
+        .unwrap()
+        .expect("gateway state before remote backlog restart");
+    let remote_node = gateway
+        .cluster_state
+        .nodes
+        .iter()
+        .find(|node| !node.local)
+        .expect("remote node in persisted cluster state");
+    let remote_node_id = remote_node.node_id.clone();
+    let remote_node_name = remote_node.node_name.clone();
+    gateway.task_queue_state = Some(PersistedClusterManagerTaskQueueState {
+        next_task_id: 903,
+        task_node_ids: BTreeMap::from([
+            (901, remote_node_id.clone()),
+            (902, remote_node_id.clone()),
+        ]),
+        task_statuses: BTreeMap::new(),
+        pending: vec![ClusterManagerTaskRecord {
+            task_id: 901,
+            task: ClusterManagerTask {
+                source: "remote queued peer recovery".to_string(),
+                kind: ClusterManagerTaskKind::BackgroundWorker {
+                    worker: "peer-recovery".to_string(),
+                    action: "indices:data/write/recovery".to_string(),
+                },
+            },
+            state: ClusterManagerTaskState::Queued,
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            failure_reason: None,
+        }],
+        in_flight: vec![ClusterManagerTaskRecord {
+            task_id: 902,
+            task: ClusterManagerTask {
+                source: "remote executing shard relocation".to_string(),
+                kind: ClusterManagerTaskKind::BackgroundWorker {
+                    worker: "shard-relocation".to_string(),
+                    action: "cluster:admin/reroute".to_string(),
+                },
+            },
+            state: ClusterManagerTaskState::InFlight,
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            failure_reason: None,
+        }],
+        acknowledged: Vec::new(),
+        failed: Vec::new(),
+    });
+    persist_gateway_state_manifest(&gateway_path, &gateway).unwrap();
+
+    let restart_stdout =
+        fs::File::create(restarted_node_dir.join("logs/restart-stdout.log")).unwrap();
+    let restart_stderr =
+        fs::File::create(restarted_node_dir.join("logs/restart-stderr.log")).unwrap();
+    guard.children[restarted_index] = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg(http_ports[restarted_index].to_string())
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_ports[restarted_index].to_string())
+        .arg("--node.id")
+        .arg(format!("steel-node-{}", restarted_index + 1))
+        .arg("--node.name")
+        .arg(format!("steel-node-{}", restarted_index + 1))
+        .arg("--cluster.name")
+        .arg("steel-dev-live-fairness-it")
+        .arg("--node.roles")
+        .arg("cluster_manager,data,ingest")
+        .arg("--discovery.seed_hosts")
+        .arg(&seed_hosts)
+        .arg("--path.data")
+        .arg(&restarted_node_data)
+        .stdout(Stdio::from(restart_stdout))
+        .stderr(Stdio::from(restart_stderr))
+        .spawn()
+        .unwrap();
+
+    let restarted_cluster = wait_json(
+        http_ports[restarted_index],
+        "GET",
+        "/_steelsearch/dev/cluster",
+        None,
+    );
+    assert_eq!(
+        restarted_cluster["cluster_name"],
+        "steel-dev-live-fairness-it"
+    );
+    assert_eq!(
+        restarted_cluster["nodes"]
+            .as_array()
+            .expect("restarted cluster nodes")
+            .len(),
+        3
+    );
+
+    let port = http_ports[restarted_index];
+    let pending = http_response(port, "GET", "/_cluster/pending_tasks", None);
+    assert_eq!(pending["status"], 200);
+    let tasks = pending["body"]["tasks"]
+        .as_array()
+        .expect("pending tasks array");
+    assert_eq!(tasks.len(), 2);
+    assert!(tasks
+        .iter()
+        .any(|task| task["id"] == 901 && task["node"] == remote_node_id));
+    assert!(tasks.iter().any(|task| {
+        task["id"] == 902 && task["node"] == remote_node_id && task["executing"] == true
+    }));
+
+    let cat_thread_pool = http_response(
+        port,
+        "GET",
+        "/_cat/thread_pool/management?format=json",
+        None,
+    );
+    assert_eq!(cat_thread_pool["status"], 200);
+    let thread_pool_rows = cat_thread_pool["body"]
+        .as_array()
+        .expect("thread pool rows");
+    let remote_row = thread_pool_rows
+        .iter()
+        .find(|row| row["node_id"] == remote_node_id)
+        .expect("remote management row");
+    assert_eq!(remote_row["node_name"], remote_node_name);
+    assert_eq!(remote_row["active"], "1");
+    assert_eq!(remote_row["queue"], "1");
+
+    let create = http_response(port, "PUT", "/live-fairness-it", Some(br#"{}"#));
+    assert_eq!(create["status"], 200);
+    let bulk = http_response(
+        port,
+        "POST",
+        "/live-fairness-it/_bulk",
+        Some(
+            b"{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"local write remains admitted\"}\n",
+        ),
+    );
+    assert_eq!(bulk["status"], 200);
+    assert_eq!(bulk["body"]["errors"], false);
+    let search = http_response(
+        port,
+        "POST",
+        "/live-fairness-it/_search",
+        Some(br#"{"query":{"match_all":{}}}"#),
+    );
+    assert_eq!(search["status"], 200);
+
+    let stats = http_response(port, "GET", "/_nodes/stats", None);
+    assert_eq!(stats["status"], 200);
+    assert_eq!(
+        stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["write"]["completed"],
+        1
+    );
+    assert_eq!(
+        stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["write"]["rejected"],
+        0
+    );
+    assert_eq!(
+        stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["search"]["completed"],
+        1
+    );
+    assert_eq!(
+        stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["search"]["rejected"],
+        0
+    );
+    assert_eq!(
+        stats["body"]["nodes"][&remote_node_id]["thread_pool"]["management"]["active"],
+        1
+    );
+    assert_eq!(
+        stats["body"]["nodes"][&remote_node_id]["thread_pool"]["management"]["queue"],
+        1
+    );
+    assert_eq!(
+        stats["body"]["nodes"][&remote_node_id]["thread_pool"]["write"]["completed"],
+        0
+    );
+    assert_eq!(
+        stats["body"]["nodes"][&remote_node_id]["thread_pool"]["search"]["completed"],
+        0
+    );
+
     let _ = fs::remove_dir_all(root);
 }
 

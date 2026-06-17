@@ -1068,6 +1068,13 @@ RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admitted",
+        "runtime-fairness-live-daemon",
+        package="os-node",
+        target=("--test", "dev_cluster_daemons"),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
