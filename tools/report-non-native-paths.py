@@ -108,6 +108,18 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         name="runtime control gaps",
         category="runtime",
+        path=ENGINE_SOURCE,
+        patterns=(
+            r"runtime cache touch hooks are present but not wired into search execution",
+            r"touch_search_runtime_caches",
+            r"cache_knn_search_result",
+            r"search_cache_telemetry_reports_zero_for_unwired_runtime_cache_surfaces",
+        ),
+        risk="runtime cache structures exist, but search execution currently bypasses them",
+    ),
+    Probe(
+        name="production runtime controls",
+        category="runtime",
         path=RUNTIME_DOC,
         patterns=(
             r"task tracking",
@@ -220,6 +232,14 @@ FAMILIES: tuple[Family, ...] = (
         next_action="add interrupted and resumed recovery phases to the live shard movement probe",
         evidence_path=PLAN_DOC,
         evidence_pattern=r"interrupt Java to SteelSearch recovery",
+    ),
+    Family(
+        name="runtime search cache hooks",
+        category="runtime",
+        status="present but unwired",
+        next_action="wire request-result, vector-graph, and fast-field cache hooks into search execution or remove dead cache surfaces",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"search_cache_telemetry_reports_zero_for_unwired_runtime_cache_surfaces",
     ),
     Family(
         name="production runtime controls",
