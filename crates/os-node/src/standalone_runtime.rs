@@ -27058,6 +27058,166 @@ mod tests {
     }
 
     #[test]
+    fn active_throttled_task_admission_still_follows_task_submission_backpressure() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        for index in [
+            "active-throttle-source",
+            "active-throttle-dest",
+            "active-throttle-update",
+        ] {
+            let create = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_json_body(serde_json::json!({})),
+            );
+            assert_eq!(create.status, 200);
+        }
+        let put_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/active-throttle-source/_doc/doc-1")
+                .with_json_body(serde_json::json!({"message": "copy me"})),
+        );
+        assert_eq!(put_doc.status, 201);
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 552,
+                task: ClusterManagerTask {
+                    source: "active throttled admission probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "reindex".to_string(),
+                        action: "indices:data/write/reindex".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::InFlight,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let mut rethrottle =
+            RestRequest::new(RestMethod::Post, "/_reindex/node-a:552/_rethrottle");
+        rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "4.25".to_string());
+        let rethrottle = node.handle_rest_request(rethrottle);
+        assert_eq!(rethrottle.status, 200);
+        assert_eq!(
+            rethrottle.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.25)
+        );
+        assert_eq!(
+            rethrottle.body["task"]["executing"],
+            Value::Bool(true)
+        );
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+        let queued_reindex_node = node.clone();
+        let queued_reindex = std::thread::spawn(move || {
+            queued_reindex_node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                    "source": {"index": "active-throttle-source"},
+                    "dest": {"index": "active-throttle-dest"}
+                })),
+            )
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "task_submission", 1);
+        let throttled =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:552"));
+        assert_eq!(throttled.status, 200);
+        assert_eq!(
+            throttled.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.25)
+        );
+
+        release_runtime_thread_pool_active_slot(&node, "task_submission");
+        let reindex = queued_reindex
+            .join()
+            .expect("queued reindex request thread should not panic");
+        assert_eq!(reindex.status, 200);
+        assert_eq!(reindex.body["created"], 1);
+        let counters = node.runtime_thread_pool_counters("task_submission");
+        assert_eq!(counters.active, 0);
+        assert_eq!(counters.queue, 0);
+        assert_eq!(counters.completed, 1);
+        assert_eq!(counters.rejected, 0);
+
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 0,
+                    completed: 1,
+                },
+            );
+        }
+        let rejected = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/active-throttle-update/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": {"match_all": {}},
+                    "script": {"source": "ctx._source.updated = true"}
+                })),
+        );
+        assert_eq!(rejected.status, 429);
+        assert_eq!(
+            rejected.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+        let counters = node.runtime_thread_pool_counters("task_submission");
+        assert_eq!(counters.active, 1);
+        assert_eq!(counters.queue, 1000);
+        assert_eq!(counters.rejected, 1);
+        assert_eq!(counters.completed, 1);
+
+        let throttled_after_reject =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:552"));
+        assert_eq!(throttled_after_reject.status, 200);
+        assert_eq!(
+            throttled_after_reject.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.25)
+        );
+    }
+
+    #[test]
     fn rethrottle_parent_and_child_tasks_keep_independent_rate_readback() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

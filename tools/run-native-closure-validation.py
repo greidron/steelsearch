@@ -1049,6 +1049,13 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "active_throttled_task_admission_still_follows_task_submission_backpressure",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "rethrottle_parent_and_child_tasks_keep_independent_rate_readback",
         "task-throttle-runtime-state",
         package="os-node",
