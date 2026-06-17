@@ -57,12 +57,13 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 10/10 tests and `zero_tests=0`, covering task cancellation through
+  with 11/11 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
-  post-cancel readback, parent-task-id child cancellation visibility,
-  queued-versus-in-flight cancellation distinction, and acknowledged/failed
-  terminal task readback without polluting pending-task queue depth, plus
+  post-cancel readback, parent-task-id child cancellation visibility including
+  same-node multi-level descendant propagation, queued-versus-in-flight
+  cancellation distinction, and acknowledged/failed terminal task readback
+  without polluting pending-task queue depth, plus
   bounded terminal task retention/eviction with stale cancellation-marker
   pruning, cancelled-task completion readback through restart until eviction,
   and persisted restart readback, and shared-runtime restart readback for task
@@ -103,10 +104,11 @@ Out of scope:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows.
 - The same runner now has a `runtime-task-children` batch. It passed on
-  2026-06-17 with 4/4 tests and `zero_tests=0`, covering same-node
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering same-node
   `/_tasks?group_by=parents` child nesting from runtime task state plus
-  parent-task-id child cancellation visibility and same-node parent/child
-  rethrottle rate visibility.
+  parent-task-id child cancellation visibility, same-node multi-level
+  descendant cancellation propagation, and same-node parent/child rethrottle
+  rate visibility.
 
 ## Workstreams
 
@@ -198,6 +200,7 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
+  same-node multi-level descendant cancellation propagation,
   queued-versus-in-flight cancellation distinction, terminal-state task
   readback, bounded terminal retention/eviction, stale cancellation-marker
   pruning, cancelled-task completion readback through restart until eviction,
@@ -230,8 +233,8 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-task-children` must
   report `failed_count == 0` and `zero_test_count == 0` before treating
   same-node parent/child task grouping and parent-task-id child cancellation
-  visibility plus parent/child rethrottle rate visibility as runtime-control
-  evidence.
+  visibility, same-node multi-level descendant cancellation propagation, plus
+  parent/child rethrottle rate visibility as runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 
@@ -274,8 +277,8 @@ Initial targets:
 2. task registry model with cancellation and parent/child metadata. Runtime
    mutation evidence now exists for bounded cancellation/readback and by-query
    rethrottle/readback; parent task metadata, task header readback, same-node
-   child grouping, and same-node parent/child rethrottle rate visibility now
-   have guarded coverage;
+   child grouping, same-node multi-level child cancellation propagation, and
+   same-node parent/child rethrottle rate visibility now have guarded coverage;
 3. queue/backpressure smoke tests for search/write/admin routes. Runtime queue
    depth evidence now exists for cluster-manager task visibility and
    administrative thread-pool telemetry, and search/write route completion

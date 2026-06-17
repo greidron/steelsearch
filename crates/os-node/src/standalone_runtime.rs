@@ -11602,14 +11602,31 @@ impl SteelNode {
     }
 
     fn tasks_matching_parent_task_id(&self, parent_task_id: &str) -> Vec<Value> {
-        self.task_records()
-            .into_iter()
-            .filter(|task| {
-                task.get("parent_task_id")
+        let records = self.task_records();
+        let mut matched = Vec::new();
+        let mut frontier = vec![parent_task_id.to_string()];
+        let mut seen = BTreeSet::new();
+        while let Some(current_parent_id) = frontier.pop() {
+            if !seen.insert(current_parent_id.clone()) {
+                continue;
+            }
+            for task in &records {
+                let is_child = task
+                    .get("parent_task_id")
                     .and_then(Value::as_str)
-                    .is_some_and(|value| value == parent_task_id)
-            })
-            .collect()
+                    .is_some_and(|value| value == current_parent_id);
+                if !is_child {
+                    continue;
+                }
+                let task_id = self.task_value_id(task);
+                if seen.contains(&task_id) {
+                    continue;
+                }
+                frontier.push(task_id);
+                matched.push(task.clone());
+            }
+        }
+        matched
     }
 
     fn task_value_id(&self, task: &Value) -> String {
@@ -22710,6 +22727,107 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn tasks_cancel_by_parent_task_id_propagates_to_same_node_descendants() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![
+                ClusterManagerTaskRecord {
+                    task_id: 191,
+                    task: ClusterManagerTask {
+                        source: "root descendant cancel probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 192,
+                    task: ClusterManagerTask {
+                        source: "child descendant cancel probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: Some("node-a:191".to_string()),
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 193,
+                    task: ClusterManagerTask {
+                        source: "grandchild descendant cancel probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: Some("node-a:192".to_string()),
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+            ],
+            ..Default::default()
+        });
+
+        let mut cancel = RestRequest::new(RestMethod::Post, "/_tasks/_cancel");
+        cancel
+            .query_params
+            .insert("parent_task_id".to_string(), "node-a:191".to_string());
+        let cancel = node.handle_rest_request(cancel);
+        assert_eq!(cancel.status, 200);
+        let cancelled_tasks = cancel.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("cancelled task map");
+        assert_eq!(cancelled_tasks.len(), 2);
+        assert_eq!(cancelled_tasks["node-a:192"]["cancelled"], Value::Bool(true));
+        assert_eq!(cancelled_tasks["node-a:193"]["cancelled"], Value::Bool(true));
+
+        let root_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:191"));
+        assert_eq!(root_get.status, 200);
+        assert_eq!(root_get.body["task"]["cancelled"], Value::Bool(false));
+
+        for task_id in ["node-a:192", "node-a:193"] {
+            let get = node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                &format!("/_tasks/{task_id}"),
+            ));
+            assert_eq!(get.status, 200, "task {task_id}");
+            assert_eq!(get.body["task"]["cancelled"], Value::Bool(true), "task {task_id}");
+        }
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
+        assert_eq!(pending_tasks.len(), 3);
+        let grandchild = pending_tasks
+            .iter()
+            .find(|task| task["id"] == 193)
+            .expect("grandchild task");
+        assert_eq!(grandchild["cancelled"], Value::Bool(true));
     }
 
     #[test]

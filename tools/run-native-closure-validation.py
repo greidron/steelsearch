@@ -248,6 +248,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "tasks_cancel_by_parent_task_id_propagates_to_same_node_descendants",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "tasks_queued_and_in_flight_cancellation_have_distinct_runtime_visibility",
         "task-cancellation-runtime-state",
         package="os-node",
@@ -484,6 +491,13 @@ RUNTIME_TASK_CHILDREN_BATCH: tuple[ValidationTest, ...] = (
     ),
     ValidationTest(
         "tasks_cancel_by_parent_task_id_preserves_parent_child_visibility",
+        "task-child-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "tasks_cancel_by_parent_task_id_propagates_to_same_node_descendants",
         "task-child-runtime-state",
         package="os-node",
         target=("--lib",),
