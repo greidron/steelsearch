@@ -26438,6 +26438,87 @@ mod tests {
     }
 
     #[test]
+    fn rethrottle_does_not_consume_task_submission_backpressure_capacity() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 551,
+                task: ClusterManagerTask {
+                    source: "rethrottle backpressure boundary probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "reindex".to_string(),
+                        action: "indices:data/write/reindex".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+        node.runtime_thread_pool_counters
+            .lock()
+            .expect("runtime thread pool counters lock poisoned")
+            .insert(
+                "task_submission".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 1000,
+                    rejected: 2,
+                    completed: 0,
+                },
+            );
+
+        let mut rethrottle =
+            RestRequest::new(RestMethod::Post, "/_reindex/node-a:551/_rethrottle");
+        rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "5.5".to_string());
+        let rethrottle = node.handle_rest_request(rethrottle);
+        assert_eq!(rethrottle.status, 200);
+        assert_eq!(
+            rethrottle.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(5.5)
+        );
+        let counters = node.runtime_thread_pool_counters("task_submission");
+        assert_eq!(counters.active, 1);
+        assert_eq!(counters.queue, 1000);
+        assert_eq!(counters.rejected, 2);
+        assert_eq!(counters.completed, 0);
+
+        let rejected_submit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": {"index": "logs-submit-source"},
+                "dest": {"index": "logs-submit-dest"}
+            })),
+        );
+        assert_eq!(rejected_submit.status, 429);
+        assert_eq!(
+            rejected_submit.body["error"]["type"],
+            "es_rejected_execution_exception"
+        );
+        let counters = node.runtime_thread_pool_counters("task_submission");
+        assert_eq!(counters.active, 1);
+        assert_eq!(counters.queue, 1000);
+        assert_eq!(counters.rejected, 3);
+        assert_eq!(counters.completed, 0);
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:551"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(5.5)
+        );
+    }
+
+    #[test]
     fn rethrottle_parent_and_child_tasks_keep_independent_rate_readback() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

@@ -805,6 +805,13 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "rethrottle_does_not_consume_task_submission_backpressure_capacity",
+        "route-backpressure-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "accepted_queued_task_submission_is_not_replayed_after_shared_runtime_restart",
         "route-backpressure-runtime-state",
         package="os-node",
@@ -924,6 +931,13 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
     ),
     ValidationTest(
         "rethrottle_refuses_shutdown_and_partial_recovery_without_mutating_rate",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "rethrottle_does_not_consume_task_submission_backpressure_capacity",
         "task-throttle-runtime-state",
         package="os-node",
         target=("--lib",),

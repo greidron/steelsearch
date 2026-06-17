@@ -215,7 +215,7 @@ Current Steelsearch evidence:
   versus in-flight execution visibility, and multi-node queued/in-flight task
   visibility with remote node metadata;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
-  on 2026-06-17 with 16/16 tests and `zero_tests=0`, covering administrative
+  on 2026-06-17 with 17/17 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
   state plus search/write thread-pool completion counters derived from real
   search and bulk route execution across success and request-error paths, plus
@@ -232,7 +232,9 @@ Current Steelsearch evidence:
   no-replay across shared-runtime restart and partial shared-state recovery
   errors, partial-recovery task-submission refusal, live-shutdown
   task-submission refusal, plus restart reset evidence for runtime thread-pool
-  queue/counter state;
+  queue/counter state, plus rethrottle control requests not consuming
+  task-submission backpressure capacity while saturated pools still reject new
+  task submissions;
 - `tools/run-native-closure-validation.py --batch runtime-fairness` passed on
   2026-06-17 with 6/6 tests and `zero_tests=0`, covering simulated multi-node
   remote task metadata visibility including node-specific cat thread-pool
@@ -241,7 +243,7 @@ Current Steelsearch evidence:
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
-  2026-06-17 with 11/11 tests and `zero_tests=0`, covering by-query rethrottle
+  2026-06-17 with 12/12 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
   mutating rate state, repeated last-write-wins rethrottle sequencing, follow-up
@@ -251,8 +253,9 @@ Current Steelsearch evidence:
   same-node, cross-node, spawned background-worker child, and multi-level
   descendant rethrottle rate readback without implicit rate propagation,
   active-to-terminal completion race refusal without mutating the last accepted
-  rate, plus rethrottle requests accepted during the per-request shared-runtime
-  sync window after restart;
+  rate, rethrottle control requests not consuming task-submission backpressure
+  capacity, plus rethrottle requests accepted during the per-request
+  shared-runtime sync window after restart;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
