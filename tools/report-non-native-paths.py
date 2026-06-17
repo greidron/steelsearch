@@ -258,8 +258,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="mixed shard movement interruption",
         category="mixed-cluster",
-        status="summary contract, final-gate option, both-direction live interruption exercises, and mixed-shard validation batch wired",
-        next_action="run tools/run-native-closure-validation.py --batch mixed-shard-movement and capture retention-lease/checkpoint monotonicity evidence",
+        status="mixed-shard validation batch passed with both-direction live interruption exercises and zero checkpoint drift",
+        next_action="capture retention-lease metadata beyond checkpoint drift and add allocation-explain coverage for unsupported movement shapes",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"mixed-shard-movement",
     ),
