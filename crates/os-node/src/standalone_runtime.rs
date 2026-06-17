@@ -2710,6 +2710,13 @@ impl SteelNode {
             ));
         }
         if request.path == "/_settings" && request.method == RestMethod::Put {
+            if let Err(response) = require_security_permission(
+                request,
+                SecurityPermission::ClusterAdmin,
+                "index metadata",
+            ) {
+                return Some(response);
+            }
             return Some(self.handle_global_settings_put_route(request));
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_settings/") {
@@ -3781,6 +3788,13 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_mapping_get_route(Some(target))),
                 RestMethod::Put | RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_mapping_put_route(target, request))
                 }
                 _ => None,
@@ -3791,6 +3805,13 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_mapping_get_route(Some(target))),
                 RestMethod::Put | RestMethod::Post => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_mapping_put_route(target, request))
                 }
                 _ => None,
@@ -3819,7 +3840,16 @@ impl SteelNode {
                         .map(String::as_str)
                         .unwrap_or("open"),
                 )),
-                RestMethod::Put => Some(self.handle_settings_put_route(target, request)),
+                RestMethod::Put => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "index metadata",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_settings_put_route(target, request))
+                }
                 _ => None,
             };
         }
@@ -4886,6 +4916,12 @@ impl SteelNode {
             let mut merged_meta = existing_meta;
             merge_object_with_null_reset(&mut merged_meta, meta);
             manifest["indices"][index]["mappings"]["_meta"] = merged_meta;
+        }
+        if !manifest["indices"][index]["mappings"].is_object() {
+            manifest["indices"][index]["mappings"] = serde_json::json!({});
+        }
+        if !manifest["indices"][index]["mappings"]["properties"].is_object() {
+            manifest["indices"][index]["mappings"]["properties"] = serde_json::json!({});
         }
         let merged_properties = manifest["indices"][index]["mappings"]["properties"]
             .as_object_mut()
@@ -24742,6 +24778,73 @@ mod tests {
                 .as_str()
                 .expect("security reason")
                 .contains("alias"));
+
+            let admin = node.handle_rest_request(
+                request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            );
+            assert_eq!(admin.status, 200, "path {path}");
+            assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
+        }
+
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        env::remove_var("SECURITY_READER_USERNAME");
+        env::remove_var("SECURITY_READER_PASSWORD");
+    }
+
+    #[test]
+    fn secure_index_metadata_routes_require_admin_role() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        env::set_var("SECURITY_READER_USERNAME", "reader");
+        env::set_var("SECURITY_READER_PASSWORD", "reader");
+        env::remove_var("SECURITY_WRITER_USERNAME");
+        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-metadata-index")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let cases = [
+            RestRequest::new(RestMethod::Put, "/sec-metadata-index/_mapping")
+                .with_json_body(serde_json::json!({"properties": {"status": {"type": "keyword"}}})),
+            RestRequest::new(RestMethod::Post, "/sec-metadata-index/_mappings")
+                .with_json_body(serde_json::json!({"properties": {"priority": {"type": "long"}}})),
+            RestRequest::new(RestMethod::Put, "/sec-metadata-index/_settings")
+                .with_json_body(serde_json::json!({"index": {"refresh_interval": "1s"}})),
+            RestRequest::new(RestMethod::Put, "/_settings")
+                .with_json_body(serde_json::json!({"index": {"number_of_replicas": 0}})),
+        ];
+
+        for request in cases {
+            let path = request.path.clone();
+            let missing = node.handle_rest_request(request.clone());
+            assert_eq!(missing.status, 401, "path {path}");
+            assert_eq!(missing.body["error"]["type"], "security_exception");
+
+            let reader = node.handle_rest_request(
+                request
+                    .clone()
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            );
+            assert_eq!(reader.status, 403, "path {path}");
+            assert_eq!(reader.body["error"]["type"], "security_exception");
+            assert!(reader.body["error"]["reason"]
+                .as_str()
+                .expect("security reason")
+                .contains("index metadata"));
 
             let admin = node.handle_rest_request(
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
