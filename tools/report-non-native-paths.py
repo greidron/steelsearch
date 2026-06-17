@@ -265,8 +265,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="production security",
         category="security",
-        status="fail-closed",
-        next_action="start with TLS/authn bootstrap fixtures before enabling production startup",
+        status="structured fail-closed boundary/checklist gate",
+        next_action="wire TLS/authn bootstrap material fixtures into the structured production security gate before enabling production startup",
         evidence_path=SECURITY_DOC,
         evidence_pattern=r"Production security readiness requires",
     ),

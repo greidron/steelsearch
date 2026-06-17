@@ -29,6 +29,8 @@ Production security readiness requires all of these boundaries to be enforced:
 marks every boundary as required and reports production blockers until the
 boundary is moved to `Enforced`. `SecurityBoundaryPolicy::enforced()` exists
 only for tests and future wiring after the actual enforcement code is present.
+`ReleaseReadinessChecklist` separately keeps benchmark, load, chaos, packaging,
+and rolling-upgrade evidence out of the security-boundary state.
 
 ## Fail-Closed Rules
 
@@ -122,8 +124,10 @@ Production security is not complete until tests cover:
 Existing production mode and readiness tests already assert that the daemon
 blocks production until all security boundaries are enforced, and that
 production startup preflight and startup readiness report the same production
-security/release gate blocker. They are baseline tests, not proof that
-enforcement has been implemented.
+security/release gate blocker. The production gate is now structured by
+security boundary and release checklist item, with tests proving that partial
+enforcement removes only the satisfied blockers. These are baseline tests, not
+proof that TLS/authn/authz enforcement has been implemented.
 
 ## Operator Evidence
 

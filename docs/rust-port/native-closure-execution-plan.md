@@ -50,9 +50,10 @@ Out of scope:
   fetch, multi-index vector-native page plus aggregation reduce, and `_id`,
   `_score`, and fast-field sort reduce variants.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 9/9 tests and `zero_tests=0`, covering data-path, bind, duplicate
-  node-id, invalid address/port, role/bootstrap, production-mode gate, and
-  daemon-level data-path / occupied-port refusal cases.
+  with 12/12 tests and `zero_tests=0`, covering data-path, bind, duplicate
+  node-id, invalid address/port, role/bootstrap, structured production
+  security/release policy gates, production-mode gate, and daemon-level
+  data-path / occupied-port refusal cases.
 - The same runner now has a `startup-readiness` batch. It passed on 2026-06-17
   with 2/2 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal plus production
@@ -208,7 +209,8 @@ Validation runner:
   vector/KNN page, aggregation, cache, and sort slices as runtime evidence.
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
-  concrete startup refusal slice as runtime-control evidence.
+  concrete startup refusal slice and structured production security/release
+  gate as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate
@@ -362,5 +364,5 @@ Exit evidence:
    current.
 3. Extend the live shard movement probe with interruption and resume phases.
 4. Add startup/preflight refusal tests before broad runtime-control wiring.
-5. Start security with fail-closed TLS/authn bootstrap fixtures, then add real
-   enforcement paths.
+5. Continue security from the structured fail-closed boundary/checklist gate
+   into TLS/authn bootstrap fixtures, then add real enforcement paths.

@@ -144,6 +144,24 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
 
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
+        "production_mode_request_reports_each_missing_security_and_release_gate",
+        "production-gate-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
+        "production_mode_request_allows_startup_only_when_all_gates_are_complete",
+        "production-gate-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
+        "production_mode_request_keeps_release_and_security_blockers_distinct",
+        "production-gate-preflight",
+        package="os-node-rest-core",
+        target=("--lib",),
+    ),
+    ValidationTest(
         "daemon_config_rejects_data_path_that_is_not_directory",
         "data-path-preflight",
         package="os-node",
