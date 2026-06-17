@@ -86,7 +86,7 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Cancellation ownership | there is no authoritative runtime-owned cancellation coordinator that owns who may flip a task from running to cancelling to cancelled |
-| Propagation model | `parent_task_id` child cancellation visibility includes same-node and cross-node multi-level descendant propagation, but current route evidence does not prove background-worker propagation |
+| Propagation model | `parent_task_id` child cancellation visibility includes same-node, cross-node, and background-worker descendant propagation; spawned-worker rethrottle propagation remains intentionally independent rather than inherited |
 | Terminal-state accounting | acknowledged/failed cluster-manager task records remain queryable through `GET /_tasks*` without contributing to pending queue depth, with bounded per-bucket retention/eviction, stale cancellation-marker pruning, persisted restart readback, and cancelled-task completion readback until eviction; partial-progress contracts remain bounded |
 | Queue interaction | queued cancellation state and in-flight refusal are visible through task and pending-task routes, but worker-owned drain/refusal ordering is still bounded |
 | Restart interaction | shared-runtime restart readback preserves task queue state and cancelled ids, and cancel requests are accepted after per-request shared-runtime sync on restart; shutdown-window and partial-recovery behavior remain open |
@@ -96,7 +96,6 @@ internal subsystems, especially:
 
 - add fixture-backed distinction for:
   - queued cancellation versus worker drain races;
-  - background-worker parent task cancel versus child task visibility;
   - shutdown-window cancellation refusal versus preservation behavior.
 - add restart-smoke coverage for:
   - post-restart partial-recovery/error-path task listing continuity.

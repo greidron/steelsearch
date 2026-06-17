@@ -57,11 +57,11 @@ Out of scope:
   with 1/1 tests and `zero_tests=0`, covering shared startup preflight and
   readiness blocker reasons for concrete filesystem refusal.
 - The same runner now has a `runtime-tasks` batch. It passed on 2026-06-17
-  with 13/13 tests and `zero_tests=0`, covering task cancellation through
+  with 14/14 tests and `zero_tests=0`, covering task cancellation through
   runtime-local state mutation plus follow-up task readback for both query-param
   and path task-id cancellation forms, repeated cancel idempotency with
   post-cancel readback, parent-task-id child cancellation visibility including
-  same-node and cross-node multi-level descendant propagation,
+  same-node, cross-node, and background-worker descendant propagation,
   queued-versus-in-flight cancellation distinction, completion-race refusal
   without cancelled-marker pollution, and acknowledged/failed terminal task readback
   without polluting pending-task queue depth, plus
@@ -106,11 +106,12 @@ Out of scope:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows.
 - The same runner now has a `runtime-task-children` batch. It passed on
-  2026-06-17 with 7/7 tests and `zero_tests=0`, covering same-node
+  2026-06-17 with 8/8 tests and `zero_tests=0`, covering same-node
   `/_tasks?group_by=parents` child nesting from runtime task state plus
   parent-task-id child cancellation visibility, same-node multi-level
   descendant cancellation propagation, cross-node descendant cancellation
-  propagation, and same-node parent/child plus multi-level descendant
+  propagation, background-worker descendant cancellation propagation, and
+  same-node parent/child plus multi-level descendant
   rethrottle rate visibility.
 
 ## Workstreams
@@ -203,7 +204,7 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch runtime-tasks` must report
   `failed_count == 0` and `zero_test_count == 0` before treating task
   cancellation, repeated cancel idempotency, parent-task-id child cancellation,
-  same-node and cross-node multi-level descendant cancellation propagation,
+  same-node, cross-node, and background-worker descendant cancellation propagation,
   queued-versus-in-flight cancellation distinction, completion-race refusal
   without cancelled-marker pollution, terminal-state task readback, bounded
   terminal retention/eviction, stale cancellation-marker pruning, cancelled-task
@@ -239,8 +240,9 @@ Validation runner:
   report `failed_count == 0` and `zero_test_count == 0` before treating
   same-node parent/child task grouping and parent-task-id child cancellation
   visibility, same-node and cross-node multi-level descendant cancellation
-  propagation, plus parent/child and multi-level descendant rethrottle rate
-  visibility as runtime-control evidence.
+  propagation, background-worker descendant cancellation propagation, plus
+  parent/child and multi-level descendant rethrottle rate visibility as
+  runtime-control evidence.
 
 ### 3. Mixed-Cluster Movement Hardening
 

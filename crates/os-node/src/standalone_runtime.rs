@@ -635,6 +635,7 @@ pub struct PersistedPublicationState {
 pub enum ClusterManagerTaskKind {
     Reroute,
     RemoveNode { node_id: String },
+    BackgroundWorker { worker: String, action: String },
 }
 
 impl Default for ClusterManagerTaskKind {
@@ -11385,12 +11386,21 @@ impl SteelNode {
                         .get(&task_id)
                         .copied()
                         .unwrap_or(-1.0);
+                    let action = self.task_action_for_kind(&record.task.kind);
+                    let mut status = serde_json::json!({
+                        "requests_per_second": requests_per_second
+                    });
+                    if let ClusterManagerTaskKind::BackgroundWorker { worker, .. } =
+                        &record.task.kind
+                    {
+                        status["background_worker"] = Value::String(worker.clone());
+                    }
                     serde_json::json!({
                         "node": node_id,
                         "node_name": self.node_name_for_task_node(&node_id),
                         "id": record.task_id,
                         "type": "transport",
-                        "action": "cluster:admin/reroute",
+                        "action": action,
                         "description": format!("{} [{}]", record.task.source, match record.state {
                             ClusterManagerTaskState::Queued => "queued",
                             ClusterManagerTaskState::InFlight => "in_flight",
@@ -11409,9 +11419,7 @@ impl SteelNode {
                         "executing": record.state == ClusterManagerTaskState::InFlight,
                         "time_in_queue_millis": 0,
                         "time_in_queue": "0ms",
-                        "status": {
-                            "requests_per_second": requests_per_second
-                        }
+                        "status": status
                     })
                 })
                 .collect();
@@ -11463,6 +11471,15 @@ impl SteelNode {
             .as_ref()
             .map(|view| view.local_node_id.clone())
             .unwrap_or_else(|| "node-a".to_string())
+    }
+
+    fn task_action_for_kind(&self, kind: &ClusterManagerTaskKind) -> String {
+        match kind {
+            ClusterManagerTaskKind::Reroute | ClusterManagerTaskKind::RemoveNode { .. } => {
+                "cluster:admin/reroute".to_string()
+            }
+            ClusterManagerTaskKind::BackgroundWorker { action, .. } => action.clone(),
+        }
     }
 
     fn node_name_for_task_node(&self, node_id: &str) -> String {
@@ -22976,6 +22993,99 @@ mod tests {
         let pending_tasks = pending.body["tasks"].as_array().expect("pending tasks array");
         assert_eq!(pending_tasks.len(), 3);
         assert!(pending_tasks.iter().any(|task| task["node"] == "node-b"));
+    }
+
+    #[test]
+    fn tasks_cancel_by_parent_task_id_propagates_to_background_worker_descendants() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![
+                ClusterManagerTaskRecord {
+                    task_id: 391,
+                    task: ClusterManagerTask {
+                        source: "maintenance parent cancel probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 392,
+                    task: ClusterManagerTask {
+                        source: "refresh background worker cancel probe".to_string(),
+                        kind: ClusterManagerTaskKind::BackgroundWorker {
+                            worker: "maintenance-refresh".to_string(),
+                            action: "indices:admin/refresh".to_string(),
+                        },
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: Some("node-a:391".to_string()),
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                },
+            ],
+            ..Default::default()
+        });
+
+        let mut cancel = RestRequest::new(RestMethod::Post, "/_tasks/_cancel");
+        cancel
+            .query_params
+            .insert("parent_task_id".to_string(), "node-a:391".to_string());
+        let cancel = node.handle_rest_request(cancel);
+        assert_eq!(cancel.status, 200);
+        let cancelled_tasks = cancel.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("cancelled task map");
+        assert_eq!(cancelled_tasks.len(), 1);
+        assert_eq!(cancelled_tasks["node-a:392"]["cancelled"], Value::Bool(true));
+        assert_eq!(
+            cancelled_tasks["node-a:392"]["action"],
+            Value::String("indices:admin/refresh".to_string())
+        );
+        assert_eq!(
+            cancelled_tasks["node-a:392"]["status"]["background_worker"],
+            Value::String("maintenance-refresh".to_string())
+        );
+
+        let parent_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:391"));
+        assert_eq!(parent_get.status, 200);
+        assert_eq!(parent_get.body["task"]["cancelled"], Value::Bool(false));
+
+        let worker_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:392"));
+        assert_eq!(worker_get.status, 200);
+        assert_eq!(
+            worker_get.body["task"]["action"],
+            Value::String("indices:admin/refresh".to_string())
+        );
+        assert_eq!(
+            worker_get.body["task"]["status"]["background_worker"],
+            Value::String("maintenance-refresh".to_string())
+        );
+        assert_eq!(worker_get.body["task"]["cancelled"], Value::Bool(true));
     }
 
     #[test]
