@@ -177,6 +177,10 @@ Current Steelsearch evidence:
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering bounded task
   cancellation that mutates runtime-local state and is visible through follow-up
   task readback;
+- `tools/run-native-closure-validation.py --batch runtime-queue` passed on
+  2026-06-17 with 2/2 tests and `zero_tests=0`, covering runtime task queue
+  metadata plus shared queue-depth visibility across cluster health, `_tasks`,
+  cluster pending tasks, and cat pending tasks;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 

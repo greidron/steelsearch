@@ -225,12 +225,30 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
     ),
 )
 
+RUNTIME_QUEUE_BATCH: tuple[ValidationTest, ...] = (
+    ValidationTest(
+        "cluster_pending_tasks_route_surfaces_task_metadata_visibility",
+        "task-queue-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "cluster_health_tasks_and_cat_pending_tasks_share_runtime_queue_depth",
+        "task-queue-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+)
+
 BATCHES: dict[str, tuple[ValidationTest, ...]] = {
     "compact": COMPACT_BATCH,
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
+    "runtime-queue": RUNTIME_QUEUE_BATCH,
 }
 
 RUNNING_RE = re.compile(r"running (?P<count>\d+) tests?")

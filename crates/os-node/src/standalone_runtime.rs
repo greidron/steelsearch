@@ -30361,6 +30361,97 @@ mod tests {
     }
 
     #[test]
+    fn cluster_health_tasks_and_cat_pending_tasks_share_runtime_queue_depth() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+        *node.task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![
+                ClusterManagerTaskRecord {
+                    task_id: 21,
+                    task: ClusterManagerTask {
+                        source: "queued reroute".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    failure_reason: None,
+                },
+                ClusterManagerTaskRecord {
+                    task_id: 22,
+                    task: ClusterManagerTask {
+                        source: "queued mapping update".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    failure_reason: None,
+                },
+            ],
+            in_flight: vec![ClusterManagerTaskRecord {
+                task_id: 23,
+                task: ClusterManagerTask {
+                    source: "publishing state".to_string(),
+                    kind: ClusterManagerTaskKind::Reroute,
+                },
+                state: ClusterManagerTaskState::InFlight,
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["number_of_pending_tasks"], 3);
+
+        let pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
+        assert_eq!(pending.status, 200);
+        assert_eq!(
+            pending.body["tasks"]
+                .as_array()
+                .expect("pending tasks array")
+                .len(),
+            3
+        );
+
+        let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
+        assert_eq!(tasks.status, 200);
+        let node_tasks = tasks.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("node task map");
+        assert_eq!(node_tasks.len(), 3);
+        assert!(node_tasks.contains_key("node-a:21"));
+        assert!(node_tasks.contains_key("node-a:23"));
+
+        let mut cat_request = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        cat_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_request);
+        assert_eq!(cat.status, 200);
+        let cat_rows = cat.body.as_array().expect("cat pending task rows");
+        assert_eq!(cat_rows.len(), 3);
+        assert_eq!(cat_rows[0]["insertOrder"], "21");
+        assert_eq!(cat_rows[2]["executing"], "true");
+    }
+
+    #[test]
     fn committed_publication_rounds_do_not_surface_as_pending_tasks() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
