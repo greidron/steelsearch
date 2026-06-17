@@ -150,7 +150,7 @@ internal subsystems, especially:
 | Gap class | Why the current surface is insufficient |
 | --- | --- |
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
-| Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
+| Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence and active-to-terminal completion race refusal preserves the last accepted rate; concurrent daemon scheduler races are still open |
 | Parent-child propagation | same-node, cross-node, and multi-level descendant rethrottle rate readback is independent without implicit propagation, but spawned worker sub-task propagation remains open |
 | Persistence and restart | shared-runtime restart readback preserves requested throttle rates, rethrottle requests are accepted after per-request shared-runtime sync on restart, and shutdown-window plus partial-recovery rethrottle requests now fail closed without mutating rate state |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
@@ -160,7 +160,7 @@ internal subsystems, especially:
 
 - add fixture-backed distinction for:
   - spawned worker sub-task rethrottle visibility;
-  - rethrottle race-with-completion behavior.
+  - concurrent daemon-level rethrottle race-with-completion behavior.
 - add operator-visible evidence for:
   - whether the last requested throttle rate is observable;
   - whether spawned worker child work inherits or diverges from the parent rate;
@@ -170,8 +170,8 @@ internal subsystems, especially:
 
 - introduce an explicit runtime owner for throttle rate state rather than
   treating rethrottle as a stateless route response.
-- define race-with-finish states beyond the current repeated rethrottle
-  last-write-wins route evidence.
+- define daemon-level race-with-finish states beyond the current repeated
+  rethrottle last-write-wins and active-to-terminal route evidence.
 - connect throttle state to child-work orchestration for sliced tasks.
 - connect shutdown-window and partial-recovery throttle refusal to future
   daemon-level restart-smoke harnesses.

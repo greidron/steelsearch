@@ -26287,6 +26287,81 @@ mod tests {
     }
 
     #[test]
+    fn rethrottle_refuses_completion_race_without_mutating_last_rate() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") = Some(PersistedClusterManagerTaskQueueState {
+            pending: vec![ClusterManagerTaskRecord {
+                task_id: 341,
+                task: ClusterManagerTask {
+                    source: "completion race rethrottle probe".to_string(),
+                    kind: ClusterManagerTaskKind::BackgroundWorker {
+                        worker: "reindex".to_string(),
+                        action: "indices:data/write/reindex".to_string(),
+                    },
+                },
+                state: ClusterManagerTaskState::Queued,
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                failure_reason: None,
+            }],
+            ..Default::default()
+        });
+
+        let mut first = RestRequest::new(RestMethod::Post, "/_reindex/node-a:341/_rethrottle");
+        first
+            .query_params
+            .insert("requests_per_second".to_string(), "4.0".to_string());
+        let first = node.handle_rest_request(first);
+        assert_eq!(first.status, 200);
+        assert_eq!(
+            first.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.0)
+        );
+
+        {
+            let mut queue = node
+                .task_queue_state
+                .lock()
+                .expect("task queue state lock poisoned");
+            let state = queue.as_mut().expect("task queue state");
+            let mut completed = state.pending.pop().expect("pending task");
+            completed.state = ClusterManagerTaskState::Acknowledged;
+            state.acknowledged.push(completed);
+        }
+
+        let mut late =
+            RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:341/_rethrottle");
+        late.body = br#"{"requests_per_second":9.0}"#.to_vec();
+        let late = node.handle_rest_request(late);
+        assert_eq!(late.status, 400);
+        assert_eq!(
+            late.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:341"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(4.0)
+        );
+        assert_eq!(
+            node.rethrottled_task_rates
+                .lock()
+                .expect("rethrottled task rates lock poisoned")
+                .get("node-a:341")
+                .copied(),
+            Some(4.0)
+        );
+    }
+
+    #[test]
     fn rethrottle_refuses_shutdown_and_partial_recovery_without_mutating_rate() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

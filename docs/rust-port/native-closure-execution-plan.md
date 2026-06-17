@@ -164,7 +164,7 @@ Out of scope:
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
-  with 9/9 tests and `zero_tests=0`, covering by-query rethrottle state
+  with 10/10 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
   mutating rate state, repeated last-write-wins rethrottle sequencing,
@@ -173,8 +173,9 @@ Out of scope:
   without mutating rate state, plus shutdown/partial-recovery rethrottle
   refusal without mutating rate state, same-node, cross-node, and multi-level
   descendant rethrottle rate readback without implicit rate propagation, and
-  rethrottle requests accepted during the per-request shared-runtime sync window
-  after restart.
+  active-to-terminal completion race refusal without mutating the last accepted
+  rate, plus rethrottle requests accepted during the per-request shared-runtime
+  sync window after restart.
 - The same runner now has a `runtime-task-metadata` batch. It passed on
   2026-06-17 with 4/4 tests and `zero_tests=0`, covering runtime parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
@@ -371,7 +372,8 @@ Validation runner:
   shared-runtime restart readback for requested throttle rates,
   cancelled/terminal task refusal, shutdown/partial-recovery refusal without
   rate mutation, and same-node, cross-node, and multi-level descendant
-  independent rate readback, plus rethrottle-request handling during the
+  independent rate readback, plus active-to-terminal completion race refusal
+  without last-rate mutation and rethrottle-request handling during the
   per-request sync window after restart.
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` must
   report `failed_count == 0` and `zero_test_count == 0` before treating parent
