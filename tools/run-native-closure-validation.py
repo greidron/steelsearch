@@ -349,6 +349,13 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "daemon_config_rejects_opensearch_e_settings_with_explicit_contract",
+        "config-parse-preflight",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "daemon_config_rejects_non_cluster_manager_without_seed_hosts",
         "role-preflight",
         package="os-node",

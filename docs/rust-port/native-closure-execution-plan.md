@@ -82,8 +82,10 @@ Out of scope:
   cache bypass counters for hybrid vector, unsupported vector, highlight, and
   explain request surfaces.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 24/24 tests and `zero_tests=0`, covering data-path, bind, duplicate
-  node-id, invalid address/port, role/bootstrap, structured production
+  with 25/25 tests and `zero_tests=0`, covering data-path, bind, duplicate
+  node-id, invalid address/port, explicit OpenSearch `-E` config-setting
+  rejection with the Steelsearch flag/env-var contract, role/bootstrap,
+  structured production
   security/release policy gates, production security bootstrap material
   through PEM-marker TLS certificate/key validation, certificate/private-key
   role mismatch rejection, invalid bootstrap file-content redaction, and the
@@ -280,10 +282,11 @@ Validation runner:
 - `tools/run-native-closure-validation.py --batch startup-preflight` must
   report `failed_count == 0` and `zero_test_count == 0` before treating the
   concrete startup refusal slice and structured production security/release
-  gate, including PEM-marker TLS bootstrap material, certificate/private-key
-  role mismatch rejection, invalid bootstrap file-content redaction, authn
-  bootstrap material, service-account-only authn bootstrap material, and
-  malformed users-file checks, as runtime-control evidence.
+  gate, including explicit OpenSearch `-E` config-setting rejection, PEM-marker
+  TLS bootstrap material, certificate/private-key role mismatch rejection,
+  invalid bootstrap file-content redaction, authn bootstrap material,
+  service-account-only authn bootstrap material, and malformed users-file
+  checks, as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate

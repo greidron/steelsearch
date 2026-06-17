@@ -138,12 +138,13 @@ Current Steelsearch evidence:
 
 - production mode is explicitly gated and can fail closed;
 - `tools/run-native-closure-validation.py --batch startup-preflight` passed on
-  2026-06-17 with 20/20 tests and `zero_tests=0`, covering structured
+  2026-06-17 with 25/25 tests and `zero_tests=0`, covering structured
   production security/release policy gates, production security bootstrap
   material through the shared users-file subject parser including malformed
   authentication-users-file rejection, plus config-level and daemon-level
-  data-path, bind, duplicate node-id, invalid address/port, role/bootstrap,
-  and production-mode refusal cases;
+  data-path, bind, duplicate node-id, invalid address/port, explicit
+  OpenSearch `-E` config-setting rejection with the Steelsearch flag/env-var
+  contract, role/bootstrap, and production-mode refusal cases;
 - `tools/run-native-closure-validation.py --batch startup-readiness` passed on
   2026-06-17 with 2/2 tests and `zero_tests=0`, covering shared startup
   preflight and readiness blocker reasons for concrete filesystem refusal plus
@@ -159,8 +160,9 @@ Required next implementation direction:
 Required tests:
 
 - extend startup refusal fixtures from the current file/not-directory,
-  occupied-port, invalid bind/config, duplicate node-id, role/bootstrap, and
-  production-gate coverage into absent/readonly/locked data paths;
+  occupied-port, invalid bind/config, explicit OpenSearch `-E` rejection,
+  duplicate node-id, role/bootstrap, and production-gate coverage into
+  absent/readonly/locked data paths;
 - extend the startup/readiness consistency probe beyond filesystem refusal and
   production security/release gate refusal into multi-node gate reasons.
 

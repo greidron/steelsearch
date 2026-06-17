@@ -4722,6 +4722,12 @@ where
                 print_help();
                 std::process::exit(0);
             }
+            other if other == "-E" || other.starts_with("-E") => {
+                return Err(format!(
+                    "unsupported OpenSearch -E config setting [{other}]; use explicit steelsearch daemon flags or STEELSEARCH_* environment variables"
+                )
+                .into());
+            }
             other => return Err(format!("unknown argument [{other}]").into()),
         }
     }
@@ -5966,6 +5972,9 @@ Options:\n\
                                     Production security bootstrap material\n\
   --mode <development|production>  Runtime mode, default development\n\
 \n\
+Unsupported compatibility input:\n\
+  OpenSearch -E<key>=<value> settings are rejected fail-closed; use the explicit steelsearch flags or STEELSEARCH_* environment variables listed here.\n\
+\n\
 Environment:\n\
   STEELSEARCH_HTTP_HOST, STEELSEARCH_HTTP_PORT,\n\
   STEELSEARCH_TRANSPORT_HOST, STEELSEARCH_TRANSPORT_PORT,\n\
@@ -6268,6 +6277,7 @@ mod tests {
         let help = daemon_help_text();
         assert!(help.contains("steelsearch development daemon"));
         assert!(help.contains("--extensions.manifest"));
+        assert!(help.contains("OpenSearch -E<key>=<value> settings are rejected fail-closed"));
         assert!(!help.contains("os-node"));
     }
 
@@ -6381,6 +6391,24 @@ mod tests {
         .to_string();
 
         assert!(error.contains("invalid digit"));
+    }
+
+    #[test]
+    fn daemon_config_rejects_opensearch_e_settings_with_explicit_contract() {
+        let vars = BTreeMap::new();
+        for arg in ["-Ecluster.name=steelsearch-dev", "-E"] {
+            let error = daemon_config_from_sources(
+                &vars,
+                [arg, "path.data=/tmp/ignored"]
+                    .into_iter()
+                    .map(ToOwned::to_owned),
+            )
+            .unwrap_err()
+            .to_string();
+
+            assert!(error.contains("unsupported OpenSearch -E config setting"));
+            assert!(error.contains("STEELSEARCH_* environment variables"));
+        }
     }
 
     #[test]
