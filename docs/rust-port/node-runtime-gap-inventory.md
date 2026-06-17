@@ -183,8 +183,9 @@ Current Steelsearch evidence:
   parent-task-id child cancellation visibility, queued-versus-in-flight
   cancellation distinction, plus acknowledged/failed terminal task readback
   without polluting pending-task queue depth, bounded terminal task
-  retention/eviction with persisted restart readback, and shared-runtime
-  restart readback for task queue state plus cancelled task ids;
+  retention/eviction with stale cancellation-marker pruning and persisted
+  restart readback, and shared-runtime restart readback for task queue state
+  plus cancelled task ids;
 - `tools/run-native-closure-validation.py --batch runtime-queue` passed on
   2026-06-17 with 3/3 tests and `zero_tests=0`, covering runtime task queue
   metadata plus shared queue-depth visibility across cluster health, `_tasks`,

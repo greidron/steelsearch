@@ -711,6 +711,35 @@ fn pruned_task_queue_state(
     state
 }
 
+fn retained_task_ids(
+    state: &PersistedClusterManagerTaskQueueState,
+    node_id: &str,
+) -> BTreeSet<String> {
+    state
+        .pending
+        .iter()
+        .chain(state.in_flight.iter())
+        .chain(state.acknowledged.iter())
+        .chain(state.failed.iter())
+        .map(|record| format!("{node_id}:{}", record.task_id))
+        .collect()
+}
+
+fn pruned_cancelled_task_ids(
+    cancelled_task_ids: BTreeSet<String>,
+    task_queue_state: Option<&PersistedClusterManagerTaskQueueState>,
+    node_id: &str,
+) -> BTreeSet<String> {
+    let Some(task_queue_state) = task_queue_state else {
+        return BTreeSet::new();
+    };
+    let retained = retained_task_ids(task_queue_state, node_id);
+    cancelled_task_ids
+        .into_iter()
+        .filter(|task_id| retained.contains(task_id))
+        .collect()
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PersistedGatewayState {
     pub coordination_state: PersistedPublicationState,
@@ -11342,14 +11371,10 @@ impl SteelNode {
                 records.extend(queue.acknowledged);
                 records.extend(queue.failed);
             }
+            let node_id = self.local_task_node_id();
             return records
                 .into_iter()
                 .map(|record| {
-                    let node_id = self
-                        .cluster_view
-                        .as_ref()
-                        .map(|v| v.local_node_id.clone())
-                        .unwrap_or_else(|| "node-a".to_string());
                     let task_id = format!("{node_id}:{}", record.task_id);
                     let cancellable = record.state == ClusterManagerTaskState::Queued;
                     let cancelled = cancelled_task_ids.contains(&task_id);
@@ -11430,6 +11455,13 @@ impl SteelNode {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn local_task_node_id(&self) -> String {
+        self.cluster_view
+            .as_ref()
+            .map(|view| view.local_node_id.clone())
+            .unwrap_or_else(|| "node-a".to_string())
     }
 
     fn tasks_len(&self) -> u64 {
@@ -14978,15 +15010,18 @@ impl SteelNode {
             .next_ml_task_id
             .lock()
             .expect("next ml task id lock poisoned") = state.next_ml_task_id;
+        let task_queue_state = state.task_queue_state.map(pruned_task_queue_state);
+        let node_id = self.local_task_node_id();
+        let cancelled_task_ids =
+            pruned_cancelled_task_ids(state.cancelled_task_ids, task_queue_state.as_ref(), &node_id);
         *self
             .task_queue_state
             .lock()
-            .expect("task queue state lock poisoned") =
-            state.task_queue_state.map(pruned_task_queue_state);
+            .expect("task queue state lock poisoned") = task_queue_state;
         *self
             .cancelled_task_ids
             .lock()
-            .expect("cancelled task ids lock poisoned") = state.cancelled_task_ids;
+            .expect("cancelled task ids lock poisoned") = cancelled_task_ids;
         *self
             .rethrottled_task_rates
             .lock()
@@ -15018,6 +15053,25 @@ impl SteelNode {
         let Some(path) = self.shared_runtime_state_path.as_ref() else {
             return;
         };
+        let task_queue_state = self
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned")
+            .clone()
+            .map(pruned_task_queue_state);
+        let node_id = self.local_task_node_id();
+        let cancelled_task_ids = pruned_cancelled_task_ids(
+            self.cancelled_task_ids
+                .lock()
+                .expect("cancelled task ids lock poisoned")
+                .clone(),
+            task_queue_state.as_ref(),
+            &node_id,
+        );
+        *self
+            .cancelled_task_ids
+            .lock()
+            .expect("cancelled task ids lock poisoned") = cancelled_task_ids.clone();
         let state = SharedRuntimeState {
             created_indices: self
                 .created_indices_state
@@ -15035,17 +15089,8 @@ impl SteelNode {
                 .expect("documents state lock poisoned")
                 .clone(),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
-            task_queue_state: self
-                .task_queue_state
-                .lock()
-                .expect("task queue state lock poisoned")
-                .clone()
-                .map(pruned_task_queue_state),
-            cancelled_task_ids: self
-                .cancelled_task_ids
-                .lock()
-                .expect("cancelled task ids lock poisoned")
-                .clone(),
+            task_queue_state,
+            cancelled_task_ids,
             rethrottled_task_rates: self
                 .rethrottled_task_rates
                 .lock()
@@ -22988,7 +23033,28 @@ mod tests {
             failed,
             ..Default::default()
         });
+        *node
+            .cancelled_task_ids
+            .lock()
+            .expect("cancelled task ids lock poisoned") = BTreeSet::from([
+            "node-a:11".to_string(),
+            "node-a:1000".to_string(),
+            "node-a:1002".to_string(),
+            "node-a:3000".to_string(),
+            "node-a:3002".to_string(),
+        ]);
         node.persist_shared_runtime_state_to_disk();
+        assert_eq!(
+            node.cancelled_task_ids
+                .lock()
+                .expect("cancelled task ids lock poisoned")
+                .clone(),
+            BTreeSet::from([
+                "node-a:11".to_string(),
+                "node-a:1002".to_string(),
+                "node-a:3002".to_string(),
+            ])
+        );
 
         let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
         assert_eq!(tasks.status, 200);
@@ -23033,6 +23099,14 @@ mod tests {
         assert_eq!(persisted_queue.failed.len(), TERMINAL_TASK_RETENTION_LIMIT);
         assert_eq!(persisted_queue.acknowledged.first().unwrap().task_id, 1002);
         assert_eq!(persisted_queue.failed.first().unwrap().task_id, 3002);
+        assert_eq!(
+            persisted.cancelled_task_ids,
+            BTreeSet::from([
+                "node-a:11".to_string(),
+                "node-a:1002".to_string(),
+                "node-a:3002".to_string(),
+            ])
+        );
 
         let mut restarted = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -23040,6 +23114,18 @@ mod tests {
         });
         restarted.shared_runtime_state_path = Some(shared_state_path.clone());
         restarted.sync_shared_runtime_state_from_disk();
+        assert_eq!(
+            restarted
+                .cancelled_task_ids
+                .lock()
+                .expect("cancelled task ids lock poisoned")
+                .clone(),
+            BTreeSet::from([
+                "node-a:11".to_string(),
+                "node-a:1002".to_string(),
+                "node-a:3002".to_string(),
+            ])
+        );
 
         let restarted_oldest =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:1000"));
