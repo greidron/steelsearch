@@ -382,6 +382,13 @@ RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
         target=("--lib",),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "rethrottle_parent_and_child_tasks_keep_independent_rate_readback",
+        "task-throttle-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_TASK_METADATA_BATCH: tuple[ValidationTest, ...] = (
@@ -449,6 +456,13 @@ RUNTIME_TASK_CHILDREN_BATCH: tuple[ValidationTest, ...] = (
     ),
     ValidationTest(
         "tasks_cancel_by_parent_task_id_preserves_parent_child_visibility",
+        "task-child-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
+        "rethrottle_parent_and_child_tasks_keep_independent_rate_readback",
         "task-child-runtime-state",
         package="os-node",
         target=("--lib",),

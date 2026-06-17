@@ -203,11 +203,12 @@ Current Steelsearch evidence:
   rejection model, and by-query/reindex task-submission admission through the
   same runtime-owned waiting and rejection model;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
-  2026-06-17 with 4/4 tests and `zero_tests=0`, covering by-query rethrottle
+  2026-06-17 with 5/5 tests and `zero_tests=0`, covering by-query rethrottle
   state mutation from query-parameter and request-body rates, repeated
   last-write-wins rethrottle sequencing, follow-up task readback, and
   shared-runtime restart readback for requested throttle rates, plus rejection
-  for cancelled or terminal tasks without mutating rate state;
+  for cancelled or terminal tasks without mutating rate state, and same-node
+  parent/child rethrottle rate readback without implicit rate propagation;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
@@ -217,9 +218,10 @@ Current Steelsearch evidence:
   `x-opaque-id` task header readback through `/_tasks`, `/_tasks/{task_id}`,
   task cancellation, and `_cat/tasks` JSON rows;
 - `tools/run-native-closure-validation.py --batch runtime-task-children` passed
-  on 2026-06-17 with 3/3 tests and `zero_tests=0`, covering same-node
+  on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering same-node
   `/_tasks?group_by=parents` child nesting from runtime task state plus
-  parent-task-id child cancellation visibility;
+  parent-task-id child cancellation visibility and same-node parent/child
+  rethrottle rate visibility;
 - full task and thread-pool runtime controls are not present as authoritative
   equivalents.
 

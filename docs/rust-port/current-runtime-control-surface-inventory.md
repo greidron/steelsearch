@@ -154,7 +154,7 @@ internal subsystems, especially:
 | --- | --- |
 | Rate-state ownership | there is no authoritative runtime owner for throttle tokens, target rates, or the effective rate currently applied to a running task |
 | Rethrottle sequencing | repeated rethrottle calls have last-write-wins readback evidence, but races with task completion are still open |
-| Parent-child propagation | there is no contract for whether rethrottle affects only a parent task, all child slices, or spawned worker sub-tasks consistently |
+| Parent-child propagation | same-node parent/child rethrottle rate readback is independent without implicit propagation, but multi-level, cross-node, and spawned worker sub-task propagation remain open |
 | Persistence and restart | shared-runtime restart readback preserves requested throttle rates, but shutdown-window and partial-recovery behavior remain open |
 | Admission and backpressure interaction | there is no documented relationship between throttle state, queue admission, backlog growth, and overload refusal |
 | Terminal-state behavior | rethrottle-after-cancel and rethrottle-after-terminal-task are rejected without mutating rate state, but rethrottle-during-shutdown remains open |
@@ -162,13 +162,14 @@ internal subsystems, especially:
 ### Required tests
 
 - add fixture-backed distinction for:
-  - parent task rethrottle versus sliced child work visibility;
+  - multi-level or cross-node parent task rethrottle versus sliced child work visibility;
   - rethrottle race-with-completion behavior.
 - add restart-smoke coverage for:
   - rethrottle request during restart window.
 - add operator-visible evidence for:
   - whether the last requested throttle rate is observable;
-  - whether child work inherits or diverges from the parent rate;
+  - whether multi-level or cross-node child work inherits or diverges from the
+    parent rate;
   - whether overload/backpressure changes task admission under throttling.
 
 ### Required implementation
