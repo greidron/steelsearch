@@ -49,7 +49,8 @@ Out of scope:
   present, zero checkpoint drift in each recorded checkpoint phase, and a
   `checkpoint_monotonicity_ok` summary gate. The live artifact also records
   retention-lease metadata from shard stats and now requires
-  `retention_lease_metadata_ok=true`.
+  `retention_lease_metadata_ok=true`; it also captures an unsupported movement
+  allocation explanation and requires `unsupported_allocation_explain_ok=true`.
 - Native-closure runtime validation now has a guarded compact runner,
   `tools/run-native-closure-validation.py --batch compact`, that rejects
   zero-test matches. The compact batch passed on 2026-06-17 with 8/8 tests:
@@ -315,10 +316,13 @@ Already evidenced:
   observation, and finalized recovery phase recording.
 - retention-lease metadata capture from shard stats with a
   `retention_lease_metadata_ok` summary gate.
+- unsupported movement allocation explanation capture for a deliberately
+  unassigned replica shape, with an `unsupported_allocation_explain_ok` summary
+  gate.
 
 Remaining tests:
 
-1. capture allocation explanation for unsupported movement shapes.
+- none for the current mixed-cluster representative hardening scope.
 
 Exit evidence:
 
@@ -328,7 +332,7 @@ Exit evidence:
   drift;
 - shard-stats phases record retention-lease metadata where the OpenSearch stats
   surface exposes it;
-- unsupported cases fail closed with a ledger row.
+- unsupported cases fail closed with a captured allocation explanation.
 
 ### 4. Production Runtime Controls
 

@@ -294,6 +294,59 @@ def update_index_settings(client: HttpJson, index: str, settings: dict[str, Any]
     client.request("PUT", f"/{index}/_settings", {"index": settings}, expected={200})
 
 
+def capture_unsupported_allocation_explain(
+    client: HttpJson, index: str, node_name: str
+) -> dict[str, Any]:
+    client.request("DELETE", f"/{index}?ignore_unavailable=true", expected={200, 404})
+    try:
+        client.request(
+            "PUT",
+            f"/{index}",
+            {
+                "settings": {
+                    "index": {
+                        "number_of_shards": 1,
+                        "number_of_replicas": 1,
+                        "routing": {"allocation": {"include": {"_name": node_name}}},
+                    }
+                }
+            },
+            expected={200},
+        )
+        shards = wait_for_shard_condition(
+            client,
+            index,
+            lambda rows: placement(rows)["primary_node"] == node_name
+            and placement(rows)["primary_state"] == "STARTED"
+            and placement(rows)["replica_state"] == "UNASSIGNED",
+        )
+        _, explain = client.request(
+            "POST",
+            "/_cluster/allocation/explain",
+            {"index": index, "shard": 0, "primary": False},
+            expected={200},
+        )
+        node_decisions = explain.get("node_allocation_decisions", [])
+        passed = (
+            isinstance(explain, dict)
+            and explain.get("index") == index
+            and explain.get("primary") is False
+            and explain.get("current_state") == "unassigned"
+            and explain.get("can_allocate") != "yes"
+            and isinstance(node_decisions, list)
+            and bool(node_decisions)
+        )
+        return {
+            "index": index,
+            "shards": shards,
+            "placement": placement(shards),
+            "allocation_explain": explain,
+            "passed": passed,
+        }
+    finally:
+        client.request("DELETE", f"/{index}?ignore_unavailable=true", expected={200, 404})
+
+
 def wait_for_index_health(client: HttpJson, index: str, expected_status: str, attempts: int, sleep_seconds: float) -> dict[str, Any]:
     latest: dict[str, Any] = {}
 
@@ -356,6 +409,10 @@ def phase_passed(report: dict[str, Any], name: str) -> bool:
         isinstance(phase, dict) and phase.get("phase") == name and bool(phase.get("passed"))
         for phase in phases
     )
+
+
+def unsupported_allocation_explain_passed(report: dict[str, Any]) -> bool:
+    return phase_passed(report, "unsupported_allocation_explain")
 
 
 def checkpoint_drift_passed(report: dict[str, Any]) -> bool:
@@ -443,6 +500,7 @@ def summarize_movement_report(
 ) -> dict[str, Any]:
     opensearch_to_steelsearch_passed = phase_passed(report, "opensearch_to_steelsearch")
     steelsearch_to_opensearch_passed = phase_passed(report, "steelsearch_to_opensearch")
+    unsupported_allocation_explain_ok = unsupported_allocation_explain_passed(report)
     checkpoint_drift_ok = checkpoint_drift_passed(report)
     checkpoint_monotonicity_ok = checkpoint_monotonicity_passed(report)
     retention_lease_metadata_ok = retention_lease_metadata_passed(report)
@@ -450,12 +508,14 @@ def summarize_movement_report(
     return {
         "passed": opensearch_to_steelsearch_passed
         and steelsearch_to_opensearch_passed
+        and unsupported_allocation_explain_ok
         and checkpoint_drift_ok
         and checkpoint_monotonicity_ok
         and retention_lease_metadata_ok
         and (interruption_evidence_ok or not require_interruption),
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
+        "unsupported_allocation_explain_ok": unsupported_allocation_explain_ok,
         "checkpoint_drift_ok": checkpoint_drift_ok,
         "checkpoint_monotonicity_ok": checkpoint_monotonicity_ok,
         "retention_lease_metadata_ok": retention_lease_metadata_ok,
@@ -674,6 +734,12 @@ def main() -> int:
             raise RuntimeError(f"three-node mixed cluster did not form; java_view_node_count={current_node_count(java1_client)}")
         clear_opensearch_cluster_blocks(java1_client)
         report["phases"].append(phase_result("cluster_formed", node_count=current_node_count(java1_client)))
+        unsupported_allocation = capture_unsupported_allocation_explain(
+            java1_client, f"{args.index}-unsupported-allocation", "java-primary-1"
+        )
+        report["phases"].append(
+            phase_result("unsupported_allocation_explain", **unsupported_allocation)
+        )
 
         java1_client.request("DELETE", f"/{args.index}?ignore_unavailable=true", expected={200, 404})
         java1_client.request(

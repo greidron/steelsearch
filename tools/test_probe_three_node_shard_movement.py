@@ -58,6 +58,23 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
                     "passed": True,
                     "checkpoint_drift": zero_drift,
                 },
+                {
+                    "phase": "unsupported_allocation_explain",
+                    "passed": True,
+                    "allocation_explain": {
+                        "index": "three-node-shard-movement-000001-unsupported-allocation",
+                        "shard": 0,
+                        "primary": False,
+                        "current_state": "unassigned",
+                        "can_allocate": "no",
+                        "node_allocation_decisions": [
+                            {
+                                "node_name": "java-primary-1",
+                                "node_decision": "no",
+                            }
+                        ],
+                    },
+                },
             ]
         }
 
@@ -67,6 +84,7 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
         self.assertTrue(summary["passed"])
         self.assertTrue(summary["opensearch_to_steelsearch_passed"])
         self.assertTrue(summary["steelsearch_to_opensearch_passed"])
+        self.assertTrue(summary["unsupported_allocation_explain_ok"])
         self.assertTrue(summary["checkpoint_drift_ok"])
         self.assertTrue(summary["checkpoint_monotonicity_ok"])
         self.assertTrue(summary["retention_lease_metadata_ok"])
@@ -146,6 +164,19 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
 
         self.assertFalse(summary["passed"])
         self.assertFalse(summary["checkpoint_drift_ok"])
+
+    def test_unsupported_allocation_explain_fails_when_missing(self):
+        report = self.representative_report()
+        report["phases"] = [
+            phase
+            for phase in report["phases"]
+            if phase["phase"] != "unsupported_allocation_explain"
+        ]
+
+        summary = self.probe.summarize_movement_report(report)
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["unsupported_allocation_explain_ok"])
 
     def test_checkpoint_monotonicity_fails_on_regression(self):
         report = self.representative_report()
