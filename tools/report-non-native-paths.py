@@ -269,8 +269,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="materialized SearchHit boundary",
         category="materialization",
-        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, and request-result cache bypass causes",
-        next_action="set closure thresholds from benchmark deltas and reduce high-delta materialized fallback families",
+        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, request-result cache bypass causes, and per-success materialization budget pass/fail rows for materialized and compatibility materialized response fetches",
+        next_action="reduce high-delta materialized fallback families that exceed the benchmark materialization budget",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"BENCHMARK_TELEMETRY_BATCH",
     ),

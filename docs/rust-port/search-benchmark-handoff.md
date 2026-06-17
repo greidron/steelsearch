@@ -53,6 +53,11 @@ Interpretation:
 - SteelSearch RSS peak is smaller than OpenSearch in both measured topologies.
 - Refresh tail remains variable across runs and should still be treated as a separate NRT architecture task.
 - Local 3-node results show SteelSearch faster than OpenSearch on all measured metrics, but SteelSearch 3-node throughput is close to 1-node throughput. Treat this as local OpenSearch comparison evidence, not proof of horizontal scaling.
+- Current benchmark reports now include a SteelSearch materialization budget
+  table for `materialized_response_fetches` and
+  `compatibility_materialized_response_fetches`, normalized by successful
+  operation count, so future runs can flag high-delta materialized fallback
+  regressions directly in the JSON/Markdown artifacts.
 
 Functional OpenSearch E2E comparison status:
 

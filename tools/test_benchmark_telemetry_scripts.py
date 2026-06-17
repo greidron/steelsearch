@@ -82,7 +82,7 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                     },
                     "operations": {
                         "lexical": {
-                            "success_count": 1,
+                            "success_count": 4,
                             "error_count": 0,
                             "latency_ms": {
                                 "p50": 1.0,
@@ -102,6 +102,39 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertIn("### Steelsearch native-path telemetry", report)
         for counter in EXPECTED_NATIVE_COUNTERS:
             self.assertIn(f"| `{counter}` |", report)
+        self.assertIn("### Steelsearch materialization budget", report)
+        self.assertIn("| `materialized_response_fetches` | 1 | 4 | 0.25 | 1.00 | `pass` |", report)
+        self.assertIn(
+            "| `compatibility_materialized_response_fetches` | 3 | 4 | 0.75 | 1.00 | `pass` |",
+            report,
+        )
+
+    def test_benchmark_matrix_json_marks_materialization_budget_failures(self):
+        matrix = load_matrix_module()
+        budgets = matrix.build_native_telemetry_budgets(
+            {
+                "steelsearch-single-node": {
+                    "resource_usage": {
+                        "materialized_response_fetches": {"delta": 5},
+                        "compatibility_materialized_response_fetches": {"delta": 1},
+                    },
+                    "operations": {
+                        "lexical": {"success_count": 2},
+                    },
+                }
+            }
+        )
+
+        scenario = budgets["steelsearch-single-node"]
+        self.assertEqual(scenario["status"], "fail")
+        self.assertEqual(
+            scenario["counters"]["materialized_response_fetches"]["status"],
+            "fail",
+        )
+        self.assertEqual(
+            scenario["counters"]["compatibility_materialized_response_fetches"]["status"],
+            "pass",
+        )
 
 
 if __name__ == "__main__":

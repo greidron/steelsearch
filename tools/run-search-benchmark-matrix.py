@@ -217,6 +217,7 @@ def main() -> int:
         for handle in reversed(handles):
             handle.stop()
 
+    results["native_telemetry_budgets"] = build_native_telemetry_budgets(results["scenarios"])
     results["comparisons"] = build_comparisons(results["scenarios"])
     summary_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     report_path.write_text(render_report(results), encoding="utf-8")
@@ -642,6 +643,61 @@ def compare_resource_usage(steel_usage: dict[str, Any], open_usage: dict[str, An
     return compared
 
 
+MATERIALIZATION_BUDGETS = {
+    "materialized_response_fetches": {
+        "max_per_success": 1.0,
+        "description": "total materialized response fetches per successful operation",
+    },
+    "compatibility_materialized_response_fetches": {
+        "max_per_success": 1.0,
+        "description": "compatibility materialized response fetches per successful operation",
+    },
+}
+
+
+def build_native_telemetry_budgets(scenarios: dict[str, Any]) -> dict[str, Any]:
+    budgets: dict[str, Any] = {}
+    for scenario_key, payload in sorted(scenarios.items()):
+        if not scenario_key.startswith("steelsearch-"):
+            continue
+        success_count = sum(
+            operation.get("success_count", 0)
+            for operation in payload.get("operations", {}).values()
+            if isinstance(operation.get("success_count", 0), (int, float))
+        )
+        counters: dict[str, Any] = {}
+        for counter, budget in MATERIALIZATION_BUDGETS.items():
+            delta = payload.get("resource_usage", {}).get(counter, {}).get("delta")
+            per_success = None
+            status = "unknown"
+            if isinstance(delta, (int, float)) and success_count > 0:
+                per_success = delta / success_count
+                status = "pass" if per_success <= budget["max_per_success"] else "fail"
+            counters[counter] = {
+                "delta": delta,
+                "success_count": success_count,
+                "per_success": per_success,
+                "max_per_success": budget["max_per_success"],
+                "status": status,
+                "description": budget["description"],
+            }
+        budgets[scenario_key] = {
+            "success_count": success_count,
+            "counters": counters,
+            "status": aggregate_budget_status(counters),
+        }
+    return budgets
+
+
+def aggregate_budget_status(counters: dict[str, Any]) -> str:
+    statuses = {payload.get("status") for payload in counters.values()}
+    if "fail" in statuses:
+        return "fail"
+    if "unknown" in statuses:
+        return "unknown"
+    return "pass"
+
+
 def slower_than_opensearch(comparison: dict[str, Any]) -> list[dict[str, Any]]:
     slower: list[dict[str, Any]] = []
     throughput = comparison["throughput_ops_per_second"]
@@ -705,6 +761,10 @@ def render_report(results: dict[str, Any]) -> str:
             ]
         )
 
+    native_telemetry_budgets = results.get("native_telemetry_budgets")
+    if not isinstance(native_telemetry_budgets, dict):
+        native_telemetry_budgets = build_native_telemetry_budgets(results.get("scenarios", {}))
+
     lines = [
         "# Search and k-NN benchmark report",
         "",
@@ -765,6 +825,7 @@ def render_report(results: dict[str, Any]) -> str:
                 )
             )
         if scenario.engine == "steelsearch":
+            native_budget = native_telemetry_budgets.get(scenario.key, {})
             lines.extend(
                 [
                     "",
@@ -778,6 +839,21 @@ def render_report(results: dict[str, Any]) -> str:
                 metric = payload.get("resource_usage", {}).get(counter, {})
                 lines.append(
                     f"| `{counter}` | {safe_number(metric.get('delta'))} | {safe_number(metric.get('after'))} |"
+                )
+            lines.extend(
+                [
+                    "",
+                    "### Steelsearch materialization budget",
+                    "",
+                    f"- Budget status: `{native_budget.get('status', 'unknown')}`",
+                    "",
+                    "| Counter | Delta | Successful ops | Per successful op | Max per successful op | Status |",
+                    "| --- | ---: | ---: | ---: | ---: | --- |",
+                ]
+            )
+            for counter, budget in native_budget.get("counters", {}).items():
+                lines.append(
+                    f"| `{counter}` | {safe_number(budget.get('delta'))} | {safe_number(budget.get('success_count'))} | {safe_number(budget.get('per_success'))} | {safe_number(budget.get('max_per_success'))} | `{budget.get('status', 'unknown')}` |"
                 )
 
     lines.extend(
