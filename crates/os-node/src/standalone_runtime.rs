@@ -95,6 +95,7 @@ pub struct RustNativeExtensionDescriptor {
     pub classname: &'static str,
     pub rest_routes: &'static [&'static str],
     pub transport_actions: &'static [&'static str],
+    pub lifecycle_hooks: &'static [&'static str],
 }
 
 pub trait RustNativeExtension {
@@ -107,6 +108,7 @@ pub struct ExtensionRegistrationEntry {
     pub feature: &'static str,
     pub rest_routes: &'static [&'static str],
     pub transport_actions: &'static [&'static str],
+    pub lifecycle_hooks: &'static [&'static str],
 }
 
 struct SteelsearchRuntimeExtension;
@@ -122,6 +124,12 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
             classname: "org.steelsearch.runtime.Plugin",
             rest_routes: &["/_cat/plugins"],
             transport_actions: &[],
+            lifecycle_hooks: &[
+                "sync_shared_runtime_state_from_disk",
+                "refuse_task_submission_if_unavailable",
+                "set_live_shutdown_in_progress",
+                "set_shared_runtime_state_recovery_failed",
+            ],
         }
     }
 }
@@ -135,6 +143,7 @@ impl RustNativeExtension for KnnCompatibilityExtension {
             classname: os_plugin_knn::KNN_EXTENSION_CLASSNAME,
             rest_routes: os_plugin_knn::KNN_EXTENSION_REST_ROUTES,
             transport_actions: os_plugin_knn::KNN_EXTENSION_TRANSPORT_ACTIONS,
+            lifecycle_hooks: &[],
         }
     }
 }
@@ -148,6 +157,7 @@ impl RustNativeExtension for MlCommonsCompatibilityExtension {
             classname: os_ml_commons::ML_COMMONS_EXTENSION_CLASSNAME,
             rest_routes: os_ml_commons::ML_COMMONS_EXTENSION_REST_ROUTES,
             transport_actions: os_ml_commons::ML_COMMONS_EXTENSION_TRANSPORT_ACTIONS,
+            lifecycle_hooks: &[],
         }
     }
 }
@@ -209,6 +219,7 @@ impl ExtensionBoundaryRegistry {
                 feature: descriptor.feature,
                 rest_routes: descriptor.rest_routes,
                 transport_actions: descriptor.transport_actions,
+                lifecycle_hooks: descriptor.lifecycle_hooks,
             })
             .collect()
     }
@@ -22978,12 +22989,19 @@ mod tests {
                 && entry.feature == "runtime-observability"
                 && entry.rest_routes == &["/_cat/plugins"]
                 && entry.transport_actions.is_empty()
+                && entry
+                    .lifecycle_hooks
+                    .contains(&"sync_shared_runtime_state_from_disk")
+                && entry
+                    .lifecycle_hooks
+                    .contains(&"refuse_task_submission_if_unavailable")
         }));
         assert!(entries.iter().any(|entry| {
             entry.module == "opensearch-knn"
                 && entry.feature == "knn-rest-compatibility"
                 && entry.rest_routes.contains(&"/_plugins/_knn/models")
                 && entry.transport_actions.is_empty()
+                && entry.lifecycle_hooks.is_empty()
         }));
         assert!(!entries
             .iter()
@@ -23004,6 +23022,12 @@ mod tests {
                 && descriptor.classname == "org.steelsearch.runtime.Plugin"
                 && descriptor.rest_routes == &["/_cat/plugins"]
                 && descriptor.transport_actions.is_empty()
+                && descriptor
+                    .lifecycle_hooks
+                    .contains(&"set_live_shutdown_in_progress")
+                && descriptor
+                    .lifecycle_hooks
+                    .contains(&"set_shared_runtime_state_recovery_failed")
         }));
         assert!(descriptors.iter().any(|descriptor| {
             descriptor.module == "opensearch-knn"
@@ -23013,6 +23037,7 @@ mod tests {
                 && descriptor.description.contains("Rust-native k-NN")
                 && descriptor.rest_routes.contains(&"/_plugins/_knn/settings")
                 && descriptor.transport_actions.is_empty()
+                && descriptor.lifecycle_hooks.is_empty()
         }));
         assert!(descriptors.iter().any(|descriptor| {
             descriptor.module == "opensearch-ml-commons"
@@ -23022,6 +23047,7 @@ mod tests {
                 && descriptor.description.contains("Rust-native ML Commons")
                 && descriptor.rest_routes.contains(&"/_plugins/_ml/connectors")
                 && descriptor.transport_actions.is_empty()
+                && descriptor.lifecycle_hooks.is_empty()
         }));
     }
 

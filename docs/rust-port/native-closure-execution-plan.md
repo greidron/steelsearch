@@ -236,8 +236,8 @@ Out of scope:
   booleans feeding the effective runtime registry, malformed manifest
   fail-closed rejection, unsupported Java plugin ABI manifest rejection,
   formal Rust-native extension API descriptors from owning crates feeding
-  registry-derived route/action/module registration tables and startup
-  transcript output per profile, plus `_cat/plugins` reporting
+  registry-derived route/action/module/lifecycle-hook registration tables and
+  startup transcript output per profile, plus `_cat/plugins` reporting
   registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while
   omitting disabled modules.
 
@@ -464,8 +464,12 @@ Already evidenced:
   default feature gates;
 - unsupported Java plugin ABI manifests fail closed;
 - formal Rust-native extension API descriptors from owning crates feed
-  registry-derived route/action/module registration tables and startup
-  transcript output per profile;
+  registry-derived route/action/module/lifecycle-hook registration tables and
+  startup transcript output per profile;
+- the Steelsearch runtime extension descriptor exposes startup/restart sync,
+  task-admission, live-shutdown, and partial-recovery lifecycle hook names,
+  while compatibility-only k-NN and ML Commons descriptors report no lifecycle
+  hooks;
 - `_cat/plugins` reports registry-enabled Steelsearch runtime, k-NN, and ML
   Commons module rows while omitting disabled modules;
 - the `module-registration` validation batch guards the manifest merge and
@@ -473,7 +477,8 @@ Already evidenced:
 
 Remaining tests:
 
-- none for the current Rust-native extension API descriptor boundary.
+- none for the current Rust-native extension API descriptor and registration
+  table boundary.
 
 Exit evidence:
 

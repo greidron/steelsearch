@@ -338,27 +338,28 @@ Current Steelsearch evidence:
   booleans feeding the effective runtime registry, malformed manifest
   fail-closed rejection, unsupported Java plugin ABI manifest rejection,
   formal Rust-native extension API descriptors from owning crates feeding
-  registry-derived route/action/module registration tables and startup
-  transcript output per profile, plus `_cat/plugins` reporting
+  registry-derived route/action/module/lifecycle-hook registration tables and
+  startup transcript output per profile, plus `_cat/plugins` reporting
   registry-enabled Steelsearch runtime, k-NN, and ML Commons module rows while
   omitting disabled modules;
 - Rust-native feature registration is now visible through startup transcript
-  and `_cat/plugins` output, while Java plugin ABI descriptors are rejected
-  before daemon runtime assembly;
+  and `_cat/plugins` output; the Steelsearch runtime extension descriptor also
+  exposes startup/restart sync, task-admission, live-shutdown, and
+  partial-recovery lifecycle hook names while Java plugin ABI descriptors are
+  rejected before daemon runtime assembly;
 - daemon runtime assembly is still monolithic compared with OpenSearch `Node`,
   but the first runtime-visible extension registry boundary is now explicit.
 
 Required next implementation direction:
 
-- expose module/feature registration as runtime wiring, not just crate
-  composition, and connect module activation/deactivation to the runtime
-  lifecycle hook surface.
+- connect module activation/deactivation to runtime lifecycle hook execution at
+  daemon and multi-node runtime boundaries.
 
 Required tests:
 
-- none for the current Rust-native extension API descriptor boundary; the next
-  gap is lifecycle behavior at daemon and multi-node runtime boundaries rather
-  than more local descriptor evidence.
+- none for the current Rust-native extension API descriptor and registration
+  table boundary; the next gap is lifecycle behavior at daemon and multi-node
+  runtime boundaries rather than more local descriptor evidence.
 
 ## Gap Class 4: User-Facing Runtime Identity And Config Hygiene
 
