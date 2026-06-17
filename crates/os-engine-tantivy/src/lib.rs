@@ -3851,9 +3851,6 @@ impl EngineStore {
         fetch_subphases: Vec<FetchSubphaseResult>,
         source_projection_fields: Option<&[String]>,
     ) -> EngineResult<Option<SearchResponse>> {
-        if !aggregation_map.is_empty() {
-            return Ok(None);
-        }
         let Some(index_name) = single_index_name else {
             return Ok(None);
         };
@@ -3870,14 +3867,50 @@ impl EngineStore {
         else {
             return Ok(None);
         };
-        Ok(Some(Self::standard_requested_page_search_response(
+        let Some(aggregations) = index.collect_aggregations_native(query, aggregation_map)? else {
+            return Ok(Some(standard_search_response(
+                total_hits,
+                page_hits,
+                serde_json::json!({}),
+                "matched refreshed documents with vector-native cached page fetch",
+                if size == 0 {
+                    SearchPhaseResult::skipped(
+                        SearchPhase::Fetch,
+                        "vector-native cached page fetch skipped hit materialization because size=0",
+                    )
+                } else {
+                    SearchPhaseResult::completed(
+                        SearchPhase::Fetch,
+                        "materialized only the requested vector-native cached page",
+                    )
+                },
+                fetch_subphases,
+            )));
+        };
+        let query_phase_detail = if aggregation_map.is_empty() {
+            "matched refreshed documents with vector-native cached page fetch"
+        } else {
+            "matched refreshed documents with vector-native cached page+aggregation fetch"
+        };
+        let skipped_fetch_phase_detail = if aggregation_map.is_empty() {
+            "vector-native cached page fetch skipped hit materialization because size=0"
+        } else {
+            "vector-native cached page+aggregation path skipped hit materialization because size=0"
+        };
+        let completed_fetch_phase_detail = if aggregation_map.is_empty() {
+            "materialized only the requested vector-native cached page"
+        } else {
+            "materialized only the requested vector-native cached page with native aggregation collection"
+        };
+        Ok(Some(Self::standard_requested_page_search_response_with_fetch_materialization(
             total_hits,
             page_hits,
-            serde_json::json!({}),
-            "matched refreshed documents with vector-native cached page fetch",
-            "vector-native cached page fetch skipped hit materialization because size=0",
-            "materialized only the requested vector-native cached page",
+            aggregations,
+            query_phase_detail,
+            skipped_fetch_phase_detail,
+            completed_fetch_phase_detail,
             size,
+            aggregation_map_contains_direct_top_hits(aggregation_map),
             source_projection_fields,
             fetch_subphases,
         )))
@@ -135005,17 +135038,35 @@ mod tests {
             highlight: None,
             explain: false,
         };
-        engine.search(search_request()).unwrap();
-        engine.search(search_request()).unwrap();
+        let first_response = engine.search(search_request()).unwrap();
+        let second_response = engine.search(search_request()).unwrap();
+        assert_eq!(search_hit_ids(&first_response.hits), vec!["1"]);
+        assert_eq!(search_hit_ids(&second_response.hits), vec!["1"]);
+        assert_eq!(
+            first_response.aggregations["services"]["buckets"],
+            serde_json::json!([{ "key": "api", "doc_count": 1 }])
+        );
+        assert_eq!(
+            second_response.aggregations["services"]["buckets"],
+            serde_json::json!([{ "key": "api", "doc_count": 1 }])
+        );
 
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
         let details = engine.search_cache_telemetry_details().unwrap();
         let vectors = details.indices.get("vectors").expect("vectors cache detail");
-        assert_eq!(telemetry.request_result_cache_entries, 0);
-        assert_eq!(telemetry.request_result_cache_hits, 0);
-        assert_eq!(telemetry.request_result_cache_misses, 0);
+        assert_eq!(telemetry.request_result_cache_entries, 1);
+        assert!(telemetry.request_result_cache_hits > 0);
+        assert!(telemetry.request_result_cache_misses > 0);
         assert_eq!(telemetry.request_result_cache_evictions, 0);
-        assert!(vectors.request_result_cache_fields.is_empty());
+        let request_result_field = vectors
+            .request_result_cache_fields
+            .get("embedding")
+            .expect("embedding request-result detail");
+        assert!(request_result_field.request_result_cache_hits > 0);
+        assert!(request_result_field.request_result_cache_misses > 0);
+        assert_eq!(request_result_field.request_result_cache_capacity_evictions, 0);
+        assert_eq!(request_result_field.request_result_cache_refresh_invalidations, 0);
+        assert_eq!(request_result_field.request_result_cache_stale_invalidations, 0);
         let vector_graph_field = vectors
             .vector_graph_cache_fields
             .get("embedding")

@@ -115,7 +115,7 @@ PROBES: tuple[Probe, ...] = (
             r"cache_knn_search_result",
             r"search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
         ),
-        risk="request-result cache is wired for pure single-index KNN, but broader aggregation/highlight/explain combinations still bypass it",
+        risk="request-result cache is wired for pure single-index KNN with native aggregation/sort, but highlight/explain and hybrid vector combinations still bypass it",
     ),
     Probe(
         name="production runtime controls",
@@ -236,8 +236,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="runtime search cache hooks",
         category="runtime",
-        status="wired for pure single-index KNN",
-        next_action="extend request-result cache coverage to aggregation, highlight, explain, and hybrid vector combinations",
+        status="wired for pure single-index KNN plus native aggregation/sort",
+        next_action="extend request-result cache coverage to highlight, explain, and hybrid vector combinations",
         evidence_path=ENGINE_SOURCE,
         evidence_pattern=r"search_hits_page_for_knn_query_cached",
     ),
