@@ -32,7 +32,10 @@ use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Write};
 use std::ops::Bound;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, RwLock,
+};
 use tantivy::aggregation::agg_req::Aggregations as TantivyAggregations;
 use tantivy::aggregation::AggregationCollector;
 use tantivy::collector::{Count, TopDocs};
@@ -110,6 +113,7 @@ pub struct TantivyEngine {
 #[derive(Debug, Default)]
 struct EngineStore {
     indices: BTreeMap<String, StoredIndex>,
+    search_execution_telemetry: SearchExecutionTelemetry,
 }
 
 #[derive(Debug)]
@@ -611,6 +615,45 @@ struct StoredVectorField {
 #[derive(Clone, Debug, Default)]
 struct SearchCollectorTelemetry {
     knn_collector_bytes_by_field: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Default)]
+struct SearchExecutionTelemetry {
+    materialized_response_fetches: AtomicU64,
+    materialized_response_avoided_fetches: AtomicU64,
+    compatibility_materialized_response_fetches: AtomicU64,
+}
+
+impl SearchExecutionTelemetry {
+    fn record_materialized_response_fetch(&self) {
+        self.materialized_response_fetches
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_materialized_response_avoided_fetch(&self) {
+        self.materialized_response_avoided_fetches
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_compatibility_materialized_response_fetch(&self) {
+        self.compatibility_materialized_response_fetches
+            .fetch_add(1, Ordering::Relaxed);
+        self.record_materialized_response_fetch();
+    }
+
+    fn materialized_response_fetches(&self) -> u64 {
+        self.materialized_response_fetches.load(Ordering::Relaxed)
+    }
+
+    fn materialized_response_avoided_fetches(&self) -> u64 {
+        self.materialized_response_avoided_fetches
+            .load(Ordering::Relaxed)
+    }
+
+    fn compatibility_materialized_response_fetches(&self) -> u64 {
+        self.compatibility_materialized_response_fetches
+            .load(Ordering::Relaxed)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1377,6 +1420,15 @@ impl IndexEngine for TantivyEngine {
             .read()
             .expect("tantivy engine store rwlock poisoned");
         let mut snapshot = SearchCacheTelemetrySnapshot::default();
+        snapshot.materialized_response_fetches = store
+            .search_execution_telemetry
+            .materialized_response_fetches();
+        snapshot.materialized_response_avoided_fetches = store
+            .search_execution_telemetry
+            .materialized_response_avoided_fetches();
+        snapshot.compatibility_materialized_response_fetches = store
+            .search_execution_telemetry
+            .compatibility_materialized_response_fetches();
         for index in store.indices.values() {
             snapshot.request_result_cache_bytes = snapshot
                 .request_result_cache_bytes
@@ -4410,6 +4462,13 @@ impl EngineStore {
             } else {
                 fetch_subphases
             };
+            if size == 0 {
+                self.search_execution_telemetry
+                    .record_materialized_response_avoided_fetch();
+            } else {
+                self.search_execution_telemetry
+                    .record_compatibility_materialized_response_fetch();
+            }
             return Ok((
                 standard_search_response(
                     total_hits,
@@ -4544,6 +4603,13 @@ impl EngineStore {
         } else {
             "materialized only the requested multi-index native page"
         };
+        if size == 0 {
+            self.search_execution_telemetry
+                .record_materialized_response_avoided_fetch();
+        } else {
+            self.search_execution_telemetry
+                .record_materialized_response_fetch();
+        }
         let reusable_context = self
             .optional_reusable_query_context_for_multi_index_hits_with_total_hits(
                 query,
@@ -128727,6 +128793,85 @@ mod tests {
                 && phase.description
                     == "size=0 compatibility path avoided top-level hit materialization"
         }));
+    }
+
+    #[test]
+    fn compatibility_materialization_updates_search_telemetry_counters() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "body": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, body) in [
+            ("1", "Apricot Alpha"),
+            ("2", "apricot beta"),
+            ("3", "banana"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "body": body }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let search_request = |size| SearchRequest {
+            indices: vec!["logs-000001".to_string()],
+            query: serde_json::json!({
+                "wildcard": {
+                    "body": {
+                        "value": "APRI*",
+                        "case_insensitive": true
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: Vec::new(),
+            from: 0,
+            size,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_include: None,
+            source_excludes: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+
+        let page_response = engine.search(search_request(10)).unwrap();
+        assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "2"]);
+        assert!(page_response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Fetch
+                && phase.description == "compatibility materialization materialized requested hits"
+        }));
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 1);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let size_zero_response = engine.search(search_request(0)).unwrap();
+        assert_eq!(size_zero_response.total_hits, 2);
+        assert!(size_zero_response.hits.is_empty());
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 1);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
     }
 
     #[test]

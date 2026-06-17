@@ -509,6 +509,9 @@ pub struct SearchCacheTelemetrySnapshot {
     pub fast_field_cache_invalidated_entries: u64,
     pub fast_field_cache_refresh_invalidations: u64,
     pub fast_field_cache_stale_invalidations: u64,
+    pub materialized_response_fetches: u64,
+    pub materialized_response_avoided_fetches: u64,
+    pub compatibility_materialized_response_fetches: u64,
 }
 
 impl SearchCacheTelemetrySnapshot {

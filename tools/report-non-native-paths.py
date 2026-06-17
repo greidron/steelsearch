@@ -63,6 +63,8 @@ PROBES: tuple[Probe, ...] = (
         patterns=(
             r"collect_materialized",
             r"compatibility materialization",
+            r"materialized_response_fetches",
+            r"compatibility_materialized_response_fetches",
             r"materialized only the requested",
             r"SearchHit",
         ),
@@ -190,10 +192,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="materialized SearchHit boundary",
         category="materialization",
-        status="present",
-        next_action="add counters for when materialized compatibility response path is selected",
+        status="present with telemetry counters",
+        next_action="feed materialized response counters into benchmark summaries and closure thresholds",
         evidence_path=ENGINE_SOURCE,
-        evidence_pattern=r"collect_materialized",
+        evidence_pattern=r"materialized_response_fetches",
     ),
     Family(
         name="pure knn",
