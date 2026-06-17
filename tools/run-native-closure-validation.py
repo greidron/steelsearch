@@ -847,6 +847,13 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "overlapping_maintenance_calls_distinguish_accepted_pending_from_completed_effect",
+        "route-backpressure-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated",
         "route-backpressure-runtime-state",
         package="os-node",

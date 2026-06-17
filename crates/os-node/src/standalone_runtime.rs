@@ -38380,6 +38380,162 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_maintenance_calls_distinguish_accepted_pending_from_completed_effect() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/maintenance-overlap-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index.status, 200);
+        let index_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/maintenance-overlap-000001/_doc/doc-1")
+                .with_json_body(serde_json::json!({
+                    "message": "refresh completion should make this visible to realtime=false get"
+                })),
+        );
+        assert_eq!(index_doc.status, 201);
+
+        let mut before_refresh_get =
+            RestRequest::new(RestMethod::Get, "/maintenance-overlap-000001/_doc/doc-1");
+        before_refresh_get
+            .query_params
+            .insert("realtime".to_string(), "false".to_string());
+        let before_refresh_get = node.handle_rest_request(before_refresh_get);
+        assert_eq!(before_refresh_get.status, 404);
+        {
+            let mut counters = node
+                .runtime_thread_pool_counters
+                .lock()
+                .expect("runtime thread pool counters lock poisoned");
+            counters.insert(
+                "maintenance".to_string(),
+                RuntimeThreadPoolCounters {
+                    active: 1,
+                    queue: 0,
+                    rejected: 0,
+                    completed: 0,
+                },
+            );
+        }
+
+        let queued_refresh_a_node = node.clone();
+        let queued_refresh_a = std::thread::spawn(move || {
+            queued_refresh_a_node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/maintenance-overlap-000001/_refresh",
+            ))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 1);
+
+        let queued_refresh_b_node = node.clone();
+        let queued_refresh_b = std::thread::spawn(move || {
+            queued_refresh_b_node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/maintenance-overlap-000001/_refresh",
+            ))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 2);
+
+        let queued_flush_node = node.clone();
+        let queued_flush = std::thread::spawn(move || {
+            queued_flush_node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/maintenance-overlap-000001/_flush",
+            ))
+        });
+        wait_for_runtime_thread_pool_queue_depth(&node, "maintenance", 3);
+
+        let mut pending_get =
+            RestRequest::new(RestMethod::Get, "/maintenance-overlap-000001/_doc/doc-1");
+        pending_get
+            .query_params
+            .insert("realtime".to_string(), "false".to_string());
+        let pending_get = node.handle_rest_request(pending_get);
+        assert_eq!(pending_get.status, 404);
+
+        let stats_while_pending =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_while_pending.status, 200);
+        let first_node = stats_while_pending.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 3);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 0);
+
+        let mut cat_while_pending =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/maintenance");
+        cat_while_pending
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat = node.handle_rest_request(cat_while_pending);
+        assert_eq!(cat.status, 200);
+        let rows = cat.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows[0]["active"], "1");
+        assert_eq!(rows[0]["queue"], "3");
+        assert_eq!(rows[0]["completed"], "0");
+
+        release_runtime_thread_pool_active_slot(&node, "maintenance");
+        let refresh_a = queued_refresh_a
+            .join()
+            .expect("first queued refresh request thread should not panic");
+        let refresh_b = queued_refresh_b
+            .join()
+            .expect("second queued refresh request thread should not panic");
+        let flush = queued_flush
+            .join()
+            .expect("queued flush request thread should not panic");
+        assert_eq!(refresh_a.status, 200);
+        assert_eq!(refresh_a.body["_shards"]["total"], 1);
+        assert_eq!(refresh_b.status, 200);
+        assert_eq!(refresh_b.body["_shards"]["total"], 1);
+        assert_eq!(flush.status, 200);
+        assert_eq!(flush.body["_shards"]["total"], 1);
+
+        let mut completed_get =
+            RestRequest::new(RestMethod::Get, "/maintenance-overlap-000001/_doc/doc-1");
+        completed_get
+            .query_params
+            .insert("realtime".to_string(), "false".to_string());
+        let completed_get = node.handle_rest_request(completed_get);
+        assert_eq!(completed_get.status, 200);
+        assert_eq!(
+            completed_get.body["_source"]["message"],
+            "refresh completion should make this visible to realtime=false get"
+        );
+
+        let stats_after_drain =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats_after_drain.status, 200);
+        let first_node = stats_after_drain.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("node stats body to contain one node");
+        assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 0);
+        assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 3);
+    }
+
+    #[test]
     fn snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

@@ -283,17 +283,15 @@ internal subsystems, especially:
 | --- | --- |
 | Worker ownership | there is no authoritative background worker owner for accepted maintenance work once the REST route returns |
 | Retry and failure policy | current evidence does not prove whether failed maintenance work is retried, abandoned, or surfaced through an observable task/error channel |
-| Progress visibility | there is no operator-visible contract for in-progress, partially-applied, or completed maintenance state beyond bounded immediate response envelopes |
-| Cross-surface coordination | there is no contract for how tier changes, close/open, refresh/flush, and snapshot restore interact when they overlap on the same index or data stream |
+| Progress visibility | overlapping refresh/flush requests on the same target now distinguish accepted-but-pending queue telemetry from completed refresh readback, but there is still no daemon-level operator-visible contract for partially-applied maintenance state |
+| Cross-surface coordination | bounded overlapping refresh/flush on the same target is fixture-covered; there is still no contract for how tier changes, close/open, and snapshot restore interact when they overlap on the same index or data stream |
 | Cleanup guarantees | there is no evidence for whether accepted maintenance work guarantees cleanup of temporary state, leases, or intermediate markers after failure |
 | Restart interaction | there is no evidence for whether maintenance work is resumed, rolled back, or forgotten across shutdown and restart |
 
 ### Required tests
 
-- add fixture-backed distinction for:
-  - accepted maintenance request versus completed maintenance effect;
-  - repeated maintenance calls while prior work is still logically in flight;
-  - overlapping maintenance operations on the same target.
+- no additional fixture-backed refresh/flush overlap distinctions remain for the
+  bounded maintenance profile.
 - add restart-smoke coverage for:
   - maintenance work accepted before shutdown;
   - tier transition interrupted by restart;
