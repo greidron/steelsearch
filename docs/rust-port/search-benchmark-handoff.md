@@ -144,9 +144,11 @@ Documentation changed:
 - `StoredDocument` now carries top-level field caches:
   - `top_level_scalar_fields: BTreeMap<String, Value>`;
   - `top_level_string_fields: BTreeMap<String, String>`;
-  - `top_level_f64_fields: BTreeMap<String, f64>`.
+  - `top_level_f64_fields: BTreeMap<String, f64>`;
+  - `top_level_date_millis_fields: BTreeMap<String, i64>`.
 - Document-backed `terms` uses `top_level_string_fields` first for top-level string fields.
 - Document-backed `range` uses `top_level_f64_fields` first for top-level numeric fields.
+- Document-backed `date_histogram` uses `top_level_date_millis_fields` first for top-level date fields.
 - Existing JSON source lookup remains the compatibility fallback for dotted fields, arrays, mixed values, non-scalar values, and missing typed cache entries.
 
 ## Important rejected attempts

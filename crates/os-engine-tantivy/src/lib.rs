@@ -145,6 +145,7 @@ struct StoredDocument {
     top_level_scalar_fields: BTreeMap<String, Value>,
     top_level_string_fields: BTreeMap<String, String>,
     top_level_f64_fields: BTreeMap<String, f64>,
+    top_level_date_millis_fields: BTreeMap<String, i64>,
     vector_fields: BTreeMap<String, StoredVectorField>,
 }
 
@@ -5315,6 +5316,7 @@ impl StoredIndex {
                 top_level_scalar_fields: extract_top_level_scalar_fields(&source),
                 top_level_string_fields: extract_top_level_string_fields(&source),
                 top_level_f64_fields: extract_top_level_f64_fields(&source),
+                top_level_date_millis_fields: extract_top_level_date_millis_fields(&source),
                 source,
             },
         );
@@ -5371,6 +5373,7 @@ impl StoredIndex {
                 top_level_scalar_fields: extract_top_level_scalar_fields(&source),
                 top_level_string_fields: extract_top_level_string_fields(&source),
                 top_level_f64_fields: extract_top_level_f64_fields(&source),
+                top_level_date_millis_fields: extract_top_level_date_millis_fields(&source),
                 metadata,
                 coordination,
                 source,
@@ -5439,6 +5442,7 @@ impl StoredIndex {
                 top_level_scalar_fields: extract_top_level_scalar_fields(&source),
                 top_level_string_fields: extract_top_level_string_fields(&source),
                 top_level_f64_fields: extract_top_level_f64_fields(&source),
+                top_level_date_millis_fields: extract_top_level_date_millis_fields(&source),
                 source,
             },
         );
@@ -8811,6 +8815,9 @@ fn replay_operations(
                 top_level_scalar_fields: extract_top_level_scalar_fields(&operation.source),
                 top_level_string_fields: extract_top_level_string_fields(&operation.source),
                 top_level_f64_fields: extract_top_level_f64_fields(&operation.source),
+                top_level_date_millis_fields: extract_top_level_date_millis_fields(
+                    &operation.source,
+                ),
                 source: operation.source,
             },
         );
@@ -8973,6 +8980,22 @@ fn extract_top_level_f64_fields(source: &Value) -> BTreeMap<String, f64> {
             object
                 .iter()
                 .filter_map(|(field, value)| value.as_f64().map(|value| (field.clone(), value)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_top_level_date_millis_fields(source: &Value) -> BTreeMap<String, i64> {
+    source
+        .as_object()
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(field, value)| {
+                    let timestamp = parse_offset_datetime_value(value)?;
+                    let millis = timestamp.unix_timestamp_nanos() / 1_000_000;
+                    i64::try_from(millis).ok().map(|millis| (field.clone(), millis))
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -18176,8 +18199,20 @@ fn coarsen_auto_date_histogram_buckets_until_target(
 }
 
 fn date_histogram_bucket(value: &Value, interval: &str) -> Option<(i64, String)> {
-    let interval = normalize_date_histogram_interval(interval)?;
     let timestamp = parse_offset_datetime_value(value)?;
+    let millis = timestamp.unix_timestamp_nanos() / 1_000_000;
+    date_histogram_bucket_from_epoch_millis(i64::try_from(millis).ok()?, interval)
+}
+
+fn date_histogram_bucket_from_epoch_millis(
+    epoch_millis: i64,
+    interval: &str,
+) -> Option<(i64, String)> {
+    let interval = normalize_date_histogram_interval(interval)?;
+    let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
+        i128::from(epoch_millis).saturating_mul(1_000_000),
+    )
+    .ok()?;
     let year = timestamp.year();
     let month = timestamp.month() as u32;
     let day = u32::from(timestamp.day());
@@ -33949,6 +33984,21 @@ fn collect_date_histogram_aggregation_from_documents(
     let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
     let top_level_field = !date_histogram.field.contains('.');
     for document in documents {
+        if top_level_field {
+            if let Some(epoch_millis) = document
+                .top_level_date_millis_fields
+                .get(&date_histogram.field)
+                .copied()
+            {
+                if let Some((bucket_key, bucket_string)) =
+                    date_histogram_bucket_from_epoch_millis(epoch_millis, &date_histogram.interval)
+                {
+                    let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
+                    entry.1 += 1;
+                }
+                continue;
+            }
+        }
         let Some(raw) = document_source_value_for_prechecked_aggregation_field(
             document,
             &date_histogram.field,
@@ -142067,6 +142117,14 @@ mod tests {
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
+        assert_eq!(
+            index.documents["1"].top_level_date_millis_fields["event_time"],
+            1_704_096_000_000
+        );
+        assert_eq!(
+            index.documents["2"].top_level_date_millis_fields["event_time"],
+            1_704_103_200_000
+        );
         let native = index
             .collect_aggregations_native(&query, &aggregations)
             .unwrap()

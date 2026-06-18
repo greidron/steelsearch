@@ -1618,6 +1618,20 @@ Artifacts:
 - `target/search-benchmark-facet-typed-scalar-cache-5000/summary.json`
 - `target/search-benchmark-matrix-minilm-knn-typed-scalar-cache/summary.json`
 
+## 2026-06-18 - Top-level date millis facet cache
+
+Change applied after the retained typed scalar cache:
+
+- Added `top_level_date_millis_fields: BTreeMap<String, i64>` to `StoredDocument`.
+- Document-backed `date_histogram` aggregation now checks the typed top-level date millis cache before reading JSON source for benchmark-style fields such as `event_time`.
+- Existing source lookup remains the fallback for dotted fields, arrays, mixed or non-date values, and missing typed cache entries.
+
+Expected effect:
+
+- This removes repeated date parsing/source-value access from the top-level `date_histogram` hot path.
+- It is a narrow continuation of the retained typed cache work, not a snapshot/binary compatibility path.
+- Any remaining facet median gap should be treated as a real doc-values/columnar aggregation follow-up rather than OpenSearch response-format compatibility work.
+
 ## 2026-06-14 - Rejected attempt: refresh request target snapshot
 
 Benchmark profile: `minilm-knn`, corpus size `5000`, duration `30s`, clients `4`.
