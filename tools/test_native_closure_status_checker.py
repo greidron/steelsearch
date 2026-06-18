@@ -27,6 +27,10 @@ def valid_report():
         "rolling_upgrade_coverage",
     ]
     return {
+        "metadata": {
+            "generated_at_epoch_seconds": 1,
+            "git_head": "abc123",
+        },
         "summary": {
             "passed": True,
             "current_evidence_ready": True,

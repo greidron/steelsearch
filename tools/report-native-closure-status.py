@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,7 @@ def main() -> int:
         peer_backpressure=peer_backpressure,
         final_cutover=final_cutover,
         require_final_cutover=args.require_final_cutover,
+        metadata=build_metadata(),
     )
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -162,11 +164,13 @@ def build_status_report(
     peer_backpressure: dict[str, Any],
     final_cutover: dict[str, Any],
     require_final_cutover: bool,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     current_ready = bool(current_evidence.get("passed")) and bool(peer_backpressure.get("passed"))
     final_ready = bool(final_cutover.get("passed"))
     passed = current_ready and (final_ready or not require_final_cutover)
     return {
+        "metadata": metadata or {},
         "summary": {
             "passed": passed,
             "current_evidence_ready": current_ready,
@@ -181,6 +185,27 @@ def build_status_report(
             "final_cutover": final_cutover,
         },
     }
+
+
+def build_metadata() -> dict[str, Any]:
+    return {
+        "generated_at_epoch_seconds": int(time.time()),
+        "git_head": git_output("rev-parse", "HEAD"),
+    }
+
+
+def git_output(*args: str) -> str | None:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
 
 
 def status_name(current_ready: bool, final_ready: bool, require_final_cutover: bool) -> str:

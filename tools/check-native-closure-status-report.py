@@ -43,11 +43,17 @@ def validate_report(
     require_final_cutover: bool = False,
 ) -> dict[str, Any]:
     errors: list[str] = []
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     gates = payload.get("gates") if isinstance(payload.get("gates"), dict) else {}
     current = gate(gates, "current_evidence")
     peer = gate(gates, "runtime_peer_backpressure_current")
     final = gate(gates, "final_cutover")
+
+    if not isinstance(metadata.get("generated_at_epoch_seconds"), int):
+        errors.append("metadata.generated_at_epoch_seconds is missing or not an integer")
+    if not isinstance(metadata.get("git_head"), str) or not metadata.get("git_head"):
+        errors.append("metadata.git_head is missing or not a string")
 
     if summary.get("current_evidence_ready") is not True:
         errors.append("summary.current_evidence_ready is not true")

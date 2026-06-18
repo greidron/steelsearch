@@ -31,8 +31,10 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             peer_backpressure={"passed": True},
             final_cutover={"passed": False, "status": "pending"},
             require_final_cutover=False,
+            metadata={"git_head": "abc123", "generated_at_epoch_seconds": 1},
         )
 
+        self.assertEqual(report["metadata"]["git_head"], "abc123")
         self.assertTrue(report["summary"]["passed"])
         self.assertTrue(report["summary"]["current_evidence_ready"])
         self.assertFalse(report["summary"]["final_cutover_ready"])
@@ -181,6 +183,8 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             stdout_payload = json.loads(result.stdout)
             file_payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(stdout_payload["summary"], file_payload["summary"])
+            self.assertIn("git_head", file_payload["metadata"])
+            self.assertIn("generated_at_epoch_seconds", file_payload["metadata"])
             self.assertEqual(file_payload["summary"]["current_evidence_ready"], True)
 
 
