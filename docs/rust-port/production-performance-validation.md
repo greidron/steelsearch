@@ -235,3 +235,7 @@ capture can rerun the affected suite without reconstructing command-line
 arguments from the fixture table. When missing case names are known, these
 commands include repeated `--case` filters and the underlying compatibility
 runners fail closed if a requested case name is not present in the fixture.
+When `tools/run-unified-opensearch-e2e.py --run --case ...` is used, the
+partial case report is merged into the best existing suite report by case name
+before the unified audit is regenerated, so targeted reruns can fill missing
+evidence without discarding previously passing cases from the same fixture.

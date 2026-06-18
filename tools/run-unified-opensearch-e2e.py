@@ -120,6 +120,15 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
     report_path = output_dir / suite.report
     if suite.runner is None:
         return collect_suite(suite, output_dir, note="no live runner is registered for this suite")
+    baseline_report = None
+    if args.case:
+        _, _, baseline_report, _ = load_best_report(
+            suite.report,
+            ROOT / suite.fixture,
+            output_dir,
+            recursive_target_scan=not args.no_recursive_target_scan,
+            exclude_paths={report_path.resolve()},
+        )
     command = [
         sys.executable,
         str(ROOT / suite.runner),
@@ -142,6 +151,10 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
         command.extend(["--case", case_name])
     started = time.time()
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
+    if args.case and baseline_report is not None and report_path.exists():
+        partial_report = load_json(report_path)
+        merged_report = merge_case_reports(baseline_report, partial_report)
+        report_path.write_text(json.dumps(merged_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     result = collect_suite(suite, output_dir)
     result["run"] = {
         "command": command,
@@ -186,6 +199,7 @@ def load_best_report(
     fixture_path: Path,
     output_dir: Path,
     recursive_target_scan: bool,
+    exclude_paths: set[Path] | None = None,
 ) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
     candidates: list[tuple[Path, str]] = []
     output_report = output_dir / report_name
@@ -207,6 +221,8 @@ def load_best_report(
     unique_candidates = []
     for path, source in candidates:
         resolved = path.resolve()
+        if exclude_paths and resolved in exclude_paths:
+            continue
         if resolved in seen:
             continue
         seen.add(resolved)
@@ -226,6 +242,44 @@ def load_best_report(
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def merge_case_reports(base: dict[str, Any], partial: dict[str, Any]) -> dict[str, Any]:
+    merged = json.loads(json.dumps(base))
+    for field in ("name", "fixture", "targets"):
+        if field in partial:
+            merged[field] = partial[field]
+
+    cases_by_name = {
+        case.get("name"): case
+        for case in merged.get("cases", [])
+        if isinstance(case, dict) and case.get("name")
+    }
+    for case in partial.get("cases", []):
+        if isinstance(case, dict) and case.get("name"):
+            cases_by_name[case["name"]] = case
+    merged["cases"] = list(cases_by_name.values())
+    merged["summary"] = recompute_case_summary(merged["cases"], merged.get("summary") or {})
+    return merged
+
+
+def recompute_case_summary(cases: list[dict[str, Any]], original: dict[str, Any]) -> dict[str, Any]:
+    summary = dict(original)
+    passed = sum(1 for case in cases if case.get("status") == "passed")
+    failed = sum(1 for case in cases if case.get("status") == "failed")
+    skipped = sum(1 for case in cases if case.get("status") == "skipped")
+    summary.update({"passed": passed, "failed": failed, "skipped": skipped})
+
+    if any("area" in case for case in cases):
+        by_area: dict[str, dict[str, int]] = {}
+        for case in cases:
+            area = str(case.get("area") or "unknown")
+            area_summary = by_area.setdefault(area, {"passed": 0, "failed": 0, "skipped": 0})
+            status = case.get("status")
+            if status in area_summary:
+                area_summary[status] += 1
+        summary["by_area"] = by_area
+    return summary
 
 
 def report_fixture_mismatch(report: dict[str, Any], expected_fixture: Path) -> bool:

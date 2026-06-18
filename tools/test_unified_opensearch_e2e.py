@@ -122,6 +122,37 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("--case case-a --case case-b", commands["unified_command"])
         self.assertIn("--case case-a --case case-b", commands["direct_command"])
 
+    def test_merge_case_reports_preserves_existing_cases_and_recomputes_summary(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merge")
+        base = {
+            "name": "synthetic",
+            "fixture": "/tmp/fixture.json",
+            "targets": {"steelsearch": "old", "opensearch": "old"},
+            "summary": {"passed": 1, "failed": 1, "skipped": 0},
+            "cases": [
+                {"name": "existing-pass", "status": "passed", "area": "search"},
+                {"name": "rerun-me", "status": "failed", "area": "search"},
+            ],
+        }
+        partial = {
+            "targets": {"steelsearch": "new", "opensearch": "new"},
+            "summary": {"passed": 1, "failed": 0, "skipped": 0},
+            "cases": [
+                {"name": "rerun-me", "status": "passed", "area": "search"},
+            ],
+        }
+
+        merged = runner.merge_case_reports(base, partial)
+
+        cases = {case["name"]: case for case in merged["cases"]}
+        self.assertEqual(cases["existing-pass"]["status"], "passed")
+        self.assertEqual(cases["rerun-me"]["status"], "passed")
+        self.assertEqual(merged["targets"], {"steelsearch": "new", "opensearch": "new"})
+        self.assertEqual(merged["summary"]["passed"], 2)
+        self.assertEqual(merged["summary"]["failed"], 0)
+        self.assertEqual(merged["summary"]["skipped"], 0)
+        self.assertEqual(merged["summary"]["by_area"]["search"]["passed"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
