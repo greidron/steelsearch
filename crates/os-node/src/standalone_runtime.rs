@@ -7669,7 +7669,11 @@ impl SteelNode {
             serde_json::from_slice::<Value>(&request.body)
                 .unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         };
-        let template_output = match self.resolve_template_source(template_id, &payload, false) {
+        let template_output = match self.resolve_template_source(
+            template_id,
+            &payload,
+            TemplateSourceValidation::AllowNonObject,
+        ) {
             Ok(source) => source,
             Err(response) => return response,
         };
@@ -8189,7 +8193,11 @@ impl SteelNode {
         } else {
             serde_json::from_slice::<Value>(&request.body).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         };
-        let body = self.resolve_template_source(template_id, &payload, true)?;
+        let body = self.resolve_template_source(
+            template_id,
+            &payload,
+            TemplateSourceValidation::SearchJsonParseError,
+        )?;
         let requested_target = target.unwrap_or("_all");
         let mut search_request = RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
             .with_json_body(body);
@@ -8206,7 +8214,7 @@ impl SteelNode {
         &self,
         template_id: Option<&str>,
         payload: &Value,
-        json_parse_error_for_non_object: bool,
+        validation: TemplateSourceValidation,
     ) -> Result<Value, RestResponse> {
         let stored_template_id = template_id.or_else(|| payload.get("id").and_then(Value::as_str));
         let source = if let Some(source) = payload.get("source") {
@@ -8221,7 +8229,7 @@ impl SteelNode {
         } else {
             serde_json::json!({ "query": { "match_all": {} } })
         };
-        validate_template_source(&source, json_parse_error_for_non_object)?;
+        validate_template_source(&source, validation)?;
         Ok(substitute_template_params(
             &source,
             payload.get("params").and_then(Value::as_object),
@@ -17532,18 +17540,25 @@ impl SteelNode {
     }
 }
 
+#[derive(Clone, Copy)]
+enum TemplateSourceValidation {
+    AllowNonObject,
+    SearchJsonParseError,
+}
+
 fn validate_template_source(
     source: &Value,
-    json_parse_error_for_non_object: bool,
+    validation: TemplateSourceValidation,
 ) -> Result<(), RestResponse> {
     if source.is_object() {
         Ok(())
-    } else if json_parse_error_for_non_object {
-        Err(build_json_parse_search_response(
-            json_parse_reason_for_template_source(source),
-        ))
     } else {
-        Err(build_parsing_search_response("malformed search template source"))
+        match validation {
+            TemplateSourceValidation::AllowNonObject => Ok(()),
+            TemplateSourceValidation::SearchJsonParseError => Err(build_json_parse_search_response(
+                json_parse_reason_for_template_source(source),
+            )),
+        }
     }
 }
 
@@ -32108,11 +32123,10 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 }),
             ),
         );
-        assert_eq!(malformed_inline_render.status, 400);
-        assert_eq!(malformed_inline_render.body["error"]["type"], "parsing_exception");
+        assert_eq!(malformed_inline_render.status, 200);
         assert_eq!(
-            malformed_inline_render.body["error"]["reason"],
-            "malformed search template source"
+            malformed_inline_render.body["template_output"],
+            "not-an-object"
         );
 
         assert_eq!(
