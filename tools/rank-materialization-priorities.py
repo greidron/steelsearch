@@ -17,6 +17,11 @@ COUNTERS = (
 
 OPERATION_FAMILIES = {
     "fallback_query_string": "query_string/simple_query_string compatibility materialization",
+    "fallback_terms_set": "terms_set compatibility materialization",
+    "fallback_distance_feature": "distance_feature compatibility materialization",
+    "fallback_rank_feature": "rank_feature compatibility materialization",
+    "fallback_more_like_this": "more_like_this compatibility materialization",
+    "fallback_case_insensitive_wildcard": "case-insensitive wildcard compatibility materialization",
     "lexical": "lexical query materialization",
     "ranking": "ranking query materialization",
     "facet": "aggregation materialization",

@@ -108,6 +108,17 @@ Out of scope:
   report now passes with `ranked_operation_count=0`,
   `materialized_response_fetches=0`, and
   `compatibility_materialized_response_fetches=0`.
+  A broader 2026-06-18 single-node Steelsearch matrix at
+  `target/materialization-priority-broader-current/` completed 618 default-mix
+  operations with `error_count=0` and zero materialized response fetches. A
+  targeted fallback matrix at
+  `target/materialization-priority-targeted-current/` now covers
+  `fallback_terms_set`, `fallback_distance_feature`, `fallback_rank_feature`,
+  `fallback_more_like_this`, and `fallback_case_insensitive_wildcard`; after
+  the distance-feature source-candidate native page path landed,
+  `fallback_distance_feature` reports zero materialized and compatibility
+  materialized response fetches, and the current top ranked target is
+  `rank_feature compatibility materialization`.
   The same gate now covers standalone HTTP query-string native-path stats wiring,
   so query-string compatibility materialization is visible through `_nodes/stats`
   rather than disappearing into the source-eval route.
@@ -374,10 +385,9 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. run the broader operation-resource-delta materialization matrix to identify
-   the next compatibility materialization family after the
-   `query_string/simple_query_string` diagnostic now reports zero
-   compatibility materialization;
+3. replace the current top-ranked `rank_feature` compatibility materialization
+   family with a native source-candidate page path, then rerun the targeted
+   materialization-priority matrix;
 4. add focused regression cases for hybrid plus aggregation plus explicit sort;
 5. only widen native paths when result ordering and total-hit semantics are
    already proven.

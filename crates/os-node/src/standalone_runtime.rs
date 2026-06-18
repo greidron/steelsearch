@@ -18283,6 +18283,8 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "span_multi"
         | "field_masking_span"
         | "more_like_this"
+        | "distance_feature"
+        | "rank_feature"
         | "intervals"
         | "bool"
         | "range"
@@ -18480,7 +18482,15 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 )));
             };
             let candidate_value = if let Some(object) = value.as_object() {
-                if object.keys().any(|key| key != "value") {
+                if object.keys().any(|key| key != "value" && key != "case_insensitive") {
+                    return Some(build_unsupported_search_response(&format!(
+                        "unsupported {query_name} parameter"
+                    )));
+                }
+                if object
+                    .get("case_insensitive")
+                    .is_some_and(|value| !value.is_boolean())
+                {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter"
                     )));
@@ -18560,24 +18570,50 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         {
             return Some(build_unsupported_search_response("unsupported terms_set terms"));
         }
-        let minimum = object
-            .get("minimum_should_match_script")
-            .and_then(Value::as_object)
-            .and_then(|script| script.get("source"))
-            .and_then(Value::as_str);
-        if minimum
-            .and_then(|value| value.parse::<usize>().ok())
+        if object
+            .get("minimum_should_match")
+            .and_then(Value::as_u64)
             .is_none()
         {
             return Some(build_unsupported_search_response(
-                "unsupported terms_set minimum_should_match_script",
+                "unsupported terms_set minimum_should_match",
             ));
         }
         if object
             .keys()
-            .any(|key| key != "terms" && key != "minimum_should_match_script")
+            .any(|key| key != "terms" && key != "minimum_should_match")
         {
             return Some(build_unsupported_search_response("unsupported terms_set parameter"));
+        }
+    }
+    if let Some(spec) = query.get("distance_feature").and_then(Value::as_object) {
+        if spec.get("field").and_then(Value::as_str).is_none()
+            || !spec.contains_key("origin")
+            || !spec.contains_key("pivot")
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported distance_feature query shape",
+            ));
+        }
+        if spec
+            .keys()
+            .any(|key| key != "field" && key != "origin" && key != "pivot")
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported distance_feature parameter",
+            ));
+        }
+    }
+    if let Some(spec) = query.get("rank_feature").and_then(Value::as_object) {
+        if spec.get("field").and_then(Value::as_str).is_none() {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature query shape",
+            ));
+        }
+        if spec.keys().any(|key| key != "field") {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature parameter",
+            ));
         }
     }
     if let Some(spec) = query.get("nested").and_then(Value::as_object) {
@@ -18757,32 +18793,30 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(spec) = query.get("more_like_this").and_then(Value::as_object) {
-        let fields_ok = spec
+        let fields_ok = !spec.contains_key("fields") || spec
             .get("fields")
             .and_then(Value::as_array)
             .is_some_and(|items| items.iter().all(|item| item.as_str().is_some()));
-        let like_ok = spec.get("like").and_then(Value::as_str).is_some_and(|value| !value.is_empty());
+        let like_ok = spec
+            .get("like")
+            .is_some_and(|value| match value {
+                Value::String(text) => !text.is_empty(),
+                Value::Array(items) => items
+                    .iter()
+                    .all(|item| item.as_str().is_some_and(|text| !text.is_empty())),
+                _ => false,
+            });
         if !fields_ok || !like_ok {
             return Some(build_unsupported_search_response(
                 "unsupported more_like_this query shape",
             ));
         }
         if spec.keys().any(|key| {
-            key != "fields"
-                && key != "like"
-                && key != "min_term_freq"
-                && key != "min_doc_freq"
+            key != "fields" && key != "like"
         }) {
             return Some(build_unsupported_search_response(
                 "unsupported more_like_this parameter",
             ));
-        }
-        for key in ["min_term_freq", "min_doc_freq"] {
-            if spec.get(key).is_some_and(|value| value.as_u64().is_none()) {
-                return Some(build_unsupported_search_response(
-                    "unsupported more_like_this parameter",
-                ));
-            }
         }
     }
     if let Some(spec) = query.get("intervals").and_then(Value::as_object) {
@@ -20486,12 +20520,9 @@ fn value_matches_terms_set(candidate: Option<&Value>, expected: &Value) -> Optio
     let expected_object = expected.as_object()?;
     let terms = expected_object.get("terms")?.as_array()?;
     let minimum = expected_object
-        .get("minimum_should_match_script")
-        .and_then(Value::as_object)?
-        .get("source")?
-        .as_str()?
-        .parse::<usize>()
-        .ok()?;
+        .get("minimum_should_match")?
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())?;
     let mut matched_terms = 0usize;
     for term in terms {
         let matched = match candidate {
@@ -35996,9 +36027,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                         "terms_set": {
                             "tags": {
                                 "terms": ["red", "blue"],
-                                "minimum_should_match_script": {
-                                    "source": "2"
-                                }
+                                "minimum_should_match": 2
                             }
                         }
                     }

@@ -69,8 +69,12 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             "fallback_query_string",
             [operation["operation"] for operation in payload["operations"]],
         )
+        self.assertNotIn(
+            "fallback_terms_set",
+            [operation["operation"] for operation in payload["operations"]],
+        )
 
-    def test_http_load_baseline_dry_run_exposes_opt_in_fallback_operation(self):
+    def test_http_load_baseline_dry_run_exposes_opt_in_fallback_operations(self):
         result = subprocess.run(
             [
                 sys.executable,
@@ -79,7 +83,7 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                 "--duration-seconds",
                 "1",
                 "--query-mix",
-                "fallback_query_string=1",
+                "fallback_query_string=1,fallback_terms_set=1,fallback_distance_feature=1,fallback_rank_feature=1,fallback_more_like_this=1,fallback_case_insensitive_wildcard=1",
             ],
             cwd=ROOT,
             text=True,
@@ -91,7 +95,14 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(
             payload["operations"],
-            [{"operation": "fallback_query_string", "weight": 1, "share": 1.0}],
+            [
+                {"operation": "fallback_query_string", "weight": 1, "share": 1 / 6},
+                {"operation": "fallback_terms_set", "weight": 1, "share": 1 / 6},
+                {"operation": "fallback_distance_feature", "weight": 1, "share": 1 / 6},
+                {"operation": "fallback_rank_feature", "weight": 1, "share": 1 / 6},
+                {"operation": "fallback_more_like_this", "weight": 1, "share": 1 / 6},
+                {"operation": "fallback_case_insensitive_wildcard", "weight": 1, "share": 1 / 6},
+            ],
         )
 
     def test_benchmark_matrix_report_exposes_all_native_telemetry_counters(self):
@@ -245,6 +256,13 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                                     "compatibility_materialized_response_fetches": {"delta": 4},
                                 },
                             },
+                            "fallback_terms_set": {
+                                "success_count": 1,
+                                "resource_usage": {
+                                    "materialized_response_fetches": {"delta": 3},
+                                    "compatibility_materialized_response_fetches": {"delta": 3},
+                                },
+                            },
                             "facet": {
                                 "success_count": 2,
                                 "resource_usage": {
@@ -258,13 +276,13 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(report["summary"]["ranked_operation_count"], 2)
+        self.assertEqual(report["summary"]["ranked_operation_count"], 3)
         self.assertTrue(report["summary"]["passed"])
         self.assertFalse(report["summary"]["allow_empty"])
-        self.assertEqual(report["summary"]["top_operation"], "fallback_query_string")
+        self.assertEqual(report["summary"]["top_operation"], "fallback_terms_set")
         self.assertEqual(
             report["priorities"][0]["family"],
-            "query_string/simple_query_string compatibility materialization",
+            "terms_set compatibility materialization",
         )
         self.assertGreater(
             report["priorities"][0]["counters"]["compatibility_materialized_response_fetches"][

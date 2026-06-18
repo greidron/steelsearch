@@ -31,6 +31,11 @@ OPERATIONS = (
     "hybrid",
     "refresh",
     "fallback_query_string",
+    "fallback_terms_set",
+    "fallback_distance_feature",
+    "fallback_rank_feature",
+    "fallback_more_like_this",
+    "fallback_case_insensitive_wildcard",
 )
 NATIVE_TELEMETRY_COUNTERS = (
     "materialized_response_fetches",
@@ -287,7 +292,7 @@ class LoadRunner:
             self.config["query_mix"].get("vector", 0) > 0
             or self.config["query_mix"].get("hybrid", 0) > 0
         )
-        fallback_diagnostics_enabled = self.config["query_mix"].get("fallback_query_string", 0) > 0
+        fallback_diagnostics_enabled = fallback_diagnostic_operations_enabled(self.config["query_mix"])
         settings = {
             "index": {
                 "number_of_shards": self.config["number_of_shards"],
@@ -317,6 +322,8 @@ class LoadRunner:
         }
         if fallback_diagnostics_enabled:
             properties["signal"] = {"type": "float"}
+            properties["fallback_shape"] = {"type": "geo_point"}
+            properties["fallback_priority"] = {"type": "keyword"}
         if vector_enabled:
             properties["embedding"] = {
                 "type": "knn_vector",
@@ -337,7 +344,7 @@ class LoadRunner:
             raise RuntimeError(f"failed to create {index}: {response}")
 
     def seed_corpus(self) -> None:
-        fallback_diagnostics_enabled = self.config["query_mix"].get("fallback_query_string", 0) > 0
+        fallback_diagnostics_enabled = fallback_diagnostic_operations_enabled(self.config["query_mix"])
         for doc_id in range(self.config["corpus_size"]):
             response = self.index_document(
                 f"seed-{doc_id}",
@@ -523,6 +530,69 @@ class LoadRunner:
                         "query_string": {
                             "query": "api",
                             "fields": ["signal"],
+                        }
+                    },
+                }
+            )
+        if operation == "fallback_terms_set":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "terms_set": {
+                            "fallback_shape": {
+                                "terms": ["alpha", "beta"],
+                                "minimum_should_match": 2,
+                            }
+                        }
+                    },
+                }
+            )
+        if operation == "fallback_distance_feature":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "distance_feature": {
+                            "field": "fallback_priority",
+                            "origin": 0.0,
+                            "pivot": 5.0,
+                        }
+                    },
+                }
+            )
+        if operation == "fallback_rank_feature":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "rank_feature": {
+                            "field": "fallback_priority",
+                        }
+                    },
+                }
+            )
+        if operation == "fallback_more_like_this":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "more_like_this": {
+                            "like": ["api"],
+                        }
+                    },
+                }
+            )
+        if operation == "fallback_case_insensitive_wildcard":
+            return self.search(
+                {
+                    "size": 10,
+                    "query": {
+                        "wildcard": {
+                            "message": {
+                                "value": "ALPHA*",
+                                "case_insensitive": True,
+                            }
                         }
                     },
                 }
@@ -799,6 +869,20 @@ def choose_operation(rng: random.Random, cumulative: list[tuple[int, str]]) -> s
     return cumulative[-1][1]
 
 
+def fallback_diagnostic_operations_enabled(query_mix: dict[str, int]) -> bool:
+    return any(
+        query_mix.get(operation, 0) > 0
+        for operation in (
+            "fallback_query_string",
+            "fallback_terms_set",
+            "fallback_distance_feature",
+            "fallback_rank_feature",
+            "fallback_more_like_this",
+            "fallback_case_insensitive_wildcard",
+        )
+    )
+
+
 def document_for(doc_id: int, dimension: int, *, fallback_diagnostics_enabled: bool = False) -> dict[str, Any]:
     terms = ("alpha", "bravo", "charlie", "delta", "checkout", "catalog", "premium", "analytics")
     services = ("checkout", "catalog", "payments", "search")
@@ -832,6 +916,8 @@ def document_for(doc_id: int, dimension: int, *, fallback_diagnostics_enabled: b
     }
     if fallback_diagnostics_enabled:
         document["signal"] = fallback_signal_for(doc_id)
+        document["fallback_shape"] = fallback_shape_for(doc_id)
+        document["fallback_priority"] = fallback_priority_for(doc_id)
     return document
 
 
@@ -843,6 +929,28 @@ def fallback_signal_for(doc_id: int) -> Any:
             return "worker"
         case _:
             return ["api", "checkout"]
+
+
+def fallback_shape_for(doc_id: int) -> list[str]:
+    match doc_id % 3:
+        case 0:
+            return ["alpha", "beta"]
+        case 1:
+            return ["alpha", "gamma"]
+        case _:
+            return ["beta", "alpha", "omega"]
+
+
+def fallback_priority_for(doc_id: int) -> Any:
+    match doc_id % 4:
+        case 0:
+            return 2.0
+        case 1:
+            return 0.0
+        case 2:
+            return [3.0, "cold"]
+        case _:
+            return [False, True]
 
 
 def vector_for(doc_id: int, dimension: int) -> list[float]:

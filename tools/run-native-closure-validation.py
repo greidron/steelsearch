@@ -227,8 +227,8 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
-        "distance_feature_non_numeric_field_fallback_updates_materialized_telemetry",
-        "source-backed-fallback-boundary",
+        "distance_feature_non_numeric_field_uses_source_candidate_native_page",
+        "source-backed-native-query",
     ),
     ValidationTest(
         "native_tantivy_path_executes_rank_feature_query",

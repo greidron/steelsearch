@@ -975,6 +975,11 @@ def render_report(results: dict[str, Any]) -> str:
             "- `vector`: k-NN query against the vector field.",
             "- `hybrid`: lexical + k-NN + filter combined query.",
             "- `fallback_query_string`: opt-in diagnostic query-string fallback case for materialization attribution.",
+            "- `fallback_terms_set`: opt-in diagnostic terms_set unsupported-field fallback case.",
+            "- `fallback_distance_feature`: opt-in diagnostic distance_feature unsupported-field fallback case.",
+            "- `fallback_rank_feature`: opt-in diagnostic rank_feature unsupported-field fallback case.",
+            "- `fallback_more_like_this`: opt-in diagnostic fieldless more_like_this fallback case.",
+            "- `fallback_case_insensitive_wildcard`: opt-in diagnostic case-insensitive text wildcard fallback case.",
             "",
         ]
     )
