@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -169,6 +170,7 @@ def collect_suite(
     result["fixture_path"] = str(fixture_path)
     result["report_path"] = str(report_path) if report_path is not None else str(output_dir / suite.report)
     result["report_source"] = source if report is not None else "missing"
+    result["rerun"] = suite_rerun_commands(suite, output_dir)
     if report is None and unusable_path is not None:
         result["note"] = f"ignored existing report because every recorded target request failed before receiving an HTTP status: {unusable_path}"
     if note:
@@ -260,6 +262,54 @@ def unreachable_response(response: dict[str, Any]) -> bool:
     if isinstance(raw_response, dict):
         status = raw_response.get("status", status)
     return status in (None, 0)
+
+
+def suite_rerun_commands(suite: Suite, output_dir: Path) -> dict[str, str]:
+    unified = [
+        sys.executable,
+        "tools/run-unified-opensearch-e2e.py",
+        "--run",
+        "--suite",
+        suite.name,
+        "--output-dir",
+        str(output_dir),
+        "--steelsearch-url",
+        "${STEELSEARCH_URL}",
+    ]
+    if suite.needs_opensearch:
+        unified.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
+
+    direct: list[str] = []
+    if suite.runner is not None:
+        direct = [
+            sys.executable,
+            suite.runner,
+            "--steelsearch-url",
+            "${STEELSEARCH_URL}",
+        ]
+        if suite.needs_opensearch:
+            direct.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
+        direct.extend(
+            [
+                "--fixture",
+                suite.fixture,
+                suite.output_arg,
+                str(output_dir / suite.report),
+            ]
+        )
+    return {
+        "unified_command": shell_join_with_env(unified),
+        "direct_command": shell_join_with_env(direct) if direct else "",
+    }
+
+
+def shell_join_with_env(command: list[str]) -> str:
+    return " ".join(
+        token
+        if token in {"${STEELSEARCH_URL}", "${OPENSEARCH_URL}"}
+        else shlex.quote(token)
+        for token in command
+    )
 
 
 def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any] | None) -> dict[str, Any]:
@@ -478,6 +528,11 @@ def render_markdown(report: dict[str, Any]) -> str:
         for suite in gap_suites:
             gaps = suite.get("case_gaps", {})
             lines.append(f"### {suite['name']}")
+            rerun = suite.get("rerun") or {}
+            if rerun.get("unified_command"):
+                lines.extend(["", "Unified rerun:", "", "```bash", rerun["unified_command"], "```", ""])
+            if rerun.get("direct_command"):
+                lines.extend(["Direct runner:", "", "```bash", rerun["direct_command"], "```", ""])
             for key in ("missing", "failed", "skipped", "extra"):
                 values = gaps.get(key) or []
                 if not values:

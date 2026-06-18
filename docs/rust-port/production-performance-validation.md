@@ -229,4 +229,7 @@ classified as skipped/known gaps in fresh reports.
 
 The generated JSON and Markdown reports include `case_gaps` for each suite so
 the next run can target the exact missing, skipped, failed, or extra case names
-instead of working from aggregate counts only.
+instead of working from aggregate counts only. Each suite also includes
+`rerun.unified_command` and `rerun.direct_command` entries so the next evidence
+capture can rerun the affected suite without reconstructing command-line
+arguments from the fixture table.
