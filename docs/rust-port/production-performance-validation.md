@@ -60,6 +60,11 @@ Use the existing tools as the validation entry points:
   comparison, chaos, packaging, and rolling-upgrade reports to
   `/_steelsearch/readiness` output and writing the artifact-backed
   `release-readiness.json` manifest consumed by production startup preflight.
+- `tools/check-release-readiness-evidence.py --require-passed` for verifying
+  that the generated production startup manifest contains every required
+  release-readiness item, every item passed, no blockers remain, and every
+  referenced evidence artifact exists before setting
+  `STEELSEARCH_RELEASE_READINESS_FILE`.
 
 Current HTTP load reports include p50, p90, p95, p99, mean, min, and max
 latencies per operation, total throughput, error rate, memory RSS delta,

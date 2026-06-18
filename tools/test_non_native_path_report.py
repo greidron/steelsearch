@@ -58,6 +58,19 @@ class NonNativePathReportTests(unittest.TestCase):
         self.assertIn("| Category | Name | Matched | Source | Watchpoint |", rendered)
         self.assertNotIn("| Category | Name | Matched | Source | Risk |", rendered)
 
+    def test_release_readiness_next_action_requires_manifest_checker(self) -> None:
+        report = load_module().build_report()
+        production_security = next(
+            family
+            for family in report["families"]
+            if family["category"] == "security" and family["name"] == "production security"
+        )
+
+        self.assertIn(
+            "check-release-readiness-evidence.py --require-passed",
+            production_security["next_action"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
