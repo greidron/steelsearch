@@ -37,6 +37,7 @@ use os_node_rest_core::{
     AuthenticationUsersFile, RestServerConfig,
 };
 use os_rest::{RestMethod, RestRequest, RestResponse};
+use os_transport::internal_transport::RemoteTransportQueueSnapshot;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2200,6 +2201,7 @@ pub struct SteelNode {
     pub cancelled_task_ids: Arc<Mutex<BTreeSet<String>>>,
     pub rethrottled_task_rates: Arc<Mutex<BTreeMap<String, f64>>>,
     runtime_thread_pool_counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
+    remote_transport_queue_counters: Arc<Mutex<BTreeMap<String, RemoteTransportQueueSnapshot>>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
@@ -2433,6 +2435,7 @@ impl SteelNode {
             cancelled_task_ids: Arc::new(Mutex::new(BTreeSet::new())),
             rethrottled_task_rates: Arc::new(Mutex::new(BTreeMap::new())),
             runtime_thread_pool_counters: Arc::new(Mutex::new(BTreeMap::new())),
+            remote_transport_queue_counters: Arc::new(Mutex::new(BTreeMap::new())),
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
@@ -13298,13 +13301,45 @@ impl SteelNode {
             .unwrap_or_default()
     }
 
+    #[cfg(test)]
+    fn record_remote_transport_queue_snapshot(
+        &self,
+        node_id: impl Into<String>,
+        snapshot: RemoteTransportQueueSnapshot,
+    ) {
+        self.remote_transport_queue_counters
+            .lock()
+            .expect("remote transport queue counters lock poisoned")
+            .insert(node_id.into(), snapshot);
+    }
+
+    fn remote_transport_thread_pool_counters(&self, node_id: &str) -> RuntimeThreadPoolCounters {
+        self.remote_transport_queue_counters
+            .lock()
+            .expect("remote transport queue counters lock poisoned")
+            .get(node_id)
+            .map(|snapshot| RuntimeThreadPoolCounters {
+                active: snapshot.active as u64,
+                queue: snapshot.queued as u64,
+                rejected: snapshot.rejected as u64,
+                completed: snapshot.completed as u64,
+            })
+            .unwrap_or_default()
+    }
+
     fn thread_pool_stats_body_for_node(&self, node_id: &str, is_local: bool) -> Value {
         let (management_active, management_queue) = self.task_queue_runtime_counts_for_node(node_id);
-        self.thread_pool_stats_body_from_counts(management_active, management_queue, is_local)
+        self.thread_pool_stats_body_from_counts(
+            node_id,
+            management_active,
+            management_queue,
+            is_local,
+        )
     }
 
     fn thread_pool_stats_body_from_counts(
         &self,
+        node_id: &str,
         management_active: u64,
         management_queue: u64,
         include_local_runtime_counters: bool,
@@ -13315,6 +13350,7 @@ impl SteelNode {
         let search = self.runtime_thread_pool_counters("search");
         let task_submission = self.runtime_thread_pool_counters("task_submission");
         let write = self.runtime_thread_pool_counters("write");
+        let remote_transport = self.remote_transport_thread_pool_counters(node_id);
         let (
             cluster_manager,
             maintenance,
@@ -13390,6 +13426,13 @@ impl SteelNode {
                 "active": write.active,
                 "rejected": write.rejected,
                 "completed": write.completed
+            },
+            "remote_transport": {
+                "threads": 1,
+                "queue": remote_transport.queue,
+                "active": remote_transport.active,
+                "rejected": remote_transport.rejected,
+                "completed": remote_transport.completed
             }
         })
     }
@@ -16307,8 +16350,13 @@ impl SteelNode {
                 ("snapshot", "fixed", "1000"),
                 ("search", "fixed", "1000"),
                 ("write", "fixed", "10000"),
+                ("remote_transport", "fixed", "1000"),
             ] {
-                let counters = if is_local {
+                let remote_transport_counters;
+                let counters = if name == "remote_transport" {
+                    remote_transport_counters = self.remote_transport_thread_pool_counters(&node_id);
+                    &remote_transport_counters
+                } else if is_local {
                     local_counters.get(name).unwrap_or(&zero_counters)
                 } else {
                     &zero_counters
@@ -40867,6 +40915,15 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             }],
             ..Default::default()
         });
+        node.record_remote_transport_queue_snapshot(
+            "node-b",
+            RemoteTransportQueueSnapshot {
+                active: 1,
+                queued: 1,
+                rejected: 1,
+                completed: 2,
+            },
+        );
 
         let health = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/health"));
         assert_eq!(health.status, 200);
@@ -40946,6 +41003,28 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(remote_row["active"], "1");
         assert_eq!(remote_row["queue"], "1");
 
+        let mut cat_remote_transport =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/remote_transport");
+        cat_remote_transport
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_remote_transport = node.handle_rest_request(cat_remote_transport);
+        assert_eq!(cat_remote_transport.status, 200);
+        let remote_transport_rows = cat_remote_transport
+            .body
+            .as_array()
+            .expect("remote transport thread pool rows");
+        assert_eq!(remote_transport_rows.len(), 2);
+        let remote_transport_row = remote_transport_rows
+            .iter()
+            .find(|row| row["node_id"] == "node-b")
+            .expect("remote transport row");
+        assert_eq!(remote_transport_row["node_name"], "steel-node-b");
+        assert_eq!(remote_transport_row["active"], "1");
+        assert_eq!(remote_transport_row["queue"], "1");
+        assert_eq!(remote_transport_row["rejected"], "1");
+        assert_eq!(remote_transport_row["completed"], "2");
+
         for index in ["multi-node-submit-source", "multi-node-submit-dest"] {
             let create = node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, format!("/{index}"))
@@ -41011,6 +41090,22 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(
             stats.body["nodes"]["node-b"]["thread_pool"]["task_submission"]["rejected"],
             0
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["remote_transport"]["active"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["remote_transport"]["queue"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["remote_transport"]["rejected"],
+            1
+        );
+        assert_eq!(
+            stats.body["nodes"]["node-b"]["thread_pool"]["remote_transport"]["completed"],
+            2
         );
 
         let tasks_after_reject = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));

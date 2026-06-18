@@ -234,7 +234,8 @@ Out of scope:
   all cluster-view transport addresses are keepalive-reachable, and keeps local
   search and write routes admitted, plus real TCP shard-search and replica
   operation transport round trips and a bounded shard-search transport queue
-  drain/reject slice for remote execution/backpressure evidence.
+  drain/reject slice surfaced through node-stats and cat thread-pool
+  `remote_transport` telemetry for remote execution/backpressure evidence.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -472,8 +473,9 @@ Validation runner:
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
   backlog, transport keepalive reachability for restarted three-daemon cluster
   views, TCP shard-search and replica-operation transport execution slices,
-  bounded shard-search transport queue drain/reject behavior, and independent
-  local workload drain as runtime fairness evidence.
+  bounded shard-search transport queue drain/reject behavior surfaced through
+  `remote_transport` telemetry, and independent local workload drain as runtime
+  fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,
@@ -628,7 +630,8 @@ Initial targets:
    cat thread-pool management telemetry and a restarted three-daemon path with
    transport keepalive reachability plus persisted remote backlog telemetry;
 4. remote TCP shard-search and replica-operation transport execution slices,
-   plus bounded shard-search transport queue drain/reject behavior;
+   plus bounded shard-search transport queue drain/reject behavior exposed in
+   node-stats and cat thread-pool telemetry;
 5. telemetry rows that are derived from runtime state rather than static route
    stubs.
 
