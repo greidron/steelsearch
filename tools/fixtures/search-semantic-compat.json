@@ -298,10 +298,6 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported count query type validation.",
       "family": "failure-path",
       "description": "[failure-path] count unsupported query type error"
     },
@@ -925,10 +921,6 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported explain query type validation.",
       "family": "failure-path",
       "description": "[failure-path] explain unsupported query type error"
     }

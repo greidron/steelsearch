@@ -8274,7 +8274,7 @@ impl SteelNode {
             }
         };
         let query = payload.get("query").unwrap_or(&Value::Null);
-        let (valid, explanation) = validate_query_payload(payload.get("query"));
+        let (valid, explanation) = validate_query_payload_for_validate_route(payload.get("query"));
         if !valid {
             return build_unsupported_search_response(&format!(
                 "unsupported count query: {explanation}"
@@ -8509,7 +8509,8 @@ impl SteelNode {
         };
         let default_query = serde_json::json!({ "match_all": {} });
         let query = payload.get("query").unwrap_or(&default_query);
-        let (valid, explanation) = validate_query_payload(payload.get("query").or(Some(&default_query)));
+        let (valid, explanation) =
+            validate_query_payload_for_validate_route(payload.get("query").or(Some(&default_query)));
         if !valid {
             return build_unsupported_search_response(&format!(
                 "unsupported explain query: {explanation}"
@@ -22031,6 +22032,12 @@ fn matches_query_body(source: &Value, query: Option<&Value>) -> bool {
         }
         return true;
     }
+    if let Some(range) = query.get("range").and_then(Value::as_object) {
+        let Some((field, bounds)) = range.iter().next() else {
+            return false;
+        };
+        return value_matches_range(source.get(field), bounds);
+    }
     false
 }
 
@@ -32289,23 +32296,15 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "no such index [missing-count-000001]"
         );
 
-        let unsupported_query_type_count = node.handle_rest_request(
+        let range_query_count = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_count").with_json_body(serde_json::json!({
                 "query": {
                     "range": { "tenant": { "gte": "a" } }
                 }
             })),
         );
-        assert_eq!(unsupported_query_type_count.status, 400);
-        assert_eq!(unsupported_query_type_count.body["status"], 400);
-        assert_eq!(
-            unsupported_query_type_count.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            unsupported_query_type_count.body["error"]["reason"],
-            "unsupported count query: unsupported query type"
-        );
+        assert_eq!(range_query_count.status, 200);
+        assert_eq!(range_query_count.body["count"], 2);
 
         let malformed_count = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_count")
@@ -36039,7 +36038,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "no such index [missing-explain-semantic]"
         );
 
-        let unsupported_query = node.handle_rest_request(
+        let range_query = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-explain-semantic/_explain/doc-1")
                 .with_json_body(serde_json::json!({
                     "query": {
@@ -36047,16 +36046,8 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                     }
                 })),
         );
-        assert_eq!(unsupported_query.status, 400);
-        assert_eq!(unsupported_query.body["status"], 400);
-        assert_eq!(
-            unsupported_query.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            unsupported_query.body["error"]["reason"],
-            "unsupported explain query: unsupported query type"
-        );
+        assert_eq!(range_query.status, 200);
+        assert_eq!(range_query.body["matched"], true);
     }
 
     #[test]
