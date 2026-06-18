@@ -1299,6 +1299,18 @@ RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
         target=("--test", "dev_cluster_daemons"),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "shard_search_client_and_server_round_trip_over_tcp",
+        "runtime-fairness-remote-transport-execution",
+        package="os-transport",
+        target=("--lib",),
+    ),
+    ValidationTest(
+        "replica_operation_client_and_server_round_trip_over_tcp",
+        "runtime-fairness-remote-transport-execution",
+        package="os-transport",
+        target=("--lib",),
+    ),
 )
 
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
