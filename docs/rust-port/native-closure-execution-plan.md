@@ -223,7 +223,7 @@ Out of scope:
   consuming task-submission backpressure capacity while saturated pools still
   reject new task submissions.
 - The same runner now has a `runtime-fairness` batch. It passed on
-  2026-06-18 with 12/12 tests and `zero_tests=0`, covering multi-node remote
+  2026-06-18 with 13/13 tests and `zero_tests=0`, covering multi-node remote
   task metadata visibility including node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
   backlog, local task-submission/search/write and local
@@ -236,7 +236,9 @@ Out of scope:
   operation transport round trips and a bounded shard-search transport queue
   drain/reject slice surfaced through node-stats and cat thread-pool
   `remote_transport` telemetry plus live daemon query-phase transport route
-  admission for remote execution/backpressure evidence.
+  admission, including a live three-daemon TCP query-phase stress that observes
+  queue rejection and REST telemetry readback, for remote execution/backpressure
+  evidence.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -476,8 +478,9 @@ Validation runner:
   views, TCP shard-search and replica-operation transport execution slices,
   bounded shard-search transport queue drain/reject behavior surfaced through
   `remote_transport` telemetry, live daemon query-phase transport route
-  admission through the shared queue gate, and independent local workload drain
-  as runtime fairness evidence.
+  admission through the shared queue gate, live three-daemon TCP query-phase
+  stress rejection/readback, and independent local workload drain as runtime
+  fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,

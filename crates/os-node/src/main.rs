@@ -2539,6 +2539,14 @@ fn maybe_build_query_phase_response_with_remote_transport_admission(
     match transport_identity
         .remote_transport_queue_gate
         .execute_blocking(|| {
+            if let Some(pause_millis) =
+                env::var("STEELSEARCH_REMOTE_TRANSPORT_QUERY_PHASE_PAUSE_MILLIS")
+                    .ok()
+                    .and_then(|raw| raw.parse::<u64>().ok())
+                    .filter(|value| *value > 0)
+            {
+                thread::sleep(Duration::from_millis(pause_millis));
+            }
             maybe_build_query_phase_response(request_id, body, transport_identity)
                 .ok_or_else(|| {
                     InternalTransportError::Handler("query phase response missing".into())

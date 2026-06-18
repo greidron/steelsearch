@@ -948,6 +948,96 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
 }
 
 #[test]
+fn live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_telemetry() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(&root).unwrap();
+    let http_ports = [free_port(), free_port(), free_port()];
+    let transport_ports = [free_port(), free_port(), free_port()];
+    let seed_hosts = transport_ports
+        .iter()
+        .map(|port| format!("127.0.0.1:{port}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut children = Vec::new();
+
+    for index in 0..3 {
+        let node_dir = root.join(format!("node-{}", index + 1));
+        fs::create_dir_all(node_dir.join("data")).unwrap();
+        fs::create_dir_all(node_dir.join("logs")).unwrap();
+        let stdout = fs::File::create(node_dir.join("logs/stdout.log")).unwrap();
+        let stderr = fs::File::create(node_dir.join("logs/stderr.log")).unwrap();
+        children.push(
+            Command::new(&binary)
+                .arg("--http.host")
+                .arg("127.0.0.1")
+                .arg("--http.port")
+                .arg(http_ports[index].to_string())
+                .arg("--transport.host")
+                .arg("127.0.0.1")
+                .arg("--transport.port")
+                .arg(transport_ports[index].to_string())
+                .arg("--node.id")
+                .arg(format!("steel-node-{}", index + 1))
+                .arg("--node.name")
+                .arg(format!("steel-node-{}", index + 1))
+                .arg("--cluster.name")
+                .arg("steel-dev-query-phase-gate-it")
+                .arg("--node.roles")
+                .arg("cluster_manager,data,ingest")
+                .arg("--discovery.seed_hosts")
+                .arg(&seed_hosts)
+                .arg("--path.data")
+                .arg(node_dir.join("data"))
+                .env("STEELSEARCH_REMOTE_TRANSPORT_MAX_IN_FLIGHT", "1")
+                .env("STEELSEARCH_REMOTE_TRANSPORT_QUEUE_SIZE", "0")
+                .env("STEELSEARCH_REMOTE_TRANSPORT_QUERY_PHASE_PAUSE_MILLIS", "1000")
+                .stdout(Stdio::from(stdout))
+                .stderr(Stdio::from(stderr))
+                .spawn()
+                .unwrap(),
+        );
+    }
+    let _guard = ChildGuard { children };
+
+    for port in http_ports {
+        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        assert_eq!(cluster["cluster_name"], "steel-dev-query-phase-gate-it");
+        assert_eq!(cluster["nodes"].as_array().expect("cluster nodes").len(), 3);
+        assert_eq!(cluster["coordination"]["publication_committed"], true);
+    }
+    let target_http_port = http_ports[0];
+    let target_transport_port = transport_ports[0];
+    let first = thread::spawn(move || {
+        send_query_phase_transport_frame_and_hold(
+            target_transport_port,
+            10_001,
+            Duration::from_millis(1200),
+        );
+    });
+    wait_for_remote_transport_cat_counter(target_http_port, "active", "1");
+
+    send_query_phase_transport_frame_and_hold(target_transport_port, 10_002, Duration::from_millis(50));
+
+    wait_for_remote_transport_cat_counter(target_http_port, "rejected", "1");
+    first.join().unwrap();
+    wait_for_remote_transport_cat_counter(target_http_port, "completed", "1");
+
+    let stats = http_response(target_http_port, "GET", "/_nodes/stats", None);
+    assert_eq!(stats["status"], 200);
+    assert_eq!(
+        stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["remote_transport"]["rejected"],
+        1
+    );
+    assert_eq!(
+        stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["remote_transport"]["completed"],
+        1
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
     let binary = os_node_binary();
     let root = unique_work_dir();
@@ -5408,6 +5498,83 @@ fn assert_transport_keepalive_responds(port: u16) {
         panic!("transport port {port} should echo keepalive ping: {error}")
     });
     assert_eq!(response, keepalive);
+}
+
+fn send_query_phase_transport_frame_and_hold(port: u16, request_id: i64, hold_for: Duration) {
+    let frame = build_test_transport_request_frame(
+        request_id,
+        3_070_099,
+        "indices:data/read/search[phase/query]",
+        Vec::new(),
+    );
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .unwrap_or_else(|error| panic!("transport port {port} should accept TCP: {error}"));
+    stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream.write_all(&frame).unwrap();
+    stream.flush().unwrap();
+    thread::sleep(hold_for);
+}
+
+fn wait_for_remote_transport_cat_counter(port: u16, counter: &str, expected: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut last_row = None;
+    while Instant::now() < deadline {
+        let response = http_response(
+            port,
+            "GET",
+            "/_cat/thread_pool/remote_transport?format=json",
+            None,
+        );
+        assert_eq!(response["status"], 200);
+        let rows = response["body"].as_array().expect("remote transport rows");
+        if let Some(row) = rows.iter().find(|row| row["node_id"] == "steel-node-1") {
+            last_row = Some(row.clone());
+            if row[counter] == expected {
+                return;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!(
+        "remote_transport counter {counter} did not reach {expected}; last row: {last_row:?}"
+    );
+}
+
+fn build_test_transport_request_frame(
+    request_id: i64,
+    header_version_id: u32,
+    action: &str,
+    payload: Vec<u8>,
+) -> Vec<u8> {
+    let mut variable_header = Vec::new();
+    write_test_transport_vint_to(&mut variable_header, 0);
+    write_test_transport_vint_to(&mut variable_header, 0);
+    write_test_transport_vint_to(&mut variable_header, 0);
+    write_test_transport_string_to(&mut variable_header, action);
+    let message_length = 8 + 1 + 4 + 4 + variable_header.len() + payload.len();
+    let mut frame = Vec::with_capacity(6 + message_length);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&(message_length as u32).to_be_bytes());
+    frame.extend_from_slice(&request_id.to_be_bytes());
+    frame.push(0x00);
+    frame.extend_from_slice(&header_version_id.to_be_bytes());
+    frame.extend_from_slice(&(variable_header.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&variable_header);
+    frame.extend_from_slice(&payload);
+    frame
+}
+
+fn write_test_transport_string_to(out: &mut Vec<u8>, value: &str) {
+    write_test_transport_vint_to(out, value.len() as u32);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn write_test_transport_vint_to(out: &mut Vec<u8>, mut value: u32) {
+    while value >= 0x80 {
+        out.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
 }
 
 fn terminate_child(child: &Child) {

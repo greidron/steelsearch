@@ -1330,6 +1330,13 @@ RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
         target=("--bin", "steelsearch"),
         features=("standalone-runtime",),
     ),
+    ValidationTest(
+        "live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_telemetry",
+        "runtime-fairness-remote-transport-backpressure",
+        package="os-node",
+        target=("--test", "dev_cluster_daemons"),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (
