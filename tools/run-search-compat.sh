@@ -91,17 +91,25 @@ elif [[ -n "${OPENSEARCH_URL:-}" && "${CI:-}" == "true" ]]; then
 fi
 
 previous_arg=""
+HAS_CASE_FILTER=0
 for arg in "$@"; do
   if [[ "${previous_arg}" == "--fixture" ]]; then
     FIXTURE_PATH="${arg}"
   elif [[ "${previous_arg}" == "--report" ]]; then
     REPORT_PATH="${arg}"
+  elif [[ "${arg}" == "--case" ]]; then
+    HAS_CASE_FILTER=1
   fi
   previous_arg="${arg}"
 done
 
 python3 "${ROOT}/tools/search_compat.py" "${args[@]}" "$@"
-python3 "${ROOT}/tools/check-rest-compat-report.py" \
-  --fixture "${FIXTURE_PATH}" \
-  --report "${REPORT_PATH}" \
+check_args=(
+  --fixture "${FIXTURE_PATH}"
+  --report "${REPORT_PATH}"
   --require-report
+)
+if [[ "${HAS_CASE_FILTER}" == "1" ]]; then
+  check_args+=(--allow-partial-report)
+fi
+python3 "${ROOT}/tools/check-rest-compat-report.py" "${check_args[@]}"

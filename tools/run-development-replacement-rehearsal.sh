@@ -65,6 +65,10 @@ Environment:
   REHEARSAL_WAIT_TIMEOUT       Startup wait timeout in seconds. Default: 300.
   SEARCH_COMPAT_FIXTURE        Fixture passed to tools/search_compat.py.
   SEARCH_COMPAT_REPORT         Search compatibility report path.
+  SEARCH_COMPAT_CASES          Comma-separated search compatibility cases.
+  MAPPING_COMPAT_CASES         Comma-separated mapping compatibility cases.
+  SNAPSHOT_LIFECYCLE_COMPAT_CASES
+                               Comma-separated snapshot lifecycle compatibility cases.
   MIGRATION_VALIDATION_REPORT  Migration validation report path.
   STEELSEARCH_BENCHMARK_REPORT Benchmark JSONL evidence attached to readiness.
   STEELSEARCH_LOAD_REPORT      HTTP load JSON evidence attached to readiness.
@@ -88,6 +92,23 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 mkdir -p "${REHEARSAL_DIR}"
+
+append_case_args() {
+  local raw="${1:-}"
+  local -n target_args="$2"
+  [[ -n "${raw}" ]] || return 0
+
+  local IFS=","
+  local entry trimmed
+  local -a entries=()
+  read -r -a entries <<< "${raw}"
+  for entry in "${entries[@]}"; do
+    trimmed="${entry#"${entry%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    [[ -n "${trimmed}" ]] || continue
+    target_args+=(--case "${trimmed}")
+  done
+}
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "root-cluster-node" ]]; then
   RUN_SEARCH_COMPAT=0
@@ -624,10 +645,13 @@ if [[ "${RUN_INDEX_LIFECYCLE_COMPAT:-1}" == "1" ]]; then
     --output "${INDEX_LIFECYCLE_COMPAT_REPORT}"
 fi
 if [[ "${RUN_MAPPING_COMPAT:-1}" == "1" ]]; then
-  python3 "${ROOT}/tools/mapping_compat.py" \
+  mapping_args=(
     --steelsearch-url "${STEELSEARCH_URL}" \
     --opensearch-url "${OPENSEARCH_URL}" \
     --output "${MAPPING_COMPAT_REPORT}"
+  )
+  append_case_args "${MAPPING_COMPAT_CASES:-}" mapping_args
+  python3 "${ROOT}/tools/mapping_compat.py" "${mapping_args[@]}"
 fi
 if [[ "${RUN_SETTINGS_COMPAT:-1}" == "1" ]]; then
   python3 "${ROOT}/tools/settings_compat.py" \
@@ -672,10 +696,13 @@ if [[ "${RUN_TEMPLATE_COMPAT:-1}" == "1" ]]; then
     --output "${TEMPLATE_COMPAT_REPORT}"
 fi
 if [[ "${RUN_SNAPSHOT_LIFECYCLE_COMPAT:-1}" == "1" ]]; then
-  python3 "${ROOT}/tools/snapshot_lifecycle_compat.py" \
+  snapshot_lifecycle_args=(
     --steelsearch-url "${STEELSEARCH_URL}" \
     --opensearch-url "${OPENSEARCH_URL}" \
     --output "${SNAPSHOT_LIFECYCLE_COMPAT_REPORT}"
+  )
+  append_case_args "${SNAPSHOT_LIFECYCLE_COMPAT_CASES:-}" snapshot_lifecycle_args
+  python3 "${ROOT}/tools/snapshot_lifecycle_compat.py" "${snapshot_lifecycle_args[@]}"
 fi
 if [[ "${RUN_DATA_STREAM_ROLLOVER_COMPAT:-1}" == "1" ]]; then
   python3 "${ROOT}/tools/data_stream_rollover_compat.py" \
@@ -711,6 +738,7 @@ if [[ "${RUN_SEARCH_COMPAT}" == "1" ]]; then
   if [[ -n "${SEARCH_COMPAT_FIXTURE:-}" ]]; then
     compat_args+=(--fixture "${SEARCH_COMPAT_FIXTURE}")
   fi
+  append_case_args "${SEARCH_COMPAT_CASES:-}" compat_args
 
   "${ROOT}/tools/run-search-compat.sh" "${compat_args[@]}"
 fi

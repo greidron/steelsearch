@@ -16,6 +16,7 @@ def main() -> int:
     parser.add_argument("--fixture", required=True)
     parser.add_argument("--report")
     parser.add_argument("--require-report", action="store_true")
+    parser.add_argument("--allow-partial-report", action="store_true")
     args = parser.parse_args()
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
@@ -25,7 +26,13 @@ def main() -> int:
         report_path = Path(args.report)
         if report_path.exists():
             report = json.loads(report_path.read_text(encoding="utf-8"))
-            errors.extend(validate_report(fixture, report))
+            errors.extend(
+                validate_report(
+                    fixture,
+                    report,
+                    allow_partial=args.allow_partial_report,
+                )
+            )
         elif args.require_report:
             errors.append(f"missing REST compatibility report: {report_path}")
     elif args.require_report:
@@ -60,7 +67,12 @@ def validate_fixture(fixture: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_report(fixture: dict[str, Any], report: dict[str, Any]) -> list[str]:
+def validate_report(
+    fixture: dict[str, Any],
+    report: dict[str, Any],
+    *,
+    allow_partial: bool = False,
+) -> list[str]:
     errors: list[str] = []
     excluded_cases = {
         name.strip()
@@ -75,10 +87,16 @@ def validate_report(fixture: dict[str, Any], report: dict[str, Any]) -> list[str
     report_cases = {case.get("name"): case for case in report.get("cases", []) if case.get("name")}
     missing = sorted(set(fixture_cases) - set(report_cases))
     extra = sorted(set(report_cases) - set(fixture_cases))
-    if missing:
+    if missing and not allow_partial:
         errors.append(f"report is missing fixture cases: {', '.join(missing)}")
     if extra:
         errors.append(f"report contains cases not declared by fixture: {', '.join(extra)}")
+    if allow_partial:
+        fixture_cases = {
+            name: case
+            for name, case in fixture_cases.items()
+            if name in report_cases
+        }
 
     setup_failures = [
         f"{step.get('target')}:{step.get('name')}"
