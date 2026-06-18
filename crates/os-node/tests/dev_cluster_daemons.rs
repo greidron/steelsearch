@@ -842,6 +842,20 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
             .len(),
         3
     );
+    let expected_transport_addresses = transport_ports
+        .iter()
+        .map(|port| format!("127.0.0.1:{port}"))
+        .collect::<BTreeSet<_>>();
+    let restarted_transport_addresses = restarted_cluster["nodes"]
+        .as_array()
+        .expect("restarted cluster nodes")
+        .iter()
+        .map(|node| node["transport_address"].as_str().unwrap().to_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(restarted_transport_addresses, expected_transport_addresses);
+    for transport_port in transport_ports {
+        assert_transport_keepalive_responds(transport_port);
+    }
 
     let port = http_ports[restarted_index];
     let pending = http_response(port, "GET", "/_cluster/pending_tasks", None);
@@ -5376,6 +5390,24 @@ fn free_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+fn assert_transport_keepalive_responds(port: u16) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .unwrap_or_else(|error| panic!("transport port {port} should accept TCP: {error}"));
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let keepalive = [b'E', b'S', 0xff, 0xff, 0xff, 0xff];
+    stream.write_all(&keepalive).unwrap();
+    let mut response = [0_u8; 6];
+    stream.read_exact(&mut response).unwrap_or_else(|error| {
+        panic!("transport port {port} should echo keepalive ping: {error}")
+    });
+    assert_eq!(response, keepalive);
 }
 
 fn terminate_child(child: &Child) {

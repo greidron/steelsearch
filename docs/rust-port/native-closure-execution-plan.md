@@ -223,15 +223,16 @@ Out of scope:
   consuming task-submission backpressure capacity while saturated pools still
   reject new task submissions.
 - The same runner now has a `runtime-fairness` batch. It passed on
-  2026-06-17 with 7/7 tests and `zero_tests=0`, covering multi-node remote
+  2026-06-18 with 7/7 tests and `zero_tests=0`, covering multi-node remote
   task metadata visibility including node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
   backlog, local task-submission/search/write and local
   maintenance/snapshot/cluster-manager control-plane admission under remote
   backlog, local overload counter isolation from remote task metadata, and
   independent search/write versus maintenance drain behavior, plus a restarted
-  three-daemon REST path that restores persisted remote backlog telemetry while
-  local search and write routes remain admitted.
+  three-daemon path that restores persisted remote backlog telemetry, verifies
+  all cluster-view transport addresses are keepalive-reachable, and keeps local
+  search and write routes admitted.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -467,7 +468,8 @@ Validation runner:
   task-submission/search/write and maintenance/snapshot/cluster-manager
   admission under remote backlog, node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
-  backlog, and independent local workload drain as runtime fairness evidence.
+  backlog, transport keepalive reachability for restarted three-daemon cluster
+  views, and independent local workload drain as runtime fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,
@@ -619,8 +621,8 @@ Initial targets:
    and with
    local overload counters and local search/write admission isolated from
    remote task metadata in multi-node task visibility, including node-specific
-   cat thread-pool management telemetry and a restarted three-daemon REST path
-   with persisted remote backlog telemetry;
+   cat thread-pool management telemetry and a restarted three-daemon path with
+   transport keepalive reachability plus persisted remote backlog telemetry;
 4. telemetry rows that are derived from runtime state rather than static route
    stubs.
 
