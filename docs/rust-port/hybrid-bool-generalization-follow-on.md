@@ -687,6 +687,12 @@ path.
   applying the exact circle matcher to child-local geo-point values instead of
   returning to the parent source-validation fallback bucket, while still
   preserving tuple isolation across sibling nested objects.
+- Current direct nested wrapper reduction reading after the latest
+  child-ordinal expansion:
+  nested `dis_max`, `boosting`, `function_score`, and `script_score` wrappers
+  now reduce through child ordinals using the same membership semantics as the
+  source matcher: `dis_max` unions matching children, `boosting` follows the
+  positive query, and score wrappers delegate to their wrapped query.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
