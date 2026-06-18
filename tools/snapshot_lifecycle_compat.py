@@ -275,11 +275,15 @@ def select_cases(fixture: dict[str, Any], requested: list[str] | None) -> list[d
     if not requested:
         return cases
     requested_set = set(requested)
-    selected = [case for case in cases if case.get("name") in requested_set]
-    missing = sorted(requested_set - {case.get("name") for case in selected})
+    requested_indexes = [
+        index
+        for index, case in enumerate(cases)
+        if case.get("name") in requested_set
+    ]
+    missing = sorted(requested_set - {cases[index].get("name") for index in requested_indexes})
     if missing:
         raise SystemExit(f"unknown snapshot lifecycle compat case(s): {', '.join(missing)}")
-    return selected
+    return cases[: max(requested_indexes) + 1]
 
 
 def main() -> int:
