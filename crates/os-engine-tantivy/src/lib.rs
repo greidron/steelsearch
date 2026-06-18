@@ -6522,6 +6522,22 @@ impl StoredIndex {
         }
         let needs_post_filter = query_requires_native_candidate_post_filter(query);
         let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+            if needs_post_filter
+                && query_allows_source_candidate_scan_for_native_post_filter(query)
+            {
+                let mut hits = self.hits_for_documents(
+                    index_name,
+                    query,
+                    self.refreshed_documents(),
+                    true,
+                )?;
+                if sort_uses_default_relevance_order(sort) {
+                    hits.sort_by(compare_relevance_hits);
+                } else {
+                    sort_hits(&mut hits, sort);
+                }
+                return Ok(Some(hits));
+            }
             return Ok(None);
         };
         let searcher = search_state.reader.searcher();
@@ -7150,6 +7166,13 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             .filter(|document| document.metadata.seq_no <= self.refreshed_seq_no)
     }
 
+    fn refreshed_documents(&self) -> Vec<&StoredDocument> {
+        self.documents
+            .values()
+            .filter(|document| document.metadata.seq_no <= self.refreshed_seq_no)
+            .collect()
+    }
+
     fn hits_for_documents(
         &self,
         index_name: &str,
@@ -7584,6 +7607,21 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             return Ok(None);
         };
         let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+            if query_requires_native_candidate_post_filter(query)
+                && query_allows_source_candidate_scan_for_native_post_filter(query)
+            {
+                let count = self
+                    .refreshed_documents()
+                    .into_iter()
+                    .filter(|document| {
+                        self.score_document_query(query, document)
+                            .ok()
+                            .flatten()
+                            .is_some()
+                    })
+                    .count();
+                return Ok(Some(count as u64));
+            }
             return Ok(None);
         };
         let searcher = search_state.reader.searcher();
@@ -7601,6 +7639,11 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             return Ok(None);
         };
         let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+            if query_requires_native_candidate_post_filter(query)
+                && query_allows_source_candidate_scan_for_native_post_filter(query)
+            {
+                return Ok(Some(self.refreshed_documents()));
+            }
             return Ok(None);
         };
         let searcher = search_state.reader.searcher();
@@ -15394,6 +15437,40 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
             .chain(clauses.filter.iter())
             .chain(clauses.must_not.iter())
             .any(query_requires_native_candidate_post_filter),
+        _ => false,
+    }
+}
+
+fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> bool {
+    match query {
+        Query::QueryString { .. } | Query::SimpleQueryString { .. } => true,
+        Query::Bool { clauses } => clauses
+            .must
+            .iter()
+            .chain(clauses.should.iter())
+            .chain(clauses.filter.iter())
+            .chain(clauses.must_not.iter())
+            .any(query_allows_source_candidate_scan_for_native_post_filter),
+        Query::ConstantScore { filter } => {
+            query_allows_source_candidate_scan_for_native_post_filter(filter)
+        }
+        Query::DisMax { queries, .. } => queries
+            .iter()
+            .any(query_allows_source_candidate_scan_for_native_post_filter),
+        Query::Boosting {
+            positive, negative, ..
+        } => {
+            query_allows_source_candidate_scan_for_native_post_filter(positive)
+                || query_allows_source_candidate_scan_for_native_post_filter(negative)
+        }
+        Query::FunctionScore { query } | Query::ScriptScore { query, .. } => {
+            query_allows_source_candidate_scan_for_native_post_filter(query)
+        }
+        Query::SpanMulti { query }
+        | Query::FieldMaskingSpan { query, .. }
+        | Query::Wrapper { query } => {
+            query_allows_source_candidate_scan_for_native_post_filter(query)
+        }
         _ => false,
     }
 }
@@ -129925,7 +130002,7 @@ mod tests {
     }
 
     #[test]
-    fn query_string_unsupported_field_type_fallback_updates_materialized_telemetry() {
+    fn query_string_unsupported_field_type_uses_source_candidate_native_page() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -129985,24 +130062,24 @@ mod tests {
         assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "3"]);
         assert!(page_response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
-                && phase.description == "compatibility materialization materialized requested hits"
+                && phase.description == "materialized only the requested native page"
         }));
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
 
         let size_zero_response = engine.search(search_request(0)).unwrap();
         assert_eq!(size_zero_response.total_hits, 2);
         assert!(size_zero_response.hits.is_empty());
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
-        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
     }
 
     #[test]
-    fn simple_query_string_unsupported_field_type_fallback_updates_materialized_telemetry() {
+    fn simple_query_string_unsupported_field_type_uses_source_candidate_native_page() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -130062,20 +130139,20 @@ mod tests {
         assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "3"]);
         assert!(page_response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
-                && phase.description == "compatibility materialization materialized requested hits"
+                && phase.description == "materialized only the requested native page"
         }));
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
 
         let size_zero_response = engine.search(search_request(0)).unwrap();
         assert_eq!(size_zero_response.total_hits, 2);
         assert!(size_zero_response.hits.is_empty());
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
-        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
     }
 
     #[test]

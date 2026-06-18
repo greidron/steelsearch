@@ -34,11 +34,12 @@ def main() -> int:
     parser.add_argument("report", type=Path, help="load-baseline or search-benchmark-matrix JSON report")
     parser.add_argument("--format", choices=("json", "markdown"), default="json")
     parser.add_argument("--min-compat-delta", type=int, default=1)
+    parser.add_argument("--allow-empty", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     payload = json.loads(args.report.read_text(encoding="utf-8"))
-    report = build_priority_report(payload, args.min_compat_delta)
+    report = build_priority_report(payload, args.min_compat_delta, allow_empty=args.allow_empty)
     text = (
         json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.format == "json"
@@ -47,10 +48,15 @@ def main() -> int:
     if args.output:
         args.output.write_text(text, encoding="utf-8")
     print(text, end="")
-    return 0 if report["summary"]["ranked_operation_count"] > 0 else 1
+    return 0 if report["summary"]["passed"] else 1
 
 
-def build_priority_report(payload: dict[str, Any], min_compat_delta: int = 1) -> dict[str, Any]:
+def build_priority_report(
+    payload: dict[str, Any],
+    min_compat_delta: int = 1,
+    *,
+    allow_empty: bool = False,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for scenario, operations in iter_operation_payloads(payload):
         for operation, op_payload in operations.items():
@@ -89,7 +95,8 @@ def build_priority_report(payload: dict[str, Any], min_compat_delta: int = 1) ->
         row["rank"] = rank
     return {
         "summary": {
-            "passed": len(rows) > 0,
+            "passed": len(rows) > 0 or allow_empty,
+            "allow_empty": allow_empty,
             "ranked_operation_count": len(rows),
             "min_compat_delta": min_compat_delta,
             "top_family": rows[0]["family"] if rows else None,

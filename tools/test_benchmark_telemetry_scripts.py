@@ -260,6 +260,7 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
 
         self.assertEqual(report["summary"]["ranked_operation_count"], 2)
         self.assertTrue(report["summary"]["passed"])
+        self.assertFalse(report["summary"]["allow_empty"])
         self.assertEqual(report["summary"]["top_operation"], "fallback_query_string")
         self.assertEqual(
             report["priorities"][0]["family"],
@@ -273,6 +274,27 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                 "per_success"
             ],
         )
+
+    def test_materialization_priority_report_can_accept_empty_rankings(self):
+        priority = load_priority_module()
+        report = priority.build_priority_report(
+            {
+                "operations": {
+                    "fallback_query_string": {
+                        "success_count": 3,
+                        "resource_usage": {
+                            "materialized_response_fetches": {"delta": 3},
+                            "compatibility_materialized_response_fetches": {"delta": 0},
+                        },
+                    }
+                }
+            },
+            allow_empty=True,
+        )
+
+        self.assertTrue(report["summary"]["passed"])
+        self.assertTrue(report["summary"]["allow_empty"])
+        self.assertEqual(report["summary"]["ranked_operation_count"], 0)
 
     def test_materialization_priority_diagnostic_dry_run_reports_artifact_paths(self):
         result = subprocess.run(

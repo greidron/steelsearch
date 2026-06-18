@@ -25200,7 +25200,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
     }
 
     #[test]
-    fn query_string_native_http_path_updates_materialized_search_cache_stats() {
+    fn query_string_native_http_path_reports_zero_materialized_search_cache_stats() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -25275,12 +25275,12 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             .expect("node stats body to contain one node");
         assert_eq!(
             first_node["steelsearch"]["search_cache"]["materialized_response_fetches"],
-            1
+            0
         );
         assert_eq!(
             first_node["steelsearch"]["search_cache"]
                 ["compatibility_materialized_response_fetches"],
-            1
+            0
         );
     }
 

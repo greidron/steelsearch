@@ -102,10 +102,12 @@ Out of scope:
   single-node Steelsearch diagnostic artifact and priority report for the
   opt-in fallback workload.
   A 2026-06-18 diagnostic run at
-  `target/materialization-priority-diagnostic-current/` completed 341
-  `fallback_query_string` operations with `error_count=0` and ranked
-  `query_string/simple_query_string compatibility materialization` first
-  (`compatibility_materialized_response_fetches=341`, `1.00/op`).
+  `target/materialization-priority-diagnostic-current/` completed 339
+  `fallback_query_string` operations with `error_count=0` after the
+  query-string source-candidate native page path landed; the fresh priority
+  report now passes with `ranked_operation_count=0`,
+  `materialized_response_fetches=0`, and
+  `compatibility_materialized_response_fetches=0`.
   The same gate now covers standalone HTTP query-string native-path stats wiring,
   so query-string compatibility materialization is visible through `_nodes/stats`
   rather than disappearing into the source-eval route.
@@ -372,9 +374,10 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. use the fresh materialization-priority diagnostic to drive the next native
-   rewrite target; the current top ranked target is
-   `query_string/simple_query_string` compatibility materialization;
+3. run the broader operation-resource-delta materialization matrix to identify
+   the next compatibility materialization family after the
+   `query_string/simple_query_string` diagnostic now reports zero
+   compatibility materialization;
 4. add focused regression cases for hybrid plus aggregation plus explicit sort;
 5. only widen native paths when result ordering and total-hit semantics are
    already proven.
