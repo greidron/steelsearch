@@ -243,8 +243,8 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
-        "more_like_this_fieldless_fallback_updates_materialized_telemetry",
-        "source-backed-fallback-boundary",
+        "more_like_this_fieldless_uses_source_candidate_native_page",
+        "source-backed-native-query",
     ),
     ValidationTest(
         "native_tantivy_path_executes_terms_set_query",

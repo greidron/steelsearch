@@ -79,11 +79,11 @@ Out of scope:
   `terms_set`, phrase/prefix/bool-prefix text queries, `multi_match`,
   `query_string`, `simple_query_string`, and `combined_fields`, including
   exact-circle `geo_distance` source validation for native bounding-box
-  candidates, fieldless `more_like_this` source materialization,
-  unsupported-field `query_string` / `simple_query_string` source materialization,
+  candidates, unsupported-field `query_string` / `simple_query_string` source
+  materialization,
   source-candidate native page coverage for `distance_feature`,
-  `rank_feature`, `terms_set`, and text-field case-insensitive wildcard
-  non-native leaf boundaries.
+  `rank_feature`, `terms_set`, fieldless `more_like_this`, and text-field
+  case-insensitive wildcard non-native leaf boundaries.
 - The same runner now has a `benchmark-telemetry` batch. It passed on
   2026-06-18 with 3/3 validations and `zero_tests=0`, covering
   benchmark/load JSON and Markdown exposure for materialized response fetches,
@@ -115,12 +115,12 @@ Out of scope:
   `target/materialization-priority-targeted-current/` now covers
   `fallback_terms_set`, `fallback_distance_feature`, `fallback_rank_feature`,
   `fallback_more_like_this`, and `fallback_case_insensitive_wildcard`; after
-  the distance-feature, rank-feature, terms-set, and text-field
-  case-insensitive wildcard source-candidate native page paths landed,
+  the distance-feature, rank-feature, terms-set, fieldless more-like-this, and
+  text-field case-insensitive wildcard source-candidate native page paths landed,
   `fallback_distance_feature`, `fallback_rank_feature`, `fallback_terms_set`,
-  and `fallback_case_insensitive_wildcard` report zero materialized and
-  compatibility materialized response fetches, and the current top ranked target
-  is `more_like_this compatibility materialization`.
+  `fallback_more_like_this`, and `fallback_case_insensitive_wildcard` report
+  zero materialized and compatibility materialized response fetches; the current
+  targeted priority report passes with `ranked_operation_count=0`.
   The same gate now covers standalone HTTP query-string native-path stats wiring,
   so query-string compatibility materialization is visible through `_nodes/stats`
   rather than disappearing into the source-eval route.
@@ -387,9 +387,9 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. replace the current top-ranked `more_like_this` compatibility
-   materialization family with a native source-candidate page path, then rerun
-   the targeted materialization-priority matrix;
+3. keep the targeted materialization-priority matrix at
+   `ranked_operation_count=0` while widening any future fallback diagnostic
+   shapes only with parity tests;
 4. add focused regression cases for hybrid plus aggregation plus explicit sort;
 5. only widen native paths when result ordering and total-hit semantics are
    already proven.
