@@ -1956,6 +1956,20 @@ RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+PACKAGING_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "packaging_evidence_builds_release_steelsearch_binary",
+        "packaging-evidence-current",
+        (
+            "python3",
+            "tools/generate-packaging-evidence.py",
+            "--output",
+            "target/release-packaging/packaging-report.json",
+        ),
+        timeout_seconds=900,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -1980,6 +1994,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-peer-backpressure-current": RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH,
     "native-closure-status-current": NATIVE_CLOSURE_STATUS_CURRENT_BATCH,
     "release-evidence-inventory-current": RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH,
+    "packaging-evidence-current": PACKAGING_EVIDENCE_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,

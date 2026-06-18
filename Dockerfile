@@ -2,7 +2,7 @@ FROM rust:1.76-bookworm AS builder
 
 WORKDIR /workspace
 COPY . .
-RUN cargo build --release -p os-node --bin steelsearch
+RUN cargo build --release -p os-node --features standalone-runtime --bin steelsearch
 
 FROM debian:bookworm-slim
 

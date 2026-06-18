@@ -770,6 +770,9 @@ Use `tools/run-native-closure-validation.py --batch release-evidence-inventory-c
 to refresh the current candidate-artifact inventory before attaching evidence;
 use `tools/report-release-evidence-inventory.py --require-complete` for the
 final cutoff check.
+Refresh packaging evidence with
+`tools/run-native-closure-validation.py --batch packaging-evidence-current`
+before running that inventory.
 
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new
