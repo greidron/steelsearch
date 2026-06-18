@@ -1928,6 +1928,16 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         ),
         timeout_seconds=180,
     ),
+    ExternalValidation(
+        "native_closure_status_report_preserves_required_gate_contract",
+        "native-closure-status-current",
+        (
+            "python3",
+            "tools/check-native-closure-status-report.py",
+            "target/native-closure-status-current.json",
+        ),
+        timeout_seconds=60,
+    ),
 )
 
 
