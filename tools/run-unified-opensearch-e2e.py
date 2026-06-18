@@ -283,11 +283,14 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
     summary = report.get("summary") or {}
     failed = int(summary.get("failed") or 0)
     skipped = int(summary.get("skipped") or 0)
-    status = "ok" if failed == 0 else "failed"
-    if skipped and failed == 0:
-        status = "ok"
     has_opensearch = "opensearch" in (report.get("targets") or {})
     classification = classify_cases(fixture_cases, report.get("cases") or [], has_opensearch)
+    missing = int(classification.get("missing") or 0)
+    status = "ok" if failed == 0 and missing == 0 else "failed"
+    if skipped and failed == 0:
+        status = "ok"
+    if missing and failed == 0:
+        status = "missing"
     return {
         **base,
         "status": status,
@@ -383,7 +386,11 @@ def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str,
 def section_summary(section_name: str, suite_results: list[dict[str, Any]]) -> dict[str, Any]:
     suites = [suite for suite in suite_results if suite["parity_section"] == section_name]
     required = [suite for suite in suites if suite["required"]]
-    missing = [suite for suite in required if suite["report_source"] == "missing"]
+    missing = [
+        suite
+        for suite in required
+        if suite["report_source"] == "missing" or suite["classification"].get("missing", 0)
+    ]
     failed = [suite for suite in required if suite["summary"]["failed"]]
     status = "ok"
     if failed:

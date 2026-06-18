@@ -105,6 +105,8 @@ def validate_report(report: dict[str, Any], allow_missing: bool) -> list[str]:
             errors.append(f"{name}: invalid status [{suite.get('status')}]")
         if suite.get("required") and suite.get("report_source") == "missing" and not allow_missing:
             errors.append(f"{name}: missing required report")
+        if suite.get("required") and suite.get("classification", {}).get("missing", 0) and not allow_missing:
+            errors.append(f"{name}: missing fixture case evidence")
     return errors
 
 

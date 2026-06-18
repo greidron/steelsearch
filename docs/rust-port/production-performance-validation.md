@@ -193,3 +193,36 @@ Current benchmark evidence produced by the Tantivy-native transition includes:
 The release owner must review the archive before approving a replacement gate.
 Missing archive evidence blocks production cutover even if the live cluster
 currently appears healthy.
+
+## Current E2E Parity Audit Notes
+
+The broad OpenSearch E2E harness is `tools/run-unified-opensearch-e2e.py`.
+It aggregates route, semantic, durability, security, and distributed parity
+reports across the compatibility fixtures. The report must not treat
+`failed=0` as full fixture coverage by itself: a stale or partial report can
+have zero failed cases while missing fixture cases that were added later.
+
+As of the current audit command:
+
+```bash
+python3 tools/run-unified-opensearch-e2e.py \
+  --output-dir target/unified-opensearch-e2e-audit \
+  --allow-missing
+python3 tools/check-unified-opensearch-e2e-report.py \
+  target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json
+```
+
+the checker fails closed without `--allow-missing` when required suite evidence
+does not cover every fixture case. The current collected reports show zero
+failed compared cases, but still miss required fixture evidence in:
+
+| Suite | Missing fixture cases | Fixture cases | Current passed cases |
+| --- | ---: | ---: | ---: |
+| `mapping` | 4 | 9 | 5 |
+| `search-semantic` | 40 | 50 | 10 |
+| `snapshot-lifecycle` | 3 | 18 | 15 |
+
+This means OpenSearch feature E2E comparison is broad and currently has no
+observed failing compared cases in the collected reports, but the replacement
+claim is not complete until these missing fixture cases are rerun or explicitly
+classified as skipped/known gaps in fresh reports.
