@@ -165,6 +165,8 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
         return validate_load_json(payload)
     if name == "load_comparison":
         return validate_load_comparison_json(payload)
+    if name == "rolling_upgrade_coverage":
+        return validate_rolling_upgrade_json(payload)
     return validate_generic_json_evidence(payload)
 
 
@@ -212,6 +214,21 @@ def validate_load_comparison_json(payload: dict[str, Any]) -> list[str]:
         errors.append("load comparison comparison object is missing")
     elif comparison.get("mode") == "dry-run":
         errors.append("load comparison is a dry-run report")
+    return errors
+
+
+def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
+    errors = validate_generic_json_evidence(payload)
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("rolling-upgrade summary is missing")
+    elif summary.get("coverage_scope") != "rolling-upgrade transcript fixture":
+        errors.append("rolling-upgrade coverage_scope mismatch")
+    transcript = payload.get("transcript")
+    if not isinstance(transcript, dict):
+        errors.append("rolling-upgrade transcript is missing")
+    elif transcript.get("profile") != "rolling-upgrade":
+        errors.append("rolling-upgrade transcript profile mismatch")
     return errors
 
 

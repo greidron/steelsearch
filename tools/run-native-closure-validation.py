@@ -1986,6 +1986,20 @@ BENCHMARK_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+ROLLING_UPGRADE_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "rolling_upgrade_evidence_runs_ordered_transcript_fixture",
+        "rolling-upgrade-evidence-current",
+        (
+            "python3",
+            "tools/generate-rolling-upgrade-evidence.py",
+            "--output",
+            "target/release-rolling-upgrade/rolling-upgrade-report.json",
+        ),
+        timeout_seconds=120,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -2012,6 +2026,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "release-evidence-inventory-current": RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH,
     "packaging-evidence-current": PACKAGING_EVIDENCE_CURRENT_BATCH,
     "benchmark-evidence-current": BENCHMARK_EVIDENCE_CURRENT_BATCH,
+    "rolling-upgrade-evidence-current": ROLLING_UPGRADE_EVIDENCE_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,

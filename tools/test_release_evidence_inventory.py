@@ -33,7 +33,6 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             for name in [
                 "final-chaos.json",
                 "final-packaging.json",
-                "final-rolling-upgrade.json",
             ]:
                 path = temp_dir / name
                 path.write_text("{}\n", encoding="utf-8")
@@ -41,6 +40,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_load(temp_dir / "final-load.json", now)
             self.write_valid_load_comparison(temp_dir / "final-load-comparison.json", now)
+            self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
             report = self.inventory.build_inventory(
                 temp_dir,
@@ -62,13 +62,13 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             for name in [
                 "final-chaos.json",
                 "final-packaging.json",
-                "final-rolling-upgrade.json",
             ]:
                 path = temp_dir / name
                 path.write_text("{}\n", encoding="utf-8")
                 os.utime(path, (now, now))
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_load(temp_dir / "final-load.json", now)
+            self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
             report = self.inventory.build_inventory(
                 temp_dir,
@@ -176,6 +176,28 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                         "opensearch": {"returncode": 0},
                     },
                     "comparison": {"mode": "completed"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.utime(path, (now, now))
+
+    def write_valid_rolling_upgrade(self, path: Path, now: float):
+        path.write_text(
+            json.dumps(
+                {
+                    "ready": True,
+                    "passed": True,
+                    "blockers": [],
+                    "summary": {
+                        "passed": True,
+                        "error_count": 0,
+                        "coverage_scope": "rolling-upgrade transcript fixture",
+                    },
+                    "transcript": {
+                        "profile": "rolling-upgrade",
+                        "status": "completed",
+                    },
                 }
             ),
             encoding="utf-8",
