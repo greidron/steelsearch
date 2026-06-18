@@ -125,10 +125,6 @@
         }
       },
       "extract": "search_hits",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch exists-query search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1"],
       "description": "[lexical] search exists present field semantic"
@@ -146,10 +142,6 @@
         }
       },
       "extract": "search_hits",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch exists-query null-field handling differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1"],
       "description": "[lexical] search exists null field semantic"
@@ -201,6 +193,10 @@
         }
       },
       "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch bool should-only minimum_should_match=0 results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1", "doc-3"],
       "description": "[lexical] search bool zero minimum_should_match semantic"

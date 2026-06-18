@@ -27,8 +27,8 @@ use crate::template_route_registration;
 use actix_web::http::StatusCode;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use os_engine::{
-    CreateIndexRequest, EngineError, IndexDocumentRequest, IndexEngine, RefreshRequest,
-    SearchRequest, SearchResponse, SortOrder, SortSpec,
+    CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
+    RefreshRequest, SearchRequest, SearchResponse, SortOrder, SortSpec,
 };
 use os_engine_tantivy::TantivyEngine;
 use os_core::Version;
@@ -9537,6 +9537,38 @@ impl SteelNode {
         )
     }
 
+    fn sync_native_bulk_index_document(
+        &self,
+        index: &str,
+        id: &str,
+        source: Value,
+        forced_refresh: bool,
+    ) {
+        self.apply_dynamic_mappings_for_source(index, &source);
+        let _ = self.native_engine.index_document(IndexDocumentRequest {
+            index: index.to_string(),
+            id: id.to_string(),
+            source,
+        });
+        if forced_refresh {
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: vec![index.to_string()],
+            });
+        }
+    }
+
+    fn sync_native_bulk_delete_document(&self, index: &str, id: &str, forced_refresh: bool) {
+        let _ = self.native_engine.delete_document(DeleteDocumentRequest {
+            index: index.to_string(),
+            id: id.to_string(),
+        });
+        if forced_refresh {
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: vec![index.to_string()],
+            });
+        }
+    }
+
     fn execute_bulk_action(
         &self,
         action: &str,
@@ -9629,6 +9661,7 @@ impl SteelNode {
         }
         match action {
             "index" => {
+                let native_source = payload.clone();
                 let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
                 let doc_existed = docs.contains_key(&key);
                 if expected_seq_no.is_some() || expected_primary_term.is_some() {
@@ -9685,6 +9718,14 @@ impl SteelNode {
                     refreshed: forced_refresh,
                 };
                 docs.insert(key, record.clone());
+                drop(docs);
+                drop(next_seq_no);
+                self.sync_native_bulk_index_document(
+                    &resolved_index,
+                    id,
+                    native_source,
+                    forced_refresh,
+                );
                 serde_json::json!({
                     "index": {
                         "_index": resolved_index,
@@ -9699,6 +9740,7 @@ impl SteelNode {
                 })
             }
             "create" => {
+                let native_source = payload.clone();
                 let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
                 if docs.contains_key(&key) {
                     return serde_json::json!({
@@ -9725,6 +9767,14 @@ impl SteelNode {
                     refreshed: forced_refresh,
                 };
                 docs.insert(key, record.clone());
+                drop(docs);
+                drop(next_seq_no);
+                self.sync_native_bulk_index_document(
+                    &resolved_index,
+                    id,
+                    native_source,
+                    forced_refresh,
+                );
                 serde_json::json!({
                     "create": {
                         "_index": resolved_index,
@@ -9767,6 +9817,9 @@ impl SteelNode {
                 let assigned_seq_no = *next_seq_no;
                 *next_seq_no += 1;
                 if let Some(record) = docs.remove(&key) {
+                    drop(docs);
+                    drop(next_seq_no);
+                    self.sync_native_bulk_delete_document(&resolved_index, id, forced_refresh);
                     serde_json::json!({
                         "delete": {
                             "_index": resolved_index,
@@ -9827,10 +9880,11 @@ impl SteelNode {
                 *next_seq_no += 1;
                 if let Some(record) = docs.get_mut(&key) {
                     merge_json_object(&mut record.source, &doc_patch);
+                    let native_source = record.source.clone();
                     record.version += 1;
                     record.seq_no = assigned_seq_no as i64;
                     record.refreshed = forced_refresh;
-                    return serde_json::json!({
+                    let response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
                             "_id": id,
@@ -9842,9 +9896,19 @@ impl SteelNode {
                             "forced_refresh": forced_refresh,
                         }
                     });
+                    drop(docs);
+                    drop(next_seq_no);
+                    self.sync_native_bulk_index_document(
+                        &resolved_index,
+                        id,
+                        native_source,
+                        forced_refresh,
+                    );
+                    return response;
                 }
                 if doc_as_upsert || !upsert.is_null() {
                     let source = if doc_as_upsert { doc_patch } else { upsert };
+                    let native_source = source.clone();
                     let record = StoredDocument {
                         source,
                         version: 1,
@@ -9854,7 +9918,7 @@ impl SteelNode {
                         refreshed: forced_refresh,
                     };
                     docs.insert(key, record.clone());
-                    return serde_json::json!({
+                    let response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
                             "_id": id,
@@ -9866,6 +9930,15 @@ impl SteelNode {
                             "forced_refresh": forced_refresh,
                         }
                     });
+                    drop(docs);
+                    drop(next_seq_no);
+                    self.sync_native_bulk_index_document(
+                        &resolved_index,
+                        id,
+                        native_source,
+                        forced_refresh,
+                    );
+                    return response;
                 }
                 serde_json::json!({
                     "update": {
@@ -39139,6 +39212,93 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         ));
         assert_eq!(indexed.status, 200);
         assert_eq!(indexed.body["_source"]["message"], "indexed-after-errors");
+    }
+
+    #[test]
+    fn bulk_route_indexes_dynamic_text_fields_into_native_search_path() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-bulk-exists-000001")
+                    .with_json_body(serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+
+        let bulk_ndjson = concat!(
+            "{\"index\":{\"_index\":\"logs-bulk-exists-000001\",\"_id\":\"doc-1\"}}\n",
+            "{\"tenant\":\"tenant-a\",\"contact_email\":\"alpha@example.com\"}\n",
+            "{\"index\":{\"_index\":\"logs-bulk-exists-000001\",\"_id\":\"doc-2\"}}\n",
+            "{\"tenant\":\"tenant-a\",\"contact_email\":null}\n"
+        );
+        let bulk_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(bulk_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(bulk_response.status, 200);
+        assert_eq!(bulk_response.body["errors"], Value::Bool(false));
+
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-bulk-exists-000001/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-bulk-exists-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "exists": {
+                            "field": "contact_email"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(search.status, 200);
+        assert_eq!(search.body["hits"]["total"]["value"], 1);
+        assert_eq!(search.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let delete_ndjson = concat!(
+            "{\"delete\":{\"_index\":\"logs-bulk-exists-000001\",\"_id\":\"doc-1\"}}\n"
+        );
+        let delete_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(delete_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(delete_response.body["errors"], Value::Bool(false));
+
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-bulk-exists-000001/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+
+        let search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-bulk-exists-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "exists": {
+                            "field": "contact_email"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(search.status, 200);
+        assert_eq!(search.body["hits"]["total"]["value"], 0);
     }
 
     #[test]
