@@ -621,6 +621,12 @@ path.
   non-`_id` `exists` leaves now also reduce directly through the current
   value-predicate candidate path, including text/vector-backed existence
   checks that previously sat in the unsupported-leaf fallback bucket.
+- Current direct nested phrase-leaf reduction reading after the latest
+  child-ordinal expansion:
+  nested `match_phrase` and `match_phrase_prefix` leaves now resolve inside the
+  nested child index using child-local source values instead of returning to the
+  parent source-validation fallback bucket, while still preserving tuple
+  isolation across sibling nested objects.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
