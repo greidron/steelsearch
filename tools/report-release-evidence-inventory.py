@@ -19,6 +19,7 @@ STARTUP_ITEMS = {
     "load_test_coverage": {
         "artifact_kind": "load JSON",
         "patterns": ("**/*load*.json",),
+        "exclude_name_parts": ("comparison",),
         "attach_argument": "--load-report",
     },
     "chaos_test_coverage": {
@@ -117,7 +118,7 @@ def inspect_item(
             candidate
             for pattern in spec["patterns"]
             for candidate in root.glob(pattern)
-            if candidate.is_file()
+            if candidate.is_file() and not excluded_candidate(candidate, spec)
         ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
@@ -133,6 +134,7 @@ def inspect_item(
             blockers.append(
                 f"latest artifact is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
             )
+        blockers.extend(validate_artifact_shape(name, latest))
     return {
         "name": name,
         "artifact_kind": spec["artifact_kind"],
@@ -143,6 +145,87 @@ def inspect_item(
         "latest_artifact_path": str(latest) if latest else None,
         "latest_artifact_age_seconds": age_seconds,
     }
+
+
+def excluded_candidate(path: Path, spec: dict[str, Any]) -> bool:
+    name = path.name.lower()
+    return any(part in name for part in spec.get("exclude_name_parts", ()))
+
+
+def validate_artifact_shape(name: str, path: Path) -> list[str]:
+    if name == "benchmark_coverage":
+        return validate_benchmark_jsonl(path)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as error:  # noqa: BLE001 - inventory reports blocker
+        return [f"artifact is not parseable JSON: {error}"]
+    if not isinstance(payload, dict):
+        return ["artifact payload is not a JSON object"]
+    if name == "load_test_coverage":
+        return validate_load_json(payload)
+    if name == "load_comparison":
+        return validate_load_comparison_json(payload)
+    return validate_generic_json_evidence(payload)
+
+
+def validate_benchmark_jsonl(path: Path) -> list[str]:
+    records: list[Any] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                records.append(json.loads(line))
+    except Exception as error:  # noqa: BLE001 - inventory reports blocker
+        return [f"artifact is not parseable JSONL: {error}"]
+    if not records:
+        return ["benchmark JSONL contains no records"]
+    if not any(isinstance(record, dict) and record.get("benchmark") for record in records):
+        return ["benchmark JSONL contains no named benchmark records"]
+    return []
+
+
+def validate_load_json(payload: dict[str, Any]) -> list[str]:
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        return ["load JSON summary is missing"]
+    errors: list[str] = []
+    if summary.get("error_count", 0) != 0:
+        errors.append(f"load JSON summary.error_count={summary.get('error_count')}")
+    if not isinstance(summary.get("operation_count"), (int, float)):
+        errors.append("load JSON summary.operation_count is missing")
+    return errors
+
+
+def validate_load_comparison_json(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    targets = payload.get("targets")
+    comparison = payload.get("comparison")
+    if not isinstance(targets, dict):
+        errors.append("load comparison targets are missing")
+    else:
+        for name in ("steelsearch", "opensearch"):
+            target = targets.get(name)
+            if not isinstance(target, dict):
+                errors.append(f"load comparison target is missing: {name}")
+            elif target.get("returncode", 0) != 0:
+                errors.append(f"load comparison {name}.returncode={target.get('returncode')}")
+    if not isinstance(comparison, dict):
+        errors.append("load comparison comparison object is missing")
+    elif comparison.get("mode") == "dry-run":
+        errors.append("load comparison is a dry-run report")
+    return errors
+
+
+def validate_generic_json_evidence(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    summary = payload.get("summary")
+    if isinstance(summary, dict) and summary.get("error_count", 0) != 0:
+        errors.append(f"evidence summary.error_count={summary.get('error_count')}")
+    blockers = payload.get("blockers")
+    if isinstance(blockers, list) and blockers:
+        errors.append("evidence blockers is not empty")
+    if payload.get("ready") is False or payload.get("passed") is False:
+        errors.append("evidence reports ready/passed false")
+    return errors
 
 
 def unique_paths(paths: Any) -> list[Path]:
