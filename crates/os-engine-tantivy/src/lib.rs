@@ -15430,6 +15430,21 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         | Query::Boosting { .. }
         | Query::FunctionScore { .. }
         | Query::ScriptScore { .. } => true,
+        Query::Prefix {
+            field,
+            case_insensitive,
+            ..
+        }
+        | Query::Wildcard {
+            field,
+            case_insensitive,
+            ..
+        }
+        | Query::Regexp {
+            field,
+            case_insensitive,
+            ..
+        } if *case_insensitive && field != "_id" => true,
         Query::Wrapper { query } => query_requires_native_candidate_post_filter(query),
         Query::Bool { clauses } => clauses
             .must
@@ -15449,6 +15464,21 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. } => true,
+        Query::Prefix {
+            field,
+            case_insensitive,
+            ..
+        }
+        | Query::Wildcard {
+            field,
+            case_insensitive,
+            ..
+        }
+        | Query::Regexp {
+            field,
+            case_insensitive,
+            ..
+        } if *case_insensitive && field != "_id" => true,
         Query::Bool { clauses } => clauses
             .must
             .iter()
@@ -129614,7 +129644,7 @@ mod tests {
     }
 
     #[test]
-    fn compatibility_materialization_updates_search_telemetry_counters() {
+    fn case_insensitive_wildcard_text_field_uses_source_candidate_native_page() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -129676,20 +129706,20 @@ mod tests {
         assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "2"]);
         assert!(page_response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
-                && phase.description == "compatibility materialization materialized requested hits"
+                && phase.description == "materialized only the requested native page"
         }));
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
 
         let size_zero_response = engine.search(search_request(0)).unwrap();
         assert_eq!(size_zero_response.total_hits, 2);
         assert!(size_zero_response.hits.is_empty());
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
-        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
     }
 
     #[test]

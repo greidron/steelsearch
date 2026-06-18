@@ -259,6 +259,10 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
+        "case_insensitive_wildcard_text_field_uses_source_candidate_native_page",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
         "query_string_unsupported_field_type_uses_source_candidate_native_page",
         "source-backed-native-query",
     ),

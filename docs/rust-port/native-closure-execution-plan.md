@@ -72,7 +72,7 @@ Out of scope:
   request-result cache bypasses with empty per-index request-result cache
   details.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-18 with 39/39 tests and `zero_tests=0`, covering native execution,
+  2026-06-18 with 40/40 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
   current source-backed query families: nested child ordinals,
   `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
@@ -81,9 +81,9 @@ Out of scope:
   exact-circle `geo_distance` source validation for native bounding-box
   candidates, fieldless `more_like_this` source materialization,
   unsupported-field `query_string` / `simple_query_string` source materialization,
-  source-candidate native page coverage for `distance_feature` and
-  `rank_feature` non-native leaf boundaries, and telemetry-visible `terms_set`
-  materialization when a mapped field cannot produce Tantivy term queries.
+  source-candidate native page coverage for `distance_feature`,
+  `rank_feature`, `terms_set`, and text-field case-insensitive wildcard
+  non-native leaf boundaries.
 - The same runner now has a `benchmark-telemetry` batch. It passed on
   2026-06-18 with 3/3 validations and `zero_tests=0`, covering
   benchmark/load JSON and Markdown exposure for materialized response fetches,
@@ -115,11 +115,12 @@ Out of scope:
   `target/materialization-priority-targeted-current/` now covers
   `fallback_terms_set`, `fallback_distance_feature`, `fallback_rank_feature`,
   `fallback_more_like_this`, and `fallback_case_insensitive_wildcard`; after
-  the distance-feature, rank-feature, and terms-set source-candidate native
-  page paths landed, `fallback_distance_feature`, `fallback_rank_feature`, and
-  `fallback_terms_set` report zero materialized and compatibility materialized
-  response fetches, and the current top ranked target is
-  `case-insensitive wildcard compatibility materialization`.
+  the distance-feature, rank-feature, terms-set, and text-field
+  case-insensitive wildcard source-candidate native page paths landed,
+  `fallback_distance_feature`, `fallback_rank_feature`, `fallback_terms_set`,
+  and `fallback_case_insensitive_wildcard` report zero materialized and
+  compatibility materialized response fetches, and the current top ranked target
+  is `more_like_this compatibility materialization`.
   The same gate now covers standalone HTTP query-string native-path stats wiring,
   so query-string compatibility materialization is visible through `_nodes/stats`
   rather than disappearing into the source-eval route.
@@ -386,7 +387,7 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. replace the current top-ranked case-insensitive wildcard compatibility
+3. replace the current top-ranked `more_like_this` compatibility
    materialization family with a native source-candidate page path, then rerun
    the targeted materialization-priority matrix;
 4. add focused regression cases for hybrid plus aggregation plus explicit sort;
