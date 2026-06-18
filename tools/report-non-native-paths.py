@@ -28,7 +28,7 @@ class Probe:
     category: str
     path: Path
     patterns: tuple[str, ...]
-    risk: str
+    watchpoint: str
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,7 @@ PROBES: tuple[Probe, ...] = (
             r"source-backed `query_string`",
             r"source-backed `simple_query_string`",
         ),
-        risk="document/source evaluation can cost more than native candidate execution",
+        watchpoint="unsupported or analyzer-sensitive shapes must stay explicit in fallback telemetry",
     ),
     Probe(
         name="materialized response fallback",
@@ -79,7 +79,7 @@ PROBES: tuple[Probe, ...] = (
             r"materialized only the requested",
             r"SearchHit",
         ),
-        risk="some shapes still require SearchHit materialization boundaries; benchmark telemetry now exposes the deltas",
+        watchpoint="materialized SearchHit boundaries must stay budgeted and visible in benchmark telemetry",
     ),
     Probe(
         name="vector/hybrid fallback boundary",
@@ -91,7 +91,7 @@ PROBES: tuple[Probe, ...] = (
             r"fallback",
             r"materialization",
         ),
-        risk="unsupported vector/hybrid shapes can fall back to broader materialization",
+        watchpoint="unsupported vector/hybrid shapes must remain fallback-counted while direct paths widen",
     ),
     Probe(
         name="mixed shard movement hardening",
@@ -104,7 +104,7 @@ PROBES: tuple[Probe, ...] = (
             r"checkpoint_monotonicity_ok",
             r"unsupported_allocation_explain_ok",
         ),
-        risk="representative movement is evidenced, but interruption/resume coverage remains thin",
+        watchpoint="live interruption/resume evidence must stay wired into the release gate",
     ),
     Probe(
         name="checkpoint drift probe",
@@ -125,7 +125,7 @@ PROBES: tuple[Probe, ...] = (
             r"interrupt_java_to_steelsearch_recovery",
             r"interrupt_steelsearch_to_opensearch_recovery",
         ),
-        risk="must stay present so mixed movement keeps seq/checkpoint drift, monotonicity, retention-lease metadata, and unsupported allocation-explain evidence, the interrupted/resumed phase contract, the enforceable gate option, and both live interruption exercises",
+        watchpoint="must stay present so mixed movement keeps seq/checkpoint drift, monotonicity, retention-lease metadata, unsupported allocation-explain evidence, the interrupted/resumed phase contract, the enforceable gate option, and both live interruption exercises",
     ),
     Probe(
         name="mixed shard movement validation batch",
@@ -137,7 +137,7 @@ PROBES: tuple[Probe, ...] = (
             r"--exercise-interruption",
             r"--require-interruption",
         ),
-        risk="must stay wired so the final mixed-cluster gate can run the live interruption probe",
+        watchpoint="must stay wired so the final mixed-cluster gate can run the live interruption probe",
     ),
     Probe(
         name="runtime control gaps",
@@ -154,7 +154,7 @@ PROBES: tuple[Probe, ...] = (
             r"multi_index_knn_vector_cache_populates_request_result_cache_detail_entries",
             r"multi_index_hybrid_vector_request_result_cache_is_telemetry_visible",
         ),
-        risk="request-result cache is wired for pure single-index and multi-index KNN plus hybrid bool vector requests with native aggregation/sort plus highlight/explain post-processing and same-request refresh correctness; unsupported non-vector-score cache surfaces remain telemetry-counted",
+        watchpoint="unsupported non-vector-score cache surfaces must remain telemetry-counted as cache coverage widens",
     ),
     Probe(
         name="production runtime controls",
@@ -166,7 +166,7 @@ PROBES: tuple[Probe, ...] = (
             r"circuit breaker",
             r"ResourceWatcherService",
         ),
-        risk="production load/failure behavior is not fully OpenSearch-equivalent",
+        watchpoint="optional Java-coordinator peer-backpressure evidence is still a separate live mixed-cluster track",
     ),
     Probe(
         name="module and feature registration boundaries",
@@ -179,7 +179,7 @@ PROBES: tuple[Probe, ...] = (
             r"startup transcript",
             r"Rust-native feature registration",
         ),
-        risk="runtime feature/module loading must be visible and registry-derived rather than implied by compiled-in route stubs",
+        watchpoint="runtime feature/module loading must stay registry-derived rather than implied by compiled-in route stubs",
     ),
     Probe(
         name="production security fail-closed boundaries",
@@ -194,7 +194,7 @@ PROBES: tuple[Probe, ...] = (
             r"fail closed",
             r"OpenSearch Security plugin API",
         ),
-        risk="secure production replacement is blocked until boundaries are enforced; baseline audit events and unsupported OpenSearch Security plugin API fail-closed behavior are now explicit",
+        watchpoint="final benchmark, load, chaos, packaging, and rolling-upgrade evidence must feed production release readiness",
     ),
 )
 
@@ -360,7 +360,7 @@ def probe_result(probe: Probe) -> dict[str, Any]:
         "name": probe.name,
         "category": probe.category,
         "path": str(probe.path.relative_to(ROOT)),
-        "risk": probe.risk,
+        "watchpoint": probe.watchpoint,
         "matched": all(item["count"] > 0 for item in matches),
         "matches": matches,
     }
@@ -431,13 +431,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Probes",
         "",
-        "| Category | Name | Matched | Source | Risk |",
+        "| Category | Name | Matched | Source | Watchpoint |",
         "| --- | --- | ---: | --- | --- |",
     ]
     for probe in report["probes"]:
         matched = "yes" if probe["matched"] else "no"
         lines.append(
-            f"| {probe['category']} | {probe['name']} | {matched} | `{probe['path']}` | {probe['risk']} |"
+            f"| {probe['category']} | {probe['name']} | {matched} | `{probe['path']}` | {probe['watchpoint']} |"
         )
     lines.extend(
         [
