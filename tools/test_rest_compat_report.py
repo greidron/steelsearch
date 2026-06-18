@@ -77,6 +77,49 @@ class RestCompatReportTests(unittest.TestCase):
 
         self.assertEqual(errors, ["failed cases: included"])
 
+    def test_partial_fixture_validation_ignores_unselected_cases(self) -> None:
+        fixture = {
+            "cases": [
+                {"name": "included"},
+                {
+                    "name": "not_selected",
+                    "comparison": "steelsearch_only",
+                    "expected_steelsearch_status": 400,
+                },
+            ],
+        }
+
+        errors = check_rest_compat_report.validate_fixture(
+            fixture,
+            selected_cases={"included"},
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_partial_fixture_validation_still_checks_selected_cases(self) -> None:
+        fixture = {
+            "cases": [
+                {
+                    "name": "included",
+                    "comparison": "steelsearch_only",
+                    "expected_steelsearch_status": 400,
+                },
+            ],
+        }
+
+        errors = check_rest_compat_report.validate_fixture(
+            fixture,
+            selected_cases={"included"},
+        )
+
+        self.assertEqual(
+            errors,
+            [
+                "steelsearch_only case [included] is missing skip_scope",
+                "steelsearch_only case [included] is missing reason",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

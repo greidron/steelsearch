@@ -20,12 +20,23 @@ def main() -> int:
     args = parser.parse_args()
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
-    errors = validate_fixture(fixture)
+    errors: list[str] = []
 
     if args.report:
         report_path = Path(args.report)
         if report_path.exists():
             report = json.loads(report_path.read_text(encoding="utf-8"))
+            report_case_names = {
+                case.get("name")
+                for case in report.get("cases", [])
+                if case.get("name")
+            }
+            errors.extend(
+                validate_fixture(
+                    fixture,
+                    selected_cases=report_case_names if args.allow_partial_report else None,
+                )
+            )
             errors.extend(
                 validate_report(
                     fixture,
@@ -37,6 +48,8 @@ def main() -> int:
             errors.append(f"missing REST compatibility report: {report_path}")
     elif args.require_report:
         errors.append("--require-report needs --report")
+    else:
+        errors.extend(validate_fixture(fixture))
 
     if errors:
         for error in errors:
@@ -45,13 +58,19 @@ def main() -> int:
     return 0
 
 
-def validate_fixture(fixture: dict[str, Any]) -> list[str]:
+def validate_fixture(
+    fixture: dict[str, Any],
+    *,
+    selected_cases: set[str] | None = None,
+) -> list[str]:
     errors: list[str] = []
     seen_names: set[str] = set()
     for case in fixture.get("cases", []):
         name = case.get("name")
         if not name:
             errors.append("case is missing name")
+            continue
+        if selected_cases is not None and name not in selected_cases:
             continue
         if name in seen_names:
             errors.append(f"duplicate case name [{name}]")

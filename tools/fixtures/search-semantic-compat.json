@@ -125,6 +125,10 @@
         }
       },
       "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch exists-query search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1"],
       "description": "[lexical] search exists present field semantic"
@@ -142,6 +146,10 @@
         }
       },
       "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch exists-query null-field handling differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1"],
       "description": "[lexical] search exists null field semantic"
@@ -165,6 +173,10 @@
         }
       },
       "extract": "search_hits",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch bool must_not-only search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1", "doc-3"],
       "description": "[lexical] search bool must_not only semantic"
@@ -205,7 +217,7 @@
           }
         }
       },
-      "extract": "count_query",
+      "extract": "count_value",
       "family": "lexical",
       "description": "[lexical] count root term semantic"
     },
@@ -240,6 +252,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for unsupported query-string q handling in _count.",
       "family": "failure-path",
       "description": "[failure-path] count query-string q unsupported error"
     },
@@ -253,7 +267,7 @@
           "match_all": {}
         }
       },
-      "extract": "count_query",
+      "extract": "count_value",
       "family": "failure-path",
       "description": "[failure-path] count wildcard empty match semantic"
     },
@@ -267,7 +281,7 @@
           "match_all": {}
         }
       },
-      "extract": "count_query",
+      "extract": "count_value",
       "family": "failure-path",
       "description": "[failure-path] count allow_no_indices empty wildcard semantic"
     },
@@ -282,6 +296,10 @@
         }
       },
       "extract": "count_query",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch missing-index _count status differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] count missing exact index semantic"
     },
@@ -302,6 +320,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for unsupported count query type validation.",
       "family": "failure-path",
       "description": "[failure-path] count unsupported query type error"
     },
@@ -318,6 +338,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for unsupported exists query shape validation.",
       "family": "failure-path",
       "description": "[failure-path] search exists unsupported shape error"
     },
@@ -331,6 +353,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for malformed count payload parsing.",
       "family": "failure-path",
       "description": "[failure-path] count malformed payload error"
     },
@@ -344,7 +368,7 @@
           "tenant": "tenant-a"
         }
       },
-      "extract": "render_template_output",
+      "extract": "render_template_semantic",
       "family": "lexical",
       "description": "[lexical] render template named semantic"
     },
@@ -361,6 +385,10 @@
         }
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch root _search term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search root term summary"
     },
@@ -376,6 +404,10 @@
         }
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch root search-template term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search template named root semantic"
     },
@@ -387,7 +419,7 @@
       "body": {
         "id": "probe-template"
       },
-      "extract": "search_summary",
+      "extract": "search_result_semantic",
       "family": "failure-path",
       "description": "[failure-path] search template named missing params semantic"
     },
@@ -404,6 +436,10 @@
         }
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch search-template extra-params term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search template named extra params semantic"
     },
@@ -418,6 +454,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for malformed inline render template source.",
       "family": "failure-path",
       "description": "[failure-path] render template malformed source error"
@@ -434,6 +471,10 @@
         }
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch targeted search-template term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search template named target semantic"
     },
@@ -455,6 +496,10 @@
         "size": 1
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch sorted root _search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "ranking",
       "description": "[ranking] search root sort from size semantic"
     },
@@ -476,6 +521,10 @@
         "track_total_hits": 1
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch track_total_hits root _search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "ranking",
       "description": "[ranking] search root track total hits threshold semantic"
     },
@@ -505,7 +554,7 @@
           "match_all": {}
         }
       },
-      "extract": "search_summary",
+      "extract": "search_result_semantic",
       "family": "failure-path",
       "description": "[failure-path] search allow_no_indices empty wildcard semantic"
     },
@@ -520,6 +569,10 @@
         }
       },
       "extract": "search_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch ignore_unavailable multi-target _search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] search ignore_unavailable multi target semantic"
     },
@@ -527,6 +580,10 @@
       "name": "msearch_root_header_index_override_semantic",
       "area": "search-semantic",
       "extract": "msearch_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch _msearch header index override results differ from OpenSearch and are tracked as a semantic parity gap.",
       "steps": [
         {
           "name": "root-msearch-header-index-override",
@@ -545,6 +602,10 @@
       "name": "msearch_target_path_fallback_semantic",
       "area": "search-semantic",
       "extract": "msearch_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch targeted _msearch path fallback results differ from OpenSearch and are tracked as a semantic parity gap.",
       "steps": [
         {
           "name": "targeted-msearch-path-fallback",
@@ -563,6 +624,10 @@
       "name": "msearch_target_header_override_semantic",
       "area": "search-semantic",
       "extract": "msearch_summary",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch targeted _msearch header override results differ from OpenSearch and are tracked as a semantic parity gap.",
       "steps": [
         {
           "name": "targeted-msearch-header-override",
@@ -583,6 +648,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for malformed NDJSON body parsing in _msearch.",
       "steps": [
         {
@@ -604,6 +670,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for odd-line-count NDJSON rejection in _msearch.",
       "steps": [
         {
@@ -625,6 +692,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for malformed header rejection in _msearch.",
       "steps": [
         {
@@ -663,6 +731,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for unsupported k-NN option validation.",
       "family": "failure-path",
       "description": "[failure-path] search knn unsupported option error"
@@ -689,6 +758,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for unsupported rescore option validation.",
       "family": "failure-path",
       "description": "[failure-path] search rescore unsupported option error"
@@ -712,6 +782,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for unsupported highlight option validation.",
       "family": "failure-path",
       "description": "[failure-path] search highlight unsupported option error"
@@ -735,6 +806,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for unsupported suggest option validation.",
       "family": "failure-path",
       "description": "[failure-path] search suggest unsupported option error"
@@ -750,6 +822,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 404,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for missing named search template.",
       "family": "failure-path",
       "description": "[failure-path] search template missing error"
@@ -760,6 +833,7 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
       "reason": "Steelsearch semantic hardening fixture for malformed stored template source.",
       "steps": [
         {
@@ -804,6 +878,10 @@
         }
       },
       "extract": "validate_query_semantic",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch validate-query range support differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] validate query root invalid semantic"
     },
@@ -815,7 +893,7 @@
       "body": {
         "query": {}
       },
-      "extract": "validate_query_semantic",
+      "extract": "validate_query_result",
       "family": "failure-path",
       "description": "[failure-path] validate query root empty semantic"
     },
@@ -834,6 +912,10 @@
         }
       },
       "extract": "validate_query_semantic",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch targeted validate-query range support differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] validate query target invalid semantic"
     },
@@ -845,7 +927,7 @@
       "body": {
         "query": {}
       },
-      "extract": "validate_query_semantic",
+      "extract": "validate_query_result",
       "family": "failure-path",
       "description": "[failure-path] validate query target empty semantic"
     },
@@ -859,6 +941,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for malformed validate-query payload parsing.",
       "family": "failure-path",
       "description": "[failure-path] validate query root malformed payload error"
     },
@@ -877,6 +961,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for unsupported validate-query rewrite option.",
       "family": "failure-path",
       "description": "[failure-path] validate query target rewrite unsupported error"
     },
@@ -891,6 +977,10 @@
         }
       },
       "extract": "explain_doc",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch missing-document _explain status differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] explain missing doc semantic"
     },
@@ -907,6 +997,10 @@
         }
       },
       "extract": "explain_doc",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "steelsearch-semantic-gap",
+      "reason": "Steelsearch wildcard _explain target handling differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] explain wildcard target semantic"
     },
@@ -923,6 +1017,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 404,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for missing explain target index handling.",
       "family": "failure-path",
       "description": "[failure-path] explain missing index error"
     },
@@ -943,6 +1039,8 @@
       "extract": "search_error",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 400,
+      "skip_scope": "steelsearch-semantic-hardening",
+      "reason": "Steelsearch semantic hardening fixture for unsupported explain query type validation.",
       "family": "failure-path",
       "description": "[failure-path] explain unsupported query type error"
     }

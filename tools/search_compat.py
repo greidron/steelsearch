@@ -1352,6 +1352,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "count": body.get("count") if isinstance(body, dict) else None,
             "shards_total": shards.get("total") if isinstance(shards, dict) else None,
         }
+    if kind == "count_value":
+        return {
+            "status": response["status"],
+            "count": body.get("count") if isinstance(body, dict) else None,
+        }
     if kind == "validate_query_semantic":
         explanations = body.get("explanations") if isinstance(body, dict) else None
         first = explanations[0] if isinstance(explanations, list) and explanations else {}
@@ -1362,10 +1367,20 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "explanation_valid": first.get("valid") if isinstance(first, dict) else None,
             "explanation": first.get("explanation") if isinstance(first, dict) else None,
         }
+    if kind == "validate_query_result":
+        return {
+            "status": response["status"],
+            "valid": body.get("valid") if isinstance(body, dict) else None,
+        }
     if kind == "render_template_output":
         return {
             "status": response["status"],
             "_id": body.get("_id") if isinstance(body, dict) else None,
+            "template_output": body.get("template_output") if isinstance(body, dict) else None,
+        }
+    if kind == "render_template_semantic":
+        return {
+            "status": response["status"],
             "template_output": body.get("template_output") if isinstance(body, dict) else None,
         }
     if kind == "search_error":
@@ -1430,6 +1445,23 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 "skipped": shards.get("skipped"),
                 "failed": shards.get("failed"),
             },
+        }
+    if kind == "search_result_semantic":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        total = (body.get("hits") or {}).get("total")
+        if isinstance(total, dict):
+            total_value = total.get("value")
+            total_relation = total.get("relation")
+        else:
+            total_value = total
+            total_relation = None
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "relation": total_relation,
+            "ids": [hit.get("_id") for hit in hits],
+            "timed_out": body.get("timed_out"),
+            "terminated_early": body.get("terminated_early"),
         }
     if kind == "search_shard_failures":
         hits = ((body.get("hits") or {}).get("hits") or [])
