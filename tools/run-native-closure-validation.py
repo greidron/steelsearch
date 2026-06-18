@@ -511,6 +511,13 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
+    *NON_NATIVE_INVENTORY_BATCH,
+    *E2E_REQUIRED_PARITY_BATCH,
+    *MATERIALIZATION_PRIORITY_CURRENT_BATCH,
+    *RELEASE_READINESS_TOOLING_BATCH,
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -1907,6 +1914,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "materialization-priority-current": MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     "release-readiness-tooling": RELEASE_READINESS_TOOLING_BATCH,
+    "current-evidence-gate": CURRENT_EVIDENCE_GATE_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,

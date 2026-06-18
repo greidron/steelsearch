@@ -80,6 +80,21 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("summary", command_text)
         self.assertIn("passed", command_text)
 
+    def test_current_evidence_gate_collects_non_live_closure_checks(self):
+        batch = self.runner.BATCHES["current-evidence-gate"]
+        names = {case.name for case in batch}
+
+        self.assertEqual(
+            names,
+            {
+                "non_native_path_inventory_has_no_missing_probe_or_family",
+                "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+                "targeted_materialization_priority_report_has_zero_ranked_operations",
+                "release_readiness_writer_and_manifest_checker_contract",
+            },
+        )
+        self.assertFalse(any(case.group == "runtime-fairness-peer-backpressure" for case in batch))
+
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
 

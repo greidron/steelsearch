@@ -751,6 +751,11 @@ Completed execution sequence:
 
 Current execution order:
 
+The non-live checks below are grouped by
+`tools/run-native-closure-validation.py --batch current-evidence-gate`.
+The optional live peer-backpressure check and final fresh cutover artifacts stay
+separate because they depend on local OpenSearch distribution/runtime evidence.
+
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new
    entries as workstream-specific watchpoints rather than format-only parity.
