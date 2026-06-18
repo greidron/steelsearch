@@ -1974,8 +1974,7 @@ impl IndexEngine for TantivyEngine {
             .store
             .write()
             .expect("tantivy engine store rwlock poisoned");
-        let request_result_cache_supported =
-            single_index_name.is_some() && vector_request_result_cache_supported(&query);
+        let request_result_cache_supported = vector_request_result_cache_supported(&query);
         store.record_request_result_cache_bypasses_for_search(
             &query,
             request.highlight.is_some(),
@@ -1992,12 +1991,6 @@ impl IndexEngine for TantivyEngine {
             fetch_subphases.clone(),
             source_projection_fields.as_deref(),
         )?;
-        drop(store);
-
-        let store = self
-            .store
-            .read()
-            .expect("tantivy engine store rwlock poisoned");
         let mut response = if let Some(response) = cached_response {
             response
         } else {
@@ -4383,7 +4376,7 @@ impl EngineStore {
     }
 
     fn search_response_index_aware_with_optional_reusable(
-        &self,
+        &mut self,
         index_names: &[String],
         single_index_name: Option<&str>,
         query: &Query,
@@ -4736,11 +4729,25 @@ impl EngineStore {
         }
         let mut hits = Vec::new();
         for index_name in index_names {
-            let Some(index) = self.indices.get(index_name) else {
+            let Some(index) = self.indices.get_mut(index_name) else {
                 return Err(EngineError::IndexNotFound {
                     index: index_name.clone(),
                 });
             };
+            if vector_request_result_cache_supported(query) {
+                if let Some((_, mut index_hits)) = index
+                    .search_hits_page_for_query_index_aware_cached(
+                        index_name,
+                        query,
+                        sort_specs,
+                        0,
+                        usize::MAX,
+                    )?
+                {
+                    hits.append(&mut index_hits);
+                    continue;
+                }
+            }
             for document in index.documents.values() {
                 if document.metadata.seq_no > index.refreshed_seq_no {
                     continue;
@@ -6752,6 +6759,28 @@ impl StoredIndex {
             }
         }
         self.search_hits_page_for_query_native(index_name, query, sort, from, size)
+    }
+
+    fn search_hits_page_for_query_index_aware_cached(
+        &mut self,
+        index_name: &str,
+        query: &Query,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        match query {
+            Query::Knn(knn) => self.search_hits_page_for_knn_query_cached(
+                index_name, knn, sort, from, size,
+            ),
+            Query::Bool { clauses } if Self::query_contains_knn(query) => self
+                .search_hits_page_for_hybrid_bool_query_cached(
+                    index_name, clauses, sort, from, size,
+                ),
+            _ => self.search_hits_page_for_query_index_aware(
+                index_name, query, sort, from, size,
+            ),
+        }
     }
 
     fn search_hits_page_for_knn_query_cached(
@@ -136444,7 +136473,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible() {
+    fn multi_index_hybrid_vector_request_result_cache_is_telemetry_visible() {
         let engine = TantivyEngine::default();
         for index in ["vectors", "vectors-alt"] {
             engine
@@ -136490,7 +136519,7 @@ mod tests {
             })
             .unwrap();
 
-        let unsupported_hybrid_request = || SearchRequest {
+        let hybrid_request = || SearchRequest {
             indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
             query: serde_json::json!({
                 "bool": {
@@ -136523,8 +136552,8 @@ mod tests {
             explain: false,
         };
 
-        let first_response = engine.search(unsupported_hybrid_request()).unwrap();
-        let second_response = engine.search(unsupported_hybrid_request()).unwrap();
+        let first_response = engine.search(hybrid_request()).unwrap();
+        let second_response = engine.search(hybrid_request()).unwrap();
         let mut first_ids = search_hit_ids(&first_response.hits);
         let mut second_ids = search_hit_ids(&second_response.hits);
         first_ids.sort();
@@ -136533,22 +136562,23 @@ mod tests {
         assert_eq!(second_ids, vec!["1", "2"]);
 
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.request_result_cache_entries, 0);
-        assert_eq!(telemetry.request_result_cache_hits, 0);
+        assert_eq!(telemetry.request_result_cache_entries, 2);
+        assert_eq!(telemetry.request_result_cache_hits, 2);
+        assert_eq!(telemetry.request_result_cache_misses, 2);
         assert_eq!(
             telemetry.request_result_cache_hybrid_vector_bypasses,
-            2
+            0
         );
         assert_eq!(
             telemetry.request_result_cache_unsupported_vector_bypasses,
-            2
+            0
         );
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
     }
 
     #[test]
-    fn multi_index_knn_vector_cache_bypass_leaves_no_request_result_cache_detail_entries() {
+    fn multi_index_knn_vector_cache_populates_request_result_cache_detail_entries() {
         let engine = TantivyEngine::default();
         for index in ["vectors", "vectors-alt"] {
             engine
@@ -136594,7 +136624,7 @@ mod tests {
             })
             .unwrap();
 
-        let unsupported_knn_request = || SearchRequest {
+        let knn_request = || SearchRequest {
             indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
             query: serde_json::json!({
                 "knn": {
@@ -136619,8 +136649,8 @@ mod tests {
             explain: false,
         };
 
-        let first_response = engine.search(unsupported_knn_request()).unwrap();
-        let second_response = engine.search(unsupported_knn_request()).unwrap();
+        let first_response = engine.search(knn_request()).unwrap();
+        let second_response = engine.search(knn_request()).unwrap();
         let mut first_ids = search_hit_ids(&first_response.hits);
         let mut second_ids = search_hit_ids(&second_response.hits);
         first_ids.sort();
@@ -136629,25 +136659,25 @@ mod tests {
         assert_eq!(second_ids, vec!["1", "2"]);
 
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.request_result_cache_entries, 0);
-        assert_eq!(telemetry.request_result_cache_hits, 0);
-        assert_eq!(telemetry.request_result_cache_misses, 0);
+        assert_eq!(telemetry.request_result_cache_entries, 2);
+        assert_eq!(telemetry.request_result_cache_hits, 2);
+        assert_eq!(telemetry.request_result_cache_misses, 2);
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
-        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 2);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 0);
 
         let details = engine.search_cache_telemetry_details().unwrap();
         for index in ["vectors", "vectors-alt"] {
             let detail = details.indices.get(index).expect("index cache detail");
-            assert_eq!(detail.summary.request_result_cache_entries, 0);
-            assert_eq!(detail.summary.request_result_cache_hits, 0);
-            assert_eq!(detail.summary.request_result_cache_misses, 0);
-            assert!(detail.request_result_cache_fields.is_empty());
+            assert_eq!(detail.summary.request_result_cache_entries, 1);
+            assert_eq!(detail.summary.request_result_cache_hits, 1);
+            assert_eq!(detail.summary.request_result_cache_misses, 1);
+            assert!(detail.request_result_cache_fields.contains_key("embedding"));
             assert!(detail.vector_graph_cache_fields.contains_key("embedding"));
         }
     }
 
     #[test]
-    fn multi_index_hybrid_vector_cache_bypass_leaves_no_request_result_cache_detail_entries() {
+    fn multi_index_hybrid_vector_cache_populates_request_result_cache_detail_entries() {
         let engine = TantivyEngine::default();
         for index in ["vectors", "vectors-alt"] {
             engine
@@ -136693,7 +136723,7 @@ mod tests {
             })
             .unwrap();
 
-        let unsupported_hybrid_request = || SearchRequest {
+        let hybrid_request = || SearchRequest {
             indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
             query: serde_json::json!({
                 "bool": {
@@ -136726,8 +136756,8 @@ mod tests {
             explain: false,
         };
 
-        let first_response = engine.search(unsupported_hybrid_request()).unwrap();
-        let second_response = engine.search(unsupported_hybrid_request()).unwrap();
+        let first_response = engine.search(hybrid_request()).unwrap();
+        let second_response = engine.search(hybrid_request()).unwrap();
         let mut first_ids = search_hit_ids(&first_response.hits);
         let mut second_ids = search_hit_ids(&second_response.hits);
         first_ids.sort();
@@ -136736,19 +136766,19 @@ mod tests {
         assert_eq!(second_ids, vec!["1", "2"]);
 
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.request_result_cache_entries, 0);
-        assert_eq!(telemetry.request_result_cache_hits, 0);
-        assert_eq!(telemetry.request_result_cache_misses, 0);
-        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 2);
-        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 2);
+        assert_eq!(telemetry.request_result_cache_entries, 2);
+        assert_eq!(telemetry.request_result_cache_hits, 2);
+        assert_eq!(telemetry.request_result_cache_misses, 2);
+        assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 0);
 
         let details = engine.search_cache_telemetry_details().unwrap();
         for index in ["vectors", "vectors-alt"] {
             let detail = details.indices.get(index).expect("index cache detail");
-            assert_eq!(detail.summary.request_result_cache_entries, 0);
-            assert_eq!(detail.summary.request_result_cache_hits, 0);
-            assert_eq!(detail.summary.request_result_cache_misses, 0);
-            assert!(detail.request_result_cache_fields.is_empty());
+            assert_eq!(detail.summary.request_result_cache_entries, 1);
+            assert_eq!(detail.summary.request_result_cache_hits, 1);
+            assert_eq!(detail.summary.request_result_cache_misses, 1);
+            assert!(detail.request_result_cache_fields.contains_key("embedding"));
             assert!(detail.vector_graph_cache_fields.contains_key("embedding"));
         }
     }

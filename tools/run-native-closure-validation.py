@@ -164,16 +164,16 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
         "multi-index-hybrid-vector-native-sort-aggregation",
     ),
     ValidationTest(
-        "multi_index_knn_vector_cache_bypass_leaves_no_request_result_cache_detail_entries",
-        "vector-knn-fallback-boundary",
+        "multi_index_knn_vector_cache_populates_request_result_cache_detail_entries",
+        "multi-index-vector-knn-cache",
     ),
     ValidationTest(
-        "multi_index_hybrid_vector_request_result_cache_bypass_is_telemetry_visible",
-        "vector-hybrid-fallback-boundary",
+        "multi_index_hybrid_vector_request_result_cache_is_telemetry_visible",
+        "multi-index-vector-hybrid-cache",
     ),
     ValidationTest(
-        "multi_index_hybrid_vector_cache_bypass_leaves_no_request_result_cache_detail_entries",
-        "vector-hybrid-fallback-boundary",
+        "multi_index_hybrid_vector_cache_populates_request_result_cache_detail_entries",
+        "multi-index-vector-hybrid-cache",
     ),
 )
 

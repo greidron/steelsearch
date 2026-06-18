@@ -68,9 +68,8 @@ Out of scope:
   vector-native page plus aggregation reduce, and `_id`, `_score`, and
   fast-field sort reduce variants, plus single-index and multi-index hybrid
   vector-native page plus aggregation coverage with explicit fast-field and
-  script sort cases, plus telemetry-visible unsupported pure and hybrid vector
-  request-result cache bypasses with empty per-index request-result cache
-  details.
+  script sort cases, plus pure and hybrid multi-index vector request-result
+  cache coverage with per-index request-result cache detail entries.
 - The same runner now has a `source-backed-query` batch. It passed on
   2026-06-18 with 40/40 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the

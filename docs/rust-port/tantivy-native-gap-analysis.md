@@ -8785,6 +8785,9 @@ Current state:
 - pure `knn` searches with explicit sort keys now also avoid cloning the full
   cached hit vector on request-result cache hits, keeping only the requested
   sorted page window during compatibility sorting on that cache-hit path;
+- pure and hybrid multi-index vector searches now reuse the same per-index
+  request-result cache before native reduce, preserving index-local refresh
+  invalidation while exposing request-result cache detail entries per index;
 - current native `top_hits` paths now keep only the requested `from + size`
   window instead of materializing full hit lists first, and current doc-backed
   vector/native aggregation collection avoids full `SearchHit`
