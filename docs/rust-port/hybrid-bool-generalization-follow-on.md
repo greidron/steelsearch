@@ -663,6 +663,12 @@ path.
   unioning child-local `match` results across the requested fields instead of
   returning to the parent source-validation fallback bucket, while still
   preserving tuple isolation across sibling nested objects.
+- Current direct nested combined-fields reduction reading after the latest
+  child-ordinal expansion:
+  nested `combined_fields` leaves now resolve inside the nested child index by
+  evaluating the required query tokens across the requested child-local fields
+  instead of returning to the parent source-validation fallback bucket, while
+  still preserving tuple isolation across sibling nested objects.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through

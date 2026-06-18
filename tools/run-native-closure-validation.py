@@ -239,6 +239,10 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
+        "native_nested_child_ordinals_support_combined_fields_leaf_without_source_validation",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
         "native_nested_child_ordinals_support_multi_match_leaf_without_source_validation",
         "source-backed-native-query",
     ),
