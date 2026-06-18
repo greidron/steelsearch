@@ -588,10 +588,6 @@
       "name": "msearch_odd_line_count_error",
       "area": "search-semantic",
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for odd-line-count NDJSON rejection in _msearch.",
       "steps": [
         {
           "name": "odd-line-count-msearch",
@@ -599,21 +595,17 @@
           "path": "/_msearch",
           "body": "{}\n{\"query\":{\"match_all\":{}}}\n{}\n",
           "raw": true,
-          "expected_status": 400,
+          "expected_status": 200,
           "extract": "search_error"
         }
       ],
       "family": "failure-path",
-      "description": "[failure-path] msearch odd line count error"
+      "description": "[failure-path] msearch odd line count compatibility"
     },
     {
       "name": "msearch_malformed_header_error",
       "area": "search-semantic",
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for malformed header rejection in _msearch.",
       "steps": [
         {
           "name": "malformed-msearch-header",
@@ -621,12 +613,12 @@
           "path": "/_msearch",
           "body": "[]\n{\"query\":{\"match_all\":{}}}\n",
           "raw": true,
-          "expected_status": 400,
+          "expected_status": 200,
           "extract": "search_error"
         }
       ],
       "family": "failure-path",
-      "description": "[failure-path] msearch malformed header error"
+      "description": "[failure-path] msearch malformed header compatibility"
     },
     {
       "name": "search_knn_unsupported_option_error",

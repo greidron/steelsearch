@@ -7704,25 +7704,18 @@ impl SteelNode {
         if lines.is_empty() {
             return Ok(None);
         }
-        if lines.len() % 2 != 0 {
-            return Err(build_x_content_parse_search_response(
-                "malformed msearch ndjson payload",
-            ));
-        }
-
+        let request_line_count = lines.len() - (lines.len() % 2);
         let mut requests = Vec::new();
         let mut index = 0;
-        while index < lines.len() {
+        while index < request_line_count {
             let header = serde_json::from_str::<Value>(lines[index]).map_err(|_| {
                 build_x_content_parse_search_response("failed to parse msearch ndjson payload")
             })?;
-            let Some(header_object) = header.as_object() else {
-                return Err(build_parsing_search_response("malformed msearch header"));
-            };
+            let header_object = header.as_object();
             let body = serde_json::from_str::<Value>(lines[index + 1])
                 .map_err(|_| build_unexpected_end_of_input_search_response())?;
             let target = header_object
-                .get("index")
+                .and_then(|header_object| header_object.get("index"))
                 .and_then(|value| match value {
                     Value::String(single) => Some(single.clone()),
                     Value::Array(values) => Some(
@@ -7735,7 +7728,9 @@ impl SteelNode {
                     _ => None,
                 })
                 .filter(|target| !target.is_empty());
-            if header_object.contains_key("index") && target.is_none() {
+            if header_object.is_some_and(|header_object| header_object.contains_key("index"))
+                && target.is_none()
+            {
                 return Err(build_parsing_search_response("malformed msearch header"));
             }
             requests.push((target, body));
@@ -35816,6 +35811,19 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-msearch-malformed"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-msearch-malformed/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenanta" })),
+            )
+            .status,
+            201
+        );
 
         let malformed_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_msearch")
@@ -35838,29 +35846,18 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(b"{}\n{\"query\":{\"match_all\":{}}}\n{}\n".to_vec()),
         );
-        assert_eq!(odd_line_count.status, 400);
-        assert_eq!(odd_line_count.body["status"], 400);
-        assert_eq!(
-            odd_line_count.body["error"]["type"],
-            "x_content_parse_exception"
-        );
-        assert_eq!(
-            odd_line_count.body["error"]["reason"],
-            "malformed msearch ndjson payload"
-        );
+        assert_eq!(odd_line_count.status, 200);
+        assert_eq!(odd_line_count.body["responses"].as_array().map(Vec::len), Some(1));
+        assert_eq!(odd_line_count.body["responses"][0]["status"], 200);
 
         let malformed_header = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_msearch")
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(b"[]\n{\"query\":{\"match_all\":{}}}\n".to_vec()),
         );
-        assert_eq!(malformed_header.status, 400);
-        assert_eq!(malformed_header.body["status"], 400);
-        assert_eq!(malformed_header.body["error"]["type"], "parsing_exception");
-        assert_eq!(
-            malformed_header.body["error"]["reason"],
-            "malformed msearch header"
-        );
+        assert_eq!(malformed_header.status, 200);
+        assert_eq!(malformed_header.body["responses"].as_array().map(Vec::len), Some(1));
+        assert_eq!(malformed_header.body["responses"][0]["status"], 200);
     }
 
     #[test]
