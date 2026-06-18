@@ -11,6 +11,7 @@ MATRIX_PATH = ROOT / "tools" / "run-search-benchmark-matrix.py"
 BASELINE_PATH = ROOT / "tools" / "run-http-load-baseline.py"
 PRIORITY_PATH = ROOT / "tools" / "rank-materialization-priorities.py"
 DIAGNOSTIC_PATH = ROOT / "tools" / "run-materialization-priority-diagnostic.py"
+PRIORITY_CHECK_PATH = ROOT / "tools" / "check-materialization-priority-report.py"
 
 EXPECTED_NATIVE_COUNTERS = (
     "materialized_response_fetches",
@@ -36,6 +37,16 @@ def load_matrix_module():
 def load_priority_module():
     module_name = "rank_materialization_priorities"
     spec = importlib.util.spec_from_file_location(module_name, PRIORITY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_priority_check_module():
+    module_name = "check_materialization_priority_report"
+    spec = importlib.util.spec_from_file_location(module_name, PRIORITY_CHECK_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[module_name] = module
@@ -313,6 +324,46 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertTrue(report["summary"]["passed"])
         self.assertTrue(report["summary"]["allow_empty"])
         self.assertEqual(report["summary"]["ranked_operation_count"], 0)
+
+    def test_materialization_priority_checker_accepts_zero_ranked_report(self):
+        checker = load_priority_check_module()
+        result = checker.validate_report(
+            {
+                "summary": {
+                    "passed": True,
+                    "allow_empty": True,
+                    "ranked_operation_count": 0,
+                    "top_operation": None,
+                    "top_family": None,
+                },
+                "priorities": [],
+            },
+            require_passed=True,
+            require_zero_ranked=True,
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["errors"], [])
+
+    def test_materialization_priority_checker_rejects_ranked_report_when_zero_required(self):
+        checker = load_priority_check_module()
+        result = checker.validate_report(
+            {
+                "summary": {
+                    "passed": True,
+                    "allow_empty": False,
+                    "ranked_operation_count": 1,
+                    "top_operation": "fallback_terms_set",
+                    "top_family": "terms_set compatibility materialization",
+                },
+                "priorities": [{"rank": 1, "operation": "fallback_terms_set"}],
+            },
+            require_passed=True,
+            require_zero_ranked=True,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("ranked_operation_count is 1, expected 0", result["errors"])
 
     def test_materialization_priority_diagnostic_dry_run_reports_artifact_paths(self):
         result = subprocess.run(

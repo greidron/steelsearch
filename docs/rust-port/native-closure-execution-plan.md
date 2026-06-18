@@ -758,7 +758,9 @@ Current execution order:
    failed and zero skipped required cases for their current fixtures.
 3. Keep the targeted materialization-priority matrix at
    `ranked_operation_count == 0` when widening source-backed or vector/hybrid
-   fallback diagnostics.
+   fallback diagnostics. Recheck current priority artifacts with
+   `tools/check-materialization-priority-report.py --require-passed
+   --require-zero-ranked` before promoting a widened diagnostic mix.
 4. Run the optional `runtime-peer-backpressure` batch when a local OpenSearch
    distribution is available, and keep its report profile explicit about the
    mixed Java/Rust query-phase comparison boundary.
