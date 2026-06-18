@@ -30,6 +30,8 @@ def valid_report():
         "metadata": {
             "generated_at_epoch_seconds": 1,
             "git_head": "abc123",
+            "git_clean": True,
+            "git_status_short": "",
         },
         "summary": {
             "passed": True,

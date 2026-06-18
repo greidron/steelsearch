@@ -185,6 +185,8 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertEqual(stdout_payload["summary"], file_payload["summary"])
             self.assertIn("git_head", file_payload["metadata"])
             self.assertIn("generated_at_epoch_seconds", file_payload["metadata"])
+            self.assertIn("git_clean", file_payload["metadata"])
+            self.assertIn("git_status_short", file_payload["metadata"])
             self.assertEqual(file_payload["summary"]["current_evidence_ready"], True)
 
 

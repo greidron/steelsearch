@@ -188,9 +188,12 @@ def build_status_report(
 
 
 def build_metadata() -> dict[str, Any]:
+    git_status_short = git_output("status", "--short")
     return {
         "generated_at_epoch_seconds": int(time.time()),
         "git_head": git_output("rev-parse", "HEAD"),
+        "git_clean": git_status_short == "",
+        "git_status_short": git_status_short,
     }
 
 

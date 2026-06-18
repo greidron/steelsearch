@@ -54,6 +54,10 @@ def validate_report(
         errors.append("metadata.generated_at_epoch_seconds is missing or not an integer")
     if not isinstance(metadata.get("git_head"), str) or not metadata.get("git_head"):
         errors.append("metadata.git_head is missing or not a string")
+    if not isinstance(metadata.get("git_clean"), bool):
+        errors.append("metadata.git_clean is missing or not a boolean")
+    if not isinstance(metadata.get("git_status_short"), str):
+        errors.append("metadata.git_status_short is missing or not a string")
 
     if summary.get("current_evidence_ready") is not True:
         errors.append("summary.current_evidence_ready is not true")
