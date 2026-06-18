@@ -17,9 +17,9 @@ use os_node::{
     ElectionResult, ElectionScheduler, ElectionSchedulerConfig, ExtensionBoundaryRegistry,
     LiveTransportDiscoveryPeerProber, NodeInfo, PersistedClusterManagerTaskQueueState,
     PersistedGatewayState, PersistedPublicationState,
-    ProductionMembershipState, ReleaseReadinessChecklist, RestServerConfig,
-    SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest,
-    persist_gateway_state_manifest,
+    ProductionMembershipState, ReleaseReadinessChecklist, RestServerConfig, RestTlsConfig,
+    SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest, persist_gateway_state_manifest,
+    validate_rest_tls_config,
 };
 use os_node_rest_core::{
     parse_authentication_users_json, AuthenticationUsersFile, SecurityBoundaryState,
@@ -383,7 +383,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("extension boundary manifest: {}", manifest_path.display());
     }
 
-    serve_rest_http_listener_until(node, listener, || SHUTDOWN_REQUESTED.load(Ordering::SeqCst))?;
+    serve_rest_http_listener_until(
+        node,
+        listener,
+        config.production_security_bootstrap.http_tls_config(),
+        || SHUTDOWN_REQUESTED.load(Ordering::SeqCst),
+    )?;
     Ok(())
 }
 
@@ -4370,6 +4375,15 @@ impl DaemonConfig {
     }
 }
 
+impl ProductionSecurityBootstrapConfig {
+    fn http_tls_config(&self) -> Option<RestTlsConfig> {
+        Some(RestTlsConfig {
+            certificate_path: self.http_tls_certificate_path.clone()?,
+            private_key_path: self.http_tls_private_key_path.clone()?,
+        })
+    }
+}
+
 trait DevelopmentClusterViewConfig {
     fn node_id(&self) -> &str;
     fn node_name(&self) -> &str;
@@ -5110,6 +5124,14 @@ fn production_security_boundary_policy(config: &DaemonConfig) -> SecurityBoundar
         .secure_settings_path
         .as_ref()
         .is_some_and(|path| validate_production_secure_settings_file(path).is_ok());
+    let http_tls_ready = config
+        .production_security_bootstrap
+        .http_tls_config()
+        .as_ref()
+        .is_some_and(|config| validate_rest_tls_config(config).is_ok());
+    if http_tls_ready {
+        policy.http_tls = SecurityBoundaryState::Enforced;
+    }
     if runtime_security_ready && authentication_subjects_ready {
         policy.authentication = SecurityBoundaryState::Enforced;
         policy.authorization = SecurityBoundaryState::Enforced;
@@ -6963,6 +6985,7 @@ mod tests {
         let users = material_root.join("users.json");
         let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        write_valid_rustls_http_tls_bootstrap_material(&http_cert, &http_key);
         write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
@@ -7014,6 +7037,7 @@ mod tests {
         let users = material_root.join("users.json");
         let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        write_valid_rustls_http_tls_bootstrap_material(&http_cert, &http_key);
         write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
@@ -7057,7 +7081,7 @@ mod tests {
             .iter()
             .find(|blocker| blocker.starts_with("[production]"))
             .expect("production policy blocker");
-        assert!(production_blocker.contains("http_tls must be implemented and enforced"));
+        assert!(!production_blocker.contains("http_tls must be implemented and enforced"));
         assert!(production_blocker.contains("transport_tls must be implemented and enforced"));
         assert!(!production_blocker.contains("authentication must be implemented and enforced"));
         assert!(!production_blocker.contains("authorization must be implemented and enforced"));
@@ -7430,6 +7454,62 @@ mod tests {
         fs::write(transport_cert, certificate).unwrap();
         fs::write(transport_key, private_key).unwrap();
     }
+
+    fn write_valid_rustls_http_tls_bootstrap_material(http_cert: &Path, http_key: &Path) {
+        fs::write(http_cert, VALID_RUSTLS_HTTP_TLS_CERTIFICATE).unwrap();
+        fs::write(http_key, VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY).unwrap();
+    }
+
+    const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----
+MIIDHDCCAgSgAwIBAgIUW3ZQ090AE9Pi3K5ylqv6Md8YPFcwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDYxODAwMDcwOFoXDTI2MDYx
+OTAwMDcwOFowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEApl5gqZoxrXeV0hqTOA380/C8LjiFdQpqgzhmJLoWgNqb
+aEUY0YBI9+aZxS93VdBMpnOabcST8WVLCvCzXKXbtp7DvQ6P5ODpK4wRnLXArWzG
+sm9nmnf1Cw667OqvvPP4/5lHGDa9CpbrgKwBmeWN/GpyNp6O1Nf8CTzF8Ccj9nGf
+HJM+OvXXJRKzuLuJ4UI5Lb3o5qhGl/uq69Sl/0oVVXXtidIISmicV2U+oAPR1ZxI
+/W6IVGlXSdDM+41NhatWet+gyCRjafA01nb8YwXODUs51APpETBdo/E2q1PvlVFE
+BUgOn4+sXogMx4PDclYkbHsKHwY+1X6v6K5K2SRNdQIDAQABo2YwZDAdBgNVHQ4E
+FgQUTpue0YvZ26osIcD8utjgZiO4MvgwHwYDVR0jBBgwFoAUTpue0YvZ26osIcD8
+utjgZiO4MvgwDAYDVR0TAQH/BAIwADAUBgNVHREEDTALgglsb2NhbGhvc3QwDQYJ
+KoZIhvcNAQELBQADggEBAF7gahC++wI/gpXdct5lwCAcT8eVOfg0MShcUWpEWeXa
+yqgerRsvNbBr2goXmiNEzcCICC29PiZnLjTHBnWb4khP+K9ZTt7bwEHM5ej8a3tJ
+Gir3AkTwNyaVim2N2ZRJRu7so6YyGkZ4LZz7kmbjCKGJyeFHQPixO7kvqHRVOOZd
+Skd/SLnSMs6Dti03kygbt5SljWI+tWNyDBhvgOA2jKihYnBS1Eve43GSAYIYSvIU
+3Yg0JcWJ/p+mDytIPa5sMLhjiViYLMAgfKlPn2LnffXnIkufRIu0FWAtmJeWqNdt
+/KOYaqdXqTtKEmUot/kOOWsFvnGiEiTEn0KkS9xTbs0=
+-----END CERTIFICATE-----
+"#;
+
+    const VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY: &[u8] = br#"-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCmXmCpmjGtd5XS
+GpM4DfzT8LwuOIV1CmqDOGYkuhaA2ptoRRjRgEj35pnFL3dV0Eymc5ptxJPxZUsK
+8LNcpdu2nsO9Do/k4OkrjBGctcCtbMayb2ead/ULDrrs6q+88/j/mUcYNr0KluuA
+rAGZ5Y38anI2no7U1/wJPMXwJyP2cZ8ckz469dclErO4u4nhQjktvejmqEaX+6rr
+1KX/ShVVde2J0ghKaJxXZT6gA9HVnEj9bohUaVdJ0Mz7jU2Fq1Z636DIJGNp8DTW
+dvxjBc4NSznUA+kRMF2j8TarU++VUUQFSA6fj6xeiAzHg8NyViRsewofBj7Vfq/o
+rkrZJE11AgMBAAECggEAEnTc52PeR/7AxbbCB1Fx73dBASWvFI1rxJPwrPlh/riB
+zh8AQlmnfqz7+SarZ/88SakAhFXvDbQtj5ClbU1PIyLY1zPy3bLf2z9mQsrdDcBI
+CMqYJUhSjH/9V8Qva9hrErwH6ZVFApQ8myE56j9PsaWDdzC+6rjtUn8F/H7zG+dP
+z+Ay65hjIBo4/5W4rG448ET+t2JJM9Ix/x1NQkSnvJaSgRWCfa4M14Civ7GQMDQe
+TxzbhrN5aBftBwxOuWknRPCLzU5PTXmPFPC9Mjx0d0EXk+QeXo75UBjA5D8migwO
+njV2FGIf4xoEVU2lgtTzKfwUE68xF6vvCYW7JF+fzwKBgQDrIvuHfhVgoGu67yGy
+qYa01Mjy5UOygi5P3C//+3OhhF2Xc6U1Is5pyrWZT9cesQPw9elYMrLfGMzPd9hK
+9MneoFYa1Np7gRoPGngqSRui9jDMD8kJ4gL1IwQa3wASj8TBoxhThHwm8srWsfuP
+HoZZc8N3IN7jCBA6gPpxbi6I1wKBgQC1IVziP3r6S34tNJ3K9YEx5tdQYNBkDcua
+Ac/61dZ8yXYHZxJF8+lVOvZyH2oPCKB+pcBs3kQ5bQVJ8L45xM2n4L2k8Oh0y6JQ
+rIbMyQe8/xHg44aDVKouodiQQgAjwNBjz6vtQFt3Av2LLWNYYk1jzmcdibhGxNJP
+HWp7WTjWkwKBgHdAuLzRD1qAQeL+4OJR5EXWHUxDRoBEUeSi0Z1MFCr4jNcBCerX
+CkTRUCS/P2ULdepBbeUTYXCQjV8zcvkhCTjlrIXTKjO1GFhMnmEjzuZpYfo8j0N5
+4vIcnjpamxjO3YUviGjjKmw+eu1EO0csvgqkEaBbhW8zabeiLmJU9TjlAoGAGNdG
+gdDq8MDBwTliGp+o5EsgZGmiqtYpgimVeHUzQVHv2fwMyYM2EPZRLj2Ysg8g072v
+sj6ZZLbK7uURcaLIAaoU2DYh60KyNBY1NoirgwQIU6tgm0pVPKf9p2sl0cFz0vx8
+O8GDycKjOx8ybMCulG2OPsLQfwQnQ6ppHBmUbfkCgYEAo1XLzKvq3DqtDYGCW5CP
+RBsyRhdhne+pw4s4GuZwjrze89TZBb1XY6U6FRbX8ji+vRJTeqL0yQgL9f6WIE+p
+6EN9fBKilx0f87TzZ354LzTXVaKBwIWsLtHYcIUnLCBM4bllq1Fv/qY5z96PT9JS
+fQcfI0Qcx8TTaGb/LywkQ5E=
+-----END PRIVATE KEY-----
+"#;
 
     fn write_valid_secure_settings_bootstrap_material(path: &Path) {
         fs::write(path, br#"{"keystore.password":"fixture-secret"}"#).unwrap();

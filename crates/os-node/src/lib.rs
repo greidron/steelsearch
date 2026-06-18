@@ -71,6 +71,7 @@ pub use standalone_runtime::{
     PersistedPublicationState,
     PublicationRoundState,
     ProductionMembershipState,
+    RestTlsConfig,
     SteelNode,
     apply_gateway_metadata_commit_state_to_manifest,
     apply_gateway_metadata_state_to_manifest,
@@ -79,6 +80,7 @@ pub use standalone_runtime::{
     load_gateway_state_manifest,
     persist_gateway_state_manifest,
     serve_rest_http_listener_until,
+    validate_rest_tls_config,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -42,7 +42,8 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
@@ -268,9 +269,22 @@ pub struct ExtensionLifecycleExecution {
     pub status: &'static str,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestTlsConfig {
+    pub certificate_path: PathBuf,
+    pub private_key_path: PathBuf,
+}
+
+pub fn validate_rest_tls_config(config: &RestTlsConfig) -> Result<(), String> {
+    load_rest_rustls_server_config(config)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
 pub fn serve_rest_http_listener_until<F>(
     node: SteelNode,
     listener: TcpListener,
+    tls_config: Option<RestTlsConfig>,
     should_stop: F,
 ) -> std::io::Result<()>
 where
@@ -288,8 +302,13 @@ where
                 .app_data(node_data.clone())
                 .default_service(web::to(handle_actix_rest_request))
         })
-        .workers(workers)
-        .listen(listener)?
+        .workers(workers);
+        let server = if let Some(tls_config) = tls_config {
+            let rustls_config = load_rest_rustls_server_config(&tls_config)?;
+            server.listen_rustls_0_21(listener, rustls_config)?
+        } else {
+            server.listen(listener)?
+        }
         .run();
         let handle = server.handle();
         std::thread::spawn(move || {
@@ -300,6 +319,59 @@ where
         });
         server.await
     })
+}
+
+fn load_rest_rustls_server_config(
+    config: &RestTlsConfig,
+) -> std::io::Result<rustls::ServerConfig> {
+    let certificates = {
+        let file = File::open(&config.certificate_path)?;
+        let mut reader = BufReader::new(file);
+        rustls_pemfile::certs(&mut reader)?
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect::<Vec<_>>()
+    };
+    if certificates.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "HTTP TLS certificate file [{}] does not contain any certificates",
+                config.certificate_path.display()
+            ),
+        ));
+    }
+    let private_key = load_rest_rustls_private_key(&config.private_key_path)?;
+    rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certificates, private_key)
+        .map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid HTTP TLS certificate/private-key pair: {error}"),
+            )
+        })
+}
+
+fn load_rest_rustls_private_key(path: &Path) -> std::io::Result<rustls::PrivateKey> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader)?.into_iter().next() {
+        return Ok(rustls::PrivateKey(key));
+    }
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader)?.into_iter().next() {
+        return Ok(rustls::PrivateKey(key));
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!(
+            "HTTP TLS private key file [{}] does not contain a supported private key",
+            path.display()
+        ),
+    ))
 }
 
 async fn handle_actix_rest_request(
@@ -21919,6 +21991,57 @@ mod tests {
     use os_core::OPENSEARCH_3_7_0_TRANSPORT;
     use std::sync::MutexGuard;
 
+    const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----
+MIIDHDCCAgSgAwIBAgIUW3ZQ090AE9Pi3K5ylqv6Md8YPFcwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDYxODAwMDcwOFoXDTI2MDYx
+OTAwMDcwOFowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEApl5gqZoxrXeV0hqTOA380/C8LjiFdQpqgzhmJLoWgNqb
+aEUY0YBI9+aZxS93VdBMpnOabcST8WVLCvCzXKXbtp7DvQ6P5ODpK4wRnLXArWzG
+sm9nmnf1Cw667OqvvPP4/5lHGDa9CpbrgKwBmeWN/GpyNp6O1Nf8CTzF8Ccj9nGf
+HJM+OvXXJRKzuLuJ4UI5Lb3o5qhGl/uq69Sl/0oVVXXtidIISmicV2U+oAPR1ZxI
+/W6IVGlXSdDM+41NhatWet+gyCRjafA01nb8YwXODUs51APpETBdo/E2q1PvlVFE
+BUgOn4+sXogMx4PDclYkbHsKHwY+1X6v6K5K2SRNdQIDAQABo2YwZDAdBgNVHQ4E
+FgQUTpue0YvZ26osIcD8utjgZiO4MvgwHwYDVR0jBBgwFoAUTpue0YvZ26osIcD8
+utjgZiO4MvgwDAYDVR0TAQH/BAIwADAUBgNVHREEDTALgglsb2NhbGhvc3QwDQYJ
+KoZIhvcNAQELBQADggEBAF7gahC++wI/gpXdct5lwCAcT8eVOfg0MShcUWpEWeXa
+yqgerRsvNbBr2goXmiNEzcCICC29PiZnLjTHBnWb4khP+K9ZTt7bwEHM5ej8a3tJ
+Gir3AkTwNyaVim2N2ZRJRu7so6YyGkZ4LZz7kmbjCKGJyeFHQPixO7kvqHRVOOZd
+Skd/SLnSMs6Dti03kygbt5SljWI+tWNyDBhvgOA2jKihYnBS1Eve43GSAYIYSvIU
+3Yg0JcWJ/p+mDytIPa5sMLhjiViYLMAgfKlPn2LnffXnIkufRIu0FWAtmJeWqNdt
+/KOYaqdXqTtKEmUot/kOOWsFvnGiEiTEn0KkS9xTbs0=
+-----END CERTIFICATE-----
+"#;
+
+    const VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY: &[u8] = br#"-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCmXmCpmjGtd5XS
+GpM4DfzT8LwuOIV1CmqDOGYkuhaA2ptoRRjRgEj35pnFL3dV0Eymc5ptxJPxZUsK
+8LNcpdu2nsO9Do/k4OkrjBGctcCtbMayb2ead/ULDrrs6q+88/j/mUcYNr0KluuA
+rAGZ5Y38anI2no7U1/wJPMXwJyP2cZ8ckz469dclErO4u4nhQjktvejmqEaX+6rr
+1KX/ShVVde2J0ghKaJxXZT6gA9HVnEj9bohUaVdJ0Mz7jU2Fq1Z636DIJGNp8DTW
+dvxjBc4NSznUA+kRMF2j8TarU++VUUQFSA6fj6xeiAzHg8NyViRsewofBj7Vfq/o
+rkrZJE11AgMBAAECggEAEnTc52PeR/7AxbbCB1Fx73dBASWvFI1rxJPwrPlh/riB
+zh8AQlmnfqz7+SarZ/88SakAhFXvDbQtj5ClbU1PIyLY1zPy3bLf2z9mQsrdDcBI
+CMqYJUhSjH/9V8Qva9hrErwH6ZVFApQ8myE56j9PsaWDdzC+6rjtUn8F/H7zG+dP
+z+Ay65hjIBo4/5W4rG448ET+t2JJM9Ix/x1NQkSnvJaSgRWCfa4M14Civ7GQMDQe
+TxzbhrN5aBftBwxOuWknRPCLzU5PTXmPFPC9Mjx0d0EXk+QeXo75UBjA5D8migwO
+njV2FGIf4xoEVU2lgtTzKfwUE68xF6vvCYW7JF+fzwKBgQDrIvuHfhVgoGu67yGy
+qYa01Mjy5UOygi5P3C//+3OhhF2Xc6U1Is5pyrWZT9cesQPw9elYMrLfGMzPd9hK
+9MneoFYa1Np7gRoPGngqSRui9jDMD8kJ4gL1IwQa3wASj8TBoxhThHwm8srWsfuP
+HoZZc8N3IN7jCBA6gPpxbi6I1wKBgQC1IVziP3r6S34tNJ3K9YEx5tdQYNBkDcua
+Ac/61dZ8yXYHZxJF8+lVOvZyH2oPCKB+pcBs3kQ5bQVJ8L45xM2n4L2k8Oh0y6JQ
+rIbMyQe8/xHg44aDVKouodiQQgAjwNBjz6vtQFt3Av2LLWNYYk1jzmcdibhGxNJP
+HWp7WTjWkwKBgHdAuLzRD1qAQeL+4OJR5EXWHUxDRoBEUeSi0Z1MFCr4jNcBCerX
+CkTRUCS/P2ULdepBbeUTYXCQjV8zcvkhCTjlrIXTKjO1GFhMnmEjzuZpYfo8j0N5
+4vIcnjpamxjO3YUviGjjKmw+eu1EO0csvgqkEaBbhW8zabeiLmJU9TjlAoGAGNdG
+gdDq8MDBwTliGp+o5EsgZGmiqtYpgimVeHUzQVHv2fwMyYM2EPZRLj2Ysg8g072v
+sj6ZZLbK7uURcaLIAaoU2DYh60KyNBY1NoirgwQIU6tgm0pVPKf9p2sl0cFz0vx8
+O8GDycKjOx8ybMCulG2OPsLQfwQnQ6ppHBmUbfkCgYEAo1XLzKvq3DqtDYGCW5CP
+RBsyRhdhne+pw4s4GuZwjrze89TZBb1XY6U6FRbX8ji+vRJTeqL0yQgL9f6WIE+p
+6EN9fBKilx0f87TzZ354LzTXVaKBwIWsLtHYcIUnLCBM4bllq1Fv/qY5z96PT9JS
+fQcfI0Qcx8TTaGb/LywkQ5E=
+-----END PRIVATE KEY-----
+"#;
+
     fn security_env_lock() -> MutexGuard<'static, ()> {
         static SECURITY_ENV_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
         SECURITY_ENV_LOCK
@@ -22880,6 +23003,78 @@ mod tests {
         let head_response = node.handle_rest_request(RestRequest::new(RestMethod::Head, "/"));
         assert_eq!(head_response.status, 200);
         assert!(head_response.body.is_null());
+    }
+
+    #[test]
+    fn rest_http_listener_serves_root_route_over_tls_when_configured() {
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-rest-tls-listener-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create tls temp root");
+        let certificate_path = root.join("http.crt");
+        let private_key_path = root.join("http.key");
+        std::fs::write(&certificate_path, VALID_RUSTLS_HTTP_TLS_CERTIFICATE)
+            .expect("write tls cert");
+        std::fs::write(&private_key_path, VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY)
+            .expect("write tls key");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind tls listener");
+        let address = listener.local_addr().expect("tls listener address");
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let server_stop = Arc::clone(&stop);
+        let server = std::thread::spawn(move || {
+            serve_rest_http_listener_until(
+                SteelNode::new(NodeInfo {
+                    name: "steel-node".to_string(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                }),
+                listener,
+                Some(RestTlsConfig {
+                    certificate_path,
+                    private_key_path,
+                }),
+                move || server_stop.load(std::sync::atomic::Ordering::SeqCst),
+            )
+        });
+
+        let certificate = rustls_pemfile::certs(&mut BufReader::new(
+            VALID_RUSTLS_HTTP_TLS_CERTIFICATE,
+        ))
+        .expect("parse tls cert")
+        .into_iter()
+        .next()
+        .expect("tls cert");
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(&rustls::Certificate(certificate))
+            .expect("trust tls cert");
+        let client_config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let server_name = rustls::ServerName::try_from("localhost").expect("server name");
+        let tcp = TcpStream::connect(address).expect("connect tls listener");
+        let connection =
+            rustls::ClientConnection::new(Arc::new(client_config), server_name)
+                .expect("tls client connection");
+        let mut tls = rustls::StreamOwned::new(connection, tcp);
+        tls.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .expect("write tls request");
+        let mut response = String::new();
+        tls.read_to_string(&mut response).expect("read tls response");
+
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        server
+            .join()
+            .expect("tls server thread should not panic")
+            .expect("tls server should stop cleanly");
+        let _ = std::fs::remove_dir_all(root);
+
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(response.contains("\"name\":\"steel-node\""), "{response}");
     }
 
     #[test]

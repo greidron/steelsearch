@@ -167,13 +167,14 @@ that concrete state and removes the authentication, authorization, and
 audit-logging blockers. When all production authentication subjects also carry
 tenant scopes, it removes the tenant-isolation blocker. When runtime security is
 enabled and the production secure-settings file is valid, it also removes the
-secure-settings blocker. HTTP TLS, transport TLS, and release checklist
-blockers remain fail-closed until their concrete enforcement evidence is wired
-into the policy.
+secure-settings blocker. When the production HTTP TLS certificate/key load into
+the REST listener's rustls configuration, it removes the HTTP TLS blocker.
+Transport TLS and release checklist blockers remain fail-closed until their
+concrete enforcement evidence is wired into the policy.
 The startup-preflight gate also validates the secure multi-node TLS handshake
 matrix fixture so success, client-certificate success, wrong-CA rejection, and
-expired-certificate rejection buckets remain present while the concrete TLS
-listener wiring is still pending.
+expired-certificate rejection buckets remain present while concrete transport
+TLS listener wiring is still pending.
 The guarded production-security batch covers root authentication, the shared
 admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, single-document read/write role
@@ -192,7 +193,8 @@ index maintenance open/close/cache controls plus index structure delete/block
 and resize controls plus root index create/read routes, k-NN
 settings/model/cache mutation routes,
 dangling-index/remote-store recovery mutation routes, and ingestion
-pause/resume control routes, and now verifies that
+pause/resume control routes, verifies that the REST HTTP listener serves the
+root route over TLS with configured certificate/key material, and now verifies that
 alias bulk/named metadata mutation does not re-enter the metadata lock while
 resolving target indices, empty index mapping updates do not panic, closed
 indices can be resolved for reopen, and ML connector credential/action secret
