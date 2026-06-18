@@ -7617,7 +7617,9 @@ impl SteelNode {
                             RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
                                 .with_json_body(body);
                         search_request.headers = request.headers.clone();
-                        self.handle_index_search_route(effective_target, &search_request).body
+                        msearch_response_with_status(
+                            self.handle_index_search_route(effective_target, &search_request),
+                        )
                     })
                     .collect::<Vec<_>>();
                 return RestResponse::json(200, serde_json::json!({ "responses": responses }));
@@ -7636,7 +7638,9 @@ impl SteelNode {
                         }));
                 search_request.headers = request.headers.clone();
                 serde_json::json!({
-                    "responses": [self.handle_index_search_route(effective_target, &search_request).body]
+                    "responses": [msearch_response_with_status(
+                        self.handle_index_search_route(effective_target, &search_request)
+                    )]
                 })
             },
         )
@@ -17655,6 +17659,14 @@ fn parse_native_sort_specs(sort: Option<&Value>) -> Result<Vec<SortSpec>, String
         }
     }
     Ok(specs)
+}
+
+fn msearch_response_with_status(response: RestResponse) -> Value {
+    let mut body = response.body;
+    if let Some(object) = body.as_object_mut() {
+        object.insert("status".to_string(), Value::from(response.status));
+    }
+    body
 }
 
 fn native_search_response_to_rest_response(
@@ -35673,10 +35685,16 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let root_msearch =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_msearch"));
         assert_eq!(root_msearch.status, 200);
+        assert_eq!(root_msearch.body["responses"][0]["status"], 200);
         assert_eq!(root_msearch.body["responses"][0]["hits"]["total"]["value"], 2);
 
         let targeted_msearch = node.handle_rest_request(RestRequest::new(
@@ -35684,6 +35702,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "/logs-msearch-*/_msearch",
         ));
         assert_eq!(targeted_msearch.status, 200);
+        assert_eq!(targeted_msearch.body["responses"][0]["status"], 200);
         assert_eq!(targeted_msearch.body["responses"][0]["hits"]["total"]["value"], 1);
 
         let explain = node.handle_rest_request(
@@ -35714,6 +35733,8 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         );
         assert_eq!(root_multi.status, 200);
         assert_eq!(root_multi.body["responses"].as_array().map(Vec::len), Some(2));
+        assert_eq!(root_multi.body["responses"][0]["status"], 200);
+        assert_eq!(root_multi.body["responses"][1]["status"], 200);
         assert_eq!(root_multi.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(root_multi.body["responses"][1]["hits"]["total"]["value"], 1);
 
@@ -35726,6 +35747,8 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         );
         assert_eq!(targeted_multi.status, 200);
         assert_eq!(targeted_multi.body["responses"].as_array().map(Vec::len), Some(2));
+        assert_eq!(targeted_multi.body["responses"][0]["status"], 200);
+        assert_eq!(targeted_multi.body["responses"][1]["status"], 200);
         assert_eq!(targeted_multi.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(targeted_multi.body["responses"][1]["hits"]["total"]["value"], 0);
     }
@@ -35816,6 +35839,11 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let root_header_override = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_msearch")
@@ -35825,6 +35853,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 ),
         );
         assert_eq!(root_header_override.status, 200);
+        assert_eq!(root_header_override.body["responses"][0]["status"], 200);
         assert_eq!(root_header_override.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(root_header_override.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-2");
 
@@ -35834,6 +35863,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 .with_body(b"{}\n{\"query\":{\"match_all\":{}}}\n".to_vec()),
         );
         assert_eq!(targeted_path_fallback.status, 200);
+        assert_eq!(targeted_path_fallback.body["responses"][0]["status"], 200);
         assert_eq!(targeted_path_fallback.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(targeted_path_fallback.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-1");
 
@@ -35845,6 +35875,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 ),
         );
         assert_eq!(targeted_header_override.status, 200);
+        assert_eq!(targeted_header_override.body["responses"][0]["status"], 200);
         assert_eq!(targeted_header_override.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(targeted_header_override.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-2");
     }

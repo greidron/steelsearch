@@ -536,10 +536,6 @@
       "name": "msearch_root_header_index_override_semantic",
       "area": "search-semantic",
       "extract": "msearch_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch _msearch header index override results differ from OpenSearch and are tracked as a semantic parity gap.",
       "steps": [
         {
           "name": "root-msearch-header-index-override",
@@ -558,10 +554,6 @@
       "name": "msearch_target_path_fallback_semantic",
       "area": "search-semantic",
       "extract": "msearch_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch targeted _msearch path fallback results differ from OpenSearch and are tracked as a semantic parity gap.",
       "steps": [
         {
           "name": "targeted-msearch-path-fallback",
@@ -580,10 +572,6 @@
       "name": "msearch_target_header_override_semantic",
       "area": "search-semantic",
       "extract": "msearch_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch targeted _msearch header override results differ from OpenSearch and are tracked as a semantic parity gap.",
       "steps": [
         {
           "name": "targeted-msearch-header-override",
