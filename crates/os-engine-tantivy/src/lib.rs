@@ -16547,6 +16547,245 @@ fn nested_candidate_field_name(path: &str, field: &str) -> String {
     }
 }
 
+fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
+    match query {
+        Query::Term { field, value } => Query::Term {
+            field: nested_child_local_field_name(path, field),
+            value: value.clone(),
+        },
+        Query::Terms { field, values } => Query::Terms {
+            field: nested_child_local_field_name(path, field),
+            values: values.clone(),
+        },
+        Query::SpanTerm { field, value } => Query::SpanTerm {
+            field: nested_child_local_field_name(path, field),
+            value: value.clone(),
+        },
+        Query::TermsSet {
+            field,
+            values,
+            minimum_should_match,
+        } => Query::TermsSet {
+            field: nested_child_local_field_name(path, field),
+            values: values.clone(),
+            minimum_should_match: *minimum_should_match,
+        },
+        Query::Match { field, query } => Query::Match {
+            field: nested_child_local_field_name(path, field),
+            query: query.clone(),
+        },
+        Query::MatchPhrase { field, query } => Query::MatchPhrase {
+            field: nested_child_local_field_name(path, field),
+            query: query.clone(),
+        },
+        Query::MatchPhrasePrefix { field, query } => Query::MatchPhrasePrefix {
+            field: nested_child_local_field_name(path, field),
+            query: query.clone(),
+        },
+        Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
+            field: nested_child_local_field_name(path, field),
+            query: query.clone(),
+        },
+        Query::CombinedFields { fields, query } => Query::CombinedFields {
+            fields: fields
+                .iter()
+                .map(|field| nested_child_local_field_name(path, field))
+                .collect(),
+            query: query.clone(),
+        },
+        Query::MultiMatch { fields, query } => Query::MultiMatch {
+            fields: fields
+                .iter()
+                .map(|field| nested_child_local_field_name(path, field))
+                .collect(),
+            query: query.clone(),
+        },
+        Query::QueryString { query, fields } => Query::QueryString {
+            query: query.clone(),
+            fields: fields.as_ref().map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| nested_child_local_field_name(path, field))
+                    .collect()
+            }),
+        },
+        Query::SimpleQueryString { query, fields } => Query::SimpleQueryString {
+            query: query.clone(),
+            fields: fields.as_ref().map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| nested_child_local_field_name(path, field))
+                    .collect()
+            }),
+        },
+        Query::MoreLikeThis { fields, like } => Query::MoreLikeThis {
+            fields: fields.as_ref().map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| nested_child_local_field_name(path, field))
+                    .collect()
+            }),
+            like: like.clone(),
+        },
+        Query::Range { field, bounds } => Query::Range {
+            field: nested_child_local_field_name(path, field),
+            bounds: bounds.clone(),
+        },
+        Query::Exists { field } => Query::Exists {
+            field: nested_child_local_field_name(path, field),
+        },
+        Query::DistanceFeature { field, origin, pivot } => Query::DistanceFeature {
+            field: nested_child_local_field_name(path, field),
+            origin: origin.clone(),
+            pivot: pivot.clone(),
+        },
+        Query::RankFeature { field } => Query::RankFeature {
+            field: nested_child_local_field_name(path, field),
+        },
+        Query::GeoDistance(geo_query) => {
+            let mut geo_query = geo_query.clone();
+            geo_query.field = nested_child_local_field_name(path, &geo_query.field);
+            Query::GeoDistance(geo_query)
+        }
+        Query::Prefix {
+            field,
+            value,
+            case_insensitive,
+        } => Query::Prefix {
+            field: nested_child_local_field_name(path, field),
+            value: value.clone(),
+            case_insensitive: *case_insensitive,
+        },
+        Query::Wildcard {
+            field,
+            value,
+            case_insensitive,
+        } => Query::Wildcard {
+            field: nested_child_local_field_name(path, field),
+            value: value.clone(),
+            case_insensitive: *case_insensitive,
+        },
+        Query::Regexp {
+            field,
+            value,
+            case_insensitive,
+        } => Query::Regexp {
+            field: nested_child_local_field_name(path, field),
+            value: value.clone(),
+            case_insensitive: *case_insensitive,
+        },
+        Query::Fuzzy {
+            field,
+            value,
+            fuzziness,
+            prefix_length,
+            transpositions,
+        } => Query::Fuzzy {
+            field: nested_child_local_field_name(path, field),
+            value: value.clone(),
+            fuzziness: *fuzziness,
+            prefix_length: *prefix_length,
+            transpositions: *transpositions,
+        },
+        Query::SpanOr { clauses } => Query::SpanOr {
+            clauses: clauses
+                .iter()
+                .map(|child| localize_query_fields_for_nested_child(child, path))
+                .collect(),
+        },
+        Query::SpanFirst { match_query, end } => Query::SpanFirst {
+            match_query: Box::new(localize_query_fields_for_nested_child(match_query, path)),
+            end: *end,
+        },
+        Query::SpanNear {
+            clauses,
+            slop,
+            in_order,
+        } => Query::SpanNear {
+            clauses: clauses
+                .iter()
+                .map(|child| localize_query_fields_for_nested_child(child, path))
+                .collect(),
+            slop: *slop,
+            in_order: *in_order,
+        },
+        Query::SpanNot { include, exclude } => Query::SpanNot {
+            include: Box::new(localize_query_fields_for_nested_child(include, path)),
+            exclude: Box::new(localize_query_fields_for_nested_child(exclude, path)),
+        },
+        Query::SpanContaining { big, little } => Query::SpanContaining {
+            big: Box::new(localize_query_fields_for_nested_child(big, path)),
+            little: Box::new(localize_query_fields_for_nested_child(little, path)),
+        },
+        Query::SpanWithin { big, little } => Query::SpanWithin {
+            big: Box::new(localize_query_fields_for_nested_child(big, path)),
+            little: Box::new(localize_query_fields_for_nested_child(little, path)),
+        },
+        Query::SpanMulti { query } => Query::SpanMulti {
+            query: Box::new(localize_query_fields_for_nested_child(query, path)),
+        },
+        Query::FieldMaskingSpan { query, field } => Query::FieldMaskingSpan {
+            query: Box::new(localize_query_fields_for_nested_child(query, path)),
+            field: nested_child_local_field_name(path, field),
+        },
+        Query::Wrapper { query } => Query::Wrapper {
+            query: Box::new(localize_query_fields_for_nested_child(query, path)),
+        },
+        Query::ConstantScore { filter } => Query::ConstantScore {
+            filter: Box::new(localize_query_fields_for_nested_child(filter, path)),
+        },
+        Query::DisMax { queries, tie_breaker } => Query::DisMax {
+            queries: queries
+                .iter()
+                .map(|child| localize_query_fields_for_nested_child(child, path))
+                .collect(),
+            tie_breaker: *tie_breaker,
+        },
+        Query::Boosting {
+            positive,
+            negative,
+            negative_boost,
+        } => Query::Boosting {
+            positive: Box::new(localize_query_fields_for_nested_child(positive, path)),
+            negative: Box::new(localize_query_fields_for_nested_child(negative, path)),
+            negative_boost: *negative_boost,
+        },
+        Query::FunctionScore { query } => Query::FunctionScore {
+            query: Box::new(localize_query_fields_for_nested_child(query, path)),
+        },
+        Query::ScriptScore { query, script } => Query::ScriptScore {
+            query: Box::new(localize_query_fields_for_nested_child(query, path)),
+            script: script.clone(),
+        },
+        Query::Bool { clauses } => Query::Bool {
+            clauses: BoolQuery {
+                must: clauses
+                    .must
+                    .iter()
+                    .map(|child| localize_query_fields_for_nested_child(child, path))
+                    .collect(),
+                should: clauses
+                    .should
+                    .iter()
+                    .map(|child| localize_query_fields_for_nested_child(child, path))
+                    .collect(),
+                filter: clauses
+                    .filter
+                    .iter()
+                    .map(|child| localize_query_fields_for_nested_child(child, path))
+                    .collect(),
+                must_not: clauses
+                    .must_not
+                    .iter()
+                    .map(|child| localize_query_fields_for_nested_child(child, path))
+                    .collect(),
+                minimum_should_match: clauses.minimum_should_match,
+            },
+        },
+        other => other.clone(),
+    }
+}
+
 fn native_nested_child_ordinals_for_query(
     path_index: &NestedPathChildIndex,
     path: &str,
@@ -16586,6 +16825,17 @@ fn native_nested_child_ordinals_for_query(
             *prefix_length,
             *transpositions,
         ),
+        Query::SpanTerm { .. }
+        | Query::SpanOr { .. }
+        | Query::SpanFirst { .. }
+        | Query::SpanNear { .. }
+        | Query::SpanNot { .. }
+        | Query::SpanContaining { .. }
+        | Query::SpanWithin { .. }
+        | Query::SpanMulti { .. }
+        | Query::FieldMaskingSpan { .. } => {
+            nested_child_source_match_ordinals(path_index, path, query)
+        }
         Query::Match { field, query } => {
             nested_child_match_ordinals(path_index, path, field, query)
         }
@@ -16942,6 +17192,21 @@ fn nested_child_fuzzy_ordinals(
             transpositions,
         ) {
             ordinals.extend(term_ordinals.iter().copied());
+        }
+    }
+    Some(ordinals)
+}
+
+fn nested_child_source_match_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    query: &Query,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let local_query = localize_query_fields_for_nested_child(query, path);
+    let mut ordinals = std::collections::BTreeSet::new();
+    for (ordinal, child) in path_index.children.iter().enumerate() {
+        if document_matches_query(&local_query, &child.parent_id, &child.source) {
+            ordinals.insert(ordinal);
         }
     }
     Some(ordinals)
@@ -140110,6 +140375,178 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("nested boosting child ordinal hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_span_term_and_or_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "body": "alpha", "tag": "x" },
+                { "body": "omega", "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "body": "beta", "tag": "y" },
+                { "body": "omega", "tag": "x" }
+            ])),
+            ("3", serde_json::json!([
+                { "body": "omega", "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "span_or": {
+                                    "clauses": [
+                                        { "span_term": { "comments.body": "alpha" } },
+                                        { "span_term": { "comments.body": "beta" } }
+                                    ]
+                                }
+                            },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+
+        let documents = index.search_documents_for_native_nested_query(path, nested_query);
+        assert_eq!(document_ids(&documents), vec!["1"]);
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("nested span_or child ordinal hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_span_near_and_multi_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "body": "alpha beta", "code": "cart", "tag": "x" },
+                { "body": "omega", "code": "note", "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "body": "alpha beta", "code": "cart", "tag": "y" },
+                { "body": "omega", "code": "cart", "tag": "x" }
+            ])),
+            ("3", serde_json::json!([
+                { "body": "alpha omega beta", "code": "cart", "tag": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "body": "alpha beta", "code": "note", "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "span_near": {
+                                    "clauses": [
+                                        { "span_term": { "comments.body": "alpha" } },
+                                        { "span_term": { "comments.body": "beta" } }
+                                    ],
+                                    "slop": 0,
+                                    "in_order": true
+                                }
+                            },
+                            {
+                                "span_multi": {
+                                    "match": {
+                                        "prefix": { "comments.code": "ca" }
+                                    }
+                                }
+                            },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+
+        let documents = index.search_documents_for_native_nested_query(path, nested_query);
+        assert_eq!(document_ids(&documents), vec!["1"]);
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("nested span_near/span_multi child ordinal hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 

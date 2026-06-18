@@ -693,6 +693,12 @@ path.
   now reduce through child ordinals using the same membership semantics as the
   source matcher: `dis_max` unions matching children, `boosting` follows the
   positive query, and score wrappers delegate to their wrapped query.
+- Current direct nested span reduction reading after the latest child-ordinal
+  expansion:
+  representative nested span leaves and wrappers now reduce through child-local
+  source matching inside the nested child index instead of parent
+  source-validation fallback, preserving tuple isolation while reusing the
+  existing span range semantics.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through

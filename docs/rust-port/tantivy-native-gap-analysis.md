@@ -9734,6 +9734,12 @@ Concrete backlog notes for the broader non-stop-point axes:
   now reduce through child ordinals using the same membership semantics as the
   source matcher: `dis_max` unions matching children, `boosting` follows the
   positive query, and score wrappers delegate to their wrapped query
+- current direct nested span reduction reading after the latest child-ordinal
+  expansion inside the hybrid-bool note:
+  representative nested span leaves and wrappers now reduce through child-local
+  source matching inside the nested child index instead of parent
+  source-validation fallback, preserving tuple isolation while reusing the
+  existing span range semantics
 - current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion inside the hybrid-bool note:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
