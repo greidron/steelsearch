@@ -9692,6 +9692,12 @@ Concrete backlog notes for the broader non-stop-point axes:
   using child-local positive numeric/bool feature values instead of returning to
   the parent source-validation fallback bucket, while still preserving tuple
   isolation across sibling nested objects
+- current direct nested distance-feature reduction reading after the latest
+  child-ordinal expansion inside the hybrid-bool note:
+  nested `distance_feature` leaves now also resolve inside the nested child
+  index using child-local comparable numeric/date values plus the requested
+  origin/pivot instead of returning to the parent source-validation fallback
+  bucket, while still preserving tuple isolation across sibling nested objects
 - current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion inside the hybrid-bool note:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through

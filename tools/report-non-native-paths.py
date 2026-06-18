@@ -197,8 +197,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="nested query",
         category="source-backed query",
-        status="native-candidate-narrowed for exact nested term/terms/terms_set/range/exists/rank_feature/prefix/wildcard/regexp/fuzzy/match/match_phrase/match_phrase_prefix/match_bool_prefix/bool leaves",
-        next_action="keep unsupported nested shapes on explicit fallback telemetry while using child-ordinal narrowing for the current safe scalar, rank-feature, terms-set, match, phrase, bool-prefix, and string-pattern leaves",
+        status="native-candidate-narrowed for exact nested term/terms/terms_set/range/exists/distance_feature/rank_feature/prefix/wildcard/regexp/fuzzy/match/match_phrase/match_phrase_prefix/match_bool_prefix/bool leaves",
+        next_action="keep unsupported nested shapes on explicit fallback telemetry while using child-ordinal narrowing for the current safe scalar, distance-feature, rank-feature, terms-set, match, phrase, bool-prefix, and string-pattern leaves",
         evidence_path=ENGINE_SOURCE,
         evidence_pattern=r"native_nested_child_ordinals_for_query",
     ),
