@@ -669,6 +669,12 @@ path.
   evaluating the required query tokens across the requested child-local fields
   instead of returning to the parent source-validation fallback bucket, while
   still preserving tuple isolation across sibling nested objects.
+- Current direct nested query-string reduction reading after the latest
+  child-ordinal expansion:
+  nested `query_string` and `simple_query_string` leaves now resolve inside the
+  nested child index by evaluating required tokens across explicit child-local
+  fields, or the child source's own field set when no fields are provided,
+  instead of returning to the parent source-validation fallback bucket.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
