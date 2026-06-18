@@ -58,6 +58,19 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertIn("--require-no-skips", command_text)
 
+    def test_materialization_priority_current_batch_requires_zero_ranked(self):
+        batch = self.runner.BATCHES["materialization-priority-current"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/check-materialization-priority-report.py", command)
+        self.assertIn(
+            "target/materialization-priority-targeted-current/materialization-priority.json",
+            command,
+        )
+        self.assertIn("--require-passed", command)
+        self.assertIn("--require-zero-ranked", command)
+
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
 

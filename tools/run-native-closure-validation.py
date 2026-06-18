@@ -456,6 +456,21 @@ BENCHMARK_TELEMETRY_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+MATERIALIZATION_PRIORITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "targeted_materialization_priority_report_has_zero_ranked_operations",
+        "materialization-priority-current",
+        (
+            "python3",
+            "tools/check-materialization-priority-report.py",
+            "target/materialization-priority-targeted-current/materialization-priority.json",
+            "--require-passed",
+            "--require-zero-ranked",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
 NON_NATIVE_INVENTORY_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "non_native_path_inventory_has_no_missing_probe_or_family",
@@ -1877,6 +1892,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "non-native-inventory": NON_NATIVE_INVENTORY_BATCH,
     "e2e-required-parity": E2E_REQUIRED_PARITY_BATCH,
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
+    "materialization-priority-current": MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,

@@ -764,7 +764,9 @@ Current execution order:
    `ranked_operation_count == 0` when widening source-backed or vector/hybrid
    fallback diagnostics. Recheck current priority artifacts with
    `tools/check-materialization-priority-report.py --require-passed
-   --require-zero-ranked` before promoting a widened diagnostic mix.
+   --require-zero-ranked` before promoting a widened diagnostic mix. The current
+   retained targeted artifact check is available as
+   `tools/run-native-closure-validation.py --batch materialization-priority-current`.
 4. Run the optional `runtime-peer-backpressure` batch when a local OpenSearch
    distribution is available, and keep its report profile explicit about the
    mixed Java/Rust query-phase comparison boundary. The batch writes the
