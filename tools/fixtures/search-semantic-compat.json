@@ -464,10 +464,6 @@
         "size": 1
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch sorted root _search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "ranking",
       "description": "[ranking] search root sort from size semantic"
     },
@@ -489,10 +485,6 @@
         "track_total_hits": 1
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch track_total_hits root _search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "ranking",
       "description": "[ranking] search root track total hits threshold semantic"
     },
@@ -537,10 +529,6 @@
         }
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch ignore_unavailable multi-target _search results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] search ignore_unavailable multi target semantic"
     },
