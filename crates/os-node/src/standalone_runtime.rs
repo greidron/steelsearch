@@ -37,7 +37,7 @@ use os_node_rest_core::{
     AuthenticationUsersFile, RestServerConfig,
 };
 use os_rest::{RestMethod, RestRequest, RestResponse};
-use os_transport::internal_transport::RemoteTransportQueueSnapshot;
+use os_transport::internal_transport::{RemoteTransportQueueGate, RemoteTransportQueueSnapshot};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2202,6 +2202,7 @@ pub struct SteelNode {
     pub rethrottled_task_rates: Arc<Mutex<BTreeMap<String, f64>>>,
     runtime_thread_pool_counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
     remote_transport_queue_counters: Arc<Mutex<BTreeMap<String, RemoteTransportQueueSnapshot>>>,
+    remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
@@ -2436,6 +2437,7 @@ impl SteelNode {
             rethrottled_task_rates: Arc::new(Mutex::new(BTreeMap::new())),
             runtime_thread_pool_counters: Arc::new(Mutex::new(BTreeMap::new())),
             remote_transport_queue_counters: Arc::new(Mutex::new(BTreeMap::new())),
+            remote_transport_queue_gate: None,
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
@@ -2473,6 +2475,14 @@ impl SteelNode {
             .expect("extension lifecycle execution lock poisoned")
             .clear();
         self.activate_registered_extensions();
+        self
+    }
+
+    pub fn with_remote_transport_queue_gate(
+        mut self,
+        gate: Arc<RemoteTransportQueueGate>,
+    ) -> Self {
+        self.remote_transport_queue_gate = Some(gate);
         self
     }
 
@@ -13314,6 +13324,17 @@ impl SteelNode {
     }
 
     fn remote_transport_thread_pool_counters(&self, node_id: &str) -> RuntimeThreadPoolCounters {
+        if node_id == self.local_task_node_id() {
+            if let Some(gate) = &self.remote_transport_queue_gate {
+                let snapshot = gate.snapshot();
+                return RuntimeThreadPoolCounters {
+                    active: snapshot.active as u64,
+                    queue: snapshot.queued as u64,
+                    rejected: snapshot.rejected as u64,
+                    completed: snapshot.completed as u64,
+                };
+            }
+        }
         self.remote_transport_queue_counters
             .lock()
             .expect("remote transport queue counters lock poisoned")
@@ -24514,7 +24535,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 .as_array()
                 .expect("cat thread_pool array")
                 .len(),
-            7
+            8
         );
 
         let mut thread_pool_text_request =
@@ -24530,6 +24551,54 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert!(thread_pool_text.contains("node_name name active queue rejected"));
         assert!(thread_pool_text.contains("search"));
         assert!(!thread_pool_text.contains("write"));
+    }
+
+    #[test]
+    fn remote_transport_thread_pool_telemetry_reads_live_gate_snapshot() {
+        let gate = Arc::new(RemoteTransportQueueGate::new(1, 1000));
+        gate.execute_blocking(|| {
+            Ok::<_, os_transport::internal_transport::InternalTransportError>(())
+        })
+        .unwrap();
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node-a".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        })
+        .with_remote_transport_queue_gate(Arc::clone(&gate));
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let mut cat_remote_transport =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/remote_transport");
+        cat_remote_transport
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let cat_remote_transport = node.handle_rest_request(cat_remote_transport);
+        assert_eq!(cat_remote_transport.status, 200);
+        assert_eq!(cat_remote_transport.body[0]["node_id"], "node-a");
+        assert_eq!(cat_remote_transport.body[0]["active"], "0");
+        assert_eq!(cat_remote_transport.body[0]["queue"], "0");
+        assert_eq!(cat_remote_transport.body[0]["rejected"], "0");
+        assert_eq!(cat_remote_transport.body[0]["completed"], "1");
+
+        let stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(stats.status, 200);
+        assert_eq!(
+            stats.body["nodes"]["node-a"]["thread_pool"]["remote_transport"]["completed"],
+            1
+        );
     }
 
     #[test]

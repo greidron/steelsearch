@@ -1317,6 +1317,19 @@ RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
         package="os-transport",
         target=("--lib",),
     ),
+    ValidationTest(
+        "remote_transport_gate_blocking_execution_queues_drains_and_rejects",
+        "runtime-fairness-remote-transport-backpressure",
+        package="os-transport",
+        target=("--lib",),
+    ),
+    ValidationTest(
+        "query_phase_transport_route_uses_remote_transport_queue_gate_for_admission",
+        "runtime-fairness-remote-transport-backpressure",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
 )
 
 RUNTIME_THROTTLE_BATCH: tuple[ValidationTest, ...] = (

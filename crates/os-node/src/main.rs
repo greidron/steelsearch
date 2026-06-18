@@ -27,6 +27,7 @@ use os_node_rest_core::{
 use os_stream::StreamInput;
 use os_transport::compression::decompress_deflate_body;
 use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
+use os_transport::internal_transport::{InternalTransportError, RemoteTransportQueueGate};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -50,6 +51,19 @@ fn now_epoch_ms() -> u128 {
         .as_millis()
 }
 
+fn remote_transport_queue_gate_from_env() -> Arc<RemoteTransportQueueGate> {
+    let max_in_flight = env::var("STEELSEARCH_REMOTE_TRANSPORT_MAX_IN_FLIGHT")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1);
+    let max_queue = env::var("STEELSEARCH_REMOTE_TRANSPORT_QUEUE_SIZE")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(1000);
+    Arc::new(RemoteTransportQueueGate::new(max_in_flight, max_queue))
+}
+
 #[derive(Clone, Debug)]
 struct DevTransportIdentity {
     cluster_name: String,
@@ -62,6 +76,7 @@ struct DevTransportIdentity {
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
     seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
     coordination_state: Arc<Mutex<DevTransportCoordinationState>>,
+    remote_transport_queue_gate: Arc<RemoteTransportQueueGate>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -295,6 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let membership_state = production_membership_from_cluster_view(&cluster_view)?;
 
     let extension_registry = effective_extension_registry(&config)?;
+    let remote_transport_queue_gate = remote_transport_queue_gate_from_env();
     let mut node = SteelNode::new(NodeInfo {
         name: config.node_name.clone(),
         version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -304,6 +320,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         port: config.port,
     })
     .with_extension_registry(extension_registry.clone())
+    .with_remote_transport_queue_gate(Arc::clone(&remote_transport_queue_gate))
     .with_gateway_backed_development_metadata_store(
         metadata_path.clone(),
         gateway_manifest_path.clone(),
@@ -329,6 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         seed_peer_identity: config.seed_peer_identity.clone(),
         seed_peer_identities: config.seed_peer_identities.clone(),
         coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+        remote_transport_queue_gate,
     };
     if config.mixed_java_native_transport_join_participation_enabled()
         && env::var("STEELSEARCH_DISABLE_PROACTIVE_JOIN")
@@ -1415,7 +1433,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && action_hint.as_deref() == Some("indices:data/read/search[phase/query]") {
-        if let Some(response) = maybe_build_query_phase_response(request_id, &body, transport_identity) {
+        if let Some(response) = maybe_build_query_phase_response_with_remote_transport_admission(
+            request_id,
+            &body,
+            transport_identity,
+        ) {
             response_frame = summarize_transport_response_frame(&response);
             stream.write_all(&response)?;
             stream.flush()?;
@@ -2507,6 +2529,41 @@ fn maybe_build_query_phase_response(
     Some(build_transport_frame_from_body(
         &rewrite_transport_body_request_id(&response_body, request_id),
     ))
+}
+
+fn maybe_build_query_phase_response_with_remote_transport_admission(
+    request_id: i64,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Option<Vec<u8>> {
+    match transport_identity
+        .remote_transport_queue_gate
+        .execute_blocking(|| {
+            maybe_build_query_phase_response(request_id, body, transport_identity)
+                .ok_or_else(|| {
+                    InternalTransportError::Handler("query phase response missing".into())
+                })
+        }) {
+        Ok(response) => Some(response),
+        Err(InternalTransportError::Rejected {
+            active,
+            queued,
+            queue_size,
+        }) => {
+            eprintln!(
+                "steelsearch_remote_transport_query_phase_rejected request_id={} active={} queued={} queue_size={}",
+                request_id, active, queued, queue_size
+            );
+            None
+        }
+        Err(error) => {
+            eprintln!(
+                "steelsearch_remote_transport_query_phase_error request_id={} error={}",
+                request_id, error
+            );
+            None
+        }
+    }
 }
 
 fn build_empty_transport_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -3619,7 +3676,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
         )),
         Some("indices:data/read/search[phase/query]") => {
-            maybe_build_query_phase_response(request_id, body, transport_identity)
+            maybe_build_query_phase_response_with_remote_transport_admission(
+                request_id,
+                body,
+                transport_identity,
+            )
         }
         Some("indices:admin/seq_no/retention_lease_background_sync")
         | Some("indices:admin/seq_no/retention_lease_background_sync[r]") => {
@@ -7505,6 +7566,7 @@ mod tests {
             seed_peer_identity: None,
             seed_peer_identities: Vec::new(),
             coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
         };
         let capture_write_lock = Arc::new(Mutex::new(()));
         let server_capture_path = capture_path.clone();
@@ -7552,6 +7614,50 @@ mod tests {
         assert_eq!(capture_json.as_array().unwrap().len(), 2);
         assert!(capture.contains("keepalive_ping"));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn query_phase_transport_route_uses_remote_transport_queue_gate_for_admission() {
+        let gate = Arc::new(RemoteTransportQueueGate::new(1, 0));
+        let active_gate = Arc::clone(&gate);
+        let active = thread::spawn(move || {
+            active_gate.execute_blocking(|| {
+                thread::sleep(Duration::from_millis(80));
+                Ok::<_, InternalTransportError>(())
+            })
+        });
+        let started = std::time::Instant::now();
+        while gate.snapshot().active != 1 {
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "timed out waiting for active remote transport route admission"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::clone(&gate),
+        };
+
+        let response = maybe_build_query_phase_response_with_remote_transport_admission(
+            42,
+            &[0; 17],
+            &transport_identity,
+        );
+
+        assert!(response.is_none());
+        assert_eq!(gate.snapshot().rejected, 1);
+        active.join().unwrap().unwrap();
+        assert_eq!(gate.snapshot().completed, 1);
     }
 
     #[test]

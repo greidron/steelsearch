@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::Duration;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -201,6 +202,41 @@ impl RemoteTransportQueueGate {
         self.run_with_permit(permit, operation).await
     }
 
+    pub fn execute_blocking<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, InternalTransportError>,
+    ) -> Result<T, InternalTransportError> {
+        let permit = match self.permits.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(TryAcquireError::NoPermits) => {
+                self.enqueue_or_reject()?;
+                loop {
+                    match self.permits.clone().try_acquire_owned() {
+                        Ok(permit) => {
+                            self.queued.fetch_sub(1, Ordering::SeqCst);
+                            break permit;
+                        }
+                        Err(TryAcquireError::NoPermits) => {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(TryAcquireError::Closed) => {
+                            self.queued.fetch_sub(1, Ordering::SeqCst);
+                            return Err(InternalTransportError::Handler(
+                                "remote transport queue closed".into(),
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(TryAcquireError::Closed) => {
+                return Err(InternalTransportError::Handler(
+                    "remote transport queue closed".into(),
+                ));
+            }
+        };
+        self.run_blocking_with_permit(permit, operation)
+    }
+
     fn enqueue_or_reject(&self) -> Result<(), InternalTransportError> {
         let mut queued = self.queued.load(Ordering::SeqCst);
         loop {
@@ -234,6 +270,18 @@ impl RemoteTransportQueueGate {
     {
         self.active.fetch_add(1, Ordering::SeqCst);
         let result = operation().await;
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        self.completed.fetch_add(1, Ordering::SeqCst);
+        result
+    }
+
+    fn run_blocking_with_permit<T>(
+        &self,
+        _permit: OwnedSemaphorePermit,
+        operation: impl FnOnce() -> Result<T, InternalTransportError>,
+    ) -> Result<T, InternalTransportError> {
+        self.active.fetch_add(1, Ordering::SeqCst);
+        let result = operation();
         self.active.fetch_sub(1, Ordering::SeqCst);
         self.completed.fetch_add(1, Ordering::SeqCst);
         result
@@ -311,6 +359,7 @@ mod tests {
     use serde::Deserialize;
     use serde_json::json;
     use std::sync::Arc;
+    use std::time::Duration as StdDuration;
     use tokio::net::TcpListener;
     use tokio::time::{sleep, Duration};
 
@@ -521,6 +570,51 @@ mod tests {
         assert_eq!(second_response.first_hit().unwrap().metadata.id, "remote-1");
         server.await.unwrap();
 
+        assert_eq!(
+            gate.snapshot(),
+            RemoteTransportQueueSnapshot {
+                active: 0,
+                queued: 0,
+                rejected: 1,
+                completed: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn remote_transport_gate_blocking_execution_queues_drains_and_rejects() {
+        let gate = Arc::new(RemoteTransportQueueGate::new(1, 1));
+        let first_gate = Arc::clone(&gate);
+        let first = std::thread::spawn(move || {
+            first_gate.execute_blocking(|| {
+                std::thread::sleep(StdDuration::from_millis(80));
+                Ok::<_, InternalTransportError>("first")
+            })
+        });
+        wait_for_transport_queue_snapshot_blocking(&gate, |snapshot| snapshot.active == 1);
+
+        let second_gate = Arc::clone(&gate);
+        let second = std::thread::spawn(move || {
+            second_gate.execute_blocking(|| Ok::<_, InternalTransportError>("second"))
+        });
+        wait_for_transport_queue_snapshot_blocking(&gate, |snapshot| {
+            snapshot.active == 1 && snapshot.queued == 1
+        });
+
+        let rejected = gate
+            .execute_blocking(|| Ok::<_, InternalTransportError>("rejected"))
+            .unwrap_err();
+        assert!(matches!(
+            rejected,
+            InternalTransportError::Rejected {
+                active: 1,
+                queued: 1,
+                queue_size: 1
+            }
+        ));
+
+        assert_eq!(first.join().unwrap().unwrap(), "first");
+        assert_eq!(second.join().unwrap().unwrap(), "second");
         assert_eq!(
             gate.snapshot(),
             RemoteTransportQueueSnapshot {
@@ -858,5 +952,23 @@ mod tests {
             "timed out waiting for remote transport queue snapshot: {:?}",
             gate.snapshot()
         );
+    }
+
+    fn wait_for_transport_queue_snapshot_blocking(
+        gate: &RemoteTransportQueueGate,
+        predicate: impl Fn(RemoteTransportQueueSnapshot) -> bool,
+    ) {
+        let started = std::time::Instant::now();
+        loop {
+            if predicate(gate.snapshot()) {
+                return;
+            }
+            assert!(
+                started.elapsed() < StdDuration::from_secs(2),
+                "timed out waiting for remote transport queue snapshot: {:?}",
+                gate.snapshot()
+            );
+            std::thread::sleep(StdDuration::from_millis(5));
+        }
     }
 }
