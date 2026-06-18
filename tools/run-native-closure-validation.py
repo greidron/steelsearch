@@ -1940,6 +1940,22 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "release_evidence_inventory_reports_current_candidate_artifacts",
+        "release-evidence-inventory-current",
+        (
+            "python3",
+            "tools/report-release-evidence-inventory.py",
+            "--root",
+            "target",
+            "--output",
+            "target/release-evidence-inventory-current.json",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -1963,6 +1979,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-peer-backpressure": RUNTIME_PEER_BACKPRESSURE_BATCH,
     "runtime-peer-backpressure-current": RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH,
     "native-closure-status-current": NATIVE_CLOSURE_STATUS_CURRENT_BATCH,
+    "release-evidence-inventory-current": RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,

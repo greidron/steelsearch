@@ -766,6 +766,10 @@ status artifact can be generated through
 For the release cutoff check, regenerate that artifact from a clean checkout
 with both `--readiness-report` and `--release-readiness-file`, then validate it with
 `tools/check-native-closure-status-report.py target/native-closure-status-current.json --require-clean-worktree`.
+Use `tools/run-native-closure-validation.py --batch release-evidence-inventory-current`
+to refresh the current candidate-artifact inventory before attaching evidence;
+use `tools/report-release-evidence-inventory.py --require-complete` for the
+final cutoff check.
 
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new
