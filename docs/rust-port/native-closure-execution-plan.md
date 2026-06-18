@@ -757,15 +757,15 @@ The optional live peer-backpressure check and final fresh cutover artifacts stay
 separate because they depend on local OpenSearch distribution/runtime evidence.
 Use `tools/report-native-closure-status.py` to produce a single JSON view that
 combines the current evidence gate, retained peer-backpressure evidence, and
-final cutover release-readiness manifest state, including the required final
-artifact categories that remain missing. The report distinguishes the five-item
-startup manifest from the six readiness-attachment inputs, where the latter also
-includes the Steelsearch-vs-OpenSearch load-comparison report. The same current
-status artifact can be generated through
+final cutover release-readiness manifest state. The report distinguishes the
+five-item startup manifest from the six readiness-attachment inputs, where the
+latter also includes the Steelsearch-vs-OpenSearch load-comparison report. The
+same current status artifact can be generated through
 `tools/run-native-closure-validation.py --batch native-closure-status-current`.
 For the release cutoff check, regenerate that artifact from a clean checkout
-with both `--readiness-report` and `--release-readiness-file`, then validate it with
-`tools/check-native-closure-status-report.py target/native-closure-status-current.json --require-clean-worktree`.
+with both `--readiness-report` and `--release-readiness-file`, then validate it
+with `tools/check-native-closure-status-report.py
+target/native-closure-status-current.json --require-clean-worktree`.
 Use `tools/run-native-closure-validation.py --batch release-evidence-inventory-current`
 to refresh the current candidate-artifact inventory before attaching evidence;
 use `tools/report-release-evidence-inventory.py --require-complete` for the
@@ -779,6 +779,24 @@ and rolling-upgrade transcript evidence with
 and mixed-cluster failure chaos evidence with
 `tools/run-native-closure-validation.py --batch chaos-evidence-current`
 before running that inventory.
+
+Current v0.1.0 release evidence status:
+
+- `target/release-evidence-inventory-current.json` reports the full startup
+  and readiness-attachment evidence inventory complete, including the live
+  Steelsearch-vs-OpenSearch `load_comparison` report.
+- `target/native-closure-status-final.json` was regenerated from a clean
+  checkout on 2026-06-18 with both the live readiness report and
+  `release-readiness.json`; its summary is `status=ready`,
+  `final_cutover_ready=true`, and `passed=true`.
+- `tools/check-native-closure-status-report.py
+  target/native-closure-status-final.json --require-final-cutover
+  --require-clean-worktree` passes with no missing startup or readiness
+  attachment items.
+- `tools/attach-release-readiness-evidence.py` now writes production startup
+  manifest artifact paths relative to the manifest file and readiness evidence
+  paths as absolute paths, so relative CLI inputs are stable when the manifest
+  lives outside the current working directory.
 
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new
@@ -802,12 +820,11 @@ before running that inventory.
    current evidence report to `target/runtime-peer-backpressure-current.json`.
    Recheck a retained report with
    `tools/run-native-closure-validation.py --batch runtime-peer-backpressure-current`.
-5. Before production cutover, refresh benchmark, load, chaos, packaging, and
+5. Before a future production cutover or release retag, refresh benchmark,
+   load, chaos, packaging, and
    rolling-upgrade artifacts and feed them through the release-readiness
    manifest writer. Validate the generated manifest with
    `tools/check-release-readiness-evidence.py --require-passed` before using it
    as `STEELSEARCH_RELEASE_READINESS_FILE`. The writer/checker contract is
    available as
-   `tools/run-native-closure-validation.py --batch release-readiness-tooling`;
-   the final cutover still requires fresh benchmark, load, chaos, packaging,
-   and rolling-upgrade artifacts.
+   `tools/run-native-closure-validation.py --batch release-readiness-tooling`.
