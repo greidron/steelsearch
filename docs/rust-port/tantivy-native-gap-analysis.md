@@ -9722,6 +9722,12 @@ Concrete backlog notes for the broader non-stop-point axes:
   evaluating the current token-overlap semantics across explicit child-local
   fields, or the child source's own field set when no fields are provided,
   instead of returning to the parent source-validation fallback bucket
+- current direct nested geo-distance reduction reading after the latest
+  child-ordinal expansion inside the hybrid-bool note:
+  nested `geo_distance` leaves now resolve inside the nested child index by
+  applying the exact circle matcher to child-local geo-point values instead of
+  returning to the parent source-validation fallback bucket, while still
+  preserving tuple isolation across sibling nested objects
 - current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion inside the hybrid-bool note:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
