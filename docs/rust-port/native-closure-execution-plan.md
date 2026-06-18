@@ -8,13 +8,17 @@ binary-to-binary Lucene compatibility.
 
 In scope:
 
-- source-backed query and aggregation execution that can still force document
-  scans or full hit materialization;
-- vector and hybrid search paths that still need broader direct native
-  page/window and aggregation coverage;
+- source-backed query and aggregation execution where unsupported or
+  analyzer-sensitive shapes must remain explicit in fallback telemetry while
+  native candidate narrowing widens;
+- vector and hybrid search paths where direct native page/window,
+  aggregation, sort, and cache coverage must stay guarded as new shapes are
+  promoted;
 - mixed-cluster shard movement hardening where the representative happy path is
-  already evidenced, but interruption/retry/restart evidence is still thin;
-- production runtime controls and production security enforcement.
+  already evidenced with both-direction interruption/restart coverage and must
+  remain in the release gate;
+- production runtime controls, runtime-visible module registration, and
+  production security enforcement.
 
 Out of scope:
 
@@ -726,11 +730,38 @@ Exit evidence:
 
 ## Immediate Execution Order
 
-1. Add a reusable non-native path report.
-2. Use that report to keep the source-backed and vector/hybrid inventories
-   current.
-3. Extend the live shard movement probe with interruption and resume phases.
-4. Add startup/preflight refusal tests before broad runtime-control wiring.
-5. Continue security from the structured fail-closed boundary/checklist gate
-   and structurally validated TLS/authn bootstrap fixtures into real
-   enforcement paths.
+Completed execution sequence:
+
+1. Added a reusable non-native path report that excludes format-only
+   OpenSearch response parity, direct OpenSearch snapshot-file compatibility,
+   and Lucene segment/translog binary compatibility.
+2. Wired that report to the source-backed, materialization, vector/hybrid,
+   mixed-cluster, runtime-control, module-registration, and production-security
+   inventories. The current report has 10/10 matched probes and 18/18
+   evidenced families.
+3. Extended the live shard movement probe with both-direction interruption and
+   resume-or-restart phases, zero checkpoint drift, checkpoint monotonicity,
+   retention-lease metadata, and unsupported allocation-explain evidence.
+4. Added startup/preflight and readiness refusal batches before broad runtime
+   control promotion.
+5. Promoted production security from structured fail-closed blockers into
+   guarded TLS, authn/authz, audit, tenant, redaction, secure-settings, route
+   enforcement, and explicit OpenSearch Security plugin API fail-closed
+   evidence.
+
+Current execution order:
+
+1. Keep `tools/report-non-native-paths.py` green with
+   `missing_probe_count == 0` and `missing_family_count == 0`; treat new
+   entries as workstream-specific watchpoints rather than format-only parity.
+2. Keep `search-semantic` and `vector-search` E2E comparison reports at zero
+   failed and zero skipped required cases for their current fixtures.
+3. Keep the targeted materialization-priority matrix at
+   `ranked_operation_count == 0` when widening source-backed or vector/hybrid
+   fallback diagnostics.
+4. Run the optional `runtime-peer-backpressure` batch when a local OpenSearch
+   distribution is available, and keep its report profile explicit about the
+   mixed Java/Rust query-phase comparison boundary.
+5. Before production cutover, refresh benchmark, load, chaos, packaging, and
+   rolling-upgrade artifacts and feed them through the release-readiness
+   manifest writer.
