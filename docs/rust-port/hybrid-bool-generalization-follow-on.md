@@ -675,6 +675,12 @@ path.
   nested child index by evaluating required tokens across explicit child-local
   fields, or the child source's own field set when no fields are provided,
   instead of returning to the parent source-validation fallback bucket.
+- Current direct nested more-like-this reduction reading after the latest
+  child-ordinal expansion:
+  nested `more_like_this` leaves now resolve inside the nested child index by
+  evaluating the current token-overlap semantics across explicit child-local
+  fields, or the child source's own field set when no fields are provided,
+  instead of returning to the parent source-validation fallback bucket.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through

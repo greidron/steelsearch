@@ -16610,6 +16610,9 @@ fn native_nested_child_ordinals_for_query(
         Query::SimpleQueryString { query, fields } => {
             nested_child_simple_query_string_ordinals(path_index, path, fields.as_deref(), query)
         }
+        Query::MoreLikeThis { fields, like } => {
+            nested_child_more_like_this_ordinals(path_index, path, fields.as_deref(), like)
+        }
         Query::Terms { field, values } => {
             let mut ordinals = std::collections::BTreeSet::new();
             for value in values {
@@ -17106,6 +17109,22 @@ fn nested_child_simple_query_string_ordinals(
             local_fields.as_deref(),
             query,
         ) {
+            ordinals.insert(ordinal);
+        }
+    }
+    Some(ordinals)
+}
+
+fn nested_child_more_like_this_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    fields: Option<&[String]>,
+    like: &[String],
+) -> Option<std::collections::BTreeSet<usize>> {
+    let local_fields = nested_child_local_fields(path, fields);
+    let mut ordinals = std::collections::BTreeSet::new();
+    for (ordinal, child) in path_index.children.iter().enumerate() {
+        if matches_more_like_this_query(&child.parent_id, &child.source, local_fields.as_deref(), like) {
             ordinals.insert(ordinal);
         }
     }
@@ -139618,6 +139637,87 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("nested simple_query_string child ordinal hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_more_like_this_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "title": "alpha title", "body": "ordinary text", "tag": "x" },
+                { "title": "omega title", "body": "note", "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "title": "alpha title", "body": "ordinary text", "tag": "y" }
+            ])),
+            ("3", serde_json::json!([
+                { "title": "alpha title", "body": "ordinary text", "tag": "y" },
+                { "title": "omega title", "body": "note", "tag": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "title": "omega title", "body": "ordinary text", "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "more_like_this": {
+                                    "fields": ["comments.title", "comments.body"],
+                                    "like": ["alpha"]
+                                }
+                            },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+
+        let documents = index.search_documents_for_native_nested_query(path, nested_query);
+        assert_eq!(document_ids(&documents), vec!["1"]);
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("nested more_like_this child ordinal hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 

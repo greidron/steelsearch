@@ -9716,6 +9716,12 @@ Concrete backlog notes for the broader non-stop-point axes:
   nested child index by evaluating required tokens across explicit child-local
   fields, or the child source's own field set when no fields are provided,
   instead of returning to the parent source-validation fallback bucket
+- current direct nested more-like-this reduction reading after the latest
+  child-ordinal expansion inside the hybrid-bool note:
+  nested `more_like_this` leaves now resolve inside the nested child index by
+  evaluating the current token-overlap semantics across explicit child-local
+  fields, or the child source's own field set when no fields are provided,
+  instead of returning to the parent source-validation fallback bucket
 - current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion inside the hybrid-bool note:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
