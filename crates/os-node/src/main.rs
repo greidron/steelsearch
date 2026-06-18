@@ -30,7 +30,8 @@ use os_transport::handshake::{build_tcp_handshake_request, build_transport_hands
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -337,7 +338,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         spawn_proactive_seed_join_loop(transport_identity.clone());
     }
-    serve_transport_seed_listener_until(transport_listener, transport_capture_path, transport_identity);
+    serve_transport_seed_listener_until(
+        transport_listener,
+        transport_capture_path,
+        transport_identity,
+        config.production_security_bootstrap.transport_tls_config(),
+    )?;
 
     eprintln!(
         "Steelsearch development daemon listening on http://{}",
@@ -402,7 +408,11 @@ fn serve_transport_seed_listener_until(
     listener: std::net::TcpListener,
     capture_path: PathBuf,
     transport_identity: DevTransportIdentity,
-) {
+    tls_config: Option<TransportTlsConfig>,
+) -> std::io::Result<()> {
+    let tls_config = tls_config
+        .map(|config| load_transport_rustls_server_config(&config).map(Arc::new))
+        .transpose()?;
     let capture_write_lock = Arc::new(Mutex::new(()));
     thread::spawn(move || loop {
         if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
@@ -413,9 +423,11 @@ fn serve_transport_seed_listener_until(
                 let capture_path = capture_path.clone();
                 let transport_identity = transport_identity.clone();
                 let capture_write_lock = Arc::clone(&capture_write_lock);
+                let tls_config = tls_config.clone();
                 thread::spawn(move || {
-                    let _ = handle_transport_seed_connection(
+                    let _ = handle_transport_seed_tcp_connection(
                         stream,
+                        tls_config,
                         &capture_path,
                         &transport_identity,
                         &capture_write_lock,
@@ -428,22 +440,144 @@ fn serve_transport_seed_listener_until(
             Err(_) => break,
         }
     });
+    Ok(())
 }
 
-fn handle_transport_seed_connection(
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TransportTlsConfig {
+    certificate_path: PathBuf,
+    private_key_path: PathBuf,
+}
+
+fn validate_transport_tls_config(config: &TransportTlsConfig) -> Result<(), String> {
+    load_transport_rustls_server_config(config)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn load_transport_rustls_server_config(
+    config: &TransportTlsConfig,
+) -> std::io::Result<rustls::ServerConfig> {
+    let certificates = {
+        let file = File::open(&config.certificate_path)?;
+        let mut reader = BufReader::new(file);
+        rustls_pemfile::certs(&mut reader)?
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect::<Vec<_>>()
+    };
+    if certificates.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "transport TLS certificate file [{}] does not contain any certificates",
+                config.certificate_path.display()
+            ),
+        ));
+    }
+    let private_key = load_transport_rustls_private_key(&config.private_key_path)?;
+    rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certificates, private_key)
+        .map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid transport TLS certificate/private-key pair: {error}"),
+            )
+        })
+}
+
+fn load_transport_rustls_private_key(path: &Path) -> std::io::Result<rustls::PrivateKey> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader)?.into_iter().next() {
+        return Ok(rustls::PrivateKey(key));
+    }
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader)?.into_iter().next() {
+        return Ok(rustls::PrivateKey(key));
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!(
+            "transport TLS private key file [{}] does not contain a supported private key",
+            path.display()
+        ),
+    ))
+}
+
+trait TransportConnection: Read + Write {
+    fn set_read_timeout(&self, duration: Option<Duration>) -> std::io::Result<()>;
+    fn peer_addr(&self) -> std::io::Result<SocketAddr>;
+}
+
+impl TransportConnection for TcpStream {
+    fn set_read_timeout(&self, duration: Option<Duration>) -> std::io::Result<()> {
+        TcpStream::set_read_timeout(self, duration)
+    }
+
+    fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+        TcpStream::peer_addr(self)
+    }
+}
+
+impl TransportConnection for rustls::StreamOwned<rustls::ServerConnection, TcpStream> {
+    fn set_read_timeout(&self, duration: Option<Duration>) -> std::io::Result<()> {
+        self.sock.set_read_timeout(duration)
+    }
+
+    fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+        self.sock.peer_addr()
+    }
+}
+
+fn handle_transport_seed_tcp_connection(
     mut stream: std::net::TcpStream,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
     capture_path: &std::path::Path,
     transport_identity: &DevTransportIdentity,
     capture_write_lock: &Arc<Mutex<()>>,
 ) -> std::io::Result<()> {
-    let connection_started_at_ms = unix_time_ms();
     let pre_first_frame_timeout_ms = env::var("STEELSEARCH_TRANSPORT_PRE_FIRST_FRAME_TIMEOUT_MS")
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .unwrap_or_else(|| transport_connection_hold_duration().as_millis() as u64);
     stream.set_read_timeout(Some(Duration::from_millis(pre_first_frame_timeout_ms)))?;
+    if let Some(tls_config) = tls_config {
+        let connection = rustls::ServerConnection::new(tls_config).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("transport TLS server connection failed: {error}"),
+            )
+        })?;
+        let mut tls_stream = rustls::StreamOwned::new(connection, stream);
+        return handle_transport_seed_connection(
+            &mut tls_stream,
+            capture_path,
+            transport_identity,
+            capture_write_lock,
+        );
+    }
+    handle_transport_seed_connection(
+        &mut stream,
+        capture_path,
+        transport_identity,
+        capture_write_lock,
+    )
+}
+
+fn handle_transport_seed_connection<S: TransportConnection>(
+    stream: &mut S,
+    capture_path: &std::path::Path,
+    transport_identity: &DevTransportIdentity,
+    capture_write_lock: &Arc<Mutex<()>>,
+) -> std::io::Result<()> {
+    let connection_started_at_ms = unix_time_ms();
+    let peer_addr = stream.peer_addr().ok();
     let (header, body) = loop {
-        match read_transport_seed_frame_detailed(&mut stream)? {
+        match read_transport_seed_frame_detailed(stream)? {
             TransportSeedFrameRead::Frame(frame) => break frame,
             TransportSeedFrameRead::Ping(header) => {
                 let response = build_keepalive_ping_frame();
@@ -452,7 +586,7 @@ fn handle_transport_seed_connection(
                 let frame_at_ms = unix_time_ms();
                 persist_transport_seed_capture(
                     capture_path,
-                    stream.peer_addr().ok(),
+                    peer_addr,
                     connection_started_at_ms,
                     Some(frame_at_ms),
                     summarize_keepalive_ping_frame(&header),
@@ -476,7 +610,7 @@ fn handle_transport_seed_connection(
                 let event_at_ms = unix_time_ms();
                 persist_transport_seed_capture(
                     capture_path,
-                    stream.peer_addr().ok(),
+                    peer_addr,
                     connection_started_at_ms,
                     None,
                     serde_json::json!({ "pre_first_frame": true }),
@@ -500,7 +634,7 @@ fn handle_transport_seed_connection(
                 let event_at_ms = unix_time_ms();
                 persist_transport_seed_capture(
                     capture_path,
-                    stream.peer_addr().ok(),
+                    peer_addr,
                     connection_started_at_ms,
                     None,
                     serde_json::json!({ "pre_first_frame": true }),
@@ -539,7 +673,7 @@ fn handle_transport_seed_connection(
     if body.len() < 17 {
         persist_transport_seed_capture(
             capture_path,
-            stream.peer_addr().ok(),
+            peer_addr,
             connection_started_at_ms,
             Some(first_frame_received_at_ms),
             first_frame,
@@ -624,7 +758,7 @@ fn handle_transport_seed_connection(
                 request_id
             );
             hold_transport_channel_open(
-                &mut stream,
+                stream,
                 transport_identity,
                 &mut post_follow_up_frame,
                 &mut post_follow_up_frame_received_at_ms,
@@ -639,7 +773,7 @@ fn handle_transport_seed_connection(
             )?;
         } else {
             stream.set_read_timeout(Some(Duration::from_millis(400)))?;
-            if let Some((follow_up_header, follow_up_body)) = read_transport_seed_frame(&mut stream)? {
+            if let Some((follow_up_header, follow_up_body)) = read_transport_seed_frame(stream)? {
                 eprintln!(
                     "steelsearch_tcp_handshake_response_stage=follow_up_received request_id={} action_hint={:?}",
                     request_id,
@@ -682,7 +816,7 @@ fn handle_transport_seed_connection(
                     stream.flush()?;
                     response_frame_sent_at_ms = Some(unix_time_ms());
                     hold_transport_channel_open(
-                        &mut stream,
+                        stream,
                         transport_identity,
                         &mut post_follow_up_frame,
                         &mut post_follow_up_frame_received_at_ms,
@@ -702,7 +836,7 @@ fn handle_transport_seed_connection(
                     request_id
                 );
                 hold_transport_channel_open(
-                    &mut stream,
+                    stream,
                     transport_identity,
                     &mut post_follow_up_frame,
                     &mut post_follow_up_frame_received_at_ms,
@@ -731,7 +865,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -751,7 +885,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -771,7 +905,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -800,7 +934,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -827,7 +961,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -854,7 +988,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -881,7 +1015,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -908,7 +1042,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -934,7 +1068,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -961,7 +1095,7 @@ fn handle_transport_seed_connection(
         )
     {
         if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
-            if let Ok(peer_addr) = stream.peer_addr() {
+            if let Some(peer_addr) = peer_addr {
                 maybe_complete_source_side_recovery(peer_addr, &body, header_version_id);
             }
         }
@@ -975,7 +1109,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -995,7 +1129,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1141,7 +1275,7 @@ fn handle_transport_seed_connection(
             publish_state_started.elapsed().as_millis()
         );
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1176,7 +1310,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1199,7 +1333,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1219,7 +1353,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1246,7 +1380,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1267,7 +1401,7 @@ fn handle_transport_seed_connection(
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1293,7 +1427,7 @@ fn handle_transport_seed_connection(
             );
         }
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1312,7 +1446,7 @@ fn handle_transport_seed_connection(
             request_id, action_hint, header_version_id
         );
         hold_transport_channel_open(
-            &mut stream,
+            stream,
             transport_identity,
             &mut post_follow_up_frame,
             &mut post_follow_up_frame_received_at_ms,
@@ -1328,7 +1462,7 @@ fn handle_transport_seed_connection(
     }
     persist_transport_seed_capture(
         capture_path,
-        stream.peer_addr().ok(),
+        peer_addr,
         connection_started_at_ms,
         Some(first_frame_received_at_ms),
         first_frame,
@@ -1356,8 +1490,8 @@ enum TransportSeedFrameRead {
     Eof,
 }
 
-fn read_transport_seed_frame(
-    stream: &mut std::net::TcpStream,
+fn read_transport_seed_frame<S: Read>(
+    stream: &mut S,
 ) -> std::io::Result<Option<([u8; 6], Vec<u8>)>> {
     match read_transport_seed_frame_detailed(stream)? {
         TransportSeedFrameRead::Frame(frame) => Ok(Some(frame)),
@@ -1366,8 +1500,8 @@ fn read_transport_seed_frame(
     }
 }
 
-fn read_transport_seed_frame_detailed(
-    stream: &mut std::net::TcpStream,
+fn read_transport_seed_frame_detailed<S: Read>(
+    stream: &mut S,
 ) -> std::io::Result<TransportSeedFrameRead> {
     let mut header = [0_u8; 6];
     match stream.read_exact(&mut header) {
@@ -3316,8 +3450,8 @@ fn summarize_relevant_shard_routings_from_cluster_state(
     summaries
 }
 
-fn hold_transport_channel_open(
-    stream: &mut TcpStream,
+fn hold_transport_channel_open<S: TransportConnection>(
+    stream: &mut S,
     transport_identity: &DevTransportIdentity,
     post_follow_up_frame: &mut Option<serde_json::Value>,
     post_follow_up_frame_received_at_ms: &mut Option<u128>,
@@ -3418,8 +3552,8 @@ fn unix_time_ms() -> u128 {
         .unwrap_or(0)
 }
 
-fn handle_subsequent_transport_request(
-    stream: &mut TcpStream,
+fn handle_subsequent_transport_request<S: TransportConnection>(
+    stream: &mut S,
     body: &[u8],
     transport_identity: &DevTransportIdentity,
     peer_addr: Option<SocketAddr>,
@@ -4382,6 +4516,13 @@ impl ProductionSecurityBootstrapConfig {
             private_key_path: self.http_tls_private_key_path.clone()?,
         })
     }
+
+    fn transport_tls_config(&self) -> Option<TransportTlsConfig> {
+        Some(TransportTlsConfig {
+            certificate_path: self.transport_tls_certificate_path.clone()?,
+            private_key_path: self.transport_tls_private_key_path.clone()?,
+        })
+    }
 }
 
 trait DevelopmentClusterViewConfig {
@@ -5131,6 +5272,14 @@ fn production_security_boundary_policy(config: &DaemonConfig) -> SecurityBoundar
         .is_some_and(|config| validate_rest_tls_config(config).is_ok());
     if http_tls_ready {
         policy.http_tls = SecurityBoundaryState::Enforced;
+    }
+    let transport_tls_ready = config
+        .production_security_bootstrap
+        .transport_tls_config()
+        .as_ref()
+        .is_some_and(|config| validate_transport_tls_config(config).is_ok());
+    if transport_tls_ready {
+        policy.transport_tls = SecurityBoundaryState::Enforced;
     }
     if runtime_security_ready && authentication_subjects_ready {
         policy.authentication = SecurityBoundaryState::Enforced;
@@ -6986,6 +7135,7 @@ mod tests {
         let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
         write_valid_rustls_http_tls_bootstrap_material(&http_cert, &http_key);
+        write_valid_rustls_transport_tls_bootstrap_material(&transport_cert, &transport_key);
         write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
@@ -7038,6 +7188,7 @@ mod tests {
         let secure_settings = material_root.join("secure-settings.json");
         write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
         write_valid_rustls_http_tls_bootstrap_material(&http_cert, &http_key);
+        write_valid_rustls_transport_tls_bootstrap_material(&transport_cert, &transport_key);
         write_valid_secure_settings_bootstrap_material(&secure_settings);
         fs::write(
             &users,
@@ -7082,13 +7233,90 @@ mod tests {
             .find(|blocker| blocker.starts_with("[production]"))
             .expect("production policy blocker");
         assert!(!production_blocker.contains("http_tls must be implemented and enforced"));
-        assert!(production_blocker.contains("transport_tls must be implemented and enforced"));
+        assert!(!production_blocker.contains("transport_tls must be implemented and enforced"));
         assert!(!production_blocker.contains("authentication must be implemented and enforced"));
         assert!(!production_blocker.contains("authorization must be implemented and enforced"));
         assert!(!production_blocker.contains("audit_logging must be implemented and enforced"));
         assert!(!production_blocker.contains("tenant_isolation must be implemented and enforced"));
         assert!(!production_blocker.contains("secure_settings must be implemented and enforced"));
         assert!(startup_error.contains("production mode is blocked"));
+    }
+
+    #[test]
+    fn transport_seed_connection_serves_keepalive_over_tls_when_configured() {
+        let root = unique_test_path("steelsearch-transport-tls-listener");
+        fs::create_dir_all(&root).unwrap();
+        let certificate_path = root.join("transport.crt");
+        let private_key_path = root.join("transport.key");
+        let capture_path = root.join("transport-capture.json");
+        write_valid_rustls_transport_tls_bootstrap_material(&certificate_path, &private_key_path);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server_config = Arc::new(
+            load_transport_rustls_server_config(&TransportTlsConfig {
+                certificate_path: certificate_path.clone(),
+                private_key_path,
+            })
+            .unwrap(),
+        );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: address,
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+        };
+        let capture_write_lock = Arc::new(Mutex::new(()));
+        let server_capture_path = capture_path.clone();
+        let server_thread = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_transport_seed_tcp_connection(
+                stream,
+                Some(server_config),
+                &server_capture_path,
+                &transport_identity,
+                &capture_write_lock,
+            )
+        });
+
+        let certificate = rustls_pemfile::certs(&mut BufReader::new(
+            VALID_RUSTLS_HTTP_TLS_CERTIFICATE,
+        ))
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(&rustls::Certificate(certificate)).unwrap();
+        let client_config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let server_name = rustls::ServerName::try_from("localhost").unwrap();
+        let tcp = TcpStream::connect(address).unwrap();
+        tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        tcp.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+        let connection =
+            rustls::ClientConnection::new(Arc::new(client_config), server_name).unwrap();
+        let mut tls = rustls::StreamOwned::new(connection, tcp);
+        tls.write_all(&build_keepalive_ping_frame()).unwrap();
+        tls.flush().unwrap();
+        let mut response = [0_u8; 6];
+        tls.read_exact(&mut response).unwrap();
+        assert_eq!(response, build_keepalive_ping_frame());
+        drop(tls);
+
+        server_thread.join().unwrap().unwrap();
+        let capture = fs::read_to_string(&capture_path).unwrap();
+        let capture_json: serde_json::Value = serde_json::from_str(&capture).unwrap();
+        assert_eq!(capture_json.as_array().unwrap().len(), 2);
+        assert!(capture.contains("keepalive_ping"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -7458,6 +7686,14 @@ mod tests {
     fn write_valid_rustls_http_tls_bootstrap_material(http_cert: &Path, http_key: &Path) {
         fs::write(http_cert, VALID_RUSTLS_HTTP_TLS_CERTIFICATE).unwrap();
         fs::write(http_key, VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY).unwrap();
+    }
+
+    fn write_valid_rustls_transport_tls_bootstrap_material(
+        transport_cert: &Path,
+        transport_key: &Path,
+    ) {
+        fs::write(transport_cert, VALID_RUSTLS_HTTP_TLS_CERTIFICATE).unwrap();
+        fs::write(transport_key, VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY).unwrap();
     }
 
     const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----

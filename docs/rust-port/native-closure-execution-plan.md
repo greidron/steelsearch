@@ -126,8 +126,10 @@ Out of scope:
   security/release gate refusal, and readiness blocker terminology that keeps
   user-facing Steelsearch runtime categories distinct from internal crate names.
 - The same runner now has a `production-security` batch. It passed on
-  2026-06-17 with 33/33 tests and `zero_tests=0`, covering REST HTTP TLS
-  listener enforcement with rustls certificate/key loading, runtime env user,
+  2026-06-18 with 34/34 tests and `zero_tests=0`, covering REST HTTP TLS
+  listener enforcement with rustls certificate/key loading, transport seed
+  listener TLS enforcement with rustls certificate/key loading and TLS-wrapped
+  keepalive frame read/write, runtime env user,
   authentication-users-file user, and service-account credentials loaded
   through the shared subject model, root route Basic auth, the shared
   admin/reader/writer permission evaluator, ML

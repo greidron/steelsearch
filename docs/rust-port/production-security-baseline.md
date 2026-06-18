@@ -169,12 +169,13 @@ tenant scopes, it removes the tenant-isolation blocker. When runtime security is
 enabled and the production secure-settings file is valid, it also removes the
 secure-settings blocker. When the production HTTP TLS certificate/key load into
 the REST listener's rustls configuration, it removes the HTTP TLS blocker.
-Transport TLS and release checklist blockers remain fail-closed until their
-concrete enforcement evidence is wired into the policy.
+When the production transport TLS certificate/key load into the transport seed
+listener's rustls configuration, it removes the transport TLS blocker. Release
+checklist blockers remain fail-closed until their concrete evidence is wired
+into the policy.
 The startup-preflight gate also validates the secure multi-node TLS handshake
 matrix fixture so success, client-certificate success, wrong-CA rejection, and
-expired-certificate rejection buckets remain present while concrete transport
-TLS listener wiring is still pending.
+expired-certificate rejection buckets remain present.
 The guarded production-security batch covers root authentication, the shared
 admin/reader/writer permission evaluator, ML, bulk, search, session, and
 service-account writer allow/deny checks, single-document read/write role
@@ -194,13 +195,15 @@ and resize controls plus root index create/read routes, k-NN
 settings/model/cache mutation routes,
 dangling-index/remote-store recovery mutation routes, and ingestion
 pause/resume control routes, verifies that the REST HTTP listener serves the
-root route over TLS with configured certificate/key material, and now verifies that
+root route over TLS with configured certificate/key material, verifies that the
+transport seed listener handles keepalive frames over TLS with configured
+certificate/key material, and now verifies that
 alias bulk/named metadata mutation does not re-enter the metadata lock while
 resolving target indices, empty index mapping updates do not panic, closed
 indices can be resolved for reopen, and ML connector credential/action secret
 material is not returned through connector REST responses or persisted in shared
-runtime state. These are baseline tests, not proof that TLS/authn/authz
-enforcement has been fully implemented.
+runtime state. These are baseline tests, not proof of full OpenSearch TLS,
+authn, authz, or audit-log parity.
 The guarded production-security batch also proves that OpenSearch Security
 plugin API routes fail closed with a documented `security_exception` instead of
 falling through to an ambiguous 404-only response.

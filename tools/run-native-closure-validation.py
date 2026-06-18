@@ -651,6 +651,13 @@ PRODUCTION_SECURITY_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "transport_seed_connection_serves_keepalive_over_tls_when_configured",
+        "production-security-transport-tls",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "secure_bulk_route_surfaces_writer_partial_authz_denial_and_reader_route_denial",
         "production-security-authorization",
         package="os-node",
