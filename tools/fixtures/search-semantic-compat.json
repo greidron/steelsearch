@@ -621,34 +621,6 @@
       "description": "[failure-path] msearch malformed header compatibility"
     },
     {
-      "name": "search_knn_unsupported_option_error",
-      "area": "search-semantic",
-      "method": "POST",
-      "path": "/logs-search-semantic-*/_search",
-      "body": {
-        "query": {
-          "knn": {
-            "embedding": {
-              "vector": [
-                0.1,
-                0.2,
-                0.3
-              ],
-              "k": 1,
-              "expand_nested": "yes"
-            }
-          }
-        }
-      },
-      "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported k-NN option validation.",
-      "family": "failure-path",
-      "description": "[failure-path] search knn unsupported option error"
-    },
-    {
       "name": "search_rescore_unsupported_option_error",
       "area": "search-semantic",
       "method": "POST",
