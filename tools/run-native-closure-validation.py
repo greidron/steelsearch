@@ -498,6 +498,19 @@ E2E_REQUIRED_PARITY_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "release_readiness_writer_and_manifest_checker_contract",
+        "release-readiness-tooling",
+        (
+            "python3",
+            "-c",
+            "import json, subprocess, sys; result = subprocess.run([sys.executable, '-m', 'unittest', 'tools/test_replacement_gate_scripts.py']); passed = result.returncode == 0; print(json.dumps({'summary': {'passed': passed, 'commands': 1}})); sys.exit(0 if passed else 1)",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -1893,6 +1906,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "e2e-required-parity": E2E_REQUIRED_PARITY_BATCH,
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "materialization-priority-current": MATERIALIZATION_PRIORITY_CURRENT_BATCH,
+    "release-readiness-tooling": RELEASE_READINESS_TOOLING_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,

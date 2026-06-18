@@ -71,6 +71,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--require-passed", command)
         self.assertIn("--require-zero-ranked", command)
 
+    def test_release_readiness_tooling_batch_runs_writer_and_checker_contract(self):
+        batch = self.runner.BATCHES["release-readiness-tooling"]
+
+        self.assertEqual(len(batch), 1)
+        command_text = " ".join(batch[0].command)
+        self.assertIn("tools/test_replacement_gate_scripts.py", command_text)
+        self.assertIn("summary", command_text)
+        self.assertIn("passed", command_text)
+
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
 

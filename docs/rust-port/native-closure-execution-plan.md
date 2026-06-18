@@ -775,4 +775,8 @@ Current execution order:
    rolling-upgrade artifacts and feed them through the release-readiness
    manifest writer. Validate the generated manifest with
    `tools/check-release-readiness-evidence.py --require-passed` before using it
-   as `STEELSEARCH_RELEASE_READINESS_FILE`.
+   as `STEELSEARCH_RELEASE_READINESS_FILE`. The writer/checker contract is
+   available as
+   `tools/run-native-closure-validation.py --batch release-readiness-tooling`;
+   the final cutover still requires fresh benchmark, load, chaos, packaging,
+   and rolling-upgrade artifacts.
