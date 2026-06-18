@@ -42,6 +42,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "missing")
         self.assertEqual(result["classification"]["missing"], 1)
+        self.assertEqual(result["case_gaps"]["missing"], ["uncovered"])
 
     def test_checker_rejects_required_suite_with_missing_case_without_allow_missing(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_report")

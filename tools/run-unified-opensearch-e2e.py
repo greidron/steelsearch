@@ -278,13 +278,16 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
             "summary": {"passed": 0, "failed": 0, "skipped": 0},
             "has_opensearch_target": False,
             "classification": empty_classification(),
+            "case_gaps": empty_case_gaps(),
             "by_area": {},
         }
     summary = report.get("summary") or {}
     failed = int(summary.get("failed") or 0)
     skipped = int(summary.get("skipped") or 0)
     has_opensearch = "opensearch" in (report.get("targets") or {})
-    classification = classify_cases(fixture_cases, report.get("cases") or [], has_opensearch)
+    report_cases = report.get("cases") or []
+    classification = classify_cases(fixture_cases, report_cases, has_opensearch)
+    case_gaps = collect_case_gaps(fixture_cases, report_cases)
     missing = int(classification.get("missing") or 0)
     status = "ok" if failed == 0 and missing == 0 else "failed"
     if skipped and failed == 0:
@@ -301,6 +304,7 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
         },
         "has_opensearch_target": has_opensearch,
         "classification": classification,
+        "case_gaps": case_gaps,
         "by_area": summary.get("by_area") or {},
     }
 
@@ -315,6 +319,15 @@ def empty_classification() -> dict[str, int]:
         "known_gap_or_skipped": 0,
         "failed": 0,
         "missing": 0,
+    }
+
+
+def empty_case_gaps() -> dict[str, list[str]]:
+    return {
+        "missing": [],
+        "extra": [],
+        "failed": [],
+        "skipped": [],
     }
 
 
@@ -351,6 +364,33 @@ def classify_cases(fixture_cases: list[dict[str, Any]], report_cases: list[dict[
     extra = set(report_by_name) - set(fixture_by_name)
     counts["missing"] += len(extra)
     return counts
+
+
+def collect_case_gaps(fixture_cases: list[dict[str, Any]], report_cases: list[dict[str, Any]]) -> dict[str, list[str]]:
+    fixture_names = {str(case.get("name")) for case in fixture_cases if case.get("name")}
+    report_by_name = {
+        str(case.get("name")): case
+        for case in report_cases
+        if isinstance(case, dict) and case.get("name")
+    }
+    missing = sorted(fixture_names - set(report_by_name))
+    extra = sorted(set(report_by_name) - fixture_names)
+    failed = sorted(
+        name
+        for name, case in report_by_name.items()
+        if name in fixture_names and case.get("status") == "failed"
+    )
+    skipped = sorted(
+        name
+        for name, case in report_by_name.items()
+        if name in fixture_names and case.get("status") == "skipped"
+    )
+    return {
+        "missing": missing,
+        "extra": extra,
+        "failed": failed,
+        "skipped": skipped,
+    }
 
 
 def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -428,6 +468,23 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.extend(["", "## Classification", "", "| Class | Cases |", "| --- | ---: |"])
     for key, value in report["coverage_summary"]["case_classification"].items():
         lines.append(f"| {key} | {value} |")
+    gap_suites = [
+        suite
+        for suite in report["suite_results"]
+        if any(suite.get("case_gaps", {}).values())
+    ]
+    if gap_suites:
+        lines.extend(["", "## Case Gaps", ""])
+        for suite in gap_suites:
+            gaps = suite.get("case_gaps", {})
+            lines.append(f"### {suite['name']}")
+            for key in ("missing", "failed", "skipped", "extra"):
+                values = gaps.get(key) or []
+                if not values:
+                    continue
+                lines.append(f"- {key}: {len(values)}")
+                lines.extend(f"  - `{value}`" for value in values)
+            lines.append("")
     lines.append("")
     return "\n".join(lines)
 

@@ -226,3 +226,7 @@ This means OpenSearch feature E2E comparison is broad and currently has no
 observed failing compared cases in the collected reports, but the replacement
 claim is not complete until these missing fixture cases are rerun or explicitly
 classified as skipped/known gaps in fresh reports.
+
+The generated JSON and Markdown reports include `case_gaps` for each suite so
+the next run can target the exact missing, skipped, failed, or extra case names
+instead of working from aggregate counts only.

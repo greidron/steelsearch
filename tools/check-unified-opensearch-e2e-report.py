@@ -103,6 +103,16 @@ def validate_report(report: dict[str, Any], allow_missing: bool) -> list[str]:
         seen.add(name)
         if suite.get("status") not in {"ok", "missing", "blocked", "failed"}:
             errors.append(f"{name}: invalid status [{suite.get('status')}]")
+        case_gaps = suite.get("case_gaps") or {}
+        classification = suite.get("classification") or {}
+        gap_classification_keys = {
+            "missing": "missing",
+            "failed": "failed",
+            "skipped": "known_gap_or_skipped",
+        }
+        for gap_key, classification_key in gap_classification_keys.items():
+            if gap_key in case_gaps and len(case_gaps.get(gap_key) or []) != int(classification.get(classification_key) or 0):
+                errors.append(f"{name}: {gap_key} case_gaps/classification drift")
         if suite.get("required") and suite.get("report_source") == "missing" and not allow_missing:
             errors.append(f"{name}: missing required report")
         if suite.get("required") and suite.get("classification", {}).get("missing", 0) and not allow_missing:
