@@ -456,6 +456,20 @@ BENCHMARK_TELEMETRY_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+NON_NATIVE_INVENTORY_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "non_native_path_inventory_has_no_missing_probe_or_family",
+        "non-native-inventory",
+        (
+            "python3",
+            "tools/report-non-native-paths.py",
+            "--format",
+            "json",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -1847,6 +1861,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "rebucketing-wide": REBUCKETING_WIDE_BATCH,
     "vector-knn": VECTOR_KNN_BATCH,
     "source-backed-query": SOURCE_BACKED_QUERY_BATCH,
+    "non-native-inventory": NON_NATIVE_INVENTORY_BATCH,
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,

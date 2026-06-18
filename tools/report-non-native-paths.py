@@ -384,6 +384,8 @@ def family_result(family: Family) -> dict[str, Any]:
 def build_report() -> dict[str, Any]:
     results = [probe_result(probe) for probe in PROBES]
     families = [family_result(family) for family in FAMILIES]
+    missing_probe_count = sum(1 for result in results if not result["matched"])
+    missing_family_count = sum(1 for family in families if not family["evidenced"])
     return {
         "scope": {
             "excluded": [
@@ -404,10 +406,11 @@ def build_report() -> dict[str, Any]:
         "summary": {
             "probe_count": len(results),
             "matched_probe_count": sum(1 for result in results if result["matched"]),
-            "missing_probe_count": sum(1 for result in results if not result["matched"]),
+            "missing_probe_count": missing_probe_count,
             "family_count": len(families),
             "evidenced_family_count": sum(1 for family in families if family["evidenced"]),
-            "missing_family_count": sum(1 for family in families if not family["evidenced"]),
+            "missing_family_count": missing_family_count,
+            "passed": missing_probe_count == 0 and missing_family_count == 0,
         },
         "probes": results,
         "families": families,

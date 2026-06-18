@@ -754,6 +754,8 @@ Current execution order:
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new
    entries as workstream-specific watchpoints rather than format-only parity.
+   The same check is available as
+   `tools/run-native-closure-validation.py --batch non-native-inventory`.
 2. Keep `search-semantic` and `vector-search` E2E comparison reports at zero
    failed and zero skipped required cases for their current fixtures.
 3. Keep the targeted materialization-priority matrix at

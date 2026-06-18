@@ -38,6 +38,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--exercise-interruption", command)
         self.assertIn("--require-interruption", command)
 
+    def test_non_native_inventory_batch_runs_json_report(self):
+        batch = self.runner.BATCHES["non-native-inventory"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/report-non-native-paths.py", command)
+        self.assertIn("--format", command)
+        self.assertIn("json", command)
+
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
 

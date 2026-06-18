@@ -43,6 +43,7 @@ class NonNativePathReportTests(unittest.TestCase):
 
         self.assertEqual(report["summary"]["missing_probe_count"], 0)
         self.assertEqual(report["summary"]["missing_family_count"], 0)
+        self.assertTrue(report["summary"]["passed"])
         self.assertEqual(
             report["summary"]["matched_probe_count"],
             report["summary"]["probe_count"],
