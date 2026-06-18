@@ -16605,6 +16605,17 @@ fn native_nested_child_ordinals_for_query(
             }
             Some(ordinals)
         }
+        Query::TermsSet {
+            field,
+            values,
+            minimum_should_match,
+        } => nested_child_terms_set_ordinals(
+            path_index,
+            path,
+            field,
+            values,
+            *minimum_should_match,
+        ),
         Query::Bool { clauses } => {
             let mut required: Option<std::collections::BTreeSet<usize>> = None;
             for child in clauses.must.iter().chain(clauses.filter.iter()) {
@@ -16676,6 +16687,38 @@ fn nested_child_range_ordinals(
     for (value, ordinal) in path_index.field_scalar_values.get(&field)? {
         if matches_range_query(value, bounds) {
             ordinals.insert(*ordinal);
+        }
+    }
+    Some(ordinals)
+}
+
+fn nested_child_terms_set_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    field: &str,
+    values: &[Value],
+    minimum_should_match: usize,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let mut ordinals = std::collections::BTreeSet::new();
+    if field == "_id" {
+        for (ordinal, child) in path_index.children.iter().enumerate() {
+            if matches_terms_set_query(
+                &Value::String(child.parent_id.clone()),
+                values,
+                minimum_should_match,
+            ) {
+                ordinals.insert(ordinal);
+            }
+        }
+        return Some(ordinals);
+    }
+
+    let field = nested_child_local_field_name(path, field);
+    for (ordinal, child) in path_index.children.iter().enumerate() {
+        if source_value_for_highlight_field(&child.source, &field)
+            .is_some_and(|value| matches_terms_set_query(value, values, minimum_should_match))
+        {
+            ordinals.insert(ordinal);
         }
     }
     Some(ordinals)
@@ -138180,6 +138223,89 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native nested exists hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_terms_set_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "tags": ["alpha", "beta"], "kind": "x" },
+                { "tags": ["alpha"], "kind": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "tags": ["alpha"], "kind": "x" }
+            ])),
+            ("3", serde_json::json!([
+                { "tags": ["alpha", "gamma"], "kind": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "tags": ["alpha"], "kind": "y" },
+                { "tags": ["beta"], "kind": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "terms_set": {
+                                    "comments.tags": {
+                                        "terms": ["alpha", "beta"],
+                                        "minimum_should_match": 2
+                                    }
+                                }
+                            },
+                            { "term": { "comments.kind": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+
+        let documents = index.search_documents_for_native_nested_query(path, nested_query);
+        assert_eq!(document_ids(&documents), vec!["1"]);
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("nested terms_set child ordinal hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
