@@ -772,6 +772,8 @@ use `tools/report-release-evidence-inventory.py --require-complete` for the
 final cutoff check.
 Refresh packaging evidence with
 `tools/run-native-closure-validation.py --batch packaging-evidence-current`
+and deterministic benchmark evidence with
+`tools/run-native-closure-validation.py --batch benchmark-evidence-current`
 before running that inventory.
 
 1. Keep `tools/report-non-native-paths.py` green with

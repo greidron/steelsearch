@@ -1970,6 +1970,22 @@ PACKAGING_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+BENCHMARK_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "benchmark_evidence_runs_deterministic_tantivy_baselines",
+        "benchmark-evidence-current",
+        (
+            "python3",
+            "tools/generate-benchmark-evidence.py",
+            "--output",
+            "target/release-benchmarks/deterministic-benchmark-baselines.jsonl",
+            "--report",
+            "target/release-benchmarks/benchmark-report.json",
+        ),
+        timeout_seconds=600,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -1995,6 +2011,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "native-closure-status-current": NATIVE_CLOSURE_STATUS_CURRENT_BATCH,
     "release-evidence-inventory-current": RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH,
     "packaging-evidence-current": PACKAGING_EVIDENCE_CURRENT_BATCH,
+    "benchmark-evidence-current": BENCHMARK_EVIDENCE_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,
