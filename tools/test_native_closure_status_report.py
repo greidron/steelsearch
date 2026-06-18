@@ -60,6 +60,35 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertTrue(report["summary"]["passed"])
         self.assertEqual(report["summary"]["status"], "ready")
 
+    def test_missing_manifest_lists_required_final_cutover_items(self):
+        final_cutover = self.reporter.inspect_release_readiness(None)
+
+        self.assertEqual(final_cutover["status"], "pending")
+        self.assertEqual(
+            final_cutover["missing_items"],
+            [
+                "benchmark_coverage",
+                "load_test_coverage",
+                "chaos_test_coverage",
+                "packaging_verified",
+                "rolling_upgrade_coverage",
+            ],
+        )
+
+    def test_missing_release_items_reports_only_failed_or_missing_items(self):
+        missing = self.reporter.missing_release_items(
+            {
+                "items": {
+                    "benchmark_coverage": {"passed": True, "errors": []},
+                    "load_test_coverage": {"passed": False, "errors": ["blocked"]},
+                    "chaos_test_coverage": {"passed": True, "errors": []},
+                    "packaging_verified": {"passed": True, "errors": []},
+                }
+            }
+        )
+
+        self.assertEqual(missing, ["load_test_coverage", "rolling_upgrade_coverage"])
+
 
 if __name__ == "__main__":
     unittest.main()

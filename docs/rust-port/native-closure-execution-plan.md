@@ -757,7 +757,8 @@ The optional live peer-backpressure check and final fresh cutover artifacts stay
 separate because they depend on local OpenSearch distribution/runtime evidence.
 Use `tools/report-native-closure-status.py` to produce a single JSON view that
 combines the current evidence gate, retained peer-backpressure evidence, and
-final cutover release-readiness manifest state.
+final cutover release-readiness manifest state, including the required final
+artifact categories that remain missing.
 
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new

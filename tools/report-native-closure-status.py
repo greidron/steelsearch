@@ -12,6 +12,13 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FINAL_CUTOVER_ITEMS = (
+    "benchmark_coverage",
+    "load_test_coverage",
+    "chaos_test_coverage",
+    "packaging_verified",
+    "rolling_upgrade_coverage",
+)
 
 
 def main() -> int:
@@ -72,6 +79,8 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
             "passed": False,
             "status": "pending",
             "reason": "release readiness manifest was not provided",
+            "required_items": list(FINAL_CUTOVER_ITEMS),
+            "missing_items": list(FINAL_CUTOVER_ITEMS),
         }
     command = [
         sys.executable,
@@ -96,6 +105,8 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
         "status": "ok" if completed.returncode == 0 else "failed",
         "summary": payload.get("summary", {}) if isinstance(payload, dict) else {},
         "errors": payload.get("errors", []) if isinstance(payload, dict) else [],
+        "required_items": list(FINAL_CUTOVER_ITEMS),
+        "missing_items": missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS),
     }
 
 
@@ -134,6 +145,16 @@ def status_name(current_ready: bool, final_ready: bool, require_final_cutover: b
     if require_final_cutover:
         return "final-cutover-missing"
     return "current-evidence-ready-final-cutover-pending"
+
+
+def missing_release_items(payload: dict[str, Any]) -> list[str]:
+    items = payload.get("items") if isinstance(payload.get("items"), dict) else {}
+    missing = []
+    for name in FINAL_CUTOVER_ITEMS:
+        item = items.get(name)
+        if not isinstance(item, dict) or item.get("passed") is not True or item.get("errors"):
+            missing.append(name)
+    return missing
 
 
 def parse_json_payload(output: str) -> dict[str, Any]:
