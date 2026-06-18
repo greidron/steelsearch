@@ -2809,7 +2809,7 @@ fn build_tantivy_query(
                 return Ok(Some(Box::new(EmptyQuery)));
             };
             match indexed_field.field_type {
-                TantivyFieldType::Keyword => {
+                TantivyFieldType::Text | TantivyFieldType::Keyword => {
                     let query =
                         RegexQuery::from_pattern(".*", indexed_field.field).map_err(tantivy_error)?;
                     Ok(Some(Box::new(query)))
@@ -132842,6 +132842,71 @@ mod tests {
             .unwrap();
 
         assert_eq!(search_hit_ids(&response.hits), vec!["1", "2", "3"]);
+        assert!(response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Query
+                && phase.description == "matched refreshed documents with native paginated fetch"
+        }));
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_dynamic_text_exists_query() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "tenant": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, contact_email) in [
+            ("1", serde_json::json!("alpha@example.com")),
+            ("2", serde_json::Value::Null),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "tenant": "tenant-a",
+                        "contact_email": contact_email
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["logs".to_string()],
+                query: serde_json::json!({
+                    "exists": { "field": "contact_email" }
+                }),
+                aggregations: serde_json::json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(search_hit_ids(&response.hits), vec!["1"]);
         assert!(response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Query
                 && phase.description == "matched refreshed documents with native paginated fetch"
