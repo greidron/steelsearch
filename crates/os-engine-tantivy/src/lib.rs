@@ -6765,6 +6765,24 @@ impl StoredIndex {
         sort: &[SortSpec],
         size: usize,
     ) -> EngineResult<Option<Vec<SearchHit>>> {
+        if query_requires_native_candidate_post_filter(query)
+            && sort_uses_default_relevance_order(sort)
+            && query_allows_source_candidate_scan_for_native_post_filter(query)
+        {
+            let Some(search_state) = &self.search_state else {
+                return Ok(None);
+            };
+            if build_tantivy_query(search_state, query)?.is_none() {
+                return Ok(self
+                    .search_hits_page_for_source_candidate_post_filter(
+                        index_name,
+                        query,
+                        0,
+                        size,
+                    )?
+                    .map(|(_total_hits, hits)| hits));
+            }
+        }
         Ok(self
             .search_hits_for_query_native(index_name, query, sort)?
             .map(|mut hits| {
@@ -130996,6 +131014,27 @@ mod tests {
         assert_eq!(telemetry.materialized_response_fetches, 0);
         assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let query = parse_query(&search_request(1).query).unwrap();
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("logs-000001").unwrap();
+        let window_hits = index
+            .search_hits_window_for_query_native("logs-000001", &query, &[], 1)
+            .unwrap()
+            .expect("span_first source-candidate native window");
+        assert_eq!(search_hit_ids(&window_hits), vec!["1"]);
+        let documents = index
+            .search_documents_for_query_native_index_aware("logs-000001", &query)
+            .unwrap()
+            .expect("span_first source-candidate native documents");
+        let mut ids = document_ids(&documents);
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["1", "3"]);
+        let count = index
+            .count_documents_for_query_native_index_aware("logs-000001", &query)
+            .unwrap()
+            .expect("span_first source-candidate native count");
+        assert_eq!(count, 2);
     }
 
     #[test]
@@ -131085,6 +131124,27 @@ mod tests {
         assert_eq!(telemetry.materialized_response_fetches, 0);
         assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let query = parse_query(&search_request(1).query).unwrap();
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("logs-000001").unwrap();
+        let window_hits = index
+            .search_hits_window_for_query_native("logs-000001", &query, &[], 1)
+            .unwrap()
+            .expect("span_containing source-candidate native window");
+        assert_eq!(search_hit_ids(&window_hits), vec!["1"]);
+        let documents = index
+            .search_documents_for_query_native_index_aware("logs-000001", &query)
+            .unwrap()
+            .expect("span_containing source-candidate native documents");
+        let mut ids = document_ids(&documents);
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["1", "3"]);
+        let count = index
+            .count_documents_for_query_native_index_aware("logs-000001", &query)
+            .unwrap()
+            .expect("span_containing source-candidate native count");
+        assert_eq!(count, 2);
     }
 
     #[test]

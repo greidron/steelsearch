@@ -699,12 +699,13 @@ path.
   source matching inside the nested child index instead of parent
   source-validation fallback, preserving tuple isolation while reusing the
   existing span range semantics.
-- Current source-candidate span page reading after the latest page-path
-  expansion:
+- Current source-candidate span page/window reading after the latest native
+  surface expansion:
   top-level span shapes that require source post-filtering and cannot build a
-  direct Tantivy candidate query now use a source-candidate native page path
-  for default relevance sorting, materializing only the requested page instead
-  of falling through to compatibility SearchHit materialization.
+  direct Tantivy candidate query now use source-candidate native page/window,
+  document, and count surfaces for default relevance sorting, materializing
+  only the requested page/window instead of falling through to compatibility
+  SearchHit materialization.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
