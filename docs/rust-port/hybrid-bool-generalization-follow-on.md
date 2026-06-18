@@ -645,6 +645,12 @@ path.
   child-local source values and the requested minimum match count instead of
   returning to the parent source-validation fallback bucket, while still
   preserving tuple isolation across sibling nested objects.
+- Current direct nested rank-feature reduction reading after the latest
+  child-ordinal expansion:
+  nested `rank_feature` leaves now also resolve inside the nested child index
+  using child-local positive numeric/bool feature values instead of returning to
+  the parent source-validation fallback bucket, while still preserving tuple
+  isolation across sibling nested objects.
 - Current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
