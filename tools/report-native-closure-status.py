@@ -53,6 +53,7 @@ READINESS_ATTACHMENT_INPUTS = {
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-readiness-file", type=Path)
+    parser.add_argument("--output", type=Path, help="write the JSON status report to this path")
     parser.add_argument(
         "--require-final-cutover",
         action="store_true",
@@ -69,7 +70,11 @@ def main() -> int:
         final_cutover=final_cutover,
         require_final_cutover=args.require_final_cutover,
     )
-    print(json.dumps(report, indent=2, sort_keys=True))
+    rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
     return 0 if report["summary"]["passed"] else 1
 
 

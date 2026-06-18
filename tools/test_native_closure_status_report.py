@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -157,6 +158,30 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertEqual(final_cutover["missing_items"], [])
             self.assertTrue(report["summary"]["passed"])
             self.assertEqual(report["summary"]["status"], "ready")
+
+    def test_cli_writes_status_report_to_output_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            output = Path(temp_dir_value) / "nested" / "native-closure-status.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPORT_PATH),
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.is_file())
+            stdout_payload = json.loads(result.stdout)
+            file_payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(stdout_payload["summary"], file_payload["summary"])
+            self.assertEqual(file_payload["summary"]["current_evidence_ready"], True)
 
 
 if __name__ == "__main__":
