@@ -83,6 +83,17 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertIn("load_comparison", final_cutover["readiness_attachment_items"])
         self.assertNotIn("load_comparison", final_cutover["startup_manifest_items"])
         self.assertEqual(
+            final_cutover["readiness_attachment_missing_items"],
+            [
+                "benchmark_coverage",
+                "load_test_coverage",
+                "chaos_test_coverage",
+                "packaging_verified",
+                "rolling_upgrade_coverage",
+                "load_comparison",
+            ],
+        )
+        self.assertEqual(
             final_cutover["required_item_inputs"]["benchmark_coverage"]["attach_argument"],
             "--benchmark-report",
         )
@@ -121,7 +132,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertEqual(set(inputs), {"load_test_coverage", "rolling_upgrade_coverage"})
         self.assertEqual(inputs["load_test_coverage"]["attach_argument"], "--load-report")
 
-    def test_complete_release_readiness_manifest_marks_final_cutover_ready(self):
+    def test_complete_release_readiness_manifest_still_requires_load_comparison_report(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
             manifest = temp_dir / "release-readiness.json"
@@ -149,6 +160,63 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             )
 
             final_cutover = self.reporter.inspect_release_readiness(manifest)
+
+            self.assertFalse(final_cutover["passed"])
+            self.assertEqual(final_cutover["missing_items"], [])
+            self.assertEqual(final_cutover["readiness_attachment_missing_items"], ["load_comparison"])
+            self.assertIn(
+                "readiness report path is not configured",
+                final_cutover["readiness_attachment_errors"],
+            )
+
+    def test_complete_readiness_attachments_mark_final_cutover_ready(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            manifest = temp_dir / "release-readiness.json"
+            readiness = temp_dir / "readiness.json"
+            load_comparison = temp_dir / "comparison.json"
+            artifacts = {
+                "benchmark_coverage": "benchmark.jsonl",
+                "load_test_coverage": "load.json",
+                "chaos_test_coverage": "chaos.json",
+                "packaging_verified": "packaging.json",
+                "rolling_upgrade_coverage": "rolling.json",
+            }
+            for artifact in artifacts.values():
+                (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
+            load_comparison.write_text("{}\n", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        name: {
+                            "passed": True,
+                            "artifact_path": artifact,
+                            "blockers": [],
+                        }
+                        for name, artifact in artifacts.items()
+                    }
+                ),
+                encoding="utf-8",
+            )
+            readiness.write_text(
+                json.dumps(
+                    {
+                        "release_evidence": {
+                            "load_comparison": {
+                                "ready": True,
+                                "path": str(load_comparison),
+                                "blockers": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            final_cutover = self.reporter.inspect_release_readiness(
+                manifest,
+                readiness_report_path=readiness,
+            )
             report = self.reporter.build_status_report(
                 current_evidence={"passed": True},
                 peer_backpressure={"passed": True},
@@ -158,6 +226,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
             self.assertTrue(final_cutover["passed"])
             self.assertEqual(final_cutover["missing_items"], [])
+            self.assertEqual(final_cutover["readiness_attachment_missing_items"], [])
             self.assertTrue(report["summary"]["passed"])
             self.assertEqual(report["summary"]["status"], "ready")
 

@@ -763,8 +763,8 @@ startup manifest from the six readiness-attachment inputs, where the latter also
 includes the Steelsearch-vs-OpenSearch load-comparison report. The same current
 status artifact can be generated through
 `tools/run-native-closure-validation.py --batch native-closure-status-current`.
-For the release cutoff check, regenerate that artifact from a clean checkout and
-validate it with
+For the release cutoff check, regenerate that artifact from a clean checkout
+with both `--readiness-report` and `--release-readiness-file`, then validate it with
 `tools/check-native-closure-status-report.py target/native-closure-status-current.json --require-clean-worktree`.
 
 1. Keep `tools/report-non-native-paths.py` green with

@@ -97,8 +97,13 @@ def validate_report(
         errors.append("load_comparison must be a readiness attachment item")
 
     missing_items = final.get("missing_items")
+    readiness_attachment_missing_items = final.get("readiness_attachment_missing_items")
     if final.get("passed") is True and missing_items != []:
         errors.append("final_cutover passed but missing_items is not empty")
+    if final.get("passed") is True and readiness_attachment_missing_items != []:
+        errors.append(
+            "final_cutover passed but readiness_attachment_missing_items is not empty"
+        )
     if require_final_cutover and final.get("passed") is not True:
         errors.append("final_cutover.passed is not true")
 
@@ -112,6 +117,7 @@ def validate_report(
             "runtime_peer_backpressure_ready": summary.get("runtime_peer_backpressure_ready"),
             "final_cutover_ready": summary.get("final_cutover_ready"),
             "missing_items": missing_items,
+            "readiness_attachment_missing_items": readiness_attachment_missing_items,
         },
     }
 

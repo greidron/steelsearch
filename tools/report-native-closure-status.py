@@ -54,6 +54,7 @@ READINESS_ATTACHMENT_INPUTS = {
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-readiness-file", type=Path)
+    parser.add_argument("--readiness-report", type=Path)
     parser.add_argument("--output", type=Path, help="write the JSON status report to this path")
     parser.add_argument(
         "--require-final-cutover",
@@ -64,7 +65,10 @@ def main() -> int:
 
     current_evidence = run_validation_batch("current-evidence-gate")
     peer_backpressure = run_validation_batch("runtime-peer-backpressure-current")
-    final_cutover = inspect_release_readiness(args.release_readiness_file)
+    final_cutover = inspect_release_readiness(
+        args.release_readiness_file,
+        readiness_report_path=args.readiness_report,
+    )
     report = build_status_report(
         current_evidence=current_evidence,
         peer_backpressure=peer_backpressure,
@@ -108,7 +112,11 @@ def run_validation_batch(batch: str) -> dict[str, Any]:
     }
 
 
-def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
+def inspect_release_readiness(
+    path: Path | None,
+    *,
+    readiness_report_path: Path | None = None,
+) -> dict[str, Any]:
     if path is None:
         return {
             "name": "release-readiness",
@@ -120,6 +128,8 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
             "missing_items": list(FINAL_CUTOVER_ITEMS),
             "required_item_inputs": final_cutover_item_inputs(list(FINAL_CUTOVER_ITEMS)),
             "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
+            "readiness_report_path": str(readiness_report_path) if readiness_report_path else None,
+            "readiness_attachment_missing_items": list(READINESS_ATTACHMENT_INPUTS),
             "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
             "manifest_command_template": release_readiness_manifest_command_template(),
         }
@@ -138,21 +148,28 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
         check=False,
     )
     payload = parse_json_payload(completed.stdout)
+    missing_items = missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
+    readiness_attachment = inspect_readiness_attachments(
+        readiness_report_path=readiness_report_path,
+        missing_startup_items=missing_items,
+    )
+    passed = completed.returncode == 0 and not readiness_attachment["missing_items"]
     return {
         "name": "release-readiness",
         "command": command,
         "returncode": completed.returncode,
-        "passed": completed.returncode == 0,
-        "status": "ok" if completed.returncode == 0 else "failed",
+        "passed": passed,
+        "status": "ok" if passed else "failed",
         "summary": payload.get("summary", {}) if isinstance(payload, dict) else {},
         "errors": payload.get("errors", []) if isinstance(payload, dict) else [],
         "required_items": list(FINAL_CUTOVER_ITEMS),
         "startup_manifest_items": list(FINAL_CUTOVER_ITEMS),
-        "missing_items": missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS),
-        "required_item_inputs": final_cutover_item_inputs(
-            missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
-        ),
+        "missing_items": missing_items,
+        "required_item_inputs": final_cutover_item_inputs(missing_items),
         "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
+        "readiness_report_path": str(readiness_report_path) if readiness_report_path else None,
+        "readiness_attachment_missing_items": readiness_attachment["missing_items"],
+        "readiness_attachment_errors": readiness_attachment["errors"],
         "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
         "manifest_command_template": release_readiness_manifest_command_template(),
     }
@@ -237,6 +254,76 @@ def final_cutover_item_inputs(item_names: list[str]) -> dict[str, dict[str, str]
         for name in item_names
         if name in FINAL_CUTOVER_ITEM_INPUTS
     }
+
+
+def inspect_readiness_attachments(
+    *,
+    readiness_report_path: Path | None,
+    missing_startup_items: list[str],
+) -> dict[str, Any]:
+    missing = list(missing_startup_items)
+    errors: list[str] = []
+    if readiness_report_path is None:
+        if "load_comparison" not in missing:
+            missing.append("load_comparison")
+        errors.append("readiness report path is not configured")
+        return {"missing_items": missing, "errors": errors}
+
+    try:
+        report = json.loads(readiness_report_path.read_text(encoding="utf-8"))
+    except Exception as error:  # noqa: BLE001 - final status reports blockers
+        if "load_comparison" not in missing:
+            missing.append("load_comparison")
+        errors.append(f"failed to parse readiness report: {error}")
+        return {"missing_items": missing, "errors": errors}
+
+    evidence = readiness_release_evidence(report)
+    if not isinstance(evidence, dict):
+        if "load_comparison" not in missing:
+            missing.append("load_comparison")
+        errors.append("readiness report release evidence is missing")
+        return {"missing_items": missing, "errors": errors}
+
+    load_comparison = evidence.get("load_comparison")
+    if not evidence_item_ready(
+        load_comparison,
+        base_dir=readiness_report_path.parent,
+    ):
+        if "load_comparison" not in missing:
+            missing.append("load_comparison")
+        errors.append("readiness report load_comparison evidence is not ready")
+    return {"missing_items": missing, "errors": errors}
+
+
+def readiness_release_evidence(report: Any) -> dict[str, Any] | None:
+    if not isinstance(report, dict):
+        return None
+    evidence = report.get("release_evidence")
+    if isinstance(evidence, dict):
+        return evidence
+    categories = report.get("categories")
+    if not isinstance(categories, dict):
+        return None
+    release = categories.get("release")
+    if not isinstance(release, dict):
+        return None
+    nested = release.get("evidence")
+    return nested if isinstance(nested, dict) else None
+
+
+def evidence_item_ready(item: Any, *, base_dir: Path) -> bool:
+    if not isinstance(item, dict) or item.get("ready") is not True:
+        return False
+    blockers = item.get("blockers")
+    if blockers not in ([], None):
+        return False
+    path_value = item.get("path")
+    if not isinstance(path_value, str) or not path_value:
+        return False
+    path = Path(path_value)
+    if not path.is_absolute():
+        path = base_dir / path
+    return path.is_file()
 
 
 def release_readiness_manifest_command_template() -> list[str]:
