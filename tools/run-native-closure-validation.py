@@ -1903,6 +1903,19 @@ RUNTIME_PEER_BACKPRESSURE_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "runtime_peer_backpressure_current_report_preserves_profile_and_counters",
+        "runtime-fairness-peer-backpressure-current",
+        (
+            "python3",
+            "tools/check-runtime-peer-backpressure-report.py",
+            "target/runtime-peer-backpressure-current.json",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -1924,6 +1937,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-backpressure": RUNTIME_BACKPRESSURE_BATCH,
     "runtime-fairness": RUNTIME_FAIRNESS_BATCH,
     "runtime-peer-backpressure": RUNTIME_PEER_BACKPRESSURE_BATCH,
+    "runtime-peer-backpressure-current": RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,

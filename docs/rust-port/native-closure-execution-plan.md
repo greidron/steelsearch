@@ -776,6 +776,8 @@ separate because they depend on local OpenSearch distribution/runtime evidence.
    distribution is available, and keep its report profile explicit about the
    mixed Java/Rust query-phase comparison boundary. The batch writes the
    current evidence report to `target/runtime-peer-backpressure-current.json`.
+   Recheck a retained report with
+   `tools/run-native-closure-validation.py --batch runtime-peer-backpressure-current`.
 5. Before production cutover, refresh benchmark, load, chaos, packaging, and
    rolling-upgrade artifacts and feed them through the release-readiness
    manifest writer. Validate the generated manifest with
