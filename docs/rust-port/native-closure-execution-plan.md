@@ -71,12 +71,13 @@ Out of scope:
   script sort cases, plus pure and hybrid multi-index vector request-result
   cache coverage with per-index request-result cache detail entries.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-18 with 40/40 tests and `zero_tests=0`, covering native execution,
+  2026-06-18 with 57/57 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
   current source-backed query families: nested child ordinals,
   `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
-  `terms_set`, phrase/prefix/bool-prefix text queries, `multi_match`,
-  `query_string`, `simple_query_string`, and `combined_fields`, including
+  `terms_set`, representative nested span leaves/wrappers,
+  phrase/prefix/bool-prefix text queries, `multi_match`, `query_string`,
+  `simple_query_string`, and `combined_fields`, including
   exact-circle `geo_distance` source validation for native bounding-box
   candidates, unsupported-field `query_string` / `simple_query_string` source
   materialization,
