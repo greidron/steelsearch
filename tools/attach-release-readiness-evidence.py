@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -118,7 +119,7 @@ def inspect_json_report(path_value: str | None, max_age_seconds: float) -> dict[
 def inspect_file(path_value: str | None, max_age_seconds: float) -> dict[str, Any]:
     if not path_value:
         return {"ready": False, "path": None, "blockers": ["report path is not configured"]}
-    path = Path(path_value)
+    path = Path(path_value).resolve()
     result: dict[str, Any] = {"ready": False, "path": str(path), "blockers": []}
     if not path.exists():
         result["blockers"].append("report file is missing")
@@ -189,11 +190,8 @@ def write_release_readiness_file(path: Path, evidence: dict[str, dict[str, Any]]
 def relative_artifact_path(base_dir: Path, path_value: Any) -> str:
     if not path_value:
         return ""
-    path = Path(str(path_value))
-    try:
-        return str(path.resolve().relative_to(base_dir.resolve()))
-    except ValueError:
-        return str(path)
+    path = Path(str(path_value)).resolve()
+    return os.path.relpath(path, base_dir.resolve())
 
 
 if __name__ == "__main__":

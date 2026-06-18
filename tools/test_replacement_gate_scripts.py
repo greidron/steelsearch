@@ -147,6 +147,75 @@ class ReplacementGateScriptTests(unittest.TestCase):
             self.assertEqual(check_payload["status"], "ok")
             self.assertEqual(check_payload["summary"]["ready_items"], 5)
 
+    def test_attach_release_readiness_evidence_writes_manifest_relative_artifact_paths(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            artifacts_dir = temp_dir / "artifacts"
+            manifest_dir = temp_dir / "manifest"
+            artifacts_dir.mkdir()
+            manifest_dir.mkdir()
+            readiness = temp_dir / "readiness.json"
+            benchmark = artifacts_dir / "benchmark.jsonl"
+            load = artifacts_dir / "load.json"
+            comparison = artifacts_dir / "comparison.json"
+            chaos = artifacts_dir / "chaos.json"
+            packaging = artifacts_dir / "packaging.json"
+            rolling = artifacts_dir / "rolling.json"
+            release_readiness = manifest_dir / "release-readiness.json"
+
+            readiness.write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "categories": {
+                            "security": {"ready": True, "blockers": []},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(json.dumps({"benchmark": "lexical"}) + "\n", encoding="utf-8")
+            for path in [load, comparison, chaos, packaging, rolling]:
+                path.write_text(json.dumps({"summary": {"error_count": 0}}), encoding="utf-8")
+
+            result = self.run_command(
+                sys.executable,
+                "tools/attach-release-readiness-evidence.py",
+                "--readiness-report",
+                str(readiness.relative_to(ROOT)),
+                "--benchmark-report",
+                str(benchmark.relative_to(ROOT)),
+                "--load-report",
+                str(load.relative_to(ROOT)),
+                "--load-comparison-report",
+                str(comparison.relative_to(ROOT)),
+                "--chaos-report",
+                str(chaos.relative_to(ROOT)),
+                "--packaging-report",
+                str(packaging.relative_to(ROOT)),
+                "--rolling-upgrade-report",
+                str(rolling.relative_to(ROOT)),
+                "--release-readiness-file",
+                str(release_readiness.relative_to(ROOT)),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            readiness_payload = json.loads(readiness.read_text(encoding="utf-8"))
+            for item in readiness_payload["release_evidence"].values():
+                self.assertTrue(Path(item["path"]).is_absolute())
+            release_payload = json.loads(release_readiness.read_text(encoding="utf-8"))
+            for item in release_payload.values():
+                self.assertTrue(item["artifact_path"].startswith("../artifacts/"))
+
+            check = self.run_command(
+                sys.executable,
+                "tools/check-release-readiness-evidence.py",
+                str(release_readiness),
+                "--require-passed",
+            )
+
+            self.assertEqual(check.returncode, 0, check.stderr)
+
     def test_release_readiness_evidence_checker_rejects_missing_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
