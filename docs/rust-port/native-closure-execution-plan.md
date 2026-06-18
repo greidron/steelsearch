@@ -239,6 +239,12 @@ Out of scope:
   admission, including a live three-daemon TCP query-phase stress that observes
   queue rejection and REST telemetry readback, for remote execution/backpressure
   evidence.
+- The OpenSearch peer comparison harness
+  `tools/compare_remote_transport_backpressure.py --mode both` passed on
+  2026-06-18 against the local OpenSearch 3.7.0-SNAPSHOT distribution. It
+  observed Steelsearch `remote_transport` `rejected=1` / `completed=1` readback
+  and OpenSearch `search` thread-pool `rejected=159` / `completed=11` readback
+  under equivalent query pressure.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -481,6 +487,11 @@ Validation runner:
   admission through the shared queue gate, live three-daemon TCP query-phase
   stress rejection/readback, and independent local workload drain as runtime
   fairness evidence.
+- `tools/run-native-closure-validation.py --batch runtime-peer-backpressure`
+  runs the OpenSearch-dependent peer comparison. It is separate from
+  `runtime-fairness` because it requires a local OpenSearch distribution; when
+  available it must report `failed_count == 0` and `zero_test_count == 0` before
+  promoting peer backpressure parity evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,

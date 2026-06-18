@@ -1713,6 +1713,22 @@ MIXED_SHARD_MOVEMENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+RUNTIME_PEER_BACKPRESSURE_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "steelsearch_remote_transport_backpressure_matches_opensearch_search_pool_rejection_readback",
+        "runtime-fairness-peer-backpressure",
+        (
+            "python3",
+            "tools/compare_remote_transport_backpressure.py",
+            "--mode",
+            "both",
+            "--work-dir",
+            "/tmp/remote-transport-backpressure-compare.validation",
+        ),
+        timeout_seconds=600,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -1728,6 +1744,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-queue": RUNTIME_QUEUE_BATCH,
     "runtime-backpressure": RUNTIME_BACKPRESSURE_BATCH,
     "runtime-fairness": RUNTIME_FAIRNESS_BATCH,
+    "runtime-peer-backpressure": RUNTIME_PEER_BACKPRESSURE_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,
