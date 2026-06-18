@@ -9668,6 +9668,12 @@ Concrete backlog notes for the broader non-stop-point axes:
   nested child index using child-local source values instead of returning to the
   parent source-validation fallback bucket, while still preserving tuple
   isolation across sibling nested objects
+- current direct nested match-leaf reduction reading after the latest
+  child-ordinal expansion inside the hybrid-bool note:
+  nested `match` leaves now also resolve inside the nested child index using
+  child-local source values instead of returning to the parent source-validation
+  fallback bucket, while still preserving tuple isolation across sibling nested
+  objects
 - current direct geo-point exact-match reduction reading after the latest
   leaf-support expansion inside the hybrid-bool note:
   non-`_id` `term` / `terms` geo-point leaves now also reduce directly through
