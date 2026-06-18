@@ -757,7 +757,9 @@ Current execution order:
    The same check is available as
    `tools/run-native-closure-validation.py --batch non-native-inventory`.
 2. Keep `search-semantic` and `vector-search` E2E comparison reports at zero
-   failed and zero skipped required cases for their current fixtures.
+   failed and zero skipped required cases for their current fixtures. The
+   collect-and-check gate is available as
+   `tools/run-native-closure-validation.py --batch e2e-required-parity`.
 3. Keep the targeted materialization-priority matrix at
    `ranked_operation_count == 0` when widening source-backed or vector/hybrid
    fallback diagnostics. Recheck current priority artifacts with

@@ -101,6 +101,66 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("report has missing required suite evidence", errors)
         self.assertIn("synthetic: missing fixture case evidence", errors)
 
+    def test_checker_rejects_required_skips_when_requested(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_no_skips")
+        report = {
+            "profile": "synthetic",
+            "generated_at": 1,
+            "status": "ok",
+            "route_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "semantic_parity": {
+                "required_suites": ["synthetic"],
+                "report_paths": ["synthetic.json"],
+                "status": "ok",
+            },
+            "durability_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "security_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "distributed_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "coverage_summary": {
+                "suite_count": 1,
+                "required_suite_count": 1,
+                "reported_suite_count": 1,
+                "opensearch_compared_suite_count": 1,
+                "case_classification": {
+                    "strict_equal": 0,
+                    "canonical_equal": 0,
+                    "semantic_equal": 0,
+                    "steelsearch_fail_closed": 0,
+                    "steelsearch_only": 0,
+                    "known_gap_or_skipped": 1,
+                    "failed": 0,
+                    "missing": 0,
+                },
+            },
+            "suite_results": [
+                {
+                    "name": "synthetic",
+                    "required": True,
+                    "status": "ok",
+                    "report_source": "target",
+                    "has_opensearch_target": True,
+                    "classification": {
+                        "strict_equal": 0,
+                        "canonical_equal": 0,
+                        "semantic_equal": 0,
+                        "steelsearch_fail_closed": 0,
+                        "steelsearch_only": 0,
+                        "known_gap_or_skipped": 1,
+                        "failed": 0,
+                        "missing": 0,
+                    },
+                }
+            ],
+        }
+
+        errors = checker.validate_report(
+            report,
+            allow_missing=False,
+            require_no_skips=True,
+        )
+
+        self.assertIn("synthetic: skipped required fixture cases", errors)
+
     def test_rerun_commands_include_missing_cases(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_rerun")
         suite = runner.Suite(

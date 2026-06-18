@@ -47,6 +47,17 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--format", command)
         self.assertIn("json", command)
 
+    def test_e2e_required_parity_batch_checks_no_skips_for_required_suites(self):
+        batch = self.runner.BATCHES["e2e-required-parity"]
+
+        self.assertEqual(len(batch), 1)
+        command_text = " ".join(batch[0].command)
+        self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
+        self.assertIn("search-semantic", command_text)
+        self.assertIn("vector-search", command_text)
+        self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
+        self.assertIn("--require-no-skips", command_text)
+
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
 

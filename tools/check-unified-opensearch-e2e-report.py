@@ -23,13 +23,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report")
     parser.add_argument("--allow-missing", action="store_true")
+    parser.add_argument(
+        "--require-no-skips",
+        action="store_true",
+        help="fail when required suites contain skipped fixture cases",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     report = json.loads(Path(args.report).read_text(encoding="utf-8"))
-    errors = validate_report(report, allow_missing=args.allow_missing)
+    errors = validate_report(
+        report,
+        allow_missing=args.allow_missing,
+        require_no_skips=args.require_no_skips,
+    )
     if errors:
         for error in errors:
             print(f"unified E2E report assertion failed: {error}")
@@ -42,6 +51,7 @@ def main() -> int:
                 "suite_count": report["coverage_summary"]["suite_count"],
                 "reported_suite_count": report["coverage_summary"]["reported_suite_count"],
                 "opensearch_compared_suite_count": report["coverage_summary"]["opensearch_compared_suite_count"],
+                "summary": {"passed": True},
             },
             indent=2,
             sort_keys=True,
@@ -50,7 +60,11 @@ def main() -> int:
     return 0
 
 
-def validate_report(report: dict[str, Any], allow_missing: bool) -> list[str]:
+def validate_report(
+    report: dict[str, Any],
+    allow_missing: bool,
+    require_no_skips: bool = False,
+) -> list[str]:
     errors: list[str] = []
     for field in ("profile", "generated_at", "status", "coverage_summary", "suite_results"):
         if field not in report:
@@ -117,6 +131,10 @@ def validate_report(report: dict[str, Any], allow_missing: bool) -> list[str]:
             errors.append(f"{name}: missing required report")
         if suite.get("required") and suite.get("classification", {}).get("missing", 0) and not allow_missing:
             errors.append(f"{name}: missing fixture case evidence")
+        if suite.get("required") and require_no_skips:
+            skipped = int(suite.get("classification", {}).get("known_gap_or_skipped") or 0)
+            if skipped:
+                errors.append(f"{name}: skipped required fixture cases")
     return errors
 
 

@@ -470,6 +470,19 @@ NON_NATIVE_INVENTORY_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+E2E_REQUIRED_PARITY_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+        "e2e-required-parity",
+        (
+            "python3",
+            "-c",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-audit'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--suite', 'search-semantic', '--suite', 'vector-search']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-no-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+        ),
+        timeout_seconds=120,
+    ),
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -1862,6 +1875,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "vector-knn": VECTOR_KNN_BATCH,
     "source-backed-query": SOURCE_BACKED_QUERY_BATCH,
     "non-native-inventory": NON_NATIVE_INVENTORY_BATCH,
+    "e2e-required-parity": E2E_REQUIRED_PARITY_BATCH,
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
