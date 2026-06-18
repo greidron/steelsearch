@@ -6585,7 +6585,7 @@ impl StoredIndex {
                 continue;
             };
             let mut hit_score = score;
-            if needs_post_filter {
+            if needs_post_filter || query_needs_exact_source_score(query) {
                 let Some(exact_score) = self.score_document_query(query, document)? else {
                     continue;
                 };
@@ -6595,7 +6595,7 @@ impl StoredIndex {
                 index_name,
                 document,
                 hit_score,
-                true,
+                !query_needs_exact_source_score(query),
             ));
         }
         if sort_uses_default_relevance_order(sort) {
@@ -6699,11 +6699,19 @@ impl StoredIndex {
                 let Some(document) = self.refreshed_document_by_id(document_id) else {
                     continue;
                 };
+                let hit_score = if query_needs_exact_source_score(query) {
+                    let Some(exact_score) = self.score_document_query(query, document)? else {
+                        continue;
+                    };
+                    exact_score
+                } else {
+                    score
+                };
                 hits.push(self.search_hit_for_document_with_score(
                     index_name,
                     document,
-                    score,
-                    true,
+                    hit_score,
+                    !query_needs_exact_source_score(query),
                 ));
             }
             return Ok(Some((total_hits, hits)));
@@ -8494,7 +8502,7 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             return Ok(None);
         }
         score += matched_should.into_iter().flatten().sum::<f32>();
-        if score == 0.0 {
+        if score == 0.0 && bool_query_has_scoring_clause(clauses) {
             score = 1.0;
         }
         Ok(Some(score))
@@ -15155,6 +15163,17 @@ fn bool_query_cannot_reduce_to_exclusion(query: &Query) -> bool {
                 && clauses.must_not.is_empty()
                 && clauses.minimum_should_match.unwrap_or(0) > 0
     )
+}
+
+fn query_needs_exact_source_score(query: &Query) -> bool {
+    matches!(
+        query,
+        Query::Bool { clauses } if !bool_query_has_scoring_clause(clauses)
+    )
+}
+
+fn bool_query_has_scoring_clause(clauses: &BoolQuery) -> bool {
+    !clauses.must.is_empty() || !clauses.should.is_empty()
 }
 
 fn effective_bool_minimum_should_match(clauses: &BoolQuery) -> u32 {
@@ -39954,6 +39973,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(context.total_hits, 2);
+        assert_eq!(
+            context
+                .hits
+                .iter()
+                .map(|hit| hit.score)
+                .collect::<Vec<_>>(),
+            vec![0.0, 0.0]
+        );
         assert_eq!(
             context
                 .hits
