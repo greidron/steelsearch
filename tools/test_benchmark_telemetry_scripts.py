@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "tools" / "run-search-benchmark-matrix.py"
 BASELINE_PATH = ROOT / "tools" / "run-http-load-baseline.py"
 PRIORITY_PATH = ROOT / "tools" / "rank-materialization-priorities.py"
+DIAGNOSTIC_PATH = ROOT / "tools" / "run-materialization-priority-diagnostic.py"
 
 EXPECTED_NATIVE_COUNTERS = (
     "materialized_response_fetches",
@@ -271,6 +272,29 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             report["priorities"][1]["counters"]["compatibility_materialized_response_fetches"][
                 "per_success"
             ],
+        )
+
+    def test_materialization_priority_diagnostic_dry_run_reports_artifact_paths(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(DIAGNOSTIC_PATH),
+                "--dry-run",
+                "--work-dir",
+                "target/test-materialization-priority-diagnostic",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["summary"]["passed"])
+        self.assertEqual(
+            payload["summary"]["priority_path"],
+            "target/test-materialization-priority-diagnostic/materialization-priority.json",
         )
 
 

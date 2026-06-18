@@ -98,6 +98,14 @@ Out of scope:
   operation-level materialization budget rows when those deltas are present.
   `tools/rank-materialization-priorities.py` consumes those reports and emits a
   ranked list of compatibility materialization families by per-success delta.
+  `tools/run-materialization-priority-diagnostic.py` now produces a fresh
+  single-node Steelsearch diagnostic artifact and priority report for the
+  opt-in fallback workload.
+  A 2026-06-18 diagnostic run at
+  `target/materialization-priority-diagnostic-current/` completed 341
+  `fallback_query_string` operations with `error_count=0` and ranked
+  `query_string/simple_query_string compatibility materialization` first
+  (`compatibility_materialized_response_fetches=341`, `1.00/op`).
   The same gate now covers standalone HTTP query-string native-path stats wiring,
   so query-string compatibility materialization is visible through `_nodes/stats`
   rather than disappearing into the source-eval route.
@@ -364,9 +372,9 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. run `tools/rank-materialization-priorities.py` against fresh
-   operation-resource-delta load artifacts and use the top ranked compatibility
-   family as the next native rewrite target;
+3. use the fresh materialization-priority diagnostic to drive the next native
+   rewrite target; the current top ranked target is
+   `query_string/simple_query_string` compatibility materialization;
 4. add focused regression cases for hybrid plus aggregation plus explicit sort;
 5. only widen native paths when result ordering and total-hit semantics are
    already proven.

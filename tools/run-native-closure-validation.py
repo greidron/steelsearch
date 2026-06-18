@@ -358,6 +358,18 @@ BENCHMARK_TELEMETRY_BATCH: tuple[ExternalValidation, ...] = (
         ),
         timeout_seconds=60,
     ),
+    ExternalValidation(
+        "materialization_priority_diagnostic_harness_reports_artifact_paths",
+        "benchmark-telemetry",
+        (
+            "python3",
+            "tools/run-materialization-priority-diagnostic.py",
+            "--dry-run",
+            "--work-dir",
+            "target/materialization-priority-diagnostic.validation",
+        ),
+        timeout_seconds=60,
+    ),
 )
 
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (

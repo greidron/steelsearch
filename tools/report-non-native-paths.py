@@ -269,10 +269,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="materialized SearchHit boundary",
         category="materialization",
-        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, request-result cache bypass causes, per-success materialization budget pass/fail rows for materialized and compatibility materialized response fetches, opt-in operation-level native counter deltas for exact single-client materialization attribution, ranked materialization-priority reports from operation-resource-delta slices, an opt-in fallback_query_string diagnostic workload, and HTTP query_string native-path stats wiring that exposes compatibility materialization through _nodes/stats",
-        next_action="run the materialization priority report on fresh benchmark/load artifacts and replace the highest-ranked compatibility materialization family with a native path",
+        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, request-result cache bypass causes, per-success materialization budget pass/fail rows for materialized and compatibility materialized response fetches, opt-in operation-level native counter deltas for exact single-client materialization attribution, ranked materialization-priority reports from operation-resource-delta slices, a fresh Steelsearch diagnostic harness for generating load and priority artifacts, an opt-in fallback_query_string diagnostic workload, and HTTP query_string native-path stats wiring that exposes compatibility materialization through _nodes/stats; latest fresh diagnostic ranked query_string/simple_query_string compatibility materialization first",
+        next_action="replace the highest-ranked query_string/simple_query_string compatibility materialization family with a native path",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
-        evidence_pattern=r"BENCHMARK_TELEMETRY_BATCH|rank-materialization-priorities",
+        evidence_pattern=r"BENCHMARK_TELEMETRY_BATCH|rank-materialization-priorities|run-materialization-priority-diagnostic",
     ),
     Family(
         name="malformed wrapper and rebucketing validation",
