@@ -1,5 +1,7 @@
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -115,6 +117,46 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
         self.assertEqual(set(inputs), {"load_test_coverage", "rolling_upgrade_coverage"})
         self.assertEqual(inputs["load_test_coverage"]["attach_argument"], "--load-report")
+
+    def test_complete_release_readiness_manifest_marks_final_cutover_ready(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            manifest = temp_dir / "release-readiness.json"
+            artifacts = {
+                "benchmark_coverage": "benchmark.jsonl",
+                "load_test_coverage": "load.json",
+                "chaos_test_coverage": "chaos.json",
+                "packaging_verified": "packaging.json",
+                "rolling_upgrade_coverage": "rolling.json",
+            }
+            for artifact in artifacts.values():
+                (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        name: {
+                            "passed": True,
+                            "artifact_path": artifact,
+                            "blockers": [],
+                        }
+                        for name, artifact in artifacts.items()
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            final_cutover = self.reporter.inspect_release_readiness(manifest)
+            report = self.reporter.build_status_report(
+                current_evidence={"passed": True},
+                peer_backpressure={"passed": True},
+                final_cutover=final_cutover,
+                require_final_cutover=True,
+            )
+
+            self.assertTrue(final_cutover["passed"])
+            self.assertEqual(final_cutover["missing_items"], [])
+            self.assertTrue(report["summary"]["passed"])
+            self.assertEqual(report["summary"]["status"], "ready")
 
 
 if __name__ == "__main__":
