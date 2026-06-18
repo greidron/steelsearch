@@ -6634,10 +6634,27 @@ impl StoredIndex {
                 .collect();
             return Ok(Some((total_hits, hits)));
         }
+        let needs_post_filter = query_requires_native_candidate_post_filter(query);
+        if needs_post_filter
+            && sort_uses_default_relevance_order(sort)
+            && query_allows_source_candidate_scan_for_native_post_filter(query)
+        {
+            let Some(search_state) = &self.search_state else {
+                return Ok(None);
+            };
+            if build_tantivy_query(search_state, query)?.is_none() {
+                return self.search_hits_page_for_source_candidate_post_filter(
+                    index_name,
+                    query,
+                    from,
+                    size,
+                );
+            }
+        }
         if !matches!(query, Query::Knn(_))
             && !Self::query_contains_knn(query)
             && !matches!(query, Query::Nested { .. })
-            && !query_requires_native_candidate_post_filter(query)
+            && !needs_post_filter
         {
             let Some(search_state) = &self.search_state else {
                 return Ok(None);
@@ -6699,6 +6716,46 @@ impl StoredIndex {
             total_hits,
             hits.into_iter().skip(from).take(size).collect(),
         )))
+    }
+
+    fn search_hits_page_for_source_candidate_post_filter(
+        &self,
+        index_name: &str,
+        query: &Query,
+        from: usize,
+        size: usize,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        let mut scored_ids = Vec::new();
+        for document in self.refreshed_documents() {
+            let Some(score) = self.score_document_query(query, document)? else {
+                continue;
+            };
+            scored_ids.push((
+                if score == 0.0 { 1.0 } else { score },
+                document.metadata.id.clone(),
+            ));
+        }
+        scored_ids.sort_by(|(left_score, left_id), (right_score, right_id)| {
+            right_score
+                .partial_cmp(left_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left_id.cmp(right_id))
+        });
+        let total_hits = scored_ids.len() as u64;
+        if size == 0 {
+            return Ok(Some((total_hits, Vec::new())));
+        }
+        let hits = scored_ids
+            .into_iter()
+            .skip(from)
+            .take(size)
+            .filter_map(|(score, document_id)| {
+                self.refreshed_document_by_id(&document_id).map(|document| {
+                    self.search_hit_for_document_with_score(index_name, document, score, false)
+                })
+            })
+            .collect();
+        Ok(Some((total_hits, hits)))
     }
 
     fn search_hits_window_for_query_native(
@@ -15493,7 +15550,12 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         | Query::MoreLikeThis { .. }
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
-        | Query::RankFeature { .. } => true,
+        | Query::RankFeature { .. }
+        | Query::SpanFirst { .. }
+        | Query::SpanNear { .. }
+        | Query::SpanNot { .. }
+        | Query::SpanContaining { .. }
+        | Query::SpanWithin { .. } => true,
         Query::Prefix {
             field,
             case_insensitive,
@@ -130838,6 +130900,175 @@ mod tests {
 
         let page_response = engine.search(search_request(10)).unwrap();
         assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "3"]);
+        assert!(page_response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Fetch
+                && phase.description == "materialized only the requested native page"
+        }));
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let size_zero_response = engine.search(search_request(0)).unwrap();
+        assert_eq!(size_zero_response.total_hits, 2);
+        assert!(size_zero_response.hits.is_empty());
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+    }
+
+    #[test]
+    fn span_first_text_leaf_uses_source_candidate_native_page() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message) in [
+            ("1", "alpha checkout"),
+            ("2", "checkout alpha"),
+            ("3", "alpha store"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "message": message }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let search_request = |size| SearchRequest {
+            indices: vec!["logs-000001".to_string()],
+            query: serde_json::json!({
+                "span_first": {
+                    "match": {
+                        "span_term": { "message": "alpha" }
+                    },
+                    "end": 1
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: Vec::new(),
+            from: 0,
+            size,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_include: None,
+            source_excludes: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+
+        let page_response = engine.search(search_request(1)).unwrap();
+        assert_eq!(page_response.total_hits, 2);
+        assert_eq!(search_hit_ids(&page_response.hits), vec!["1"]);
+        assert!(page_response.phase_results.iter().any(|phase| {
+            phase.phase == SearchPhase::Fetch
+                && phase.description == "materialized only the requested native page"
+        }));
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+
+        let size_zero_response = engine.search(search_request(0)).unwrap();
+        assert_eq!(size_zero_response.total_hits, 2);
+        assert!(size_zero_response.hits.is_empty());
+        let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+    }
+
+    #[test]
+    fn span_containing_mixed_shape_uses_source_candidate_native_page() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message) in [
+            ("1", "alpha beta"),
+            ("2", "beta alpha"),
+            ("3", "alpha x beta"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "message": message }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let search_request = |size| SearchRequest {
+            indices: vec!["logs-000001".to_string()],
+            query: serde_json::json!({
+                "span_containing": {
+                    "big": {
+                        "span_near": {
+                            "clauses": [
+                                { "span_term": { "message": "alpha" } },
+                                { "span_term": { "message": "beta" } }
+                            ],
+                            "slop": 1,
+                            "in_order": true
+                        }
+                    },
+                    "little": {
+                        "span_term": { "message": "beta" }
+                    }
+                }
+            }),
+            aggregations: serde_json::json!({}),
+            sort: Vec::new(),
+            from: 0,
+            size,
+            stored_fields: None,
+            source_fields: None,
+            source_filter: None,
+            source_includes: None,
+            source_include: None,
+            source_excludes: None,
+            source_exclude: None,
+            highlight: None,
+            explain: false,
+        };
+
+        let page_response = engine.search(search_request(1)).unwrap();
+        assert_eq!(page_response.total_hits, 2);
+        assert_eq!(search_hit_ids(&page_response.hits), vec!["1"]);
         assert!(page_response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
                 && phase.description == "materialized only the requested native page"

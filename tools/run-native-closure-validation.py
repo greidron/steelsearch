@@ -343,6 +343,14 @@ SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
         "source-backed-native-query",
     ),
     ValidationTest(
+        "span_first_text_leaf_uses_source_candidate_native_page",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
+        "span_containing_mixed_shape_uses_source_candidate_native_page",
+        "source-backed-native-query",
+    ),
+    ValidationTest(
         "native_tantivy_path_executes_combined_fields_query",
         "source-backed-native-query",
     ),

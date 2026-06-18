@@ -71,7 +71,7 @@ Out of scope:
   script sort cases, plus pure and hybrid multi-index vector request-result
   cache coverage with per-index request-result cache detail entries.
 - The same runner now has a `source-backed-query` batch. It passed on
-  2026-06-18 with 57/57 tests and `zero_tests=0`, covering native execution,
+  2026-06-18 with 59/59 tests and `zero_tests=0`, covering native execution,
   fallback-boundary source validation, and hybrid candidate reduction for the
   current source-backed query families: nested child ordinals,
   `geo_distance`, `distance_feature`, `rank_feature`, `more_like_this`,
@@ -83,7 +83,8 @@ Out of scope:
   materialization,
   source-candidate native page coverage for `distance_feature`,
   `rank_feature`, `terms_set`, fieldless `more_like_this`, and text-field
-  case-insensitive wildcard non-native leaf boundaries.
+  case-insensitive wildcard plus representative span non-native leaf/wrapper
+  boundaries.
 - The same runner now has a `benchmark-telemetry` batch. It passed on
   2026-06-18 with 3/3 validations and `zero_tests=0`, covering
   benchmark/load JSON and Markdown exposure for materialized response fetches,
