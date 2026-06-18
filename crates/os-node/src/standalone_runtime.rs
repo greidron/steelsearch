@@ -8213,16 +8213,9 @@ impl SteelNode {
             source.clone()
         } else if let Some(template_name) = stored_template_id {
             let Some(source) = self.load_stored_script_source(template_name) else {
-                return Err(RestResponse::json(
-                    404,
-                    serde_json::json!({
-                        "error": {
-                            "type": "resource_not_found_exception",
-                            "reason": format!("stored script [{template_name}] not found")
-                        },
-                        "status": 404
-                    }),
-                ));
+                return Err(build_resource_not_found_search_response(&format!(
+                    "unable to find script [{template_name}] in cluster state"
+                )));
             };
             source
         } else {
@@ -8250,7 +8243,7 @@ impl SteelNode {
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
         if request.query_params.contains_key("q") {
             return build_unsupported_search_response(
-                "unsupported count option [q]; use request body [query] instead",
+                "request [/_count] contains unrecognized parameter: [q]",
             );
         }
         let payload = if request.body.is_empty() {
@@ -8258,13 +8251,13 @@ impl SteelNode {
         } else {
             match serde_json::from_slice::<Value>(&request.body) {
                 Ok(body) => body,
-                Err(error) => {
+                Err(_) => {
                     return RestResponse::json(
                         400,
                         serde_json::json!({
                             "error": {
-                                "type": "parse_exception",
-                                "reason": error.to_string()
+                                "type": "parsing_exception",
+                                "reason": "Failed to parse"
                             },
                             "status": 400
                         }),
@@ -17560,6 +17553,19 @@ fn build_unsupported_search_response(reason: &str) -> RestResponse {
     )
 }
 
+fn build_resource_not_found_search_response(reason: &str) -> RestResponse {
+    RestResponse::json(
+        404,
+        serde_json::json!({
+            "error": {
+                "type": "resource_not_found_exception",
+                "reason": reason
+            },
+            "status": 404
+        }),
+    )
+}
+
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     ![
         "collapse",
@@ -18664,7 +18670,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     }
     if let Some(spec) = query.get("exists").and_then(Value::as_object) {
         if spec.len() != 1 || spec.get("field").and_then(Value::as_str).is_none() {
-            return Some(build_unsupported_search_response("unsupported exists query shape"));
+            return Some(build_parsing_search_response(
+                "[exists] must be provided with a [field]",
+            ));
         }
     }
     if let Some(spec) = query.get("terms_set").and_then(Value::as_object) {
@@ -31864,6 +31872,11 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             .status,
             200
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let root_search_template =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/template"));
@@ -32098,6 +32111,14 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             ),
         );
         assert_eq!(missing_named_search_template.status, 404);
+        assert_eq!(
+            missing_named_search_template.body["error"]["type"],
+            "resource_not_found_exception"
+        );
+        assert_eq!(
+            missing_named_search_template.body["error"]["reason"],
+            "unable to find script [missing-template] in cluster state"
+        );
     }
 
     #[test]
@@ -32181,7 +32202,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         );
         assert_eq!(
             q_count.body["error"]["reason"],
-            "unsupported count option [q]; use request body [query] instead"
+            "request [/_count] contains unrecognized parameter: [q]"
         );
 
         let empty_wildcard_count = node.handle_rest_request(
@@ -32248,7 +32269,8 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         );
         assert_eq!(malformed_count.status, 400);
         assert_eq!(malformed_count.body["status"], 400);
-        assert_eq!(malformed_count.body["error"]["type"], "parse_exception");
+        assert_eq!(malformed_count.body["error"]["type"], "parsing_exception");
+        assert_eq!(malformed_count.body["error"]["reason"], "Failed to parse");
 
         let root_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_validate/query").with_json_body(

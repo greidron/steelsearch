@@ -238,10 +238,6 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported query-string q handling in _count.",
       "family": "failure-path",
       "description": "[failure-path] count query-string q unsupported error"
     },
@@ -320,10 +316,6 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported exists query shape validation.",
       "family": "failure-path",
       "description": "[failure-path] search exists unsupported shape error"
     },
@@ -335,10 +327,6 @@
       "body": "{\"query\":",
       "raw_json": true,
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for malformed count payload parsing.",
       "family": "failure-path",
       "description": "[failure-path] count malformed payload error"
     },
@@ -764,10 +752,6 @@
         "id": "missing-template"
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 404,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for missing named search template.",
       "family": "failure-path",
       "description": "[failure-path] search template missing error"
     },
@@ -943,10 +927,6 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 404,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for missing explain target index handling.",
       "family": "failure-path",
       "description": "[failure-path] explain missing index error"
     },
