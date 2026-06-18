@@ -8276,6 +8276,32 @@ impl SteelNode {
             ));
         }
         let requested_target = target.unwrap_or("_all");
+        let resolved_indices = if requested_target == "_all" {
+            None
+        } else {
+            let ignore_unavailable =
+                query_param_is_true(request.query_params.get("ignore_unavailable"));
+            let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
+            let mut indices = Vec::new();
+            for selector in requested_target
+                .split(',')
+                .map(str::trim)
+                .filter(|selector| !selector.is_empty())
+            {
+                let selector_uses_wildcard = selector.contains('*') || selector.contains('?');
+                match self.resolve_search_targets(
+                    selector,
+                    ignore_unavailable,
+                    allow_no_indices || selector_uses_wildcard,
+                ) {
+                    Ok(mut matched) => indices.append(&mut matched),
+                    Err(response) => return response,
+                }
+            }
+            indices.sort();
+            indices.dedup();
+            Some(indices)
+        };
         let docs = self.documents_state.lock().expect("documents state lock poisoned");
         let count = docs
             .iter()
@@ -8287,8 +8313,10 @@ impl SteelNode {
                 let Some(id) = parts.next() else {
                     return false;
                 };
-                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
-                    return false;
+                if let Some(indices) = &resolved_indices {
+                    if !indices.iter().any(|resolved| resolved == index) {
+                        return false;
+                    }
                 }
                 let _ = id;
                 matches_query_body(&record.source, Some(query))
@@ -32159,8 +32187,16 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 }),
             ),
         );
-        assert_eq!(missing_exact_index_count.status, 200);
-        assert_eq!(missing_exact_index_count.body["count"], 0);
+        assert_eq!(missing_exact_index_count.status, 404);
+        assert_eq!(missing_exact_index_count.body["status"], 404);
+        assert_eq!(
+            missing_exact_index_count.body["error"]["type"],
+            "index_not_found_exception"
+        );
+        assert_eq!(
+            missing_exact_index_count.body["error"]["reason"],
+            "no such index [missing-count-000001]"
+        );
 
         let unsupported_query_type_count = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_count").with_json_body(serde_json::json!({

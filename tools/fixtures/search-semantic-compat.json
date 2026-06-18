@@ -284,10 +284,6 @@
         }
       },
       "extract": "count_query",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch missing-index _count status differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] count missing exact index semantic"
     },
