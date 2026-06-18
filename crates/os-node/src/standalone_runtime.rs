@@ -18539,10 +18539,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     }
     if let Some(spec) = query.get("hybrid").and_then(Value::as_object) {
         let Some(queries) = spec.get("queries").and_then(Value::as_array) else {
-            return Some(build_unsupported_search_response("unsupported hybrid query shape"));
+            return Some(build_parsing_search_response("unsupported hybrid query shape"));
         };
         if queries.is_empty() || spec.keys().any(|key| key != "queries") {
-            return Some(build_unsupported_search_response("unsupported hybrid query shape"));
+            return Some(build_parsing_search_response("unsupported hybrid query shape"));
         }
         let mut knn_count = 0usize;
         for clause in queries {
@@ -18554,7 +18554,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
         }
         if knn_count != 1 {
-            return Some(build_unsupported_search_response("unsupported hybrid query shape"));
+            return Some(build_parsing_search_response("unsupported hybrid query shape"));
         }
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
@@ -35702,6 +35702,10 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 })),
         );
         assert_eq!(invalid_hybrid.status, 400);
+        assert_eq!(
+            invalid_hybrid.body["error"]["type"],
+            "parsing_exception"
+        );
         assert_eq!(
             invalid_hybrid.body["error"]["reason"],
             "unsupported hybrid query shape"
