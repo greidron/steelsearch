@@ -39,7 +39,7 @@ STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS="${STEELSEARCH_RELEASE_EVIDENCE_MAX
 WAIT_TIMEOUT="${REHEARSAL_WAIT_TIMEOUT:-300}"
 RUN_SEARCH_COMPAT="${RUN_SEARCH_COMPAT:-1}"
 PHASE_A_COMPARE_SCOPE="${PHASE_A_COMPARE_SCOPE:-full}"
-export SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}"
+SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-}"
 
 STEELSEARCH_STARTED=0
 OPENSEARCH_STARTED=0
@@ -69,6 +69,8 @@ Environment:
   MAPPING_COMPAT_CASES         Comma-separated mapping compatibility cases.
   SNAPSHOT_LIFECYCLE_COMPAT_CASES
                                Comma-separated snapshot lifecycle compatibility cases.
+  SNAPSHOT_REPOSITORY_BASE_DIR Snapshot repository fixture base path. Defaults to the local
+                               OpenSearch path.repo when this rehearsal starts OpenSearch.
   MIGRATION_VALIDATION_REPORT  Migration validation report path.
   STEELSEARCH_BENCHMARK_REPORT Benchmark JSONL evidence attached to readiness.
   STEELSEARCH_LOAD_REPORT      HTTP load JSON evidence attached to readiness.
@@ -108,6 +110,15 @@ append_case_args() {
     [[ -n "${trimmed}" ]] || continue
     target_args+=(--case "${trimmed}")
   done
+}
+
+absolute_path() {
+  local path="$1"
+  if [[ "${path}" == /* ]]; then
+    printf '%s\n' "${path}"
+  else
+    printf '%s/%s\n' "${ROOT}" "${path}"
+  fi
 }
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "root-cluster-node" ]]; then
@@ -243,7 +254,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "snapshot-migration" ]]; then
   export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
   export RUN_VECTOR_SEARCH_COMPAT=0
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
-  export RUN_MIGRATION_CUTOVER_INTEGRATION=1
+  export RUN_MIGRATION_CUTOVER_INTEGRATION="${RUN_MIGRATION_CUTOVER_INTEGRATION:-1}"
 fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
@@ -573,13 +584,19 @@ fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && -n "${OPENSEARCH_URL:-}" ]]; then
   OPENSEARCH_URL="${OPENSEARCH_URL%/}"
+  export SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}"
   echo "Using existing OpenSearch endpoint: ${OPENSEARCH_URL}" >&2
 elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
   OPENSEARCH_HTTP_HOST="${OPENSEARCH_HTTP_HOST:-127.0.0.1}"
   OPENSEARCH_HTTP_PORT="${OPENSEARCH_HTTP_PORT:-9200}"
   OPENSEARCH_URL="http://${OPENSEARCH_HTTP_HOST}:${OPENSEARCH_HTTP_PORT}"
   export OPENSEARCH_HTTP_HOST OPENSEARCH_HTTP_PORT
-  export OPENSEARCH_WORK_DIR="${OPENSEARCH_WORK_DIR:-${REHEARSAL_DIR}/opensearch}"
+  OPENSEARCH_WORK_DIR="$(absolute_path "${OPENSEARCH_WORK_DIR:-${REHEARSAL_DIR}/opensearch}")"
+  export OPENSEARCH_WORK_DIR
+  OPENSEARCH_REPO_DIR="$(absolute_path "${OPENSEARCH_REPO_DIR:-${OPENSEARCH_WORK_DIR}/repo}")"
+  export OPENSEARCH_REPO_DIR
+  SNAPSHOT_REPOSITORY_BASE_DIR="$(absolute_path "${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_REPO_DIR}}")"
+  export SNAPSHOT_REPOSITORY_BASE_DIR
   rm -rf "${OPENSEARCH_WORK_DIR}"
   echo "Starting OpenSearch at ${OPENSEARCH_URL}" >&2
   if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then

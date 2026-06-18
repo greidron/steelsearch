@@ -349,7 +349,7 @@
       "method": "POST",
       "path": "/_snapshot/repo-compat/missing-snapshot/_restore",
       "compare": {
-        "expected_status": 404,
+        "expected_status": 500,
         "body_paths_present": [
           "error.type",
           "status"

@@ -187,6 +187,26 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
             "node_names": sorted(node_names),
         }
 
+    if extract == "snapshot_missing_repository":
+        error = body.get("error")
+        root_cause_type = None
+        error_type = None
+        error_reason = ""
+        if isinstance(error, dict):
+            error_type = error.get("type")
+            error_reason = str(error.get("reason") or "")
+            root_causes = error.get("root_cause")
+            if isinstance(root_causes, list) and root_causes:
+                first = root_causes[0]
+                if isinstance(first, dict):
+                    root_cause_type = first.get("type")
+        return {
+            "status": body.get("status"),
+            "error_type": error_type,
+            "error_reason": error_reason,
+            "root_cause_type": root_cause_type,
+        }
+
     if extract == "restore_validation_failure":
         error = body.get("error")
         reason = ""

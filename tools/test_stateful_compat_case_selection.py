@@ -58,6 +58,35 @@ class StatefulCompatCaseSelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "unknown mapping compat case"):
             mapping_compat.select_cases(fixture, ["missing"])
 
+    def test_snapshot_missing_repository_error_is_normalized(self) -> None:
+        snapshot_lifecycle_compat = load_tool_module("snapshot_lifecycle_compat")
+        case = {"extract": "snapshot_missing_repository"}
+        body = {
+            "error": {
+                "type": "repository_missing_exception",
+                "reason": "[repo-missing] missing",
+                "root_cause": [
+                    {
+                        "type": "repository_missing_exception",
+                        "reason": "[repo-missing] missing",
+                    },
+                ],
+            },
+            "status": 404,
+        }
+
+        normalized = snapshot_lifecycle_compat.normalize_snapshot_body(case, body)
+
+        self.assertEqual(
+            normalized,
+            {
+                "status": 404,
+                "error_type": "repository_missing_exception",
+                "error_reason": "[repo-missing] missing",
+                "root_cause_type": "repository_missing_exception",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7025,7 +7025,7 @@ impl SteelNode {
             return build_missing_snapshot_repository_response(repository);
         }
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
-            return build_missing_snapshot_response(repository, snapshot);
+            return build_missing_snapshot_restore_response(repository, snapshot);
         };
         RestResponse::json(
             200,
@@ -7057,7 +7057,7 @@ impl SteelNode {
             return build_missing_snapshot_repository_response(repository);
         }
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
-            return build_missing_snapshot_response(repository, snapshot);
+            return build_missing_snapshot_restore_response(repository, snapshot);
         };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         if let Some(parameter) = extract_snapshot_restore_unknown_parameter(&body) {
@@ -19393,6 +19393,25 @@ fn build_missing_snapshot_response(repository: &str, snapshot: &str) -> RestResp
     )
 }
 
+fn build_missing_snapshot_restore_response(repository: &str, snapshot: &str) -> RestResponse {
+    RestResponse::json(
+        500,
+        serde_json::json!({
+            "error": {
+                "type": "snapshot_restore_exception",
+                "reason": format!("[{repository}:{snapshot}] snapshot does not exist"),
+                "root_cause": [
+                    {
+                        "type": "snapshot_restore_exception",
+                        "reason": format!("[{repository}:{snapshot}] snapshot does not exist"),
+                    }
+                ]
+            },
+            "status": 500
+        }),
+    )
+}
+
 fn build_concurrent_snapshot_delete_response(repository: &str, snapshot: &str) -> RestResponse {
     RestResponse::json(
         409,
@@ -19423,6 +19442,18 @@ fn apply_snapshot_restore_rename(
 ) -> String {
     match (rename_pattern, rename_replacement) {
         (Some("(.+)"), Some(replacement)) => replacement.replace("$1", source_index),
+        (Some(pattern), Some(replacement)) if pattern.contains("(.+)") => {
+            let Some((prefix, suffix)) = pattern.split_once("(.+)") else {
+                return source_index.to_string();
+            };
+            if source_index.starts_with(prefix) && source_index.ends_with(suffix) {
+                let capture_end = source_index.len().saturating_sub(suffix.len());
+                if prefix.len() <= capture_end {
+                    return replacement.replace("$1", &source_index[prefix.len()..capture_end]);
+                }
+            }
+            source_index.to_string()
+        }
         (Some(pattern), Some(replacement)) if pattern == source_index => replacement.to_string(),
         _ => source_index.to_string(),
     }
@@ -38031,6 +38062,48 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         ));
         assert_eq!(missing.status, 404);
         assert_eq!(missing.body["error"]["type"], "snapshot_missing_exception");
+    }
+
+    #[test]
+    fn snapshot_restore_missing_snapshot_matches_opensearch_error_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let repository = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-missing-restore")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": {
+                        "location": "target/test-snapshots/repo-missing-restore"
+                    }
+                })),
+        );
+        assert_eq!(repository.status, 200);
+
+        let missing_restore = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-missing-restore/snapshot-missing/_restore",
+        ));
+
+        assert_eq!(missing_restore.status, 500);
+        assert_eq!(
+            missing_restore.body["error"]["type"],
+            "snapshot_restore_exception"
+        );
+        assert_eq!(missing_restore.body["status"], 500);
+    }
+
+    #[test]
+    fn snapshot_restore_rename_supports_prefix_capture_pattern() {
+        assert_eq!(
+            apply_snapshot_restore_rename(
+                "logs-compat",
+                Some("logs-(.+)"),
+                Some("restored-$1"),
+            ),
+            "restored-compat"
+        );
     }
 
     #[test]

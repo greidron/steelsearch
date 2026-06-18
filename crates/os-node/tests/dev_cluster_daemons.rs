@@ -4291,10 +4291,10 @@ fn daemon_snapshot_restore_round_trip_after_crash_recovery() {
         "/_snapshot/dev-repo/after-crash/_restore?wait_for_completion=true",
         Some(br#"{}"#),
     );
-    assert_eq!(deleted_restore["status"], 404);
+    assert_eq!(deleted_restore["status"], 500);
     assert_eq!(
         deleted_restore["body"]["error"]["type"],
-        "snapshot_missing_exception"
+        "snapshot_restore_exception"
     );
 
     terminate_child(&restarted);
@@ -4386,10 +4386,10 @@ fn daemon_snapshot_restore_fails_closed_for_missing_and_corrupt_metadata() {
         "/_snapshot/dev-repo/missing-metadata/_restore",
         Some(br#"{}"#),
     );
-    assert_eq!(missing_restore["status"], 404);
+    assert_eq!(missing_restore["status"], 500);
     assert_eq!(
         missing_restore["body"]["error"]["type"],
-        "snapshot_missing_exception"
+        "snapshot_restore_exception"
     );
 
     let corrupt_manifest = data_path
