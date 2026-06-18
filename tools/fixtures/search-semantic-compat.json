@@ -168,7 +168,7 @@
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 200,
       "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch bool must_not-only search results differ from OpenSearch and are tracked as a semantic parity gap.",
+      "reason": "Steelsearch bool must_not-only default hit order differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "lexical",
       "expect_hits": ["doc-1", "doc-3"],
       "description": "[lexical] search bool must_not only semantic"
@@ -193,12 +193,8 @@
         }
       },
       "extract": "search_hits",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch bool should-only minimum_should_match=0 results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
-      "expect_hits": ["doc-1", "doc-3"],
+      "expect_hits": [],
       "description": "[lexical] search bool zero minimum_should_match semantic"
     },
     {

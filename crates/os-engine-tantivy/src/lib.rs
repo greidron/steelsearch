@@ -2740,7 +2740,7 @@ fn build_tantivy_query(
             Ok(Some(Box::new(BooleanQuery::new(clauses))))
         }
         Query::Bool { clauses } => {
-            let minimum_should_match = clauses.minimum_should_match.unwrap_or(0);
+            let minimum_should_match = effective_bool_minimum_should_match(clauses);
             if minimum_should_match > 1 {
                 return build_tantivy_minimum_should_match_query(
                     search_state,
@@ -6247,9 +6247,7 @@ impl StoredIndex {
         let Query::Bool { clauses } = query else {
             return self.reduced_candidate_ids_for_query(index_name, query);
         };
-        let minimum_should_match = clauses.minimum_should_match.unwrap_or(u32::from(
-            !clauses.should.is_empty() && clauses.must.is_empty() && clauses.filter.is_empty(),
-        )) as usize;
+        let minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
         if minimum_should_match == 1
             && clauses.must.is_empty()
             && clauses.filter.is_empty()
@@ -6299,9 +6297,7 @@ impl StoredIndex {
             }
         }
 
-        let mut minimum_should_match = clauses.minimum_should_match.unwrap_or(u32::from(
-            !clauses.should.is_empty() && clauses.must.is_empty() && clauses.filter.is_empty(),
-        )) as usize;
+        let mut minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
         if !clauses.should.is_empty() {
             minimum_should_match = minimum_should_match.min(clauses.should.len());
         }
@@ -8492,9 +8488,7 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
             .iter()
             .filter(|score| score.is_some())
             .count() as u32;
-        let mut minimum_should_match = clauses.minimum_should_match.unwrap_or(u32::from(
-            !clauses.should.is_empty() && clauses.must.is_empty(),
-        ));
+        let mut minimum_should_match = effective_bool_minimum_should_match(clauses);
         minimum_should_match = minimum_should_match.min(clauses.should.len() as u32);
         if should_count < minimum_should_match {
             return Ok(None);
@@ -15163,6 +15157,16 @@ fn bool_query_cannot_reduce_to_exclusion(query: &Query) -> bool {
     )
 }
 
+fn effective_bool_minimum_should_match(clauses: &BoolQuery) -> u32 {
+    let should_only_default = u32::from(
+        !clauses.should.is_empty() && clauses.must.is_empty() && clauses.filter.is_empty(),
+    );
+    clauses
+        .minimum_should_match
+        .unwrap_or(should_only_default)
+        .max(should_only_default)
+}
+
 fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
     if let Query::SpanTerm { field, value } = query {
         return document_matches_query(
@@ -16089,8 +16093,9 @@ fn matches_query_string_query(
     query: &str,
 ) -> bool {
     let effective_fields = query_string_effective_fields_from_source(id, source, fields);
+    let query_tokens = tokenize_query_string_required_terms(query);
     matched_query_token_count_across_fields(id, source, &effective_fields, query)
-        == tokenize_phrase_text(query).len()
+        == query_tokens.len()
 }
 
 fn matched_query_token_count_across_fields(
@@ -17877,8 +17882,9 @@ fn matches_simple_query_string_query(
     query: &str,
 ) -> bool {
     let effective_fields = simple_query_string_effective_fields_from_source(id, source, fields);
+    let query_tokens = tokenize_query_string_required_terms(query);
     matched_query_token_count_across_fields(id, source, &effective_fields, query)
-        == tokenize_phrase_text(query).len()
+        == query_tokens.len()
 }
 
 fn simple_query_string_effective_fields(hit: &SearchHit, fields: Option<&[String]>) -> Vec<String> {
@@ -18594,13 +18600,7 @@ fn matches_bool_query(clauses: &BoolQuery, id: &str, source: &Value) -> bool {
         return false;
     }
 
-    let default_minimum_should_match = usize::from(
-        !clauses.should.is_empty() && clauses.must.is_empty() && clauses.filter.is_empty(),
-    );
-    let mut minimum_should_match = clauses
-        .minimum_should_match
-        .map(|value| value as usize)
-        .unwrap_or(default_minimum_should_match);
+    let mut minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
     minimum_should_match = minimum_should_match.min(clauses.should.len());
     let matching_should_clauses = clauses
         .should
@@ -39410,7 +39410,7 @@ mod tests {
     }
 
     #[test]
-    fn bool_query_native_candidates_treat_zero_minimum_should_match_should_only_bool_as_match_all_universe(
+    fn bool_query_native_candidates_treat_zero_minimum_should_match_should_only_bool_as_required_should(
     ) {
         let mut engine = TantivyEngine::default();
         engine
@@ -39475,11 +39475,7 @@ mod tests {
 
         assert_eq!(
             candidates,
-            Some(
-                ["a".to_string(), "b".to_string(), "c".to_string()]
-                    .into_iter()
-                    .collect()
-            )
+            Some(["a".to_string()].into_iter().collect())
         );
     }
 
@@ -41007,7 +41003,7 @@ mod tests {
     }
 
     #[test]
-    fn bool_query_native_hits_treat_zero_minimum_should_match_should_only_bool_as_match_all_universe(
+    fn bool_query_native_hits_treat_zero_minimum_should_match_should_only_bool_as_required_should(
     ) {
         let mut engine = TantivyEngine::default();
         engine
@@ -41069,9 +41065,9 @@ mod tests {
             hits.into_iter()
                 .map(|hit| hit.metadata.id)
                 .collect::<Vec<_>>(),
-            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+            vec!["a".to_string()]
         );
-        assert_eq!(total, Some(3));
+        assert_eq!(total, Some(1));
     }
 
     #[test]

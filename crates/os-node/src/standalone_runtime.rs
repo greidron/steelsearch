@@ -19364,10 +19364,8 @@ fn query_uses_pure_knn_candidate_path(query: &Value) -> bool {
             .get("minimum_should_match")
             .and_then(Value::as_u64)
             .map(|value| value as usize)
-            .unwrap_or(1);
-        if required == 0 {
-            return false;
-        }
+            .unwrap_or(1)
+            .max(1);
         let pure_should_candidates = shoulds
             .iter()
             .filter(|clause| query_uses_pure_knn_candidate_path(clause))
@@ -36190,7 +36188,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 })),
         );
         assert_eq!(zero_minimum_should_match.status, 200);
-        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 3);
+        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 0);
     }
 
     #[test]
