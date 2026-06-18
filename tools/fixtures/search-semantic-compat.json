@@ -369,10 +369,6 @@
         }
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch root _search term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search root term summary"
     },
@@ -388,10 +384,6 @@
         }
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch root search-template term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search template named root semantic"
     },
@@ -420,10 +412,6 @@
         }
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch search-template extra-params term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search template named extra params semantic"
     },
@@ -455,10 +443,6 @@
         }
       },
       "extract": "search_summary",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch targeted search-template term-query results differ from OpenSearch and are tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] search template named target semantic"
     },

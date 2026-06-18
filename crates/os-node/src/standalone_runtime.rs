@@ -28,7 +28,7 @@ use actix_web::http::StatusCode;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use os_engine::{
     CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
-    RefreshRequest, SearchRequest, SearchResponse, SortOrder, SortSpec,
+    RefreshRequest, SearchRequest, SearchResponse, SearchShardStats, SortOrder, SortSpec,
 };
 use os_engine_tantivy::TantivyEngine;
 use os_core::Version;
@@ -9054,7 +9054,18 @@ impl SteelNode {
     ) -> Option<RestResponse> {
         let request = standalone_native_search_request(resolved_indices, body).ok()?;
         match self.native_engine.search(request) {
-            Ok(response) => Some(native_search_response_to_rest_response(response, body)),
+            Ok(response) => {
+                let total_shards = resolved_indices
+                    .iter()
+                    .map(|index| self.index_primary_shard_count(index))
+                    .sum::<usize>()
+                    .max(1);
+                Some(native_search_response_to_rest_response(
+                    response,
+                    body,
+                    total_shards,
+                ))
+            }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => None,
             Err(error) => Some(engine_error_to_rest_response(error)),
         }
@@ -17646,7 +17657,18 @@ fn parse_native_sort_specs(sort: Option<&Value>) -> Result<Vec<SortSpec>, String
     Ok(specs)
 }
 
-fn native_search_response_to_rest_response(response: SearchResponse, body: &Value) -> RestResponse {
+fn native_search_response_to_rest_response(
+    mut response: SearchResponse,
+    body: &Value,
+    total_shards: usize,
+) -> RestResponse {
+    response.shards = SearchShardStats {
+        total: total_shards as u64,
+        successful: total_shards as u64,
+        skipped: response.shards.skipped,
+        failed: 0,
+        failures: Vec::new(),
+    };
     let mut response_body = response.to_opensearch_body(1);
     if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
         if response.total_hits > threshold {
@@ -34581,6 +34603,72 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             significant_terms_background.body["aggregations"]["sig"]["buckets"][0]["doc_count"],
             3
         );
+    }
+
+    #[test]
+    fn native_root_search_reports_all_targeted_shards() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for index in [
+            "logs-native-shards-000001",
+            "metrics-native-shards-000001",
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, format!("/{index}")).with_json_body(
+                        serde_json::json!({
+                            "mappings": {
+                                "properties": {
+                                    "tenant": { "type": "keyword" }
+                                }
+                            }
+                        }),
+                    ),
+                )
+                .status,
+                200
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-native-shards-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-native-shards-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenant-a" }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 1);
+        assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(response.body["_shards"]["total"], 2);
+        assert_eq!(response.body["_shards"]["successful"], 2);
+        assert_eq!(response.body["_shards"]["failed"], 0);
     }
 
     #[test]
