@@ -1,8 +1,14 @@
 use bytes::BytesMut;
 use os_core::Version;
+use std::future::Future;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
 
 use crate::action::{
     build_steelsearch_replica_operation_request_message,
@@ -129,6 +135,111 @@ pub fn validate_replica_operation_response(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RemoteTransportQueueSnapshot {
+    pub active: usize,
+    pub queued: usize,
+    pub rejected: usize,
+    pub completed: usize,
+}
+
+#[derive(Debug)]
+pub struct RemoteTransportQueueGate {
+    permits: Arc<Semaphore>,
+    max_queue: usize,
+    active: AtomicUsize,
+    queued: AtomicUsize,
+    rejected: AtomicUsize,
+    completed: AtomicUsize,
+}
+
+impl RemoteTransportQueueGate {
+    pub fn new(max_in_flight: usize, max_queue: usize) -> Self {
+        assert!(max_in_flight > 0, "max_in_flight must be greater than zero");
+        Self {
+            permits: Arc::new(Semaphore::new(max_in_flight)),
+            max_queue,
+            active: AtomicUsize::new(0),
+            queued: AtomicUsize::new(0),
+            rejected: AtomicUsize::new(0),
+            completed: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn snapshot(&self) -> RemoteTransportQueueSnapshot {
+        RemoteTransportQueueSnapshot {
+            active: self.active.load(Ordering::SeqCst),
+            queued: self.queued.load(Ordering::SeqCst),
+            rejected: self.rejected.load(Ordering::SeqCst),
+            completed: self.completed.load(Ordering::SeqCst),
+        }
+    }
+
+    pub async fn execute<Fut, T>(
+        &self,
+        operation: impl FnOnce() -> Fut,
+    ) -> Result<T, InternalTransportError>
+    where
+        Fut: Future<Output = Result<T, InternalTransportError>>,
+    {
+        let permit = match self.permits.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(TryAcquireError::NoPermits) => {
+                self.enqueue_or_reject()?;
+                let permit = self.permits.clone().acquire_owned().await.map_err(|_| {
+                    InternalTransportError::Handler("remote transport queue closed".into())
+                })?;
+                self.queued.fetch_sub(1, Ordering::SeqCst);
+                permit
+            }
+            Err(TryAcquireError::Closed) => {
+                return Err(InternalTransportError::Handler(
+                    "remote transport queue closed".into(),
+                ));
+            }
+        };
+        self.run_with_permit(permit, operation).await
+    }
+
+    fn enqueue_or_reject(&self) -> Result<(), InternalTransportError> {
+        let mut queued = self.queued.load(Ordering::SeqCst);
+        loop {
+            if queued >= self.max_queue {
+                self.rejected.fetch_add(1, Ordering::SeqCst);
+                return Err(InternalTransportError::Rejected {
+                    active: self.active.load(Ordering::SeqCst),
+                    queued,
+                    queue_size: self.max_queue,
+                });
+            }
+            match self.queued.compare_exchange(
+                queued,
+                queued + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(next) => queued = next,
+            }
+        }
+    }
+
+    async fn run_with_permit<Fut, T>(
+        &self,
+        _permit: OwnedSemaphorePermit,
+        operation: impl FnOnce() -> Fut,
+    ) -> Result<T, InternalTransportError>
+    where
+        Fut: Future<Output = Result<T, InternalTransportError>>,
+    {
+        self.active.fetch_add(1, Ordering::SeqCst);
+        let result = operation().await;
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        self.completed.fetch_add(1, Ordering::SeqCst);
+        result
+    }
+}
+
 async fn read_next_message(
     stream: &mut TcpStream,
 ) -> Result<crate::TransportMessage, InternalTransportError> {
@@ -162,6 +273,12 @@ pub enum InternalTransportError {
     ConnectionClosed,
     #[error("unexpected response request id: expected {expected}, got {actual}")]
     UnexpectedRequestId { expected: i64, actual: i64 },
+    #[error("remote transport queue rejected request: active {active}, queued {queued}, queue_size {queue_size}")]
+    Rejected {
+        active: usize,
+        queued: usize,
+        queue_size: usize,
+    },
     #[error("handler failed: {0}")]
     Handler(String),
 }
@@ -193,7 +310,9 @@ mod tests {
     };
     use serde::Deserialize;
     use serde_json::json;
+    use std::sync::Arc;
     use tokio::net::TcpListener;
+    use tokio::time::{sleep, Duration};
 
     #[derive(Debug, Deserialize)]
     struct MixedClusterWriteReplicationFailClosedFixture {
@@ -288,6 +407,129 @@ mod tests {
 
         server.await.unwrap();
         assert_eq!(response.first_hit().unwrap().metadata.id, "remote-1");
+    }
+
+    #[tokio::test]
+    async fn shard_search_remote_transport_gate_queues_drains_and_rejects_over_tcp() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            for ordinal in 0..2 {
+                let (stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    if ordinal == 0 {
+                        sleep(Duration::from_millis(100)).await;
+                    }
+                    handle_steelsearch_shard_search_connection(
+                        stream,
+                        OPENSEARCH_3_7_0_TRANSPORT,
+                        move |request| {
+                            Ok(SteelsearchShardSearchResponseWire {
+                                result: SearchShardSearchResult::success(
+                                    request.target,
+                                    SearchResponse::new(
+                                        1,
+                                        vec![SearchHit {
+                                            index: "logs-000001".to_string(),
+                                            metadata: DocumentMetadata {
+                                                id: format!("remote-{ordinal}"),
+                                                version: 1,
+                                                seq_no: ordinal,
+                                                primary_term: 1,
+                                            },
+                                            score: 1.0,
+                                            source: json!({ "message": format!("remote {ordinal}") }),
+                                            fields: None,
+                                            highlight: None,
+                                            explanation: None,
+                                            sort: None,
+                                        }],
+                                        json!({}),
+                                    ),
+                                ),
+                            })
+                        },
+                    )
+                    .await
+                    .unwrap();
+                });
+            }
+        });
+        let gate = Arc::new(RemoteTransportQueueGate::new(1, 1));
+        let first_gate = Arc::clone(&gate);
+        let first = tokio::spawn(async move {
+            first_gate
+                .execute(|| async move {
+                    let request = shard_search_request(101);
+                    send_steelsearch_shard_search_request(
+                        address,
+                        101,
+                        OPENSEARCH_3_7_0_TRANSPORT,
+                        &request,
+                    )
+                    .await
+                })
+                .await
+        });
+        wait_for_transport_queue_snapshot(&gate, |snapshot| snapshot.active == 1).await;
+
+        let second_gate = Arc::clone(&gate);
+        let second = tokio::spawn(async move {
+            second_gate
+                .execute(|| async move {
+                    let request = shard_search_request(102);
+                    send_steelsearch_shard_search_request(
+                        address,
+                        102,
+                        OPENSEARCH_3_7_0_TRANSPORT,
+                        &request,
+                    )
+                    .await
+                })
+                .await
+        });
+        wait_for_transport_queue_snapshot(&gate, |snapshot| {
+            snapshot.active == 1 && snapshot.queued == 1
+        })
+        .await;
+
+        let rejected = gate
+            .execute(|| async move {
+                let request = shard_search_request(103);
+                send_steelsearch_shard_search_request(
+                    address,
+                    103,
+                    OPENSEARCH_3_7_0_TRANSPORT,
+                    &request,
+                )
+                .await
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            rejected,
+            InternalTransportError::Rejected {
+                active: 1,
+                queued: 1,
+                queue_size: 1
+            }
+        ));
+
+        let first_response = first.await.unwrap().unwrap();
+        assert_eq!(first_response.first_hit().unwrap().metadata.id, "remote-0");
+        let second_response = second.await.unwrap().unwrap();
+        assert_eq!(second_response.first_hit().unwrap().metadata.id, "remote-1");
+        server.await.unwrap();
+
+        assert_eq!(
+            gate.snapshot(),
+            RemoteTransportQueueSnapshot {
+                active: 0,
+                queued: 0,
+                rejected: 1,
+                completed: 2,
+            }
+        );
     }
 
     #[tokio::test]
@@ -570,5 +812,51 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(error, InternalTransportError::Io(_)));
+    }
+
+    fn shard_search_request(request_id: i64) -> SteelsearchShardSearchRequestWire {
+        SteelsearchShardSearchRequestWire {
+            parent_task_node: "coordinator".to_string(),
+            parent_task_id: Some(request_id),
+            target: SearchShardTarget {
+                index: "logs-000001".to_string(),
+                shard: 0,
+                node: "node-a".to_string(),
+            },
+            request: SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: json!({ "match_all": {} }),
+                aggregations: json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            },
+        }
+    }
+
+    async fn wait_for_transport_queue_snapshot(
+        gate: &RemoteTransportQueueGate,
+        predicate: impl Fn(RemoteTransportQueueSnapshot) -> bool,
+    ) {
+        for _ in 0..100 {
+            let snapshot = gate.snapshot();
+            if predicate(snapshot) {
+                return;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        panic!(
+            "timed out waiting for remote transport queue snapshot: {:?}",
+            gate.snapshot()
+        );
     }
 }

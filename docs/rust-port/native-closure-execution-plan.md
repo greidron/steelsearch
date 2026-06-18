@@ -223,7 +223,7 @@ Out of scope:
   consuming task-submission backpressure capacity while saturated pools still
   reject new task submissions.
 - The same runner now has a `runtime-fairness` batch. It passed on
-  2026-06-18 with 9/9 tests and `zero_tests=0`, covering multi-node remote
+  2026-06-18 with 10/10 tests and `zero_tests=0`, covering multi-node remote
   task metadata visibility including node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
   backlog, local task-submission/search/write and local
@@ -233,7 +233,8 @@ Out of scope:
   three-daemon path that restores persisted remote backlog telemetry, verifies
   all cluster-view transport addresses are keepalive-reachable, and keeps local
   search and write routes admitted, plus real TCP shard-search and replica
-  operation transport round trips for remote execution slices.
+  operation transport round trips and a bounded shard-search transport queue
+  drain/reject slice for remote execution/backpressure evidence.
 - The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
   mutation from both query-parameter and request-body rates, `-1` unlimited
@@ -470,8 +471,9 @@ Validation runner:
   admission under remote backlog, node-specific cat thread-pool management
   telemetry, node-scoped cat thread-pool control-plane telemetry under remote
   backlog, transport keepalive reachability for restarted three-daemon cluster
-  views, TCP shard-search and replica-operation transport execution slices, and
-  independent local workload drain as runtime fairness evidence.
+  views, TCP shard-search and replica-operation transport execution slices,
+  bounded shard-search transport queue drain/reject behavior, and independent
+  local workload drain as runtime fairness evidence.
 - `tools/run-native-closure-validation.py --batch runtime-throttle` must report
   `failed_count == 0` and `zero_test_count == 0` before treating by-query
   task rethrottle state, `-1` unlimited rate acceptance,
@@ -625,7 +627,8 @@ Initial targets:
    remote task metadata in multi-node task visibility, including node-specific
    cat thread-pool management telemetry and a restarted three-daemon path with
    transport keepalive reachability plus persisted remote backlog telemetry;
-4. remote TCP shard-search and replica-operation transport execution slices;
+4. remote TCP shard-search and replica-operation transport execution slices,
+   plus bounded shard-search transport queue drain/reject behavior;
 5. telemetry rows that are derived from runtime state rather than static route
    stubs.
 
