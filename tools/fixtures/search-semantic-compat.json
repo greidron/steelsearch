@@ -977,10 +977,6 @@
         }
       },
       "extract": "explain_doc",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch wildcard _explain target handling differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "lexical",
       "description": "[lexical] explain wildcard target semantic"
     },

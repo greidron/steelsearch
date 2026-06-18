@@ -8474,34 +8474,17 @@ impl SteelNode {
                 }
             }
         };
-        let resolved_indices = if index.contains('*') {
-            let manifest = self
-                .metadata_manifest_state
-                .lock()
-                .expect("metadata manifest state lock poisoned");
-            let matched = manifest["indices"]
-                .as_object()
-                .map(|indices| {
-                    indices
-                        .keys()
-                        .filter(|candidate| matches_index_selector(index, candidate))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            if matched.is_empty() {
-                return RestResponse::json(
-                    404,
-                    serde_json::json!({
-                        "error": {
-                            "type": "index_not_found_exception",
-                            "reason": format!("no such index [{index}]")
-                        },
-                        "status": 404
-                    }),
-                );
-            }
-            matched
+        let resolved_indices = if index.contains('*') || index.contains('?') {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "index_not_found_exception",
+                        "reason": format!("no such index [{index}]")
+                    },
+                    "status": 404
+                }),
+            );
         } else if self.index_or_alias_exists(index) {
             vec![self.resolve_index_or_alias(index)]
         } else {
@@ -35824,10 +35807,15 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                     }
                 })),
         );
-        assert_eq!(wildcard.status, 200);
-        assert_eq!(wildcard.body["_index"], "logs-explain-semantic");
-        assert_eq!(wildcard.body["matched"], true);
-        assert_eq!(wildcard.body["get"]["found"], true);
+        assert_eq!(wildcard.status, 404);
+        assert_eq!(
+            wildcard.body["error"]["type"],
+            "index_not_found_exception"
+        );
+        assert_eq!(
+            wildcard.body["error"]["reason"],
+            "no such index [logs-explain-*]"
+        );
 
         let missing_index = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/missing-explain-semantic/_explain/doc-1")
