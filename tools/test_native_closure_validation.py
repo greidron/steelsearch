@@ -48,6 +48,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertTrue(any(case.group == "runtime-lifecycle-shutdown" for case in batch))
         self.assertTrue(any(case.group == "runtime-lifecycle-recovery" for case in batch))
 
+    def test_runtime_peer_backpressure_batch_declares_mixed_query_phase_profile(self):
+        batch = self.runner.BATCHES["runtime-peer-backpressure"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/compare_remote_transport_backpressure.py", command)
+        self.assertIn("--profile", command)
+        self.assertIn("mixed-java-rust-query-phase", command)
+
     def test_external_validation_reads_summary_passed(self):
         case = self.runner.ExternalValidation(
             "synthetic_external_validation",

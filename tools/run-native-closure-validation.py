@@ -1750,6 +1750,8 @@ RUNTIME_PEER_BACKPRESSURE_BATCH: tuple[ExternalValidation, ...] = (
             "tools/compare_remote_transport_backpressure.py",
             "--mode",
             "both",
+            "--profile",
+            "mixed-java-rust-query-phase",
             "--work-dir",
             "/tmp/remote-transport-backpressure-compare.validation",
         ),

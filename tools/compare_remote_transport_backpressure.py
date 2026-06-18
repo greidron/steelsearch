@@ -28,6 +28,12 @@ DEFAULT_OPENSEARCH_DIST = Path(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("dry-run", "steelsearch", "opensearch", "both"), default="dry-run")
+    parser.add_argument(
+        "--profile",
+        choices=("same-host-query-pressure", "mixed-java-rust-query-phase"),
+        default="same-host-query-pressure",
+        help="comparison contract to declare in the generated report",
+    )
     parser.add_argument("--work-dir", default="/tmp/remote-transport-backpressure-compare")
     parser.add_argument("--opensearch-dist-home", default=str(DEFAULT_OPENSEARCH_DIST))
     parser.add_argument("--output", help="write JSON report to this path")
@@ -39,11 +45,13 @@ def main() -> int:
             "summary": {
                 "passed": True,
                 "mode": args.mode,
+                "profile": args.profile,
                 "checks": [
                     "steelsearch_remote_transport_active_rejected_completed_rest_readback",
                     "opensearch_search_thread_pool_rejected_completed_rest_readback",
                 ],
-            }
+            },
+            "profile": comparison_profile(args.profile),
         }
         emit(report, args.output)
         return 0
@@ -73,6 +81,7 @@ def main() -> int:
         "summary": {
             "passed": passed,
             "mode": args.mode,
+            "profile": args.profile,
             "steelsearch_passed": results.get("steelsearch", {}).get("passed"),
             "opensearch_passed": results.get("opensearch", {}).get("passed"),
             "comparison": (
@@ -80,6 +89,7 @@ def main() -> int:
                 "OpenSearch peer rejects/readbacks saturated search thread-pool work under equivalent query pressure."
             ),
         },
+        "profile": comparison_profile(args.profile),
         "results": results,
     }
     emit(report, args.output)
@@ -167,6 +177,7 @@ def run_steelsearch_probe(work_dir: Path) -> dict[str, Any]:
         passed = int(pool["rejected"]) >= 1 and int(pool["completed"]) >= 1
         return {
             "passed": passed,
+            "pressure_surface": "mixed-cluster Rust query-phase remote transport admission",
             "pool": "remote_transport",
             "active_row": active_row,
             "rejected_row": rejected_row,
@@ -244,6 +255,7 @@ def run_opensearch_probe(dist_home: Path, work_dir: Path) -> dict[str, Any]:
         passed = int(after["rejected"]) > int(before["rejected"]) and int(node_stats["rejected"]) > 0
         return {
             "passed": passed,
+            "pressure_surface": "Java peer search thread-pool query execution",
             "pool": "search",
             "version": root.get("version", {}),
             "before_row": before,
@@ -254,6 +266,48 @@ def run_opensearch_probe(dist_home: Path, work_dir: Path) -> dict[str, Any]:
         }
     finally:
         terminate_all([process])
+
+
+def comparison_profile(name: str) -> dict[str, Any]:
+    profiles = {
+        "same-host-query-pressure": {
+            "name": "same-host-query-pressure",
+            "scope": "same-host Steelsearch/OpenSearch pressure comparison",
+            "participants": [
+                "standalone Steelsearch three-daemon Rust cluster",
+                "standalone single-node OpenSearch Java peer",
+            ],
+            "steelsearch_surface": "remote_transport query-phase route admission",
+            "opensearch_surface": "search thread-pool query execution",
+            "required_readbacks": [
+                "Steelsearch _cat/thread_pool/remote_transport rejected>=1",
+                "Steelsearch _nodes/stats thread_pool.remote_transport completed>=1",
+                "OpenSearch _cat/thread_pool/search rejected increases",
+                "OpenSearch _nodes/stats/thread_pool search rejected>0",
+            ],
+        },
+        "mixed-java-rust-query-phase": {
+            "name": "mixed-java-rust-query-phase",
+            "scope": "declared mixed-cluster Java/Rust query-phase backpressure profile",
+            "participants": [
+                "Rust Steelsearch data-node query-phase receiver",
+                "Java OpenSearch peer search coordinator pressure analogue",
+            ],
+            "steelsearch_surface": "indices:data/read/search[phase/query] over remote_transport",
+            "opensearch_surface": "Java search thread-pool saturation under equivalent query pressure",
+            "required_readbacks": [
+                "Rust receiver rejects excess query-phase remote transport work",
+                "Rust receiver exposes remote_transport rejected/completed through _cat and _nodes/stats",
+                "Java peer exposes analogous search thread-pool rejection through _cat and _nodes/stats",
+                "profile report records both surfaces without relying on snapshot-file or binary compatibility",
+            ],
+            "limits": [
+                "the comparison runs independent local Rust and Java probes unless a future harness supplies a live mixed-cluster coordinator",
+                "the profile is parity evidence for query-phase backpressure semantics, not shard-store or Lucene binary compatibility",
+            ],
+        },
+    }
+    return profiles[name]
 
 
 def run_opensearch_search_pressure(base_url: str, index: str) -> list[dict[str, Any]]:
