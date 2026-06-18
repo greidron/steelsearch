@@ -137360,7 +137360,7 @@ mod tests {
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
 
-        let unsupported_vector_request = || SearchRequest {
+        let multi_index_vector_request = || SearchRequest {
             indices: vec!["vectors".to_string(), "vectors-alt".to_string()],
             query: serde_json::json!({
                 "knn": {
@@ -137384,17 +137384,18 @@ mod tests {
             highlight: None,
             explain: false,
         };
-        let first_unsupported_response = engine.search(unsupported_vector_request()).unwrap();
-        let second_unsupported_response = engine.search(unsupported_vector_request()).unwrap();
-        let mut first_unsupported_ids = search_hit_ids(&first_unsupported_response.hits);
-        first_unsupported_ids.sort();
-        let mut second_unsupported_ids = search_hit_ids(&second_unsupported_response.hits);
-        second_unsupported_ids.sort();
-        assert_eq!(first_unsupported_ids, vec!["1", "2"]);
-        assert_eq!(second_unsupported_ids, vec!["1", "2"]);
+        let first_multi_index_response = engine.search(multi_index_vector_request()).unwrap();
+        let second_multi_index_response = engine.search(multi_index_vector_request()).unwrap();
+        let mut first_multi_index_ids = search_hit_ids(&first_multi_index_response.hits);
+        first_multi_index_ids.sort();
+        let mut second_multi_index_ids = search_hit_ids(&second_multi_index_response.hits);
+        second_multi_index_ids.sort();
+        assert_eq!(first_multi_index_ids, vec!["1", "2"]);
+        assert_eq!(second_multi_index_ids, vec!["1", "2"]);
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
+        assert!(telemetry.request_result_cache_hits > request_result_cache_hits_before_hybrid);
         assert_eq!(telemetry.request_result_cache_hybrid_vector_bypasses, 0);
-        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 2);
+        assert_eq!(telemetry.request_result_cache_unsupported_vector_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_highlight_bypasses, 0);
         assert_eq!(telemetry.request_result_cache_explain_bypasses, 0);
     }

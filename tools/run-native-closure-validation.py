@@ -175,6 +175,10 @@ VECTOR_KNN_BATCH: tuple[ValidationTest, ...] = (
         "multi_index_hybrid_vector_cache_populates_request_result_cache_detail_entries",
         "multi-index-vector-hybrid-cache",
     ),
+    ValidationTest(
+        "search_cache_telemetry_tracks_wired_runtime_cache_surfaces",
+        "vector-runtime-cache-telemetry",
+    ),
 )
 
 SOURCE_BACKED_QUERY_BATCH: tuple[ValidationTest, ...] = (
