@@ -6687,8 +6687,8 @@ impl StoredIndex {
             let Some(id_field) = search_state.fields.get("_id") else {
                 return Ok(None);
             };
-            let mut hits = Vec::with_capacity(size);
-            for (score, address) in scored_addresses.into_iter().skip(from).take(size) {
+            let mut hits = Vec::with_capacity(scored_addresses.len());
+            for (score, address) in scored_addresses {
                 let stored_document = searcher.doc(address).map_err(tantivy_error)?;
                 let Some(document_id) = stored_document
                     .get_first(id_field.field)
@@ -6714,7 +6714,15 @@ impl StoredIndex {
                     !query_needs_exact_source_score(query),
                 ));
             }
-            return Ok(Some((total_hits, hits)));
+            if sort_uses_default_relevance_order(sort) {
+                hits.sort_by(compare_relevance_hits);
+            } else {
+                sort_hits(&mut hits, sort);
+            }
+            return Ok(Some((
+                total_hits,
+                hits.into_iter().skip(from).take(size).collect(),
+            )));
         }
         let Some(hits) = self.search_hits_for_query_native(index_name, query, sort)? else {
             return Ok(None);

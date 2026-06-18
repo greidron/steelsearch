@@ -961,10 +961,6 @@
         }
       },
       "extract": "explain_doc",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch missing-document _explain status differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] explain missing doc semantic"
     },

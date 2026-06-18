@@ -8525,18 +8525,11 @@ impl SteelNode {
         });
         let Some((resolved_index, record)) = found else {
             return RestResponse::json(
-                200,
+                404,
                 serde_json::json!({
                     "_index": if resolved_indices.len() == 1 { resolved_indices[0].clone() } else { index.to_string() },
                     "_id": id,
-                    "matched": false,
-                    "explanation": {
-                        "value": 0.0,
-                        "description": "document missing"
-                    },
-                    "get": {
-                        "found": false
-                    }
+                    "matched": false
                 }),
             );
         };
@@ -35816,10 +35809,12 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                     }
                 })),
         );
-        assert_eq!(missing.status, 200);
+        assert_eq!(missing.status, 404);
         assert_eq!(missing.body["matched"], false);
-        assert_eq!(missing.body["get"]["found"], false);
-        assert_eq!(missing.body["explanation"]["description"], "document missing");
+        assert_eq!(missing.body["_index"], "logs-explain-semantic");
+        assert_eq!(missing.body["_id"], "doc-missing");
+        assert!(missing.body.get("get").is_none());
+        assert!(missing.body.get("explanation").is_none());
 
         let wildcard = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-explain-*/_explain/doc-1")
