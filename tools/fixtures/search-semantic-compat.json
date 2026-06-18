@@ -862,10 +862,6 @@
         }
       },
       "extract": "validate_query_semantic",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch validate-query range support differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] validate query root invalid semantic"
     },
@@ -896,10 +892,6 @@
         }
       },
       "extract": "validate_query_semantic",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-semantic-gap",
-      "reason": "Steelsearch targeted validate-query range support differs from OpenSearch and is tracked as a semantic parity gap.",
       "family": "failure-path",
       "description": "[failure-path] validate query target invalid semantic"
     },

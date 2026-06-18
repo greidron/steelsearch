@@ -8431,7 +8431,7 @@ impl SteelNode {
             }
         };
         let query = payload.get("query");
-        let (valid, explanation) = validate_query_payload(query);
+        let (valid, explanation) = validate_query_payload_for_validate_route(query);
         let mut body = serde_json::json!({
             "valid": valid,
             "_shards": {
@@ -8444,7 +8444,7 @@ impl SteelNode {
         if let Some(index) = target {
             body["_indices"] = serde_json::json!([index]);
         }
-        if query.is_some() {
+        if query.is_some() && !valid {
             body["explanations"] = serde_json::json!([{
                 "index": target.unwrap_or("_all"),
                 "valid": valid,
@@ -21948,6 +21948,14 @@ fn matches_query_body(source: &Value, query: Option<&Value>) -> bool {
 }
 
 fn validate_query_payload(query: Option<&Value>) -> (bool, String) {
+    validate_query_payload_with_options(query, false)
+}
+
+fn validate_query_payload_for_validate_route(query: Option<&Value>) -> (bool, String) {
+    validate_query_payload_with_options(query, true)
+}
+
+fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool) -> (bool, String) {
     let Some(query) = query else {
         return (true, "no query provided".to_string());
     };
@@ -21959,6 +21967,14 @@ fn validate_query_payload(query: Option<&Value>) -> (bool, String) {
             return (true, format!("term query fields: {}", term.as_object().map(|object| object.len()).unwrap_or(0)));
         }
         return (false, "term query requires at least one field".to_string());
+    }
+    if allow_range {
+        if let Some(range) = query.get("range") {
+            if range.as_object().is_some_and(|object| !object.is_empty()) {
+                return (true, "range query".to_string());
+            }
+            return (false, "range query requires at least one field".to_string());
+        }
     }
     if query.as_object().is_some_and(|object| object.is_empty()) {
         return (false, "query object must not be empty".to_string());
@@ -32223,7 +32239,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(targeted_validate.body["_indices"][0], "logs-count-*");
         assert_eq!(targeted_validate.body["valid"], true);
 
-        let root_invalid_validate = node.handle_rest_request(
+        let root_range_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_validate/query").with_json_body(
                 serde_json::json!({
                     "query": {
@@ -32232,12 +32248,22 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 }),
             ),
         );
-        assert_eq!(root_invalid_validate.status, 200);
-        assert_eq!(root_invalid_validate.body["valid"], false);
-        assert_eq!(
-            root_invalid_validate.body["explanations"][0]["explanation"],
-            "unsupported query type"
+        assert_eq!(root_range_validate.status, 200);
+        assert_eq!(root_range_validate.body["valid"], true);
+        assert!(root_range_validate.body.get("explanations").is_none());
+
+        let targeted_range_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "range": { "tenant": { "gte": "a" } }
+                    }
+                }),
+            ),
         );
+        assert_eq!(targeted_range_validate.status, 200);
+        assert_eq!(targeted_range_validate.body["valid"], true);
+        assert!(targeted_range_validate.body.get("explanations").is_none());
 
         let targeted_invalid_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query").with_json_body(

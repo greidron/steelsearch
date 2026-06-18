@@ -215,7 +215,8 @@ python3 tools/check-unified-opensearch-e2e-report.py \
 the checker fails closed without `--allow-missing` when required suite evidence
 does not cover every fixture case. The current collected required-suite reports
 show zero failed and zero missing cases. The search semantic suite now reports
-20 passed, 0 failed, and 30 skipped known-gap or hardening cases.
+22 passed, 0 failed, and 28 skipped known-gap or hardening cases, including
+root and targeted `_validate/query` range-query parity.
 
 This means OpenSearch feature E2E comparison is broad and currently has no
 observed failing compared cases in the collected required-suite reports. The
