@@ -5493,11 +5493,17 @@ fn validate_production_tls_private_key_file(path: &Path) -> Result<(), String> {
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct ReleaseReadinessEvidenceFile {
-    benchmark_coverage: bool,
-    load_test_coverage: bool,
-    chaos_test_coverage: bool,
-    packaging_verified: bool,
-    rolling_upgrade_coverage: bool,
+    benchmark_coverage: ReleaseReadinessEvidenceItem,
+    load_test_coverage: ReleaseReadinessEvidenceItem,
+    chaos_test_coverage: ReleaseReadinessEvidenceItem,
+    packaging_verified: ReleaseReadinessEvidenceItem,
+    rolling_upgrade_coverage: ReleaseReadinessEvidenceItem,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+struct ReleaseReadinessEvidenceItem {
+    passed: bool,
+    artifact_path: PathBuf,
 }
 
 fn release_readiness_evidence_blockers(path: Option<&PathBuf>) -> Vec<String> {
@@ -5517,13 +5523,73 @@ fn load_release_readiness_checklist(path: &Path) -> Result<ReleaseReadinessCheck
     let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
     let evidence: ReleaseReadinessEvidenceFile =
         serde_json::from_str(&raw).map_err(|error| format!("must be valid JSON: {error}"))?;
+    let evidence_root = path.parent().unwrap_or_else(|| Path::new("."));
+    validate_release_readiness_evidence_item(
+        "benchmark_coverage",
+        evidence_root,
+        &evidence.benchmark_coverage,
+    )?;
+    validate_release_readiness_evidence_item(
+        "load_test_coverage",
+        evidence_root,
+        &evidence.load_test_coverage,
+    )?;
+    validate_release_readiness_evidence_item(
+        "chaos_test_coverage",
+        evidence_root,
+        &evidence.chaos_test_coverage,
+    )?;
+    validate_release_readiness_evidence_item(
+        "packaging_verified",
+        evidence_root,
+        &evidence.packaging_verified,
+    )?;
+    validate_release_readiness_evidence_item(
+        "rolling_upgrade_coverage",
+        evidence_root,
+        &evidence.rolling_upgrade_coverage,
+    )?;
     Ok(ReleaseReadinessChecklist {
-        benchmark_coverage: evidence.benchmark_coverage,
-        load_test_coverage: evidence.load_test_coverage,
-        chaos_test_coverage: evidence.chaos_test_coverage,
-        packaging_verified: evidence.packaging_verified,
-        rolling_upgrade_coverage: evidence.rolling_upgrade_coverage,
+        benchmark_coverage: evidence.benchmark_coverage.passed,
+        load_test_coverage: evidence.load_test_coverage.passed,
+        chaos_test_coverage: evidence.chaos_test_coverage.passed,
+        packaging_verified: evidence.packaging_verified.passed,
+        rolling_upgrade_coverage: evidence.rolling_upgrade_coverage.passed,
     })
+}
+
+fn validate_release_readiness_evidence_item(
+    field: &str,
+    evidence_root: &Path,
+    item: &ReleaseReadinessEvidenceItem,
+) -> Result<(), String> {
+    if item.artifact_path.as_os_str().is_empty() {
+        return Err(format!("{field}.artifact_path must not be empty"));
+    }
+    let artifact_path = if item.artifact_path.is_absolute() {
+        item.artifact_path.clone()
+    } else {
+        evidence_root.join(&item.artifact_path)
+    };
+    let metadata = fs::metadata(&artifact_path).map_err(|error| {
+        format!(
+            "{field}.artifact_path ({}) must be readable: {error}",
+            artifact_path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "{field}.artifact_path ({}) must be a file",
+            artifact_path.display()
+        ));
+    }
+    if metadata.len() == 0 {
+        return Err(format!(
+            "{field}.artifact_path ({}) must not be empty",
+            artifact_path.display()
+        ));
+    }
+    Ok(())
 }
 
 fn contains_pem_private_key_markers(raw: &str) -> bool {
@@ -7367,7 +7433,48 @@ mod tests {
         let _ = fs::remove_dir_all(material_root);
         assert!(!readiness.ready);
         assert!(blockers.contains("[release] production release readiness evidence is invalid"));
-        assert!(blockers.contains("missing field"));
+        assert!(blockers.contains("invalid type"));
+    }
+
+    #[test]
+    fn production_startup_preflight_rejects_missing_release_readiness_artifact() {
+        let path = unique_test_path("steelsearch-production-release-missing-artifact-data");
+        let material_root =
+            unique_test_path("steelsearch-production-release-missing-artifact-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let release_readiness = material_root.join("release-readiness.json");
+        fs::write(
+            &release_readiness,
+            br#"{
+  "benchmark_coverage": {"passed": true, "artifact_path": "missing-benchmark.md"},
+  "load_test_coverage": {"passed": true, "artifact_path": "load.md"},
+  "chaos_test_coverage": {"passed": true, "artifact_path": "chaos.md"},
+  "packaging_verified": {"passed": true, "artifact_path": "packaging.md"},
+  "rolling_upgrade_coverage": {"passed": true, "artifact_path": "rolling-upgrade.md"}
+}"#,
+        )
+        .unwrap();
+        for artifact in [
+            "load.md",
+            "chaos.md",
+            "packaging.md",
+            "rolling-upgrade.md",
+        ] {
+            fs::write(material_root.join(artifact), b"release evidence\n").unwrap();
+        }
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.release_readiness_evidence_path = Some(release_readiness);
+
+        let readiness = startup_readiness_report(&config);
+        let blockers = readiness.blockers.join("\n");
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(!readiness.ready);
+        assert!(blockers.contains("[release] production release readiness evidence is invalid"));
+        assert!(blockers.contains("benchmark_coverage.artifact_path"));
+        assert!(blockers.contains("missing-benchmark.md"));
     }
 
     #[test]
@@ -7825,14 +7932,24 @@ mod tests {
     }
 
     fn write_complete_release_readiness_evidence(path: &Path) {
+        let evidence_root = path.parent().unwrap();
+        for artifact in [
+            "benchmark.md",
+            "load.md",
+            "chaos.md",
+            "packaging.md",
+            "rolling-upgrade.md",
+        ] {
+            fs::write(evidence_root.join(artifact), b"release evidence\n").unwrap();
+        }
         fs::write(
             path,
             br#"{
-  "benchmark_coverage": true,
-  "load_test_coverage": true,
-  "chaos_test_coverage": true,
-  "packaging_verified": true,
-  "rolling_upgrade_coverage": true
+  "benchmark_coverage": {"passed": true, "artifact_path": "benchmark.md"},
+  "load_test_coverage": {"passed": true, "artifact_path": "load.md"},
+  "chaos_test_coverage": {"passed": true, "artifact_path": "chaos.md"},
+  "packaging_verified": {"passed": true, "artifact_path": "packaging.md"},
+  "rolling_upgrade_coverage": {"passed": true, "artifact_path": "rolling-upgrade.md"}
 }"#,
         )
         .unwrap();

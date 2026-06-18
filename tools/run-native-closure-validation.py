@@ -560,6 +560,13 @@ STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "production_startup_preflight_rejects_missing_release_readiness_artifact",
+        "startup-preflight-production-release-evidence",
+        package="os-node",
+        target=("--bin", "steelsearch"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "daemon_rejects_data_path_that_is_not_a_directory",
         "daemon-data-path-preflight",
         package="os-node",

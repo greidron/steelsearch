@@ -35,11 +35,12 @@ after the actual enforcement code is present.
 and rolling-upgrade evidence out of the security-boundary state.
 Production startup can load that checklist from
 `STEELSEARCH_RELEASE_READINESS_FILE` or `--release.readiness_file`; the JSON
-evidence file must explicitly set `benchmark_coverage`,
-`load_test_coverage`, `chaos_test_coverage`, `packaging_verified`, and
-`rolling_upgrade_coverage` to `true` before the release checklist gate is
-cleared. Missing or malformed evidence fails closed with a release-specific
-startup blocker.
+evidence file must include `benchmark_coverage`, `load_test_coverage`,
+`chaos_test_coverage`, `packaging_verified`, and `rolling_upgrade_coverage`
+objects, each with `passed: true` and a non-empty readable `artifact_path`,
+before the release checklist gate is cleared. Relative artifact paths resolve
+from the evidence file directory. Missing, malformed, or empty artifact evidence
+fails closed with a release-specific startup blocker.
 Production startup preflight now also requires bootstrap material paths for
 HTTP TLS certificate/key, transport TLS certificate/key, an authentication
 users file, and a secure-settings file. The authentication users file must be
@@ -232,4 +233,5 @@ Before production cutover, attach this security evidence to the release record:
 - audit log sampling report;
 - secret redaction test report;
 - OpenSearch Security API compatibility or fail-closed decision record;
+- artifact-backed release-readiness evidence manifest;
 - list of accepted residual security risks.
