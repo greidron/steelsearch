@@ -74,6 +74,14 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 "rolling_upgrade_coverage",
             ],
         )
+        self.assertEqual(
+            final_cutover["required_item_inputs"]["benchmark_coverage"]["attach_argument"],
+            "--benchmark-report",
+        )
+        self.assertIn(
+            "--release-readiness-file",
+            final_cutover["manifest_command_template"],
+        )
 
     def test_missing_release_items_reports_only_failed_or_missing_items(self):
         missing = self.reporter.missing_release_items(
@@ -88,6 +96,14 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         )
 
         self.assertEqual(missing, ["load_test_coverage", "rolling_upgrade_coverage"])
+
+    def test_final_cutover_item_inputs_are_limited_to_requested_items(self):
+        inputs = self.reporter.final_cutover_item_inputs(
+            ["load_test_coverage", "rolling_upgrade_coverage"]
+        )
+
+        self.assertEqual(set(inputs), {"load_test_coverage", "rolling_upgrade_coverage"})
+        self.assertEqual(inputs["load_test_coverage"]["attach_argument"], "--load-report")
 
 
 if __name__ == "__main__":

@@ -19,6 +19,28 @@ FINAL_CUTOVER_ITEMS = (
     "packaging_verified",
     "rolling_upgrade_coverage",
 )
+FINAL_CUTOVER_ITEM_INPUTS = {
+    "benchmark_coverage": {
+        "attach_argument": "--benchmark-report",
+        "artifact_kind": "benchmark JSONL",
+    },
+    "load_test_coverage": {
+        "attach_argument": "--load-report",
+        "artifact_kind": "load JSON",
+    },
+    "chaos_test_coverage": {
+        "attach_argument": "--chaos-report",
+        "artifact_kind": "chaos JSON",
+    },
+    "packaging_verified": {
+        "attach_argument": "--packaging-report",
+        "artifact_kind": "packaging JSON",
+    },
+    "rolling_upgrade_coverage": {
+        "attach_argument": "--rolling-upgrade-report",
+        "artifact_kind": "rolling-upgrade JSON",
+    },
+}
 
 
 def main() -> int:
@@ -81,6 +103,8 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
             "reason": "release readiness manifest was not provided",
             "required_items": list(FINAL_CUTOVER_ITEMS),
             "missing_items": list(FINAL_CUTOVER_ITEMS),
+            "required_item_inputs": final_cutover_item_inputs(list(FINAL_CUTOVER_ITEMS)),
+            "manifest_command_template": release_readiness_manifest_command_template(),
         }
     command = [
         sys.executable,
@@ -107,6 +131,10 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
         "errors": payload.get("errors", []) if isinstance(payload, dict) else [],
         "required_items": list(FINAL_CUTOVER_ITEMS),
         "missing_items": missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS),
+        "required_item_inputs": final_cutover_item_inputs(
+            missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
+        ),
+        "manifest_command_template": release_readiness_manifest_command_template(),
     }
 
 
@@ -155,6 +183,35 @@ def missing_release_items(payload: dict[str, Any]) -> list[str]:
         if not isinstance(item, dict) or item.get("passed") is not True or item.get("errors"):
             missing.append(name)
     return missing
+
+
+def final_cutover_item_inputs(item_names: list[str]) -> dict[str, dict[str, str]]:
+    return {
+        name: FINAL_CUTOVER_ITEM_INPUTS[name]
+        for name in item_names
+        if name in FINAL_CUTOVER_ITEM_INPUTS
+    }
+
+
+def release_readiness_manifest_command_template() -> list[str]:
+    return [
+        "python3",
+        "tools/attach-release-readiness-evidence.py",
+        "--readiness-report",
+        "<readiness-report.json>",
+        "--benchmark-report",
+        "<benchmark.jsonl>",
+        "--load-report",
+        "<load.json>",
+        "--chaos-report",
+        "<chaos.json>",
+        "--packaging-report",
+        "<packaging.json>",
+        "--rolling-upgrade-report",
+        "<rolling-upgrade.json>",
+        "--release-readiness-file",
+        "<release-readiness.json>",
+    ]
 
 
 def parse_json_payload(output: str) -> dict[str, Any]:
