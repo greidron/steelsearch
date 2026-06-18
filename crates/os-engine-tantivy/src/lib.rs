@@ -15410,6 +15410,7 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         | Query::Nested { .. }
         | Query::Pinned { .. }
         | Query::MoreLikeThis { .. }
+        | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. }
         | Query::MatchPhrasePrefix { .. }
@@ -15445,6 +15446,7 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
     match query {
         Query::QueryString { .. }
         | Query::SimpleQueryString { .. }
+        | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. } => true,
         Query::Bool { clauses } => clauses
@@ -129691,7 +129693,7 @@ mod tests {
     }
 
     #[test]
-    fn terms_set_non_term_field_fallback_updates_materialized_telemetry() {
+    fn terms_set_non_term_field_uses_source_candidate_native_page() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -129753,20 +129755,20 @@ mod tests {
         assert_eq!(search_hit_ids(&page_response.hits), vec!["1", "3"]);
         assert!(page_response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Fetch
-                && phase.description == "compatibility materialization materialized requested hits"
+                && phase.description == "materialized only the requested native page"
         }));
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
 
         let size_zero_response = engine.search(search_request(0)).unwrap();
         assert_eq!(size_zero_response.total_hits, 2);
         assert!(size_zero_response.hits.is_empty());
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.materialized_response_fetches, 1);
-        assert_eq!(telemetry.compatibility_materialized_response_fetches, 1);
-        assert_eq!(telemetry.materialized_response_avoided_fetches, 1);
+        assert_eq!(telemetry.materialized_response_fetches, 0);
+        assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
+        assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
     }
 
     #[test]

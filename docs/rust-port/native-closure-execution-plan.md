@@ -115,10 +115,11 @@ Out of scope:
   `target/materialization-priority-targeted-current/` now covers
   `fallback_terms_set`, `fallback_distance_feature`, `fallback_rank_feature`,
   `fallback_more_like_this`, and `fallback_case_insensitive_wildcard`; after
-  the distance-feature and rank-feature source-candidate native page paths
-  landed, both `fallback_distance_feature` and `fallback_rank_feature` report
-  zero materialized and compatibility materialized response fetches, and the
-  current top ranked target is `terms_set compatibility materialization`.
+  the distance-feature, rank-feature, and terms-set source-candidate native
+  page paths landed, `fallback_distance_feature`, `fallback_rank_feature`, and
+  `fallback_terms_set` report zero materialized and compatibility materialized
+  response fetches, and the current top ranked target is
+  `case-insensitive wildcard compatibility materialization`.
   The same gate now covers standalone HTTP query-string native-path stats wiring,
   so query-string compatibility materialization is visible through `_nodes/stats`
   rather than disappearing into the source-eval route.
@@ -385,9 +386,9 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. replace the current top-ranked `terms_set` compatibility materialization
-   family with a native source-candidate page path, then rerun the targeted
-   materialization-priority matrix;
+3. replace the current top-ranked case-insensitive wildcard compatibility
+   materialization family with a native source-candidate page path, then rerun
+   the targeted materialization-priority matrix;
 4. add focused regression cases for hybrid plus aggregation plus explicit sort;
 5. only widen native paths when result ordering and total-hit semantics are
    already proven.

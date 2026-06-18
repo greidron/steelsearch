@@ -73,11 +73,12 @@ Interpretation:
   `target/materialization-priority-broader-current/` has zero materialized
   response fetches, while the targeted fallback matrix at
   `target/materialization-priority-targeted-current/` has removed
-  `fallback_distance_feature` and `fallback_rank_feature` from the priority
-  list and now ranks `fallback_terms_set` first, followed by
-  `fallback_case_insensitive_wildcard` and `fallback_more_like_this`. The
-  matrix runner clears a scenario output directory before a fresh run so stale
-  gateway manifests from previous ports do not poison repeat local slices.
+  `fallback_distance_feature`, `fallback_rank_feature`, and
+  `fallback_terms_set` from the priority list and now ranks
+  `fallback_case_insensitive_wildcard` first, followed by
+  `fallback_more_like_this`. The matrix runner clears a scenario output
+  directory before a fresh run so stale gateway manifests from previous ports do
+  not poison repeat local slices.
 
 Functional OpenSearch E2E comparison status:
 
