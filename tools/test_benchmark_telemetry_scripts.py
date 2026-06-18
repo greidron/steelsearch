@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "tools" / "run-search-benchmark-matrix.py"
 BASELINE_PATH = ROOT / "tools" / "run-http-load-baseline.py"
+PRIORITY_PATH = ROOT / "tools" / "rank-materialization-priorities.py"
 
 EXPECTED_NATIVE_COUNTERS = (
     "materialized_response_fetches",
@@ -24,6 +25,16 @@ EXPECTED_NATIVE_COUNTERS = (
 def load_matrix_module():
     module_name = "run_search_benchmark_matrix"
     spec = importlib.util.spec_from_file_location(module_name, MATRIX_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_priority_module():
+    module_name = "rank_materialization_priorities"
+    spec = importlib.util.spec_from_file_location(module_name, PRIORITY_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[module_name] = module
@@ -211,6 +222,56 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             2.0,
         )
         self.assertEqual(operations["lexical"]["status"], "pass")
+
+    def test_materialization_priority_report_ranks_compatibility_delta_per_success(self):
+        priority = load_priority_module()
+        report = priority.build_priority_report(
+            {
+                "scenarios": {
+                    "steelsearch-single-node": {
+                        "operations": {
+                            "lexical": {
+                                "success_count": 10,
+                                "resource_usage": {
+                                    "materialized_response_fetches": {"delta": 10},
+                                    "compatibility_materialized_response_fetches": {"delta": 1},
+                                },
+                            },
+                            "fallback_query_string": {
+                                "success_count": 2,
+                                "resource_usage": {
+                                    "materialized_response_fetches": {"delta": 4},
+                                    "compatibility_materialized_response_fetches": {"delta": 4},
+                                },
+                            },
+                            "facet": {
+                                "success_count": 2,
+                                "resource_usage": {
+                                    "materialized_response_fetches": {"delta": 4},
+                                    "compatibility_materialized_response_fetches": {"delta": 0},
+                                },
+                            },
+                        }
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(report["summary"]["ranked_operation_count"], 2)
+        self.assertTrue(report["summary"]["passed"])
+        self.assertEqual(report["summary"]["top_operation"], "fallback_query_string")
+        self.assertEqual(
+            report["priorities"][0]["family"],
+            "query_string/simple_query_string compatibility materialization",
+        )
+        self.assertGreater(
+            report["priorities"][0]["counters"]["compatibility_materialized_response_fetches"][
+                "per_success"
+            ],
+            report["priorities"][1]["counters"]["compatibility_materialized_response_fetches"][
+                "per_success"
+            ],
+        )
 
 
 if __name__ == "__main__":

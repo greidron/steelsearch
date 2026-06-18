@@ -96,9 +96,11 @@ Out of scope:
   native counter deltas for exact single-client materialization attribution,
   an opt-in `fallback_query_string` diagnostic workload, and benchmark Markdown
   operation-level materialization budget rows when those deltas are present.
-  The same gate now covers standalone HTTP query-string native-path stats
-  wiring, so query-string compatibility materialization is visible through
-  `_nodes/stats` rather than disappearing into the source-eval route.
+  `tools/rank-materialization-priorities.py` consumes those reports and emits a
+  ranked list of compatibility materialization families by per-success delta.
+  The same gate now covers standalone HTTP query-string native-path stats wiring,
+  so query-string compatibility materialization is visible through `_nodes/stats`
+  rather than disappearing into the source-eval route.
 - The same runner now has a `startup-preflight` batch. It passed on 2026-06-18
   with 35/35 tests and `zero_tests=0`, covering missing, readonly, locked,
   file-backed, and daemon-level data-path refusal/creation checks, bind,
@@ -362,8 +364,11 @@ Initial targets:
    `size=0`, native aggregation collection, and multi-index reduce;
 2. add report rows for shapes that still fall back to materialized response
    helpers;
-3. add focused regression cases for hybrid plus aggregation plus explicit sort;
-4. only widen native paths when result ordering and total-hit semantics are
+3. run `tools/rank-materialization-priorities.py` against fresh
+   operation-resource-delta load artifacts and use the top ranked compatibility
+   family as the next native rewrite target;
+4. add focused regression cases for hybrid plus aggregation plus explicit sort;
+5. only widen native paths when result ordering and total-hit semantics are
    already proven.
 
 Exit evidence:

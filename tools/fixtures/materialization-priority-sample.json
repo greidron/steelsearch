@@ -1,0 +1,41 @@
+{
+  "scenarios": {
+    "steelsearch-single-node": {
+      "operations": {
+        "facet": {
+          "resource_usage": {
+            "compatibility_materialized_response_fetches": {
+              "delta": 0
+            },
+            "materialized_response_fetches": {
+              "delta": 8
+            }
+          },
+          "success_count": 4
+        },
+        "fallback_query_string": {
+          "resource_usage": {
+            "compatibility_materialized_response_fetches": {
+              "delta": 6
+            },
+            "materialized_response_fetches": {
+              "delta": 6
+            }
+          },
+          "success_count": 3
+        },
+        "lexical": {
+          "resource_usage": {
+            "compatibility_materialized_response_fetches": {
+              "delta": 1
+            },
+            "materialized_response_fetches": {
+              "delta": 8
+            }
+          },
+          "success_count": 8
+        }
+      }
+    }
+  }
+}

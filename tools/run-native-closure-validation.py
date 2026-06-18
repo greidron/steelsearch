@@ -346,6 +346,18 @@ BENCHMARK_TELEMETRY_BATCH: tuple[ExternalValidation, ...] = (
             "import json, subprocess, sys; commands = [[sys.executable, '-m', 'unittest', 'tools/test_benchmark_telemetry_scripts.py'], ['cargo', 'test', '-p', 'os-node', '--features', 'standalone-runtime', '--lib', 'query_string_native_http_path_updates_materialized_search_cache_stats', '--', '--nocapture']]; results = [subprocess.run(command) for command in commands]; passed = all(result.returncode == 0 for result in results); print(json.dumps({'summary': {'passed': passed, 'commands': len(commands)}})); sys.exit(0 if passed else 1)",
         ),
     ),
+    ExternalValidation(
+        "materialization_priority_report_ranks_operation_resource_deltas",
+        "benchmark-telemetry",
+        (
+            "python3",
+            "tools/rank-materialization-priorities.py",
+            "tools/fixtures/materialization-priority-sample.json",
+            "--format",
+            "json",
+        ),
+        timeout_seconds=60,
+    ),
 )
 
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (

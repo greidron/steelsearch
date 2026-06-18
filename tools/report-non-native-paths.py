@@ -269,10 +269,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="materialized SearchHit boundary",
         category="materialization",
-        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, request-result cache bypass causes, per-success materialization budget pass/fail rows for materialized and compatibility materialized response fetches, opt-in operation-level native counter deltas for exact single-client materialization attribution, an opt-in fallback_query_string diagnostic workload, and HTTP query_string native-path stats wiring that exposes compatibility materialization through _nodes/stats",
-        next_action="use operation-resource-delta diagnostic slices to prioritize remaining compatibility materialization families, then replace the highest-delta fallback families with native paths",
+        status="present with zero-test-guarded benchmark/load telemetry for materialized fetches, avoided materialization, compatibility materialization, request-result cache bypass causes, per-success materialization budget pass/fail rows for materialized and compatibility materialized response fetches, opt-in operation-level native counter deltas for exact single-client materialization attribution, ranked materialization-priority reports from operation-resource-delta slices, an opt-in fallback_query_string diagnostic workload, and HTTP query_string native-path stats wiring that exposes compatibility materialization through _nodes/stats",
+        next_action="run the materialization priority report on fresh benchmark/load artifacts and replace the highest-ranked compatibility materialization family with a native path",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
-        evidence_pattern=r"BENCHMARK_TELEMETRY_BATCH",
+        evidence_pattern=r"BENCHMARK_TELEMETRY_BATCH|rank-materialization-priorities",
     ),
     Family(
         name="malformed wrapper and rebucketing validation",
