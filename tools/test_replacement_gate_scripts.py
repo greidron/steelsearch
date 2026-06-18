@@ -135,6 +135,78 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 self.assertTrue(item["artifact_path"])
                 self.assertEqual(item["blockers"], [])
 
+            check = self.run_command(
+                sys.executable,
+                "tools/check-release-readiness-evidence.py",
+                str(release_readiness),
+                "--require-passed",
+            )
+
+            self.assertEqual(check.returncode, 0, check.stderr)
+            check_payload = json.loads(check.stdout)
+            self.assertEqual(check_payload["status"], "ok")
+            self.assertEqual(check_payload["summary"]["ready_items"], 5)
+
+    def test_release_readiness_evidence_checker_rejects_missing_artifact(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            manifest = temp_dir / "release-readiness.json"
+            for artifact in [
+                "benchmark.jsonl",
+                "load.json",
+                "chaos.json",
+                "packaging.json",
+                "rolling.json",
+            ]:
+                if artifact != "chaos.json":
+                    (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "benchmark_coverage": {
+                            "passed": True,
+                            "artifact_path": "benchmark.jsonl",
+                            "blockers": [],
+                        },
+                        "load_test_coverage": {
+                            "passed": True,
+                            "artifact_path": "load.json",
+                            "blockers": [],
+                        },
+                        "chaos_test_coverage": {
+                            "passed": True,
+                            "artifact_path": "chaos.json",
+                            "blockers": [],
+                        },
+                        "packaging_verified": {
+                            "passed": True,
+                            "artifact_path": "packaging.json",
+                            "blockers": [],
+                        },
+                        "rolling_upgrade_coverage": {
+                            "passed": True,
+                            "artifact_path": "rolling.json",
+                            "blockers": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_command(
+                sys.executable,
+                "tools/check-release-readiness-evidence.py",
+                str(manifest),
+                "--require-passed",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["status"], "failed")
+            self.assertTrue(
+                any("chaos_test_coverage.artifact_path" in error for error in payload["errors"])
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

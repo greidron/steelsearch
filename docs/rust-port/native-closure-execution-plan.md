@@ -767,4 +767,6 @@ Current execution order:
    current evidence report to `target/runtime-peer-backpressure-current.json`.
 5. Before production cutover, refresh benchmark, load, chaos, packaging, and
    rolling-upgrade artifacts and feed them through the release-readiness
-   manifest writer.
+   manifest writer. Validate the generated manifest with
+   `tools/check-release-readiness-evidence.py --require-passed` before using it
+   as `STEELSEARCH_RELEASE_READINESS_FILE`.
