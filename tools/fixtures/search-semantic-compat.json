@@ -578,10 +578,6 @@
       "name": "msearch_malformed_ndjson_error",
       "area": "search-semantic",
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for malformed NDJSON body parsing in _msearch.",
       "steps": [
         {
           "name": "malformed-msearch-body",

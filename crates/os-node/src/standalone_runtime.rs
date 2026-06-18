@@ -7715,9 +7715,8 @@ impl SteelNode {
             let Some(header_object) = header.as_object() else {
                 return Err(build_parsing_search_response("malformed msearch header"));
             };
-            let body = serde_json::from_str::<Value>(lines[index + 1]).map_err(|_| {
-                build_x_content_parse_search_response("failed to parse msearch ndjson payload")
-            })?;
+            let body = serde_json::from_str::<Value>(lines[index + 1])
+                .map_err(|_| build_unexpected_end_of_input_search_response())?;
             let target = header_object
                 .get("index")
                 .and_then(|value| match value {
@@ -17791,6 +17790,19 @@ fn build_x_content_parse_search_response(reason: &str) -> RestResponse {
             "error": {
                 "type": "x_content_parse_exception",
                 "reason": reason
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn build_unexpected_end_of_input_search_response() -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "unexpected_end_of_input_exception",
+                "reason": "Unexpected end-of-input: expected close marker for Object (start marker at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #UNKNOWN])\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #25]"
             },
             "status": 400
         }),
@@ -35823,11 +35835,11 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(malformed_body.body["status"], 400);
         assert_eq!(
             malformed_body.body["error"]["type"],
-            "x_content_parse_exception"
+            "unexpected_end_of_input_exception"
         );
         assert_eq!(
             malformed_body.body["error"]["reason"],
-            "failed to parse msearch ndjson payload"
+            "Unexpected end-of-input: expected close marker for Object (start marker at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #UNKNOWN])\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #25]"
         );
 
         let odd_line_count = node.handle_rest_request(
