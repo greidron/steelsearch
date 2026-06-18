@@ -165,6 +165,8 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
         return validate_load_json(payload)
     if name == "load_comparison":
         return validate_load_comparison_json(payload)
+    if name == "chaos_test_coverage":
+        return validate_chaos_json(payload)
     if name == "rolling_upgrade_coverage":
         return validate_rolling_upgrade_json(payload)
     return validate_generic_json_evidence(payload)
@@ -214,6 +216,21 @@ def validate_load_comparison_json(payload: dict[str, Any]) -> list[str]:
         errors.append("load comparison comparison object is missing")
     elif comparison.get("mode") == "dry-run":
         errors.append("load comparison is a dry-run report")
+    return errors
+
+
+def validate_chaos_json(payload: dict[str, Any]) -> list[str]:
+    errors = validate_generic_json_evidence(payload)
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("chaos summary is missing")
+    elif summary.get("coverage_scope") != "mixed-cluster failure fixture":
+        errors.append("chaos coverage_scope mismatch")
+    source = payload.get("source_report")
+    if not isinstance(source, dict):
+        errors.append("chaos source_report is missing")
+    elif source.get("summary", {}).get("passed") is not True:
+        errors.append("chaos source_report summary.passed is not true")
     return errors
 
 

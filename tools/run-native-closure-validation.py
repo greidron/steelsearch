@@ -2000,6 +2000,22 @@ ROLLING_UPGRADE_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+CHAOS_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "chaos_evidence_runs_mixed_cluster_failure_fixture",
+        "chaos-evidence-current",
+        (
+            "python3",
+            "tools/generate-chaos-evidence.py",
+            "--work-dir",
+            "target/release-chaos",
+            "--output",
+            "target/release-chaos/chaos-report.json",
+        ),
+        timeout_seconds=300,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -2027,6 +2043,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "packaging-evidence-current": PACKAGING_EVIDENCE_CURRENT_BATCH,
     "benchmark-evidence-current": BENCHMARK_EVIDENCE_CURRENT_BATCH,
     "rolling-upgrade-evidence-current": ROLLING_UPGRADE_EVIDENCE_CURRENT_BATCH,
+    "chaos-evidence-current": CHAOS_EVIDENCE_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,

@@ -1806,6 +1806,12 @@ impl PublicationClusterStateDiff {
         self,
         previous: &ClusterState,
     ) -> Result<ClusterState, ClusterStateDecodeError> {
+        if self.header.from_uuid != previous.header.state_uuid {
+            return Err(ClusterStateDecodeError::DiffBaseMismatch {
+                expected: previous.header.state_uuid.clone(),
+                actual: self.header.from_uuid,
+            });
+        }
         let mut metadata = previous.metadata.clone();
         metadata.cluster_uuid = self.metadata_cluster_uuid;
         metadata.cluster_uuid_committed = self.metadata_cluster_uuid_committed;
@@ -8207,6 +8213,7 @@ mod tests {
             routing_table_version: 19,
             routing_indices: empty_string_map_diff_envelope(),
             nodes_complete_diff: false,
+            discovery_nodes: None,
             metadata_cluster_uuid: "cluster-uuid".into(),
             metadata_cluster_uuid_committed: true,
             metadata_version: 23,
@@ -8230,6 +8237,7 @@ mod tests {
             metadata_templates: empty_string_map_diff_envelope(),
             metadata_customs: empty_string_map_diff_envelope(),
             blocks_complete_diff: false,
+            cluster_blocks: None,
             customs: empty_string_map_diff_envelope(),
             minimum_cluster_manager_nodes_on_publishing_cluster_manager: -1,
         }

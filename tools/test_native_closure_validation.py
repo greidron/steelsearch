@@ -162,6 +162,17 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--output", command)
         self.assertIn("target/release-rolling-upgrade/rolling-upgrade-report.json", command)
 
+    def test_chaos_evidence_current_batch_writes_release_report(self):
+        batch = self.runner.BATCHES["chaos-evidence-current"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/generate-chaos-evidence.py", command)
+        self.assertIn("--work-dir", command)
+        self.assertIn("target/release-chaos", command)
+        self.assertIn("--output", command)
+        self.assertIn("target/release-chaos/chaos-report.json", command)
+
     def test_native_closure_status_current_batch_writes_report_artifact(self):
         batch = self.runner.BATCHES["native-closure-status-current"]
 

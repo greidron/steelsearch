@@ -31,13 +31,13 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             temp_dir = Path(temp_dir_value)
             now = 1_000_000.0
             for name in [
-                "final-chaos.json",
                 "final-packaging.json",
             ]:
                 path = temp_dir / name
                 path.write_text("{}\n", encoding="utf-8")
                 os.utime(path, (now, now))
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
+            self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load.json", now)
             self.write_valid_load_comparison(temp_dir / "final-load-comparison.json", now)
             self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
@@ -60,13 +60,13 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             temp_dir = Path(temp_dir_value)
             now = 1_000_000.0
             for name in [
-                "final-chaos.json",
                 "final-packaging.json",
             ]:
                 path = temp_dir / name
                 path.write_text("{}\n", encoding="utf-8")
                 os.utime(path, (now, now))
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
+            self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load.json", now)
             self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
@@ -163,6 +163,31 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
     def write_valid_load(self, path: Path, now: float):
         path.write_text(
             json.dumps({"summary": {"error_count": 0, "operation_count": 10}}),
+            encoding="utf-8",
+        )
+        os.utime(path, (now, now))
+
+    def write_valid_chaos(self, path: Path, now: float):
+        path.write_text(
+            json.dumps(
+                {
+                    "ready": True,
+                    "passed": True,
+                    "blockers": [],
+                    "summary": {
+                        "passed": True,
+                        "error_count": 0,
+                        "coverage_scope": "mixed-cluster failure fixture",
+                    },
+                    "source_report": {
+                        "summary": {"passed": True},
+                        "checks": {
+                            "failure_topology_probe_passed": True,
+                            "failure_ledger_passed": True,
+                        },
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         os.utime(path, (now, now))

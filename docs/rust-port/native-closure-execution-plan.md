@@ -776,6 +776,8 @@ and deterministic benchmark evidence with
 `tools/run-native-closure-validation.py --batch benchmark-evidence-current`
 and rolling-upgrade transcript evidence with
 `tools/run-native-closure-validation.py --batch rolling-upgrade-evidence-current`
+and mixed-cluster failure chaos evidence with
+`tools/run-native-closure-validation.py --batch chaos-evidence-current`
 before running that inventory.
 
 1. Keep `tools/report-non-native-paths.py` green with
