@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("SNAPSHOT_LIFECYCLE_COMPAT_REPORT", str(DEFAULT_OUTPUT)),
     )
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--case", action="append", dest="cases", help="case name to run; may be repeated")
     return parser.parse_args()
 
 
@@ -269,6 +270,18 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
     return errors
 
 
+def select_cases(fixture: dict[str, Any], requested: list[str] | None) -> list[dict[str, Any]]:
+    cases = fixture.get("cases", [])
+    if not requested:
+        return cases
+    requested_set = set(requested)
+    selected = [case for case in cases if case.get("name") in requested_set]
+    missing = sorted(requested_set - {case.get("name") for case in selected})
+    if missing:
+        raise SystemExit(f"unknown snapshot lifecycle compat case(s): {', '.join(missing)}")
+    return selected
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url or not args.opensearch_url:
@@ -298,7 +311,7 @@ def main() -> int:
         prepare_case_environment(case)
         request_with_polling(args.steelsearch_url, case, args.timeout)
         request_with_polling(args.opensearch_url, case, args.timeout)
-    for case in fixture.get("cases", []):
+    for case in select_cases(fixture, args.cases):
         prepare_case_environment(case)
         steelsearch = normalize_response(
             case,

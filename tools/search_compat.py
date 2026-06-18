@@ -252,6 +252,7 @@ def main() -> int:
     parser.add_argument("--opensearch-url", default=os.environ.get("OPENSEARCH_URL"))
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--wait", action="store_true", help="wait for endpoints before running")
+    parser.add_argument("--case", action="append", dest="cases", help="case name to run; may be repeated")
     args = parser.parse_args()
 
     if not args.steelsearch_url:
@@ -264,6 +265,14 @@ def main() -> int:
         fixture["cases"] = [
             case for case in fixture["cases"] if case.get("name") not in excluded
         ]
+    if args.cases:
+        requested = set(args.cases)
+        fixture["cases"] = [
+            case for case in fixture["cases"] if case.get("name") in requested
+        ]
+        missing = sorted(requested - {case.get("name") for case in fixture["cases"]})
+        if missing:
+            raise SystemExit(f"unknown search compat case(s): {', '.join(missing)}")
     targets = {"steelsearch": args.steelsearch_url.rstrip("/")}
     if args.opensearch_url:
         targets["opensearch"] = args.opensearch_url.rstrip("/")

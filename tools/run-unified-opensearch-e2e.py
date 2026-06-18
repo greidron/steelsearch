@@ -69,6 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--run", action="store_true", help="run live suites instead of only collecting existing reports")
     parser.add_argument("--suite", action="append", help="suite name to include; may be repeated")
+    parser.add_argument("--case", action="append", help="case name to run; may be repeated")
     parser.add_argument("--allow-missing", action="store_true", help="exit 0 even if required suite reports are missing")
     parser.add_argument(
         "--no-recursive-target-scan",
@@ -137,6 +138,8 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
             str(args.timeout),
         ]
     )
+    for case_name in args.case or []:
+        command.extend(["--case", case_name])
     started = time.time()
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     result = collect_suite(suite, output_dir)
@@ -170,7 +173,7 @@ def collect_suite(
     result["fixture_path"] = str(fixture_path)
     result["report_path"] = str(report_path) if report_path is not None else str(output_dir / suite.report)
     result["report_source"] = source if report is not None else "missing"
-    result["rerun"] = suite_rerun_commands(suite, output_dir)
+    result["rerun"] = suite_rerun_commands(suite, output_dir, result.get("case_gaps", {}))
     if report is None and unusable_path is not None:
         result["note"] = f"ignored existing report because every recorded target request failed before receiving an HTTP status: {unusable_path}"
     if note:
@@ -264,7 +267,8 @@ def unreachable_response(response: dict[str, Any]) -> bool:
     return status in (None, 0)
 
 
-def suite_rerun_commands(suite: Suite, output_dir: Path) -> dict[str, str]:
+def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, Any] | None = None) -> dict[str, str]:
+    target_cases = list((case_gaps or {}).get("missing") or [])
     unified = [
         sys.executable,
         "tools/run-unified-opensearch-e2e.py",
@@ -278,6 +282,8 @@ def suite_rerun_commands(suite: Suite, output_dir: Path) -> dict[str, str]:
     ]
     if suite.needs_opensearch:
         unified.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
+    for case_name in target_cases:
+        unified.extend(["--case", case_name])
 
     direct: list[str] = []
     if suite.runner is not None:
@@ -297,6 +303,8 @@ def suite_rerun_commands(suite: Suite, output_dir: Path) -> dict[str, str]:
                 str(output_dir / suite.report),
             ]
         )
+        for case_name in target_cases:
+            direct.extend(["--case", case_name])
     return {
         "unified_command": shell_join_with_env(unified),
         "direct_command": shell_join_with_env(direct) if direct else "",

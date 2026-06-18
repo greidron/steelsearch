@@ -101,6 +101,27 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("report has missing required suite evidence", errors)
         self.assertIn("synthetic: missing fixture case evidence", errors)
 
+    def test_rerun_commands_include_missing_cases(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_rerun")
+        suite = runner.Suite(
+            "synthetic",
+            "search",
+            "semantic_parity",
+            "tools/search_compat.py",
+            "tools/fixtures/search-compat.json",
+            "synthetic-report.json",
+            output_arg="--report",
+        )
+
+        commands = runner.suite_rerun_commands(
+            suite,
+            Path("target/e2e"),
+            {"missing": ["case-a", "case-b"]},
+        )
+
+        self.assertIn("--case case-a --case case-b", commands["unified_command"])
+        self.assertIn("--case case-a --case case-b", commands["direct_command"])
+
 
 if __name__ == "__main__":
     unittest.main()
