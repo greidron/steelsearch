@@ -16595,6 +16595,9 @@ fn native_nested_child_ordinals_for_query(
         Query::MatchPhrasePrefix { field, query } => {
             nested_child_match_phrase_prefix_ordinals(path_index, path, field, query)
         }
+        Query::MatchBoolPrefix { field, query } => {
+            nested_child_match_bool_prefix_ordinals(path_index, path, field, query)
+        }
         Query::Terms { field, values } => {
             let mut ordinals = std::collections::BTreeSet::new();
             for value in values {
@@ -16895,6 +16898,37 @@ fn nested_child_match_phrase_prefix_ordinals(
     let field = nested_child_local_field_name(path, field);
     for (ordinal, child) in path_index.children.iter().enumerate() {
         if matches_match_phrase_prefix_query(
+            source_value_for_highlight_field(&child.source, &field),
+            query,
+        ) {
+            ordinals.insert(ordinal);
+        }
+    }
+    Some(ordinals)
+}
+
+fn nested_child_match_bool_prefix_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    field: &str,
+    query: &Value,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let mut ordinals = std::collections::BTreeSet::new();
+    if field == "_id" {
+        for (ordinal, child) in path_index.children.iter().enumerate() {
+            if matches_match_bool_prefix_query(
+                Some(&Value::String(child.parent_id.clone())),
+                query,
+            ) {
+                ordinals.insert(ordinal);
+            }
+        }
+        return Some(ordinals);
+    }
+
+    let field = nested_child_local_field_name(path, field);
+    for (ordinal, child) in path_index.children.iter().enumerate() {
+        if matches_match_bool_prefix_query(
             source_value_for_highlight_field(&child.source, &field),
             query,
         ) {
@@ -138760,6 +138794,82 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("nested match_phrase_prefix child ordinal hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_match_bool_prefix_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": { "type": "object" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            ("1", serde_json::json!([
+                { "body": "alpha checkout", "tag": "x" },
+                { "body": "beta note", "tag": "y" }
+            ])),
+            ("2", serde_json::json!([
+                { "body": "alpha cheese", "tag": "x" }
+            ])),
+            ("3", serde_json::json!([
+                { "body": "checkout beta", "tag": "x" }
+            ])),
+            ("4", serde_json::json!([
+                { "body": "alpha", "tag": "y" },
+                { "body": "checkout", "tag": "x" }
+            ])),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "bool": {
+                        "must": [
+                            { "match_bool_prefix": { "comments.body": "alpha check" } },
+                            { "term": { "comments.tag": "x" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested { path, query: nested_query } = &query else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+
+        let documents = index.search_documents_for_native_nested_query(path, nested_query);
+        assert_eq!(document_ids(&documents), vec!["1"]);
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("nested match_bool_prefix child ordinal hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
