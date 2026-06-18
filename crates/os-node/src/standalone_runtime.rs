@@ -7669,7 +7669,7 @@ impl SteelNode {
             serde_json::from_slice::<Value>(&request.body)
                 .unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         };
-        let template_output = match self.resolve_template_source(template_id, &payload) {
+        let template_output = match self.resolve_template_source(template_id, &payload, false) {
             Ok(source) => source,
             Err(response) => return response,
         };
@@ -8190,7 +8190,7 @@ impl SteelNode {
         } else {
             serde_json::from_slice::<Value>(&request.body).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         };
-        let body = self.resolve_template_source(template_id, &payload)?;
+        let body = self.resolve_template_source(template_id, &payload, true)?;
         let requested_target = target.unwrap_or("_all");
         let mut search_request = RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
             .with_json_body(body);
@@ -8207,6 +8207,7 @@ impl SteelNode {
         &self,
         template_id: Option<&str>,
         payload: &Value,
+        json_parse_error_for_non_object: bool,
     ) -> Result<Value, RestResponse> {
         let stored_template_id = template_id.or_else(|| payload.get("id").and_then(Value::as_str));
         let source = if let Some(source) = payload.get("source") {
@@ -8221,7 +8222,7 @@ impl SteelNode {
         } else {
             serde_json::json!({ "query": { "match_all": {} } })
         };
-        validate_template_source(&source)?;
+        validate_template_source(&source, json_parse_error_for_non_object)?;
         Ok(substitute_template_params(
             &source,
             payload.get("params").and_then(Value::as_object),
@@ -17532,12 +17533,30 @@ impl SteelNode {
     }
 }
 
-fn validate_template_source(source: &Value) -> Result<(), RestResponse> {
+fn validate_template_source(
+    source: &Value,
+    json_parse_error_for_non_object: bool,
+) -> Result<(), RestResponse> {
     if source.is_object() {
         Ok(())
+    } else if json_parse_error_for_non_object {
+        Err(build_json_parse_search_response(
+            json_parse_reason_for_template_source(source),
+        ))
     } else {
         Err(build_parsing_search_response("malformed search template source"))
     }
+}
+
+fn json_parse_reason_for_template_source(source: &Value) -> String {
+    let token = source
+        .as_str()
+        .and_then(|source| source.split(|ch: char| !ch.is_ascii_alphanumeric()).next())
+        .filter(|token| !token.is_empty())
+        .unwrap_or("VALUE");
+    format!(
+        "Unrecognized token '{token}': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #UNKNOWN]"
+    )
 }
 
 fn build_unsupported_search_response(reason: &str) -> RestResponse {
@@ -17562,6 +17581,19 @@ fn build_resource_not_found_search_response(reason: &str) -> RestResponse {
                 "reason": reason
             },
             "status": 404
+        }),
+    )
+}
+
+fn build_json_parse_search_response(reason: String) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "json_parse_exception",
+                "reason": reason
+            },
+            "status": 400
         }),
     )
 }
@@ -32096,11 +32128,11 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(malformed_named_search_template.status, 400);
         assert_eq!(
             malformed_named_search_template.body["error"]["type"],
-            "parsing_exception"
+            "json_parse_exception"
         );
         assert_eq!(
             malformed_named_search_template.body["error"]["reason"],
-            "malformed search template source"
+            "Unrecognized token 'not': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #UNKNOWN]"
         );
 
         let missing_named_search_template = node.handle_rest_request(

@@ -759,10 +759,6 @@
       "name": "search_template_named_malformed_source_error",
       "area": "search-semantic",
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for malformed stored template source.",
       "steps": [
         {
           "name": "store-malformed-template-source",
