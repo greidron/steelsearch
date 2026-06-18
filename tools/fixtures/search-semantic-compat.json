@@ -668,12 +668,8 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported rescore option validation.",
       "family": "failure-path",
-      "description": "[failure-path] search rescore unsupported option error"
+      "description": "[failure-path] search rescore score mode compatibility"
     },
     {
       "name": "search_highlight_unsupported_option_error",
@@ -692,12 +688,8 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported highlight option validation.",
       "family": "failure-path",
-      "description": "[failure-path] search highlight unsupported option error"
+      "description": "[failure-path] search highlight encoder compatibility"
     },
     {
       "name": "search_suggest_unsupported_option_error",
@@ -716,12 +708,8 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported suggest option validation.",
       "family": "failure-path",
-      "description": "[failure-path] search suggest unsupported option error"
+      "description": "[failure-path] search term suggest size compatibility"
     },
     {
       "name": "search_template_missing_error",

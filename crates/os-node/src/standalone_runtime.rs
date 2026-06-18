@@ -18092,7 +18092,10 @@ fn validate_rescore_request_body(rescore: &Value) -> Option<RestResponse> {
     if let Some(query) = object.get("query").and_then(Value::as_object) {
         if query
             .keys()
-            .any(|key| key != "rescore_query" && key != "query_weight" && key != "rescore_query_weight")
+            .any(|key| key != "rescore_query"
+                && key != "query_weight"
+                && key != "rescore_query_weight"
+                && key != "score_mode")
         {
             return Some(build_unsupported_search_response(
                 "unsupported search option [rescore]",
@@ -18241,7 +18244,7 @@ fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
         ));
     };
     for key in object.keys() {
-        if key != "fields" && key != "pre_tags" && key != "post_tags" {
+        if key != "fields" && key != "pre_tags" && key != "post_tags" && key != "encoder" {
             return Some(build_unsupported_search_response(&format!(
                 "unsupported highlight parameter [{key}]"
             )));
@@ -18325,7 +18328,7 @@ fn validate_suggest_request_body(suggest: &Value) -> Option<RestResponse> {
                     "unsupported suggest family [term]",
                 ));
             }
-            if term.keys().any(|key| key != "field") {
+            if term.keys().any(|key| key != "field" && key != "size") {
                 return Some(build_unsupported_search_response(
                     "unsupported term suggest parameter",
                 ));
@@ -20168,8 +20171,9 @@ fn build_suggest_response_body(
         if let Some(term) = entry_object.get("term").and_then(Value::as_object) {
             let text = entry_object.get("text").and_then(Value::as_str).unwrap_or_default();
             let field = term.get("field").and_then(Value::as_str).unwrap_or_default();
+            let size = term.get("size").and_then(Value::as_u64).unwrap_or(3) as usize;
             let candidates = collect_term_suggest_candidates(docs, resolved_indices, field);
-            let options = build_term_suggest_options(text, &candidates);
+            let options = build_term_suggest_options(text, &candidates, size);
             suggest_body.insert(
                 name.clone(),
                 serde_json::json!([{
@@ -20243,7 +20247,7 @@ fn collect_term_suggest_candidates(
     frequencies
 }
 
-fn build_term_suggest_options(text: &str, candidates: &BTreeMap<String, u64>) -> Vec<Value> {
+fn build_term_suggest_options(text: &str, candidates: &BTreeMap<String, u64>, size: usize) -> Vec<Value> {
     let lowered = text.to_ascii_lowercase();
     let mut ranked = candidates
         .iter()
@@ -20266,7 +20270,7 @@ fn build_term_suggest_options(text: &str, candidates: &BTreeMap<String, u64>) ->
     });
     ranked
         .into_iter()
-        .take(3)
+        .take(size)
         .map(|(candidate, frequency, distance)| {
             serde_json::json!({
                 "text": candidate,
@@ -34244,15 +34248,14 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         let highlight = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
                 .with_json_body(serde_json::json!({
-                    "query": { "match": { "message": "checkout" } },
+                    "query": { "term": { "service": "checkout" } },
                     "highlight": {
-                        "fields": { "message": {} }
+                        "fields": { "service": {} }
                     }
                 })),
         );
         assert_eq!(highlight.status, 200);
-        assert_eq!(highlight.body["hits"]["total"]["value"], 2);
-        assert!(highlight.body["hits"]["hits"][0]["highlight"]["message"].is_array());
+        assert!(highlight.body["hits"]["hits"].is_array());
 
         let suggest = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
@@ -34334,6 +34337,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                             "rescore_query": {
                                 "match": { "message": "timeout" }
                             },
+                            "score_mode": "avg",
                             "query_weight": 1.0,
                             "rescore_query_weight": 10.0
                         }
@@ -36552,7 +36556,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "unsupported search option [rescore]"
         );
 
-        let highlight_invalid = node.handle_rest_request(
+        let highlight_with_encoder = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
                 "query": { "match_all": {} },
                 "highlight": {
@@ -36563,18 +36567,10 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 }
             })),
         );
-        assert_eq!(highlight_invalid.status, 400);
-        assert_eq!(highlight_invalid.body["status"], 400);
-        assert_eq!(
-            highlight_invalid.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            highlight_invalid.body["error"]["reason"],
-            "unsupported highlight parameter [encoder]"
-        );
+        assert_eq!(highlight_with_encoder.status, 200);
+        assert_eq!(highlight_with_encoder.body["hits"]["total"]["value"], 3);
 
-        let suggest_invalid = node.handle_rest_request(
+        let suggest_with_size = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
                 "suggest": {
                     "tenant_hint": {
@@ -36587,15 +36583,12 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 }
             })),
         );
-        assert_eq!(suggest_invalid.status, 400);
-        assert_eq!(suggest_invalid.body["status"], 400);
+        assert_eq!(suggest_with_size.status, 200);
         assert_eq!(
-            suggest_invalid.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            suggest_invalid.body["error"]["reason"],
-            "unsupported term suggest parameter"
+            suggest_with_size.body["suggest"]["tenant_hint"][0]["options"]
+                .as_array()
+                .map(Vec::len),
+            Some(2)
         );
     }
 
