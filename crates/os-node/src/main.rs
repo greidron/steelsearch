@@ -4479,6 +4479,7 @@ struct DaemonConfig {
     development_security_mode: DevelopmentSecurityMode,
     production_security_runtime_enforcement_enabled: bool,
     production_security_bootstrap: ProductionSecurityBootstrapConfig,
+    release_readiness_evidence_path: Option<PathBuf>,
     java_write_forwarding_validated: bool,
     seed_peer_identity: Option<InteropSeedPeerIdentityManifest>,
     seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
@@ -4786,6 +4787,9 @@ where
             .get("STEELSEARCH_SECURE_SETTINGS_FILE")
             .map(PathBuf::from),
     };
+    let mut release_readiness_evidence_path = vars
+        .get("STEELSEARCH_RELEASE_READINESS_FILE")
+        .map(PathBuf::from);
     let mut extension_manifest_path = vars.get("STEELSEARCH_EXTENSION_MANIFEST").map(PathBuf::from);
     let mut extension_registry_overrides = ExtensionRegistryOverrideConfig {
         knn_plugin_enabled: parse_bool_env(vars, "STEELSEARCH_ENABLE_KNN_PLUGIN")?,
@@ -4897,6 +4901,11 @@ where
                         .ok_or("--security.secure_settings_file requires a value")?,
                 ));
             }
+            "--release.readiness_file" => {
+                release_readiness_evidence_path = Some(PathBuf::from(
+                    args.next().ok_or("--release.readiness_file requires a value")?,
+                ));
+            }
             "--extensions.knn" => {
                 let value = args.next().ok_or("--extensions.knn requires a value")?;
                 let enabled = parse_bool_flag(&value)?;
@@ -4971,6 +4980,7 @@ where
         development_security_mode,
         production_security_runtime_enforcement_enabled,
         production_security_bootstrap,
+        release_readiness_evidence_path,
         java_write_forwarding_validated,
         seed_peer_identity,
         seed_peer_identities,
@@ -5236,8 +5246,16 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             &config.production_security_bootstrap,
         ));
         let security_policy = production_security_boundary_policy(config);
+        blockers.extend(release_readiness_evidence_blockers(
+            config.release_readiness_evidence_path.as_ref(),
+        ));
+        let release_checklist = config
+            .release_readiness_evidence_path
+            .as_ref()
+            .and_then(|path| load_release_readiness_checklist(path).ok())
+            .unwrap_or_default();
         if let Err(error) =
-            validate_production_mode_request(&security_policy, ReleaseReadinessChecklist::default())
+            validate_production_mode_request(&security_policy, release_checklist)
         {
             blockers.push(format!("[production] Steelsearch {error}"));
         }
@@ -5471,6 +5489,41 @@ fn validate_production_tls_private_key_file(path: &Path) -> Result<(), String> {
         return Ok(());
     }
     Err("must contain PEM private key markers".to_string())
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+struct ReleaseReadinessEvidenceFile {
+    benchmark_coverage: bool,
+    load_test_coverage: bool,
+    chaos_test_coverage: bool,
+    packaging_verified: bool,
+    rolling_upgrade_coverage: bool,
+}
+
+fn release_readiness_evidence_blockers(path: Option<&PathBuf>) -> Vec<String> {
+    match path {
+        None => Vec::new(),
+        Some(path) => match load_release_readiness_checklist(path) {
+            Ok(_) => Vec::new(),
+            Err(error) => vec![format!(
+                "[release] production release readiness evidence is invalid ({}): {error}",
+                path.display()
+            )],
+        },
+    }
+}
+
+fn load_release_readiness_checklist(path: &Path) -> Result<ReleaseReadinessChecklist, String> {
+    let raw = fs::read_to_string(path).map_err(|error| format!("must be readable: {error}"))?;
+    let evidence: ReleaseReadinessEvidenceFile =
+        serde_json::from_str(&raw).map_err(|error| format!("must be valid JSON: {error}"))?;
+    Ok(ReleaseReadinessChecklist {
+        benchmark_coverage: evidence.benchmark_coverage,
+        load_test_coverage: evidence.load_test_coverage,
+        chaos_test_coverage: evidence.chaos_test_coverage,
+        packaging_verified: evidence.packaging_verified,
+        rolling_upgrade_coverage: evidence.rolling_upgrade_coverage,
+    })
 }
 
 fn contains_pem_private_key_markers(raw: &str) -> bool {
@@ -6332,6 +6385,7 @@ Options:\n\
   --security.authentication_users_file <path>\n\
   --security.secure_settings_file <path>\n\
                                     Production security bootstrap material\n\
+  --release.readiness_file <path>  Production release checklist evidence JSON\n\
   --mode <development|production>  Runtime mode, default development\n\
 \n\
 Unsupported compatibility input:\n\
@@ -6347,6 +6401,7 @@ Environment:\n\
   STEELSEARCH_HTTP_TLS_CERTIFICATE, STEELSEARCH_HTTP_TLS_PRIVATE_KEY,\n\
   STEELSEARCH_TRANSPORT_TLS_CERTIFICATE, STEELSEARCH_TRANSPORT_TLS_PRIVATE_KEY,\n\
   STEELSEARCH_AUTHENTICATION_USERS_FILE, STEELSEARCH_SECURE_SETTINGS_FILE,\n\
+  STEELSEARCH_RELEASE_READINESS_FILE,\n\
   STEELSEARCH_ENABLE_KNN_PLUGIN, STEELSEARCH_ENABLE_ML_COMMONS,\n\
   STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED,\n\
   STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST,\n\
@@ -6374,6 +6429,7 @@ mod tests {
             development_security_mode: DevelopmentSecurityMode::Disabled,
             production_security_runtime_enforcement_enabled: false,
             production_security_bootstrap: ProductionSecurityBootstrapConfig::default(),
+            release_readiness_evidence_path: None,
             java_write_forwarding_validated: false,
             seed_peer_identity: None,
             seed_peer_identities: Vec::new(),
@@ -7243,6 +7299,78 @@ mod tests {
     }
 
     #[test]
+    fn production_startup_preflight_accepts_complete_release_readiness_evidence() {
+        let path = unique_test_path("steelsearch-production-release-ready-data");
+        let material_root = unique_test_path("steelsearch-production-release-ready-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let http_cert = material_root.join("http.crt");
+        let http_key = material_root.join("http.key");
+        let transport_cert = material_root.join("transport.crt");
+        let transport_key = material_root.join("transport.key");
+        let users = material_root.join("users.json");
+        let secure_settings = material_root.join("secure-settings.json");
+        let release_readiness = material_root.join("release-readiness.json");
+        write_valid_tls_bootstrap_material(&http_cert, &http_key, &transport_cert, &transport_key);
+        write_valid_rustls_http_tls_bootstrap_material(&http_cert, &http_key);
+        write_valid_rustls_transport_tls_bootstrap_material(&transport_cert, &transport_key);
+        write_valid_secure_settings_bootstrap_material(&secure_settings);
+        write_complete_release_readiness_evidence(&release_readiness);
+        fs::write(
+            &users,
+            br#"{"users":[{"username":"admin","password_hash":"fixture-hash","roles":["admin"],"tenants":["tenant-a"]}]}"#,
+        )
+        .unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.production_security_runtime_enforcement_enabled = true;
+        config.release_readiness_evidence_path = Some(release_readiness);
+        config.production_security_bootstrap = ProductionSecurityBootstrapConfig {
+            http_tls_certificate_path: Some(http_cert),
+            http_tls_private_key_path: Some(http_key),
+            transport_tls_certificate_path: Some(transport_cert),
+            transport_tls_private_key_path: Some(transport_key),
+            authentication_users_path: Some(users),
+            secure_settings_path: Some(secure_settings),
+        };
+
+        let readiness = startup_readiness_report(&config);
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(
+            readiness.ready,
+            "all production security and release blockers should be cleared: {:?}",
+            readiness.blockers
+        );
+        assert!(readiness.blockers.is_empty());
+    }
+
+    #[test]
+    fn production_startup_preflight_rejects_invalid_release_readiness_evidence() {
+        let path = unique_test_path("steelsearch-production-release-invalid-data");
+        let material_root = unique_test_path("steelsearch-production-release-invalid-material");
+        fs::create_dir_all(&material_root).unwrap();
+        let release_readiness = material_root.join("release-readiness.json");
+        fs::write(
+            &release_readiness,
+            br#"{"benchmark_coverage":true,"load_test_coverage":true}"#,
+        )
+        .unwrap();
+        let mut config = minimal_daemon_config(path.clone());
+        config.mode = DaemonMode::Production;
+        config.release_readiness_evidence_path = Some(release_readiness);
+
+        let readiness = startup_readiness_report(&config);
+        let blockers = readiness.blockers.join("\n");
+
+        let _ = fs::remove_dir_all(path);
+        let _ = fs::remove_dir_all(material_root);
+        assert!(!readiness.ready);
+        assert!(blockers.contains("[release] production release readiness evidence is invalid"));
+        assert!(blockers.contains("missing field"));
+    }
+
+    #[test]
     fn transport_seed_connection_serves_keepalive_over_tls_when_configured() {
         let root = unique_test_path("steelsearch-transport-tls-listener");
         fs::create_dir_all(&root).unwrap();
@@ -7694,6 +7822,20 @@ mod tests {
     ) {
         fs::write(transport_cert, VALID_RUSTLS_HTTP_TLS_CERTIFICATE).unwrap();
         fs::write(transport_key, VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY).unwrap();
+    }
+
+    fn write_complete_release_readiness_evidence(path: &Path) {
+        fs::write(
+            path,
+            br#"{
+  "benchmark_coverage": true,
+  "load_test_coverage": true,
+  "chaos_test_coverage": true,
+  "packaging_verified": true,
+  "rolling_upgrade_coverage": true
+}"#,
+        )
+        .unwrap();
     }
 
     const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----

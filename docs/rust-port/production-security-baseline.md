@@ -33,6 +33,13 @@ separate blockers so one socket family cannot mask the other.
 after the actual enforcement code is present.
 `ReleaseReadinessChecklist` separately keeps benchmark, load, chaos, packaging,
 and rolling-upgrade evidence out of the security-boundary state.
+Production startup can load that checklist from
+`STEELSEARCH_RELEASE_READINESS_FILE` or `--release.readiness_file`; the JSON
+evidence file must explicitly set `benchmark_coverage`,
+`load_test_coverage`, `chaos_test_coverage`, `packaging_verified`, and
+`rolling_upgrade_coverage` to `true` before the release checklist gate is
+cleared. Missing or malformed evidence fails closed with a release-specific
+startup blocker.
 Production startup preflight now also requires bootstrap material paths for
 HTTP TLS certificate/key, transport TLS certificate/key, an authentication
 users file, and a secure-settings file. The authentication users file must be
@@ -171,8 +178,8 @@ secure-settings blocker. When the production HTTP TLS certificate/key load into
 the REST listener's rustls configuration, it removes the HTTP TLS blocker.
 When the production transport TLS certificate/key load into the transport seed
 listener's rustls configuration, it removes the transport TLS blocker. Release
-checklist blockers remain fail-closed until their concrete evidence is wired
-into the policy.
+checklist blockers remain fail-closed until a complete release-readiness
+evidence file is provided.
 The startup-preflight gate also validates the secure multi-node TLS handshake
 matrix fixture so success, client-certificate success, wrong-CA rejection, and
 expired-certificate rejection buckets remain present.

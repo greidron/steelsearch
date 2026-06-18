@@ -99,8 +99,8 @@ Out of scope:
   The same gate now covers standalone HTTP query-string native-path stats
   wiring, so query-string compatibility materialization is visible through
   `_nodes/stats` rather than disappearing into the source-eval route.
-- The same runner now has a `startup-preflight` batch. It passed on 2026-06-17
-  with 32/32 tests and `zero_tests=0`, covering missing, readonly, locked,
+- The same runner now has a `startup-preflight` batch. It passed on 2026-06-18
+  with 34/34 tests and `zero_tests=0`, covering missing, readonly, locked,
   file-backed, and daemon-level data-path refusal/creation checks, bind,
   duplicate node-id, invalid address/port, explicit OpenSearch `-E` config-setting
   rejection with the Steelsearch flag/env-var contract, role/bootstrap,
@@ -113,7 +113,8 @@ Out of scope:
   authentication-users-file acceptance and malformed authentication-users-file
   rejection, secure-settings-file JSON-object validation with secret redaction,
   runtime security enforcement env-var refusal when
-  `STEELSEARCH_SECURITY_ENABLED=true` is not set, production policy promotion
+  `STEELSEARCH_SECURITY_ENABLED=true` is not set, release-readiness evidence-file
+  acceptance/rejection, production policy promotion
   for the authentication, authorization, and audit-logging boundaries once
   runtime security and valid authentication subjects are present, and
   production policy promotion for secure settings once runtime security and a
@@ -393,7 +394,8 @@ Validation runner:
   certificate/private-key role mismatch rejection, invalid bootstrap
   file-content redaction, authn bootstrap material, service-account-only authn
   bootstrap material, malformed users-file checks, and runtime security
-  enforcement env-var refusal, as runtime-control evidence.
+  enforcement env-var refusal, plus release-readiness evidence-file
+  acceptance/rejection, as runtime-control evidence.
 - `tools/run-native-closure-validation.py --batch startup-readiness` must
   report `failed_count == 0` and `zero_test_count == 0` before treating shared
   startup/readiness blocker reasons, including production security/release gate
