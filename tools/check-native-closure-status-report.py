@@ -29,10 +29,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path)
     parser.add_argument("--require-final-cutover", action="store_true")
+    parser.add_argument("--require-clean-worktree", action="store_true")
     args = parser.parse_args()
 
     payload = json.loads(args.report.read_text(encoding="utf-8"))
-    result = validate_report(payload, require_final_cutover=args.require_final_cutover)
+    result = validate_report(
+        payload,
+        require_final_cutover=args.require_final_cutover,
+        require_clean_worktree=args.require_clean_worktree,
+    )
     print(json.dumps({"report": str(args.report), **result}, indent=2, sort_keys=True))
     return 0 if result["status"] == "ok" else 1
 
@@ -41,6 +46,7 @@ def validate_report(
     payload: dict[str, Any],
     *,
     require_final_cutover: bool = False,
+    require_clean_worktree: bool = False,
 ) -> dict[str, Any]:
     errors: list[str] = []
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -58,6 +64,10 @@ def validate_report(
         errors.append("metadata.git_clean is missing or not a boolean")
     if not isinstance(metadata.get("git_status_short"), str):
         errors.append("metadata.git_status_short is missing or not a string")
+    if require_clean_worktree and metadata.get("git_clean") is not True:
+        errors.append("metadata.git_clean is not true")
+    if require_clean_worktree and metadata.get("git_status_short") != "":
+        errors.append("metadata.git_status_short is not empty")
 
     if summary.get("current_evidence_ready") is not True:
         errors.append("summary.current_evidence_ready is not true")

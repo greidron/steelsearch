@@ -82,6 +82,33 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn("summary.final_cutover_ready is not true", result["errors"])
         self.assertIn("final_cutover.passed is not true", result["errors"])
 
+    def test_accepts_dirty_worktree_metadata_without_clean_requirement(self):
+        report = valid_report()
+        report["metadata"]["git_clean"] = False
+        report["metadata"]["git_status_short"] = " M tools/check-native-closure-status-report.py"
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["errors"], [])
+
+    def test_require_clean_worktree_accepts_clean_metadata(self):
+        result = self.checker.validate_report(valid_report(), require_clean_worktree=True)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["errors"], [])
+
+    def test_require_clean_worktree_rejects_dirty_metadata(self):
+        report = valid_report()
+        report["metadata"]["git_clean"] = False
+        report["metadata"]["git_status_short"] = " M tools/check-native-closure-status-report.py"
+
+        result = self.checker.validate_report(report, require_clean_worktree=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("metadata.git_clean is not true", result["errors"])
+        self.assertIn("metadata.git_status_short is not empty", result["errors"])
+
 
 if __name__ == "__main__":
     unittest.main()
