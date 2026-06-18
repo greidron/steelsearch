@@ -8411,27 +8411,13 @@ impl SteelNode {
         target: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
-        if request.query_params.contains_key("rewrite") {
-            return build_unsupported_search_response(
-                "unsupported validate query option [rewrite]",
-            );
-        }
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
             match serde_json::from_slice::<Value>(&request.body) {
                 Ok(body) => body,
-                Err(error) => {
-                    return RestResponse::json(
-                        400,
-                        serde_json::json!({
-                            "error": {
-                                "type": "parse_exception",
-                                "reason": error.to_string()
-                            },
-                            "status": 400
-                        }),
-                    );
+                Err(_) => {
+                    return RestResponse::json(200, serde_json::json!({ "valid": false }));
                 }
             }
         };
@@ -8449,7 +8435,7 @@ impl SteelNode {
         if let Some(index) = target {
             body["_indices"] = serde_json::json!([index]);
         }
-        if query.is_some() && !valid {
+        if query.is_some() && (!valid || request.query_params.contains_key("rewrite")) {
             body["explanations"] = serde_json::json!([{
                 "index": target.unwrap_or("_all"),
                 "valid": valid,
@@ -32414,9 +32400,8 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             RestRequest::new(RestMethod::Post, "/_validate/query")
                 .with_body(b"{\"query\":".to_vec()),
         );
-        assert_eq!(malformed_validate.status, 400);
-        assert_eq!(malformed_validate.body["status"], 400);
-        assert_eq!(malformed_validate.body["error"]["type"], "parse_exception");
+        assert_eq!(malformed_validate.status, 200);
+        assert_eq!(malformed_validate.body["valid"], false);
 
         let targeted_rewrite_validate = node.handle_rest_request(
             RestRequest::new(
@@ -32429,16 +32414,9 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 }
             })),
         );
-        assert_eq!(targeted_rewrite_validate.status, 400);
-        assert_eq!(targeted_rewrite_validate.body["status"], 400);
-        assert_eq!(
-            targeted_rewrite_validate.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            targeted_rewrite_validate.body["error"]["reason"],
-            "unsupported validate query option [rewrite]"
-        );
+        assert_eq!(targeted_rewrite_validate.status, 200);
+        assert_eq!(targeted_rewrite_validate.body["valid"], true);
+        assert_eq!(targeted_rewrite_validate.body["explanations"][0]["valid"], true);
     }
 
     #[test]

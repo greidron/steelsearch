@@ -847,10 +847,6 @@
       "body": "{\"query\":",
       "raw_json": true,
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for malformed validate-query payload parsing.",
       "family": "failure-path",
       "description": "[failure-path] validate query root malformed payload error"
     },
@@ -867,10 +863,6 @@
         }
       },
       "extract": "search_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "steelsearch-semantic-hardening",
-      "reason": "Steelsearch semantic hardening fixture for unsupported validate-query rewrite option.",
       "family": "failure-path",
       "description": "[failure-path] validate query target rewrite unsupported error"
     },
