@@ -41,6 +41,13 @@ FINAL_CUTOVER_ITEM_INPUTS = {
         "artifact_kind": "rolling-upgrade JSON",
     },
 }
+READINESS_ATTACHMENT_INPUTS = {
+    **FINAL_CUTOVER_ITEM_INPUTS,
+    "load_comparison": {
+        "attach_argument": "--load-comparison-report",
+        "artifact_kind": "Steelsearch-vs-OpenSearch load comparison JSON",
+    },
+}
 
 
 def main() -> int:
@@ -104,6 +111,7 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
             "required_items": list(FINAL_CUTOVER_ITEMS),
             "missing_items": list(FINAL_CUTOVER_ITEMS),
             "required_item_inputs": final_cutover_item_inputs(list(FINAL_CUTOVER_ITEMS)),
+            "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
             "manifest_command_template": release_readiness_manifest_command_template(),
         }
     command = [
@@ -134,6 +142,7 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
         "required_item_inputs": final_cutover_item_inputs(
             missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
         ),
+        "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
         "manifest_command_template": release_readiness_manifest_command_template(),
     }
 
@@ -203,6 +212,8 @@ def release_readiness_manifest_command_template() -> list[str]:
         "<benchmark.jsonl>",
         "--load-report",
         "<load.json>",
+        "--load-comparison-report",
+        "<load-comparison.json>",
         "--chaos-report",
         "<chaos.json>",
         "--packaging-report",

@@ -82,6 +82,14 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             "--release-readiness-file",
             final_cutover["manifest_command_template"],
         )
+        self.assertEqual(
+            final_cutover["readiness_attachment_inputs"]["load_comparison"]["attach_argument"],
+            "--load-comparison-report",
+        )
+        self.assertIn(
+            "--load-comparison-report",
+            final_cutover["manifest_command_template"],
+        )
 
     def test_missing_release_items_reports_only_failed_or_missing_items(self):
         missing = self.reporter.missing_release_items(
