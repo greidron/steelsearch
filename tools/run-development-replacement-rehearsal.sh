@@ -31,6 +31,10 @@ STEELSEARCH_READINESS_REPORT="${STEELSEARCH_READINESS_REPORT:-${REHEARSAL_DIR}/s
 STEELSEARCH_BENCHMARK_REPORT="${STEELSEARCH_BENCHMARK_REPORT:-${REHEARSAL_DIR}/deterministic-baselines.jsonl}"
 STEELSEARCH_LOAD_REPORT="${STEELSEARCH_LOAD_REPORT:-${REHEARSAL_DIR}/http-load-baseline.json}"
 STEELSEARCH_LOAD_COMPARISON_REPORT="${STEELSEARCH_LOAD_COMPARISON_REPORT:-${REHEARSAL_DIR}/http-load-comparison.json}"
+STEELSEARCH_CHAOS_REPORT="${STEELSEARCH_CHAOS_REPORT:-${REHEARSAL_DIR}/chaos-report.json}"
+STEELSEARCH_PACKAGING_REPORT="${STEELSEARCH_PACKAGING_REPORT:-${REHEARSAL_DIR}/packaging-report.json}"
+STEELSEARCH_ROLLING_UPGRADE_REPORT="${STEELSEARCH_ROLLING_UPGRADE_REPORT:-${REHEARSAL_DIR}/rolling-upgrade-report.json}"
+STEELSEARCH_RELEASE_READINESS_FILE="${STEELSEARCH_RELEASE_READINESS_FILE:-${REHEARSAL_DIR}/release-readiness.json}"
 STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS="${STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS:-86400}"
 WAIT_TIMEOUT="${REHEARSAL_WAIT_TIMEOUT:-300}"
 RUN_SEARCH_COMPAT="${RUN_SEARCH_COMPAT:-1}"
@@ -66,6 +70,12 @@ Environment:
   STEELSEARCH_LOAD_REPORT      HTTP load JSON evidence attached to readiness.
   STEELSEARCH_LOAD_COMPARISON_REPORT
                                Steelsearch/OpenSearch load comparison evidence.
+  STEELSEARCH_CHAOS_REPORT     Chaos/failure-mode JSON evidence attached to readiness.
+  STEELSEARCH_PACKAGING_REPORT Packaging verification JSON evidence attached to readiness.
+  STEELSEARCH_ROLLING_UPGRADE_REPORT
+                               Rolling-upgrade JSON evidence attached to readiness.
+  STEELSEARCH_RELEASE_READINESS_FILE
+                               Artifact-backed production startup evidence manifest.
   STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS
                                Max benchmark/load report age. Default: 86400.
   PHASE_A_COMPARE_SCOPE        `full`, `root-cluster-node`, `index-metadata`, `document-write-path`, `search`, `search-execution`, `snapshot-migration`, `vector-ml`, or `transport-admin`. Default: full.
@@ -416,6 +426,10 @@ attach_release_evidence_to_readiness() {
     --benchmark-report "${STEELSEARCH_BENCHMARK_REPORT}" \
     --load-report "${STEELSEARCH_LOAD_REPORT}" \
     --load-comparison-report "${STEELSEARCH_LOAD_COMPARISON_REPORT}" \
+    --chaos-report "${STEELSEARCH_CHAOS_REPORT}" \
+    --packaging-report "${STEELSEARCH_PACKAGING_REPORT}" \
+    --rolling-upgrade-report "${STEELSEARCH_ROLLING_UPGRADE_REPORT}" \
+    --release-readiness-file "${STEELSEARCH_RELEASE_READINESS_FILE}" \
     --max-age-seconds "${STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
 }
 

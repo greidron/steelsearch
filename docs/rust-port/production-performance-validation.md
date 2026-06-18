@@ -57,7 +57,9 @@ Use the existing tools as the validation entry points:
   `tools/run-opensearch-compare.sh` for development replacement and compatibility
   rehearsal evidence.
 - `tools/attach-release-readiness-evidence.py` for attaching benchmark, load,
-  and comparison reports to `/_steelsearch/readiness` output.
+  comparison, chaos, packaging, and rolling-upgrade reports to
+  `/_steelsearch/readiness` output and writing the artifact-backed
+  `release-readiness.json` manifest consumed by production startup preflight.
 
 Current HTTP load reports include p50, p90, p95, p99, mean, min, and max
 latencies per operation, total throughput, error rate, memory RSS delta,

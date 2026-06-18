@@ -16,6 +16,10 @@ def main() -> int:
     parser.add_argument("--benchmark-report")
     parser.add_argument("--load-report")
     parser.add_argument("--load-comparison-report")
+    parser.add_argument("--chaos-report")
+    parser.add_argument("--packaging-report")
+    parser.add_argument("--rolling-upgrade-report")
+    parser.add_argument("--release-readiness-file")
     parser.add_argument("--max-age-seconds", type=float, default=86_400.0)
     args = parser.parse_args()
 
@@ -25,6 +29,11 @@ def main() -> int:
         "benchmark": inspect_jsonl_report(args.benchmark_report, args.max_age_seconds),
         "load": inspect_json_report(args.load_report, args.max_age_seconds),
         "load_comparison": inspect_json_report(args.load_comparison_report, args.max_age_seconds),
+        "chaos": inspect_json_report(args.chaos_report, args.max_age_seconds),
+        "packaging": inspect_json_report(args.packaging_report, args.max_age_seconds),
+        "rolling_upgrade": inspect_json_report(
+            args.rolling_upgrade_report, args.max_age_seconds
+        ),
     }
     blockers = [
         f"{name}: {blocker}"
@@ -48,6 +57,17 @@ def main() -> int:
     report["blockers"] = readiness_blockers(categories)
 
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.release_readiness_file:
+        write_release_readiness_file(
+            Path(args.release_readiness_file),
+            {
+                "benchmark_coverage": evidence["benchmark"],
+                "load_test_coverage": evidence["load"],
+                "chaos_test_coverage": evidence["chaos"],
+                "packaging_verified": evidence["packaging"],
+                "rolling_upgrade_coverage": evidence["rolling_upgrade"],
+            },
+        )
     return 0
 
 
@@ -150,6 +170,30 @@ def readiness_blockers(categories: dict[str, Any]) -> list[str]:
         for blocker in category.get("blockers", []):
             blockers.append(f"{name}: {blocker}")
     return sorted(set(blockers))
+
+
+def write_release_readiness_file(path: Path, evidence: dict[str, dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        name: {
+            "passed": item.get("ready") is True,
+            "artifact_path": relative_artifact_path(path.parent, item.get("path")),
+            "blockers": item.get("blockers", []),
+            "summary": item.get("summary", {}),
+        }
+        for name, item in evidence.items()
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def relative_artifact_path(base_dir: Path, path_value: Any) -> str:
+    if not path_value:
+        return ""
+    path = Path(str(path_value))
+    try:
+        return str(path.resolve().relative_to(base_dir.resolve()))
+    except ValueError:
+        return str(path)
 
 
 if __name__ == "__main__":

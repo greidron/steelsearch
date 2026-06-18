@@ -1,5 +1,8 @@
 import os
+import json
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -62,6 +65,75 @@ class ReplacementGateScriptTests(unittest.TestCase):
             "+ tools/run-search-compat.sh --report target/test-search-compat-report.json",
             result.stdout,
         )
+
+    def test_attach_release_readiness_evidence_writes_startup_manifest(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            readiness = temp_dir / "readiness.json"
+            benchmark = temp_dir / "benchmark.jsonl"
+            load = temp_dir / "load.json"
+            comparison = temp_dir / "comparison.json"
+            chaos = temp_dir / "chaos.json"
+            packaging = temp_dir / "packaging.json"
+            rolling = temp_dir / "rolling.json"
+            release_readiness = temp_dir / "release-readiness.json"
+
+            readiness.write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "categories": {
+                            "security": {"ready": True, "blockers": []},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(json.dumps({"benchmark": "lexical"}) + "\n", encoding="utf-8")
+            for path in [load, comparison, chaos, packaging, rolling]:
+                path.write_text(json.dumps({"summary": {"error_count": 0}}), encoding="utf-8")
+
+            result = self.run_command(
+                sys.executable,
+                "tools/attach-release-readiness-evidence.py",
+                "--readiness-report",
+                str(readiness),
+                "--benchmark-report",
+                str(benchmark),
+                "--load-report",
+                str(load),
+                "--load-comparison-report",
+                str(comparison),
+                "--chaos-report",
+                str(chaos),
+                "--packaging-report",
+                str(packaging),
+                "--rolling-upgrade-report",
+                str(rolling),
+                "--release-readiness-file",
+                str(release_readiness),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            readiness_payload = json.loads(readiness.read_text(encoding="utf-8"))
+            self.assertTrue(readiness_payload["categories"]["release"]["ready"])
+            self.assertTrue(readiness_payload["ready"])
+            self.assertEqual(readiness_payload["blockers"], [])
+            release_payload = json.loads(release_readiness.read_text(encoding="utf-8"))
+            self.assertEqual(
+                sorted(release_payload),
+                [
+                    "benchmark_coverage",
+                    "chaos_test_coverage",
+                    "load_test_coverage",
+                    "packaging_verified",
+                    "rolling_upgrade_coverage",
+                ],
+            )
+            for item in release_payload.values():
+                self.assertTrue(item["passed"])
+                self.assertTrue(item["artifact_path"])
+                self.assertEqual(item["blockers"], [])
 
 
 if __name__ == "__main__":
