@@ -56,6 +56,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/compare_remote_transport_backpressure.py", command)
         self.assertIn("--profile", command)
         self.assertIn("mixed-java-rust-query-phase", command)
+        self.assertIn("--output", command)
+        self.assertIn("target/runtime-peer-backpressure-current.json", command)
 
     def test_external_validation_reads_summary_passed(self):
         case = self.runner.ExternalValidation(

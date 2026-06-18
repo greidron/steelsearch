@@ -1834,6 +1834,8 @@ RUNTIME_PEER_BACKPRESSURE_BATCH: tuple[ExternalValidation, ...] = (
             "mixed-java-rust-query-phase",
             "--work-dir",
             "/tmp/remote-transport-backpressure-compare.validation",
+            "--output",
+            "target/runtime-peer-backpressure-current.json",
         ),
         timeout_seconds=600,
     ),

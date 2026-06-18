@@ -763,7 +763,8 @@ Current execution order:
    --require-zero-ranked` before promoting a widened diagnostic mix.
 4. Run the optional `runtime-peer-backpressure` batch when a local OpenSearch
    distribution is available, and keep its report profile explicit about the
-   mixed Java/Rust query-phase comparison boundary.
+   mixed Java/Rust query-phase comparison boundary. The batch writes the
+   current evidence report to `target/runtime-peer-backpressure-current.json`.
 5. Before production cutover, refresh benchmark, load, chaos, packaging, and
    rolling-upgrade artifacts and feed them through the release-readiness
    manifest writer.
