@@ -109,8 +109,10 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
             "status": "pending",
             "reason": "release readiness manifest was not provided",
             "required_items": list(FINAL_CUTOVER_ITEMS),
+            "startup_manifest_items": list(FINAL_CUTOVER_ITEMS),
             "missing_items": list(FINAL_CUTOVER_ITEMS),
             "required_item_inputs": final_cutover_item_inputs(list(FINAL_CUTOVER_ITEMS)),
+            "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
             "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
             "manifest_command_template": release_readiness_manifest_command_template(),
         }
@@ -138,10 +140,12 @@ def inspect_release_readiness(path: Path | None) -> dict[str, Any]:
         "summary": payload.get("summary", {}) if isinstance(payload, dict) else {},
         "errors": payload.get("errors", []) if isinstance(payload, dict) else [],
         "required_items": list(FINAL_CUTOVER_ITEMS),
+        "startup_manifest_items": list(FINAL_CUTOVER_ITEMS),
         "missing_items": missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS),
         "required_item_inputs": final_cutover_item_inputs(
             missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
         ),
+        "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
         "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
         "manifest_command_template": release_readiness_manifest_command_template(),
     }

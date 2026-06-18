@@ -74,6 +74,9 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 "rolling_upgrade_coverage",
             ],
         )
+        self.assertEqual(final_cutover["startup_manifest_items"], final_cutover["missing_items"])
+        self.assertIn("load_comparison", final_cutover["readiness_attachment_items"])
+        self.assertNotIn("load_comparison", final_cutover["startup_manifest_items"])
         self.assertEqual(
             final_cutover["required_item_inputs"]["benchmark_coverage"]["attach_argument"],
             "--benchmark-report",
