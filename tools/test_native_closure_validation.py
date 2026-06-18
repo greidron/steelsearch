@@ -124,6 +124,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/check-runtime-peer-backpressure-report.py", command)
         self.assertIn("target/runtime-peer-backpressure-current.json", command)
 
+    def test_native_closure_status_current_batch_writes_report_artifact(self):
+        batch = self.runner.BATCHES["native-closure-status-current"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/report-native-closure-status.py", command)
+        self.assertIn("--output", command)
+        self.assertIn("target/native-closure-status-current.json", command)
+
     def test_external_validation_reads_summary_passed(self):
         case = self.runner.ExternalValidation(
             "synthetic_external_validation",

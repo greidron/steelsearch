@@ -1916,6 +1916,20 @@ RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "native_closure_status_report_writes_current_evidence_artifact",
+        "native-closure-status-current",
+        (
+            "python3",
+            "tools/report-native-closure-status.py",
+            "--output",
+            "target/native-closure-status-current.json",
+        ),
+        timeout_seconds=180,
+    ),
+)
+
 
 BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "compact": COMPACT_BATCH,
@@ -1938,6 +1952,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "runtime-fairness": RUNTIME_FAIRNESS_BATCH,
     "runtime-peer-backpressure": RUNTIME_PEER_BACKPRESSURE_BATCH,
     "runtime-peer-backpressure-current": RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH,
+    "native-closure-status-current": NATIVE_CLOSURE_STATUS_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,
     "runtime-task-metadata": RUNTIME_TASK_METADATA_BATCH,
     "runtime-task-headers": RUNTIME_TASK_HEADERS_BATCH,
