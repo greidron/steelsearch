@@ -251,3 +251,28 @@ When `tools/run-unified-opensearch-e2e.py --run --case ...` is used, the
 partial case report is merged into the best existing suite report by case name
 before the unified audit is regenerated, so targeted reruns can fill missing
 evidence without discarding previously passing cases from the same fixture.
+
+`tools/report-rest-api-coverage.py` adds a source-inventory view on top of the
+suite/case report. It compares
+`docs/rust-port/generated/source-rest-routes.tsv` against compatibility fixture
+HTTP methods and paths, then optionally narrows the view to the fixtures from
+`ok` required suites in a unified E2E report. The current 0.2.0 audit results
+are:
+
+- source REST inventory: 389 total rows, 373 in scope, with 365 `planned`, 6
+  `stubbed`, 2 `implemented`, and 16 `out-of-scope` rows;
+- all repo compatibility fixtures touch 289 of the 373 in-scope source route
+  rows and leave 84 in-scope rows without fixture coverage;
+- the green required live audit for `search-semantic` and `vector-search`
+  touches 15 of the 373 in-scope source route rows and leaves 358 in-scope rows
+  outside that green live subset;
+- the broader collected unified report touches 86 of the 373 in-scope source
+  route rows, but that report is `blocked` because retained `search-compat` and
+  `search-strict` suite evidence still has failed, missing, or skipped cases.
+
+This means current required E2E evidence is clean for its supported fixtures,
+but it must not be read as full OpenSearch REST API coverage. The next API
+compatibility workstream should promote blocked route-parity suites into the
+green required audit one suite at a time, starting from the existing
+`case_gaps` lists and preserving the source-inventory coverage report as the
+coverage counter.

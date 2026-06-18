@@ -151,6 +151,22 @@ Interpretation note for the table above:
 | k-NN transport actions | Planned | Planned | k-NN REST and internal model surfaces exist; OpenSearch k-NN transport handlers are not implemented. |
 | Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
 
+Current 0.2.0 transport coverage evidence:
+
+- `tools/report-transport-action-coverage.py` compares the source-derived
+  transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
+  with current Steelsearch evidence. The current inventory has 160 transport
+  actions, all classified as `planned`, and zero OpenSearch `ActionModule`
+  transport actions classified as implemented.
+- `target/runtime-peer-backpressure-current.json` is passing evidence for the
+  `mixed-java-rust-query-phase` profile. It proves query-phase backpressure and
+  readback behavior across the Rust remote-transport receiver and the Java
+  OpenSearch peer search-thread-pool analogue.
+- That evidence does not promote generic OpenSearch transport action dispatch.
+  The current transport claim remains frame/handshake/observe-only plus the
+  explicit query-phase backpressure profile until actions are implemented and
+  validated one by one.
+
 ## Replacement Readiness Summary
 
 | Capability | Current replacement judgement |
@@ -166,6 +182,20 @@ Interpretation note for the table above:
 | Production OpenSearch API parity | Not ready. |
 | Java OpenSearch data-node replacement inside an existing Java cluster | Not supported. |
 | OpenSearch Security plugin replacement | Not supported. |
+
+Current 0.2.0 mixed-cluster coverage evidence:
+
+- `tools/report-mixed-cluster-coverage.py --require-passed` aggregates the
+  retained phase-C join, recovery, failure, write-replication, publication,
+  allocation, and shard-movement reports.
+- The current retained coverage has 10/10 phase-C reports passed, the
+  representative three-node shard movement report passed, both
+  OpenSearch-to-Steelsearch and Steelsearch-to-OpenSearch movement directions
+  passed, and checkpoint drift is zero for the recorded movement phases.
+- This is representative mixed-cluster join/movement/recovery evidence. It is
+  not a generic Java OpenSearch data-node replacement claim for arbitrary
+  existing Java clusters, Java plugin hot paths, Lucene segment/translog binary
+  compatibility, or direct OpenSearch snapshot repository import.
 
 ## Matrix Gaps To Close
 

@@ -498,6 +498,49 @@ E2E_REQUIRED_PARITY_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+REST_API_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "rest_api_source_inventory_coverage_is_reported_for_required_live_suites",
+        "rest-api-coverage-current",
+        (
+            "python3",
+            "-c",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-audit'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--suite', 'search-semantic', '--suite', 'vector-search']; coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-live-required-suites', '--output', 'target/rest-api-coverage-current.json']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(coverage).returncode)",
+        ),
+        timeout_seconds=120,
+    ),
+)
+
+TRANSPORT_ACTION_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
+        "transport-action-coverage-current",
+        (
+            "python3",
+            "tools/report-transport-action-coverage.py",
+            "--require-peer-backpressure",
+            "--output",
+            "target/transport-action-coverage-current.json",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
+MIXED_CLUSTER_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
+        "mixed-cluster-coverage-current",
+        (
+            "python3",
+            "tools/report-mixed-cluster-coverage.py",
+            "--require-passed",
+            "--output",
+            "target/mixed-cluster-coverage-current.json",
+        ),
+        timeout_seconds=60,
+    ),
+)
+
 RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "release_readiness_writer_and_manifest_checker_contract",
@@ -514,6 +557,9 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
 CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *NON_NATIVE_INVENTORY_BATCH,
     *E2E_REQUIRED_PARITY_BATCH,
+    *REST_API_COVERAGE_CURRENT_BATCH,
+    *TRANSPORT_ACTION_COVERAGE_CURRENT_BATCH,
+    *MIXED_CLUSTER_COVERAGE_CURRENT_BATCH,
     *MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     *RELEASE_READINESS_TOOLING_BATCH,
 )
@@ -2024,6 +2070,9 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "source-backed-query": SOURCE_BACKED_QUERY_BATCH,
     "non-native-inventory": NON_NATIVE_INVENTORY_BATCH,
     "e2e-required-parity": E2E_REQUIRED_PARITY_BATCH,
+    "rest-api-coverage-current": REST_API_COVERAGE_CURRENT_BATCH,
+    "transport-action-coverage-current": TRANSPORT_ACTION_COVERAGE_CURRENT_BATCH,
+    "mixed-cluster-coverage-current": MIXED_CLUSTER_COVERAGE_CURRENT_BATCH,
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "materialization-priority-current": MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     "release-readiness-tooling": RELEASE_READINESS_TOOLING_BATCH,

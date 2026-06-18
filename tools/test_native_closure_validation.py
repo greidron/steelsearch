@@ -58,6 +58,34 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertIn("--require-no-skips", command_text)
 
+    def test_rest_api_coverage_current_batch_reports_source_inventory_coverage(self):
+        batch = self.runner.BATCHES["rest-api-coverage-current"]
+
+        self.assertEqual(len(batch), 1)
+        command_text = " ".join(batch[0].command)
+        self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
+        self.assertIn("tools/report-rest-api-coverage.py", command_text)
+        self.assertIn("--require-live-required-suites", command_text)
+        self.assertIn("target/rest-api-coverage-current.json", command_text)
+
+    def test_transport_action_coverage_current_batch_reports_inventory_and_peer_evidence(self):
+        batch = self.runner.BATCHES["transport-action-coverage-current"]
+
+        self.assertEqual(len(batch), 1)
+        command_text = " ".join(batch[0].command)
+        self.assertIn("tools/report-transport-action-coverage.py", command_text)
+        self.assertIn("--require-peer-backpressure", command_text)
+        self.assertIn("target/transport-action-coverage-current.json", command_text)
+
+    def test_mixed_cluster_coverage_current_batch_reports_join_and_movement_boundary(self):
+        batch = self.runner.BATCHES["mixed-cluster-coverage-current"]
+
+        self.assertEqual(len(batch), 1)
+        command_text = " ".join(batch[0].command)
+        self.assertIn("tools/report-mixed-cluster-coverage.py", command_text)
+        self.assertIn("--require-passed", command_text)
+        self.assertIn("target/mixed-cluster-coverage-current.json", command_text)
+
     def test_materialization_priority_current_batch_requires_zero_ranked(self):
         batch = self.runner.BATCHES["materialization-priority-current"]
 
@@ -89,6 +117,9 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
             {
                 "non_native_path_inventory_has_no_missing_probe_or_family",
                 "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+                "rest_api_source_inventory_coverage_is_reported_for_required_live_suites",
+                "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
+                "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
                 "targeted_materialization_priority_report_has_zero_ranked_operations",
                 "release_readiness_writer_and_manifest_checker_contract",
             },
