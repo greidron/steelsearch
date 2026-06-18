@@ -40,7 +40,7 @@ class PackagingEvidenceTests(unittest.TestCase):
             self.assertEqual(report["summary"]["error_count"], 0)
             self.assertTrue(report["summary"]["binary_present"])
             self.assertTrue(report["summary"]["binary_executable"])
-            self.assertEqual(report["cargo_package"]["package_version"], "0.1.0")
+            self.assertEqual(report["cargo_package"]["package_version"], "0.2.0")
 
     def test_generate_report_rejects_dockerfile_without_required_feature(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -100,7 +100,7 @@ def write_package_fixture(root: Path):
         """
 [package]
 name = "os-node"
-version = "0.1.0"
+version = "0.2.0"
 
 [features]
 standalone-runtime = []

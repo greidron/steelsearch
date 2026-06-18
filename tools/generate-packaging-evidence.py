@@ -20,6 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback is not ex
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_PACKAGE_VERSION = "0.2.0"
 BUILD_COMMAND = (
     "cargo",
     "build",
@@ -125,7 +126,7 @@ def inspect_cargo_package(root: Path) -> dict[str, Any]:
     bins = payload.get("bin", [])
     if package.get("name") != "os-node":
         blockers.append("os-node package name mismatch")
-    if package.get("version") != "0.1.0":
+    if package.get("version") != EXPECTED_PACKAGE_VERSION:
         blockers.append(f"os-node package version mismatch: {package.get('version')}")
     if "standalone-runtime" not in features:
         blockers.append("standalone-runtime feature is missing")
