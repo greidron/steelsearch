@@ -8650,7 +8650,20 @@ impl SteelNode {
             }
         };
 
-        let requested_id = path_id.or_else(|| payload.get("id").and_then(Value::as_str));
+        if path_id.is_none() && payload.get("id").is_some() {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "parse_exception",
+                        "reason": "failed to parse term vectors request. unknown field [id]"
+                    },
+                    "status": 400
+                }),
+            );
+        }
+
+        let requested_id = path_id;
         let Some(id) = requested_id else {
             return RestResponse::json(
                 400,
@@ -39728,21 +39741,19 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             201
         );
 
-        let body_get = node.handle_rest_request(
+        let body_id_get = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/logs-termvectors-000001/_termvectors")
                 .with_json_body(serde_json::json!({"id":"doc-1"})),
         );
-        assert_eq!(body_get.status, 200);
-        assert_eq!(body_get.body["_index"], "logs-termvectors-000001");
-        assert_eq!(body_get.body["found"], Value::Bool(true));
-        assert!(body_get.body["term_vectors"]["message"]["terms"].is_object());
+        assert_eq!(body_id_get.status, 400);
+        assert_eq!(body_id_get.body["error"]["type"], "parse_exception");
 
-        let body_post = node.handle_rest_request(
+        let body_id_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-termvectors-000001/_termvectors")
                 .with_json_body(serde_json::json!({"id":"doc-1"})),
         );
-        assert_eq!(body_post.status, 200);
-        assert!(body_post.body["term_vectors"]["message"]["terms"].is_object());
+        assert_eq!(body_id_post.status, 400);
+        assert_eq!(body_id_post.body["error"]["type"], "parse_exception");
 
         let path_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,

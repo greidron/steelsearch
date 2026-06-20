@@ -850,6 +850,24 @@
       "description": "[admin-cat] cat nodes text"
     },
     {
+      "name": "cat_fielddata_root_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/fielddata?format=json",
+      "extract": "cat_fielddata",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat fielddata root json"
+    },
+    {
+      "name": "cat_shards_root_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/shards?format=json",
+      "extract": "cat_shards_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat shards root json columns"
+    },
+    {
       "name": "cat_shards_targeted_json",
       "area": "cat",
       "method": "GET",
@@ -867,6 +885,15 @@
       "extract": "cat_shards",
       "family": "admin-cat",
       "description": "[admin-cat] cat shards targeted text"
+    },
+    {
+      "name": "cat_segments_root_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/segments?format=json",
+      "extract": "cat_segments_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat segments root json columns"
     },
     {
       "name": "cat_segments_targeted_json",
@@ -1026,6 +1053,71 @@
       "extract": "mget_summary",
       "family": "admin-cat",
       "description": "[admin-cat] targeted mget GET summary"
+    },
+    {
+      "name": "mtermvectors_root_get_summary",
+      "area": "document",
+      "method": "GET",
+      "path": "/_mtermvectors",
+      "body": {
+        "docs": [
+          {
+            "_index": "logs-compat",
+            "_id": "log-1"
+          },
+          {
+            "_index": "logs-compat",
+            "_id": "missing-log"
+          }
+        ]
+      },
+      "extract": "mtermvectors_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] root mtermvectors GET summary"
+    },
+    {
+      "name": "mtermvectors_target_get_summary",
+      "area": "document",
+      "method": "GET",
+      "path": "/logs-compat/_mtermvectors",
+      "body": {
+        "ids": [
+          "log-1",
+          "missing-log"
+        ]
+      },
+      "extract": "mtermvectors_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted mtermvectors GET summary"
+    },
+    {
+      "name": "termvectors_target_body_id_get_error",
+      "area": "document",
+      "method": "GET",
+      "path": "/logs-compat/_termvectors",
+      "body": {
+        "id": "log-1",
+        "fields": [
+          "message"
+        ]
+      },
+      "extract": "error_response",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted termvectors body id GET error"
+    },
+    {
+      "name": "termvectors_target_id_get_summary",
+      "area": "document",
+      "method": "GET",
+      "path": "/logs-compat/_termvectors/log-1",
+      "body": {
+        "fields": [
+          "message"
+        ]
+      },
+      "extract": "termvectors_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted termvectors id GET summary"
     },
     {
       "name": "source_get_summary",

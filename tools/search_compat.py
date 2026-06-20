@@ -1388,6 +1388,36 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "indices": [doc.get("_index") for doc in docs if isinstance(doc, dict)],
             "found": [doc.get("found") for doc in docs if isinstance(doc, dict)],
         }
+    if kind == "mtermvectors_summary":
+        docs = body.get("docs") if isinstance(body, dict) else []
+        if not isinstance(docs, list):
+            docs = []
+        pairs = sorted(
+            (
+                doc.get("_id"),
+                doc.get("_index"),
+                doc.get("found"),
+            )
+            for doc in docs
+            if isinstance(doc, dict)
+        )
+        return {
+            "status": response["status"],
+            "docs": [
+                {"_id": doc_id, "_index": index, "found": found}
+                for doc_id, index, found in pairs
+            ],
+        }
+    if kind == "termvectors_summary":
+        term_vectors = body.get("term_vectors") if isinstance(body, dict) else {}
+        if not isinstance(term_vectors, dict):
+            term_vectors = {}
+        return {
+            "status": response["status"],
+            "_index": body.get("_index") if isinstance(body, dict) else None,
+            "found": body.get("found") if isinstance(body, dict) else None,
+            "fields": sorted(field for field in ("message",) if field in term_vectors),
+        }
     if kind == "render_template_output":
         return {
             "status": response["status"],
@@ -1933,6 +1963,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "row_count": row_count,
             "required_columns_present": sorted(CAT_SHARDS_REQUIRED_COLUMNS & columns),
         }
+    if kind == "cat_shards_columns":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
+            "required_columns_present": sorted(CAT_SHARDS_REQUIRED_COLUMNS & columns),
+        }
     if kind == "cat_segments":
         if isinstance(body, list):
             rows = body
@@ -1946,6 +1988,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "row_count": row_count,
+            "required_columns_present": sorted(CAT_SEGMENTS_REQUIRED_COLUMNS & columns),
+        }
+    if kind == "cat_segments_columns":
+        if isinstance(body, list):
+            rows = body
+            columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            columns = set(lines[0].split()) if lines else set()
+        return {
+            "status": response["status"],
             "required_columns_present": sorted(CAT_SEGMENTS_REQUIRED_COLUMNS & columns),
         }
     if kind == "cat_pit_segments":
