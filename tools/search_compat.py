@@ -2261,16 +2261,34 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "first_primary": shard0.get("primary") if isinstance(shard0, dict) else None,
         }
     if kind == "segments_api":
-        indices = sorted(body.keys()) if isinstance(body, dict) else []
-        first = body.get(indices[0], {}) if indices else {}
+        indices_body = body.get("indices") if isinstance(body, dict) else {}
+        if not isinstance(indices_body, dict):
+            indices_body = {}
+        indices = sorted(indices_body.keys())
+        first = indices_body.get(indices[0], {}) if indices else {}
         shards = first.get("shards") if isinstance(first, dict) else {}
         shard0 = shards.get("0") if isinstance(shards, dict) else None
-        first_segment = shard0[0] if isinstance(shard0, list) and shard0 else {}
+        first_shard = shard0[0] if isinstance(shard0, list) and shard0 else {}
+        segments = first_shard.get("segments") if isinstance(first_shard, dict) else {}
+        if isinstance(segments, dict) and segments:
+            first_segment_name = sorted(segments.keys())[0]
+            first_segment = segments.get(first_segment_name) or {}
+        else:
+            first_segment_name = first_shard.get("segment") if isinstance(first_shard, dict) else None
+            first_segment = first_shard if isinstance(first_shard, dict) else {}
         return {
             "status": response["status"],
             "indices": indices,
-            "first_segment": first_segment.get("segment") if isinstance(first_segment, dict) else None,
+            "first_segment": first_segment_name,
             "first_committed": first_segment.get("committed") if isinstance(first_segment, dict) else None,
+        }
+    if kind == "segments_api_index_list":
+        indices_body = body.get("indices") if isinstance(body, dict) else {}
+        if not isinstance(indices_body, dict):
+            indices_body = {}
+        return {
+            "status": response["status"],
+            "indices": sorted(indices_body.keys()),
         }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}

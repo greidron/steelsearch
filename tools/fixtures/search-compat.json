@@ -888,6 +888,24 @@
       "description": "[admin-cat] cat segments targeted text"
     },
     {
+      "name": "segments_global_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_segments",
+      "extract": "segments_api_index_list",
+      "family": "admin-cat",
+      "description": "[admin-cat] global segments shape"
+    },
+    {
+      "name": "segments_target_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_segments",
+      "extract": "segments_api",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted segments shape"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",

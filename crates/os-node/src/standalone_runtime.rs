@@ -15901,38 +15901,68 @@ impl SteelNode {
     }
 
     fn handle_segments_route(&self, target: Option<&str>) -> RestResponse {
-        let mut response = serde_json::Map::new();
-        for index in self
+        let mut indices = serde_json::Map::new();
+        let created_indices: Vec<String> = self
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
             .iter()
+            .cloned()
+            .collect();
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let matched_indices: Vec<String> = created_indices
+            .into_iter()
             .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
-        {
+            .filter(|index| !index_metadata_is_hidden(&manifest["indices"][index]))
+            .collect();
+        drop(manifest);
+        for index in matched_indices {
             let docs = self.index_document_count(&index);
-            response.insert(
+            indices.insert(
                 index.clone(),
                 serde_json::json!({
                     "shards": {
                         "0": [
                             {
-                                "generation": 1,
-                                "num_docs": docs,
-                                "deleted_docs": 0,
-                                "size_in_bytes": 0,
-                                "memory_in_bytes": 0,
-                                "committed": true,
-                                "search": true,
-                                "version": "9.0",
-                                "compound": false,
-                                "segment": "_0"
+                                "routing": {
+                                    "primary": true,
+                                    "state": "STARTED"
+                                },
+                                "num_committed_segments": 0,
+                                "num_search_segments": 1,
+                                "segments": {
+                                    "_0": {
+                                        "generation": 0,
+                                        "num_docs": docs,
+                                        "deleted_docs": 0,
+                                        "size_in_bytes": 0,
+                                        "memory_in_bytes": 0,
+                                        "committed": false,
+                                        "search": true,
+                                        "version": "10.4.0",
+                                        "compound": true
+                                    }
+                                }
                             }
                         ]
                     }
                 }),
             );
         }
-        RestResponse::json(200, Value::Object(response))
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": indices.len(),
+                    "successful": indices.len(),
+                    "failed": 0
+                },
+                "indices": indices
+            }),
+        )
     }
 
     fn handle_cat_pit_segments_route(&self, request: &RestRequest, include_all: bool) -> RestResponse {
@@ -38772,20 +38802,31 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             RestRequest::new(RestMethod::Put, "/metrics-segments-000001")
                 .with_json_body(serde_json::json!({})),
         );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-segments-hidden-000001").with_json_body(
+                serde_json::json!({
+                    "settings": {"index": {"hidden": true}}
+                }),
+            ),
+        );
 
         let global = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_segments"));
         assert_eq!(global.status, 200);
-        assert!(global.body["logs-segments-000001"]["shards"]["0"].is_array());
-        assert!(global.body["metrics-segments-000001"]["shards"]["0"].is_array());
+        assert_eq!(global.body["_shards"]["total"], 2);
+        assert!(global.body["indices"]["logs-segments-000001"]["shards"]["0"].is_array());
+        assert!(global.body["indices"]["metrics-segments-000001"]["shards"]["0"].is_array());
+        assert!(global.body["indices"].get("logs-segments-hidden-000001").is_none());
 
         let targeted =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-*/_segments"));
         assert_eq!(targeted.status, 200);
-        assert!(targeted.body.get("logs-segments-000001").is_some());
-        assert!(targeted.body.get("metrics-segments-000001").is_none());
+        assert_eq!(targeted.body["_shards"]["total"], 1);
+        assert!(targeted.body["indices"].get("logs-segments-000001").is_some());
+        assert!(targeted.body["indices"].get("metrics-segments-000001").is_none());
         assert_eq!(
-            targeted.body["logs-segments-000001"]["shards"]["0"][0]["segment"],
-            "_0"
+            targeted.body["indices"]["logs-segments-000001"]["shards"]["0"][0]["segments"]["_0"]
+                ["committed"],
+            false
         );
     }
 
