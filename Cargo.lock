@@ -910,7 +910,7 @@ checksum = "269bca4c2591a28585d6bf10d9ed0332b7d76900a1b02bec41bdc3a2cdcda107"
 
 [[package]]
 name = "os-cluster-state"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -925,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "os-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "os-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "os-engine-tantivy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "os-engine",
  "os-plugin-knn",
@@ -957,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "os-migration"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "os-ml-commons"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -973,7 +973,7 @@ dependencies = [
 
 [[package]]
 name = "os-node"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "actix-http",
  "actix-web",
@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "os-node-rest-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1011,7 +1011,7 @@ dependencies = [
 
 [[package]]
 name = "os-plugin-knn"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "os-query-dsl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "os-rest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "os-snapshot"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "os-stream"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "thiserror",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "os-tcp-probe"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "os-transport"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "os-wire"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "os-core",
