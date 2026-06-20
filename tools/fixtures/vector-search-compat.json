@@ -30,6 +30,26 @@
           "name": "hnsw",
           "engine": "lucene"
         }
+      },
+      "embedding_cosine": {
+        "type": "knn_vector",
+        "dimension": 3,
+        "data_type": "float",
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "cosinesimil"
+        }
+      },
+      "embedding_innerproduct": {
+        "type": "knn_vector",
+        "dimension": 3,
+        "data_type": "float",
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "innerproduct"
+        }
       }
     }
   },
@@ -41,6 +61,16 @@
         "tenant": "tenant-a",
         "category": "alpha",
         "embedding": [
+          0.9,
+          0.1,
+          0.0
+        ],
+        "embedding_cosine": [
+          0.9,
+          0.1,
+          0.0
+        ],
+        "embedding_innerproduct": [
           0.9,
           0.1,
           0.0
@@ -57,11 +87,96 @@
           0.1,
           0.9,
           0.0
+        ],
+        "embedding_cosine": [
+          0.1,
+          0.9,
+          0.0
+        ],
+        "embedding_innerproduct": [
+          0.1,
+          0.9,
+          0.0
         ]
       }
     }
   ],
   "cases": [
+    {
+      "name": "knn_search",
+      "metadata": {
+        "evidence_classes": [
+          "lucene-score-space",
+          "exact-ranking"
+        ]
+      },
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "k": 2
+            }
+          }
+        },
+        "size": 2,
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_cosinesimil_search",
+      "metadata": {
+        "evidence_classes": [
+          "lucene-score-space",
+          "exact-ranking"
+        ]
+      },
+      "body": {
+        "query": {
+          "knn": {
+            "embedding_cosine": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "k": 2
+            }
+          }
+        },
+        "size": 2,
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_innerproduct_search",
+      "metadata": {
+        "evidence_classes": [
+          "lucene-score-space",
+          "exact-ranking"
+        ]
+      },
+      "body": {
+        "query": {
+          "knn": {
+            "embedding_innerproduct": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "k": 2
+            }
+          }
+        },
+        "size": 2,
+        "track_total_hits": true
+      }
+    },
     {
       "name": "knn_query_happy_path",
       "metadata": {

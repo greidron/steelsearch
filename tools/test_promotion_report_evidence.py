@@ -86,6 +86,33 @@ class PromotionReportEvidenceTests(unittest.TestCase):
 
             self.assertEqual(errors, ["report evidence missing required evidence classes: ['class-b']"])
 
+    def test_vector_fixture_carries_report_bound_query_cases(self):
+        fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "vector-search-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cases = {case["name"]: case for case in fixture["cases"]}
+
+        for case_name in [
+            "knn_search",
+            "knn_cosinesimil_search",
+            "knn_innerproduct_search",
+            "knn_query_happy_path",
+            "knn_query_filter_happy_path",
+            "knn_query_ignore_unmapped_happy_path",
+            "knn_query_radial_max_distance_happy_path",
+            "knn_query_method_parameters_happy_path",
+            "hybrid_query_happy_path",
+            "hybrid_should_query_happy_path",
+            "hybrid_minimum_should_match_happy_path",
+        ]:
+            self.assertIn(case_name, cases)
+
+        observed_evidence = set()
+        for case in cases.values():
+            observed_evidence.update((case.get("metadata") or {}).get("evidence_classes") or [])
+        self.assertIn("lucene-score-space", observed_evidence)
+        self.assertIn("exact-ranking", observed_evidence)
+        self.assertIn("hybrid-score-merge", observed_evidence)
+
 
 if __name__ == "__main__":
     unittest.main()

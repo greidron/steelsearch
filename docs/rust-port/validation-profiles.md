@@ -61,10 +61,12 @@ Families owned by the vector profile:
 - current coverage caveat:
   - the broad baseline search report may skip k-NN/ML cases when the source
     target is degraded; those skipped cases are not promotion evidence
-  - the vector query report currently covers vector/hybrid query parity, but
-    byte-vector, binary-vector, nested-filtered k-NN, k-NN plugin operational
-    API, and full ML/security evidence must be supplied by report artifacts
-    before those promotion claims are closed
+  - the vector query report covers base, cosine, inner-product, radial,
+    filtered, method-parameter, ignore-unmapped, and hybrid query parity; the
+    remaining vector promotion evidence gaps are byte-vector, binary-vector,
+    and nested-filtered k-NN evidence classes
+  - k-NN plugin operational API and full ML/security evidence must still be
+    supplied by report artifacts before those promotion claims are closed
 
 ### `snapshot-migration`
 
