@@ -18,8 +18,10 @@ RUNTIME_DOC = ROOT / "docs" / "rust-port" / "node-runtime-gap-inventory.md"
 SECURITY_DOC = ROOT / "docs" / "rust-port" / "production-security-baseline.md"
 SHARD_PROBE = ROOT / "tools" / "probe_three_node_shard_movement.py"
 ENGINE_SOURCE = ROOT / "crates" / "os-engine-tantivy" / "src" / "lib.rs"
+STANDALONE_RUNTIME_SOURCE = ROOT / "crates" / "os-node" / "src" / "standalone_runtime.rs"
 BENCHMARK_MATRIX = ROOT / "tools" / "run-search-benchmark-matrix.py"
 NATIVE_CLOSURE_VALIDATION = ROOT / "tools" / "run-native-closure-validation.py"
+VECTOR_FIXTURE = ROOT / "tools" / "fixtures" / "vector-search-compat.json"
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,18 @@ PROBES: tuple[Probe, ...] = (
             r"materialization",
         ),
         watchpoint="unsupported vector/hybrid shapes must remain fallback-counted while direct paths widen",
+    ),
+    Probe(
+        name="nested filtered kNN parity and fallback boundary",
+        category="vector-hybrid",
+        path=VECTOR_FIXTURE,
+        patterns=(
+            r"knn_nested_filtered_happy_path",
+            r"nested-filtered-knn",
+            r"segments\.embedding",
+            r"segments\.tag",
+        ),
+        watchpoint="nested filtered kNN has OpenSearch parity evidence but remains routed away from the native search engine until full-path nested vector normalization is native",
     ),
     Probe(
         name="mixed shard movement hardening",
@@ -302,6 +316,14 @@ FAMILIES: tuple[Family, ...] = (
         next_action="keep widening vector coverage using explicit fallback counters for unsupported shapes",
         evidence_path=ENGINE_SOURCE,
         evidence_pattern=r"search_hits_page_for_hybrid_bool_query_cached",
+    ),
+    Family(
+        name="nested filtered kNN",
+        category="vector-hybrid",
+        status="OpenSearch-parity scenario covered in the vector comparison fixture, with nested+kNN requests deliberately routed away from the native engine for now",
+        next_action="make nested kNN native only after the engine can preserve OpenSearch nested path scoping, full dotted vector field lookup, and inner nested filter semantics under strict comparison",
+        evidence_path=STANDALONE_RUNTIME_SOURCE,
+        evidence_pattern=r"query_contains_nested_knn",
     ),
     Family(
         name="mixed shard movement interruption",
