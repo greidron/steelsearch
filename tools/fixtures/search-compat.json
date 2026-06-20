@@ -942,6 +942,24 @@
       "description": "[admin-cat] targeted recovery shape"
     },
     {
+      "name": "flush_synced_root_get_status",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_flush/synced",
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] root synced flush GET status"
+    },
+    {
+      "name": "flush_synced_target_get_shards",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_flush/synced",
+      "extract": "flush_shards",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted synced flush GET shards"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",
