@@ -1028,6 +1028,24 @@
       "description": "[admin-cat] targeted mget GET summary"
     },
     {
+      "name": "source_get_summary",
+      "area": "document",
+      "method": "GET",
+      "path": "/logs-compat/_source/log-1",
+      "extract": "source_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] get source summary"
+    },
+    {
+      "name": "source_head_status",
+      "area": "document",
+      "method": "HEAD",
+      "path": "/logs-compat/_source/log-1",
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] head source status"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",

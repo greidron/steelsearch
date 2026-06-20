@@ -1281,6 +1281,13 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "_id": body.get("_id"),
             "_source": body.get("_source"),
         }
+    if kind == "source_summary":
+        return {
+            "status": response["status"],
+            "message": body.get("message") if isinstance(body, dict) else None,
+            "service": body.get("service") if isinstance(body, dict) else None,
+            "bytes": body.get("bytes") if isinstance(body, dict) else None,
+        }
     if kind == "single_doc_write_result":
         return {
             "status": response["status"],
