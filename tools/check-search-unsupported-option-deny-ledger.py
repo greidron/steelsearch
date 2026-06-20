@@ -26,7 +26,6 @@ def main() -> int:
         raise SystemExit("search unsupported-option deny ledger is empty")
 
     required = {
-        "expand_wildcards_closed_fail_closed",
         "runtime_mappings_request_body_fail_closed",
     }
     seen = set()

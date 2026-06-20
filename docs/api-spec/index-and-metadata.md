@@ -56,14 +56,15 @@ The current live standalone profile now covers:
 - comma target lists such as `HEAD /logs-000001,metrics-000001`
 - `_all`
 - selector options `ignore_unavailable`, `allow_no_indices`, and
-  `expand_wildcards=open|all`
+  `expand_wildcards=open|closed|all`
 
 The route remains a pure existence check:
 
 - existing resolved target set -> `200` with no body
 - unresolved target set -> `404` with no body
 
-Unsupported `expand_wildcards` forms still fail closed explicitly.
+Unsupported `expand_wildcards` forms other than the documented selector set
+still fail closed explicitly.
 
 ### `PUT /{index}` Current Standalone Profile
 
@@ -106,7 +107,7 @@ But selector handling now covers:
 - `_all`
 - `ignore_unavailable=true`
 - `allow_no_indices=true`
-- `expand_wildcards=open|all`
+- `expand_wildcards=open|closed|all`
 
 ### `DELETE /{index}` Current Standalone Selector Profile
 
@@ -118,7 +119,7 @@ The current live standalone profile for `DELETE /{index}` covers:
 - `_all`
 - `ignore_unavailable=true`
 - `allow_no_indices=true`
-- `expand_wildcards=open|all`
+- `expand_wildcards=open|closed|all`
 
 Canonical missing-index error semantics still use
 `index_not_found_exception` when the selector is not allowed to collapse to an

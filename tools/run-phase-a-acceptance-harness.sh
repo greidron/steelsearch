@@ -179,7 +179,7 @@ fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "full" ]]; then
   export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-strict-compat.json}"
-  export SEARCH_COMPAT_EXCLUDE_CASES="${SEARCH_COMPAT_EXCLUDE_CASES:-expand_wildcards_closed_fail_closed,get_aliases_readback,cat_count_json,cat_count_text}"
+  export SEARCH_COMPAT_EXCLUDE_CASES="${SEARCH_COMPAT_EXCLUDE_CASES:-get_aliases_readback,cat_count_json,cat_count_text}"
 fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "root-cluster-node" ]]; then

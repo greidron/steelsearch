@@ -8293,6 +8293,7 @@ impl SteelNode {
                     selector,
                     ignore_unavailable,
                     allow_no_indices || selector_uses_wildcard,
+                    "open",
                 ) {
                     Ok(mut matched) => indices.append(&mut matched),
                     Err(response) => return response,
@@ -8659,15 +8660,6 @@ impl SteelNode {
                 return build_unsupported_search_response("unsupported pre_filter_shard_size");
             }
         }
-        if request
-            .query_params
-            .get("expand_wildcards")
-            .is_some_and(|value| value == "closed")
-        {
-            return build_unsupported_search_response(
-                "unsupported search target option [expand_wildcards=closed]",
-            );
-        }
         let mut body = match serde_json::from_slice::<Value>(&request.body) {
             Ok(body) => body,
             Err(error) => {
@@ -8736,12 +8728,32 @@ impl SteelNode {
             {
                 Vec::new()
             } else {
-                match self.resolve_search_targets(index, ignore_unavailable, allow_no_indices) {
+                match self.resolve_search_targets(
+                    index,
+                    ignore_unavailable,
+                    allow_no_indices,
+                    expand_wildcards,
+                ) {
                     Ok(indices) => indices,
                     Err(response) => return response,
                 }
             }
         };
+        if let Some(closed_index) = resolved_indices
+            .iter()
+            .find(|index_name| self.index_is_closed(index_name))
+        {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "index_closed_exception",
+                        "reason": format!("closed index [{closed_index}]")
+                    },
+                    "status": 400
+                }),
+            );
+        }
         let requested_routing = request
             .query_params
             .get("routing")
@@ -9456,7 +9468,7 @@ impl SteelNode {
             .get("keep_alive")
             .map(String::as_str)
             .unwrap_or("1m");
-        let resolved_indices = match self.resolve_search_targets(index, false, false) {
+        let resolved_indices = match self.resolve_search_targets(index, false, false, "open") {
             Ok(indices) => indices,
             Err(response) => return response,
         };
@@ -17272,20 +17284,31 @@ impl SteelNode {
         target: &str,
         ignore_unavailable: bool,
         allow_no_indices: bool,
+        expand_wildcards: &str,
     ) -> Result<Vec<String>, RestResponse> {
+        let (include_open, include_hidden, include_closed) =
+            parse_index_expand_wildcards(expand_wildcards)?;
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
         let mut resolved = Vec::new();
         for selector in target.split(',').filter(|selector| !selector.is_empty()) {
+            let wildcard_selector =
+                selector == "_all" || selector.contains('*') || selector.contains('?');
             let mut matched = Vec::new();
             if let Some(indices) = manifest["indices"].as_object() {
-                if selector == "_all" {
-                    matched.extend(indices.keys().cloned());
-                }
                 for (index_name, index_body) in indices {
                     if selector == index_name || wildcard_match(selector, index_name) {
+                        if !Self::search_target_state_matches(
+                            index_body,
+                            wildcard_selector,
+                            include_open,
+                            include_hidden,
+                            include_closed,
+                        ) {
+                            continue;
+                        }
                         matched.push(index_name.clone());
                         continue;
                     }
@@ -17293,6 +17316,15 @@ impl SteelNode {
                         if aliases.contains_key(selector)
                             || aliases.keys().any(|alias| wildcard_match(selector, alias))
                         {
+                            if !Self::search_target_state_matches(
+                                index_body,
+                                wildcard_selector,
+                                include_open,
+                                include_hidden,
+                                include_closed,
+                            ) {
+                                continue;
+                            }
                             matched.push(index_name.clone());
                         }
                     }
@@ -17332,6 +17364,31 @@ impl SteelNode {
             ));
         }
         Ok(resolved)
+    }
+
+    fn search_target_state_matches(
+        index_body: &Value,
+        wildcard_selector: bool,
+        include_open: bool,
+        include_hidden: bool,
+        include_closed: bool,
+    ) -> bool {
+        if !wildcard_selector {
+            return true;
+        }
+        let closed = index_body["state"]
+            .as_str()
+            .is_some_and(|state| state == "close");
+        if closed && !include_closed {
+            return false;
+        }
+        if !closed && !include_open {
+            return false;
+        }
+        if index_metadata_is_hidden(index_body) && !include_hidden {
+            return false;
+        }
+        true
     }
 
     fn index_primary_shard_count(&self, index: &str) -> usize {
@@ -21758,7 +21815,10 @@ fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool, b
             "hidden" => {
                 include_hidden = true;
             }
-            "closed" | "none" => {
+            "closed" => {
+                include_closed = true;
+            }
+            "none" => {
                 return Err(RestResponse::opensearch_error_kind(
                     os_rest::RestErrorKind::IllegalArgument,
                     format!("unsupported expand_wildcards value [{expand_wildcards}]"),
@@ -38735,6 +38795,63 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             .expect("metadata manifest state lock poisoned");
         assert_eq!(manifest["indices"]["logs-close-000001"]["state"], "close");
         assert_eq!(manifest["indices"]["metrics-close-000001"]["state"], "close");
+    }
+
+    #[test]
+    fn search_expand_wildcards_closed_resolves_closed_targets_and_fails_closed() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-search-open-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-search-closed-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        let open_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-search-open-000001/_doc/open-doc")
+                .with_json_body(serde_json::json!({"message": "open"})),
+        );
+        assert_eq!(open_doc.status, 201);
+        let closed_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-search-closed-000001/_doc/closed-doc")
+                .with_json_body(serde_json::json!({"message": "closed"})),
+        );
+        assert_eq!(closed_doc.status, 201);
+        let refresh = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"));
+        assert_eq!(refresh.status, 200);
+        let close = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-search-closed-000001/_close",
+        ));
+        assert_eq!(close.status, 200);
+
+        let default_wildcard = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-*/_search")
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})),
+        );
+        assert_eq!(default_wildcard.status, 200);
+        assert_eq!(default_wildcard.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            default_wildcard.body["hits"]["hits"][0]["_index"],
+            "logs-search-open-000001"
+        );
+
+        for path in [
+            "/logs-search-*/_search?expand_wildcards=closed",
+            "/logs-search-*/_search?expand_wildcards=all",
+            "/logs-search-closed-000001/_search",
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, path)
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}}})),
+            );
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(response.body["error"]["type"], "index_closed_exception");
+        }
     }
 
     #[test]

@@ -348,6 +348,7 @@ Required semantic cases:
 - `scripted_metric_aggregation`
 - `partial_shard_failure_geo_search`
 - `allow_partial_search_results_execution_summary`
+- `expand_wildcards_closed_fail_closed`
 
 Required security cases through `security-authz-compat-report.json`:
 
@@ -357,7 +358,6 @@ Required security cases through `security-authz-compat-report.json`:
 
 Required fail-closed deny ledger:
 
-- `expand_wildcards_closed_fail_closed`
 - `runtime_mappings_request_body_fail_closed`
 
 Promotion is blocked if supported search evidence is present without an

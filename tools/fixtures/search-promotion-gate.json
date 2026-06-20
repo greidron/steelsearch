@@ -44,7 +44,8 @@
         "sum_bucket_pipeline_aggregation",
         "scripted_metric_aggregation",
         "partial_shard_failure_geo_search",
-        "allow_partial_search_results_execution_summary"
+        "allow_partial_search_results_execution_summary",
+        "expand_wildcards_closed_fail_closed"
       ]
     },
     "security_parity": {
@@ -64,7 +65,6 @@
   "unsupported_option_deny_ledger": {
     "fixture": "search-unsupported-option-deny-ledger.json",
     "required_cases": [
-      "expand_wildcards_closed_fail_closed",
       "runtime_mappings_request_body_fail_closed"
     ]
   },

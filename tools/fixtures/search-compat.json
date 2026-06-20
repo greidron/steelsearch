@@ -3987,10 +3987,39 @@
         }
       },
       "extract": "error_response",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-search-target-option",
-      "reason": "Steelsearch rejects closed wildcard expansion until closed-index engine state is implemented.",
+      "steps": [
+        {
+          "name": "delete-index",
+          "method": "DELETE",
+          "path": "/logs-closed-wildcard-compat"
+        },
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-closed-wildcard-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "close-index",
+          "method": "POST",
+          "path": "/logs-closed-wildcard-compat/_close",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "search-closed-wildcard",
+          "method": "POST",
+          "path": "/logs-closed-wildcard-*/_search?expand_wildcards=closed",
+          "expected_status": 400,
+          "body": {
+            "query": {
+              "match_all": {}
+            }
+          },
+          "extract": "error_response"
+        }
+      ],
       "family": "misc",
       "description": "[misc] expand wildcards closed fail closed"
     },

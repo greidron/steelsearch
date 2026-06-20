@@ -85,6 +85,7 @@ def main() -> int:
             "scripted_metric_aggregation",
             "partial_shard_failure_geo_search",
             "allow_partial_search_results_execution_summary",
+            "expand_wildcards_closed_fail_closed",
         },
     )
     ensure_subset(
@@ -109,7 +110,6 @@ def main() -> int:
         "unsupported_option_deny_ledger.required_cases",
         deny.get("required_cases") or [],
         {
-            "expand_wildcards_closed_fail_closed",
             "runtime_mappings_request_body_fail_closed",
         },
     )

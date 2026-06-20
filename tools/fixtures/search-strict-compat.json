@@ -3467,10 +3467,39 @@
         }
       },
       "extract": "error_response",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "out-of-phase-defer",
-      "reason": "Closed-index engine state is intentionally deferred out of Phase A-1 lexical strict parity; the current search strict fixture keeps this as an explicit out-of-phase defer.",
+      "steps": [
+        {
+          "name": "delete-index",
+          "method": "DELETE",
+          "path": "/logs-closed-wildcard-strict-compat"
+        },
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-closed-wildcard-strict-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "close-index",
+          "method": "POST",
+          "path": "/logs-closed-wildcard-strict-compat/_close",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "search-closed-wildcard",
+          "method": "POST",
+          "path": "/logs-closed-wildcard-strict-*/_search?expand_wildcards=closed",
+          "expected_status": 400,
+          "body": {
+            "query": {
+              "match_all": {}
+            }
+          },
+          "extract": "error_response"
+        }
+      ],
       "family": "misc",
       "description": "[misc] expand wildcards closed fail closed",
       "strict_source_parity_required": true
