@@ -1762,6 +1762,189 @@
       "description": "[admin-cat] tasks shape"
     },
     {
+      "name": "task_missing_get_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_tasks/node-a:999999",
+      "extract": "task_get_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] missing task GET error"
+    },
+    {
+      "name": "remote_store_metadata_shard_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_remotestore/metadata/logs-compat/0",
+      "extract": "remote_store_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] remote store metadata shard shape"
+    },
+    {
+      "name": "remote_store_stats_shard_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_remotestore/stats/logs-compat/0",
+      "extract": "remote_store_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] remote store stats shard shape"
+    },
+    {
+      "name": "snapshot_repository_status_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_snapshot/compat-status-repo/_status",
+      "extract": "snapshot_status",
+      "steps": [
+        {
+          "name": "put-repository",
+          "method": "PUT",
+          "path": "/_snapshot/compat-status-repo",
+          "expected_status": 200,
+          "body": {
+            "type": "fs",
+            "settings": {
+              "location": "target/compat-status-repo"
+            }
+          },
+          "extract": "acknowledged"
+        },
+        {
+          "name": "create-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/compat-status-repo/snap-1?wait_for_completion=true",
+          "expected_status": 200,
+          "body": {
+            "indices": "logs-compat",
+            "include_global_state": false
+          },
+          "extract": "snapshot_create"
+        },
+        {
+          "name": "repository-status",
+          "method": "GET",
+          "path": "/_snapshot/compat-status-repo/_status",
+          "expected_status": 200,
+          "extract": "snapshot_status"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] snapshot repository status shape"
+    },
+    {
+      "name": "snapshot_root_status_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_snapshot/_status",
+      "extract": "snapshot_status",
+      "steps": [
+        {
+          "name": "put-repository",
+          "method": "PUT",
+          "path": "/_snapshot/compat-root-status-repo",
+          "expected_status": 200,
+          "body": {
+            "type": "fs",
+            "settings": {
+              "location": "target/compat-root-status-repo"
+            }
+          },
+          "extract": "acknowledged"
+        },
+        {
+          "name": "create-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/compat-root-status-repo/snap-1?wait_for_completion=true",
+          "expected_status": 200,
+          "body": {
+            "indices": "logs-compat",
+            "include_global_state": false
+          },
+          "extract": "snapshot_create"
+        },
+        {
+          "name": "root-status",
+          "method": "GET",
+          "path": "/_snapshot/_status",
+          "expected_status": 200,
+          "extract": "snapshot_status"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] snapshot root status shape"
+    },
+    {
+      "name": "wlm_stats_root_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_wlm/stats",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] WLM stats root shape"
+    },
+    {
+      "name": "wlm_stats_node_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_wlm/_all/stats",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] WLM stats node shape"
+    },
+    {
+      "name": "wlm_stats_workload_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_wlm/stats/default",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] WLM stats workload group shape"
+    },
+    {
+      "name": "wlm_stats_node_workload_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_wlm/_all/stats/default",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] WLM stats node workload group shape"
+    },
+    {
+      "name": "list_wlm_stats_root_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/wlm_stats",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] list WLM stats root shape"
+    },
+    {
+      "name": "list_wlm_stats_node_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/wlm_stats/_all/stats",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] list WLM stats node shape"
+    },
+    {
+      "name": "list_wlm_stats_workload_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/wlm_stats/stats/default",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] list WLM stats workload group shape"
+    },
+    {
+      "name": "list_wlm_stats_node_workload_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/wlm_stats/_all/stats/default",
+      "extract": "wlm_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] list WLM stats node workload group shape"
+    },
+    {
       "name": "grok_processor_patterns",
       "area": "operational",
       "method": "GET",

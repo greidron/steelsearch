@@ -2344,6 +2344,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
             "indices_keys": sorted(body.get("indices", {}).keys()) if isinstance(body, dict) and isinstance(body.get("indices"), dict) else None,
         }
+    if kind == "wlm_stats":
+        node_entries = {
+            key: value
+            for key, value in body.items()
+            if isinstance(value, dict) and isinstance(value.get("workload_groups"), dict)
+        } if isinstance(body, dict) else {}
+        return {
+            "status": response["status"],
+            "nodes_meta_present": isinstance(body, dict) and isinstance(body.get("_nodes"), dict),
+            "node_entry_count": len(node_entries),
+        }
     if kind == "snapshot_missing_repository":
         error = body.get("error") if isinstance(body, dict) else None
         root_cause = error.get("root_cause") if isinstance(error, dict) else None
@@ -2416,6 +2427,12 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "snapshot_name": first.get("snapshot") if isinstance(first, dict) else None,
             "state": first.get("state") if isinstance(first, dict) else None,
             "indices": first.get("indices") if isinstance(first, dict) else None,
+        }
+    if kind == "snapshot_status":
+        snapshots = body.get("snapshots") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "snapshots_is_list": isinstance(snapshots, list),
         }
     if kind == "snapshot_delete":
         snapshot = body.get("snapshot") if isinstance(body, dict) else None
@@ -2789,6 +2806,12 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "tasks_present": isinstance(body.get("tasks"), dict),
             "nodes_present": isinstance(body.get("nodes"), dict),
+        }
+    if kind == "task_get_error":
+        error = body.get("error") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
         }
     if kind == "allocation_explain":
         decisions = body.get("node_allocation_decisions")

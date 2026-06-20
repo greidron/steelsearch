@@ -3216,7 +3216,7 @@ impl SteelNode {
             return Some(self.handle_remote_store_restore_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_list/wlm_stats" {
-            return Some(self.handle_wlm_stats_route(None, None));
+            return Some(self.handle_wlm_list_stats_route(None, None));
         }
         if request.method == RestMethod::Get && request.path == "/_list" {
             return Some(self.handle_list_route());
@@ -3243,7 +3243,7 @@ impl SteelNode {
         {
             let workload_group =
                 request.path.trim_start_matches("/_list/wlm_stats/stats/");
-            return Some(self.handle_wlm_stats_route(None, Some(workload_group)));
+            return Some(self.handle_wlm_list_stats_route(None, Some(workload_group)));
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_list/wlm_stats/")
@@ -3255,7 +3255,7 @@ impl SteelNode {
                 .trim_start_matches("/_list/wlm_stats/")
                 .trim_end_matches("/stats")
                 .trim_end_matches('/');
-            return Some(self.handle_wlm_stats_route(Some(node_id), None));
+            return Some(self.handle_wlm_list_stats_route(Some(node_id), None));
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_list/wlm_stats/")
@@ -3266,7 +3266,7 @@ impl SteelNode {
             let (node_id, workload_group) = suffix
                 .split_once("/stats/")
                 .expect("list wlm stats suffix");
-            return Some(self.handle_wlm_stats_route(Some(node_id), Some(workload_group)));
+            return Some(self.handle_wlm_list_stats_route(Some(node_id), Some(workload_group)));
         }
         if request.method == RestMethod::Get && request.path == "/_wlm/stats" {
             return Some(self.handle_wlm_stats_route(None, None));
@@ -3916,6 +3916,9 @@ impl SteelNode {
         if request.path == "/_snapshot" && request.method == RestMethod::Get {
             return Some(self.handle_snapshot_repository_read_route(None));
         }
+        if request.path == "/_snapshot/_status" && request.method == RestMethod::Get {
+            return Some(self.handle_snapshot_status_collection_route(None));
+        }
         let snapshot_segments = request.path.trim_matches('/').split('/').collect::<Vec<_>>();
         if snapshot_segments.first() == Some(&"_snapshot") {
             return match snapshot_segments.as_slice() {
@@ -3962,6 +3965,9 @@ impl SteelNode {
                         return Some(response);
                     }
                     Some(self.handle_snapshot_cleanup_route(repository))
+                }
+                ["_snapshot", repository, "_status"] if request.method == RestMethod::Get => {
+                    Some(self.handle_snapshot_status_collection_route(Some(repository)))
                 }
                 ["_snapshot", repository, snapshot] => match request.method {
                     RestMethod::Put | RestMethod::Post => {
@@ -7074,6 +7080,15 @@ impl SteelNode {
                 }),
             ),
         )
+    }
+
+    fn handle_snapshot_status_collection_route(&self, repository: Option<&str>) -> RestResponse {
+        if let Some(repository) = repository {
+            if !self.snapshot_repository_exists(repository) {
+                return build_missing_snapshot_repository_response(repository);
+            }
+        }
+        RestResponse::json(200, serde_json::json!({ "snapshots": [] }))
     }
 
     fn handle_snapshot_restore_route(
@@ -12278,37 +12293,85 @@ impl SteelNode {
             }
             Some(_) => None,
         };
-        let workload_group_id = workload_group.unwrap_or("default");
-        let mut nodes = serde_json::Map::new();
-        if let Some(selected_node_id) = selected {
-            nodes.insert(
+        let workload_group_id = workload_group.unwrap_or("DEFAULT_WORKLOAD_GROUP");
+        let workload_group_exists = workload_group_id == "DEFAULT_WORKLOAD_GROUP";
+        let cluster_name = self
+            .cluster_view
+            .as_ref()
+            .map(|view| view.cluster_name.as_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("steelsearch-dev");
+        let mut body = serde_json::Map::new();
+        body.insert("cluster_name".to_string(), serde_json::json!(cluster_name));
+        body.insert(
+            "_nodes".to_string(),
+            serde_json::json!({
+                "total": if selected.is_some() { 1 } else { 0 },
+                "successful": if selected.is_some() && workload_group_exists { 1 } else { 0 },
+                "failed": if selected.is_some() && !workload_group_exists { 1 } else { 0 }
+            }),
+        );
+        if let Some(selected_node_id) = selected.filter(|_| workload_group_exists) {
+            body.insert(
                 selected_node_id.clone(),
                 serde_json::json!({
-                    "node_id": selected_node_id,
-                    "stats": {
-                        "workload_groups": {
-                            workload_group_id: {
-                                "active_requests": 0,
-                                "rejected_requests": 0,
+                    "workload_groups": {
+                        workload_group_id: {
+                            "cpu": {
+                                "current_usage": 0.0,
                                 "cancellations": 0,
-                                "cpu": {
-                                    "current_usage": 0.0
-                                },
-                                "memory": {
-                                    "current_usage_bytes": 0
-                                }
-                            }
+                                "rejections": 0
+                            },
+                            "memory": {
+                                "current_usage": 0.0,
+                                "cancellations": 0,
+                                "rejections": 0
+                            },
+                            "total_cancellations": 0,
+                            "total_completions": 0,
+                            "total_rejections": 0
                         }
                     }
                 }),
             );
         }
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "nodes": nodes
-            }),
-        )
+        RestResponse::json(200, Value::Object(body))
+    }
+
+    fn handle_wlm_list_stats_route(
+        &self,
+        node_id: Option<&str>,
+        workload_group: Option<&str>,
+    ) -> RestResponse {
+        let runtime_node_id = self.info.name.as_str();
+        let selected = matches!(node_id, None | Some("_all") | Some("_local"))
+            || node_id.is_some_and(|candidate| candidate == runtime_node_id);
+        let workload_group_id = workload_group.unwrap_or("DEFAULT_WORKLOAD_GROUP");
+        let mut rows = Vec::new();
+        if selected && workload_group_id == "DEFAULT_WORKLOAD_GROUP" {
+            rows.push(serde_json::json!({
+                "NODE_ID": runtime_node_id,
+                "WORKLOAD_GROUP_ID": "DEFAULT_WORKLOAD_GROUP",
+                "CPU_USAGE": "0.0",
+                "MEMORY_USAGE": "0.0",
+                "TOTAL_COMPLETIONS": "0",
+                "TOTAL_REJECTIONS": "0",
+                "TOTAL_CANCELLATIONS": "0",
+                "|": "|"
+            }));
+        }
+        let empty_page = rows.is_empty();
+        rows.push(serde_json::json!({
+            "NODE_ID": "No more pages available",
+            "WORKLOAD_GROUP_ID": "-",
+            "CPU_USAGE": "-",
+            "MEMORY_USAGE": "-",
+            "TOTAL_COMPLETIONS": "-",
+            "TOTAL_REJECTIONS": "-",
+            "TOTAL_CANCELLATIONS": "-",
+            "|": if empty_page { "-" } else { "|" }
+        }));
+        RestResponse::json(200, Value::Array(rows))
     }
 
     fn handle_script_context_route(&self) -> RestResponse {
@@ -38895,14 +38958,28 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "/_list/wlm_stats/stats/default",
             "/_list/wlm_stats/_all/stats",
             "/_list/wlm_stats/_all/stats/default",
-            "/_wlm/stats",
-            "/_wlm/stats/default",
-            "/_wlm/_all/stats",
-            "/_wlm/_all/stats/default",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
-            assert!(response.body["nodes"].is_object(), "path {path}");
+            assert!(response.body.is_array(), "path {path}");
+        }
+
+        for path in ["/_wlm/stats", "/_wlm/_all/stats"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(response.body["_nodes"].is_object(), "path {path}");
+            assert!(
+                response.body["steel-node"]["workload_groups"].is_object(),
+                "path {path}"
+            );
+        }
+
+        for path in ["/_wlm/stats/default", "/_wlm/_all/stats/default"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["_nodes"]["successful"], 0);
+            assert_eq!(response.body["_nodes"]["failed"], 1);
+            assert!(response.body.get("steel-node").is_none(), "path {path}");
         }
 
         let filtered = node.handle_rest_request(RestRequest::new(
@@ -38910,7 +38987,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "/_wlm/missing-node/stats/default",
         ));
         assert_eq!(filtered.status, 200);
-        assert_eq!(filtered.body["nodes"], serde_json::json!({}));
+        assert_eq!(filtered.body["_nodes"]["total"], 0);
     }
 
     #[test]
