@@ -15909,7 +15909,7 @@ impl SteelNode {
             .iter()
             .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
         {
-            let docs = self.index_document_count(index);
+            let docs = self.index_document_count(&index);
             response.insert(
                 index.clone(),
                 serde_json::json!({
@@ -16548,16 +16548,18 @@ impl SteelNode {
 
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
         let mut rows = Vec::new();
-        for index in self
+        let indices: Vec<String> = self
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
             .iter()
             .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
-        {
-            let docs = self.index_document_count(index);
+            .cloned()
+            .collect();
+        for index in indices {
+            let docs = self.index_document_count(&index);
             rows.push(serde_json::json!({
-                "index": index,
+                "index": &index,
                 "shard": "0",
                 "prirep": "p",
                 "state": "STARTED",
@@ -16566,16 +16568,18 @@ impl SteelNode {
                 "ip": "0.0.0.0",
                 "node": self.info.name.clone(),
             }));
-            rows.push(serde_json::json!({
-                "index": index,
-                "shard": "0",
-                "prirep": "r",
-                "state": "UNASSIGNED",
-                "docs": "0",
-                "store": "0b",
-                "ip": "",
-                "node": "",
-            }));
+            for _ in 0..self.index_replica_count(&index) {
+                rows.push(serde_json::json!({
+                    "index": &index,
+                    "shard": "0",
+                    "prirep": "r",
+                    "state": "UNASSIGNED",
+                    "docs": "0",
+                    "store": "0b",
+                    "ip": "",
+                    "node": "",
+                }));
+            }
         }
         rows.sort_by(|left, right| {
             left["index"]
@@ -17412,6 +17416,25 @@ impl SteelNode {
             .or_else(|| settings["number_of_shards"].as_str())
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(1)
+    }
+
+    fn index_replica_count(&self, index: &str) -> usize {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let settings = &manifest["indices"][index]["settings"];
+        settings["index"]["number_of_replicas"]
+            .as_str()
+            .or_else(|| settings["number_of_replicas"].as_str())
+            .and_then(|value| value.parse::<usize>().ok())
+            .or_else(|| {
+                settings["index"]["number_of_replicas"]
+                    .as_u64()
+                    .or_else(|| settings["number_of_replicas"].as_u64())
+                    .map(|value| value as usize)
+            })
+            .unwrap_or(0)
     }
 
     fn index_document_count(&self, index: &str) -> usize {
@@ -24584,8 +24607,34 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             .insert("format".to_string(), "json".to_string());
         let shards_json_response = node.handle_rest_request(shards_json_request);
         assert_eq!(shards_json_response.status, 200);
-        assert_eq!(shards_json_response.body.as_array().expect("cat shards array").len(), 2);
+        assert_eq!(shards_json_response.body.as_array().expect("cat shards array").len(), 1);
         assert_eq!(shards_json_response.body[0]["index"], "logs-000001");
+        assert_eq!(shards_json_response.body[0]["prirep"], "p");
+
+        node.metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["indices"]["logs-000001"] =
+            SteelNode::normalize_index_manifest_entry(
+                "logs-000001",
+                serde_json::json!({
+                    "settings": {"index": {"number_of_replicas": 1}}
+                }),
+            );
+        let mut replicated_shards_request = RestRequest::new(RestMethod::Get, "/_cat/shards/logs-*");
+        replicated_shards_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let replicated_shards_response = node.handle_rest_request(replicated_shards_request);
+        assert_eq!(replicated_shards_response.status, 200);
+        assert_eq!(
+            replicated_shards_response
+                .body
+                .as_array()
+                .expect("replicated cat shards array")
+                .len(),
+            2
+        );
+        assert_eq!(replicated_shards_response.body[1]["prirep"], "r");
 
         let mut segments_text_request = RestRequest::new(RestMethod::Get, "/_cat/segments/logs-*");
         segments_text_request

@@ -850,6 +850,25 @@
       "description": "[admin-cat] cat nodes text"
     },
     {
+      "name": "cat_shards_targeted_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/shards/logs-compat?format=json",
+      "extract": "cat_shards",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat shards targeted json"
+    },
+    {
+      "name": "cat_shards_targeted_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/shards/logs-compat?v=true",
+      "accept": "text/plain",
+      "extract": "cat_shards",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat shards targeted text"
+    },
+    {
       "name": "cat_segments_targeted_json",
       "area": "cat",
       "method": "GET",
