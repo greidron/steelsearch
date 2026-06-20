@@ -1,5 +1,7 @@
 import importlib.util
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -212,6 +214,75 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(merged["summary"]["failed"], 0)
         self.assertEqual(merged["summary"]["skipped"], 0)
         self.assertEqual(merged["summary"]["by_area"]["search"]["passed"], 2)
+
+    def test_load_best_report_prefers_complete_passing_report_over_newer_failed_report(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_best_report")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "fixture.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "case-a" },
+    { "name": "case-b" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            recursive_dir = temp_dir / "target" / "nested"
+            recursive_dir.mkdir(parents=True)
+            passing_report = output_dir / "synthetic-report.json"
+            failed_report = recursive_dir / "synthetic-report.json"
+            passing_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 2, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" },
+    { "name": "case-b", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            time.sleep(0.01)
+            failed_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 1, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" },
+    { "name": "case-b", "status": "failed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                path, source, report, unusable = runner.load_best_report(
+                    "synthetic-report.json",
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(path, passing_report)
+            self.assertEqual(source, "output-dir")
+            self.assertIsNone(unusable)
+            self.assertEqual(report["summary"]["failed"], 0)
 
 
 if __name__ == "__main__":

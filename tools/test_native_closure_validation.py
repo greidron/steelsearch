@@ -58,6 +58,17 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertIn("--require-no-skips", command_text)
 
+    def test_e2e_search_compat_parity_batch_allows_known_skips_but_rejects_failures(self):
+        batch = self.runner.BATCHES["e2e-search-compat-parity"]
+
+        self.assertEqual(len(batch), 1)
+        command_text = " ".join(batch[0].command)
+        self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
+        self.assertIn("search-compat", command_text)
+        self.assertIn("search-strict", command_text)
+        self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
+        self.assertNotIn("--require-no-skips", command_text)
+
     def test_rest_api_coverage_current_batch_reports_source_inventory_coverage(self):
         batch = self.runner.BATCHES["rest-api-coverage-current"]
 
@@ -117,6 +128,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
             {
                 "non_native_path_inventory_has_no_missing_probe_or_family",
                 "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+                "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
                 "rest_api_source_inventory_coverage_is_reported_for_required_live_suites",
                 "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
                 "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",

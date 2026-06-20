@@ -228,20 +228,44 @@ def load_best_report(
         seen.add(resolved)
         unique_candidates.append((path, source))
 
+    fixture = load_json(fixture_path)
     unusable_path = None
-    for path, source in sorted(unique_candidates, key=lambda item: item[0].stat().st_mtime, reverse=True):
+    usable_candidates: list[tuple[tuple[int, int, int, int, float], Path, str, dict[str, Any]]] = []
+    for path, source in unique_candidates:
         report = load_json(path)
         if report_fixture_mismatch(report, fixture_path):
             continue
         if report_has_no_reachable_targets(report):
             unusable_path = path
             continue
+        usable_candidates.append((report_quality_key(report, fixture, path), path, source, report))
+    if usable_candidates:
+        _, path, source, report = max(usable_candidates, key=lambda item: item[0])
         return path, source, report, unusable_path
     return unusable_path, None, None, unusable_path
 
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def report_quality_key(report: dict[str, Any], fixture: dict[str, Any], path: Path) -> tuple[int, int, int, int, float]:
+    fixture_names = {
+        case.get("name")
+        for case in fixture.get("cases") or []
+        if isinstance(case, dict) and case.get("name")
+    }
+    report_cases = [
+        case
+        for case in report.get("cases") or []
+        if isinstance(case, dict) and case.get("name")
+    ]
+    report_names = {case.get("name") for case in report_cases}
+    covered = len(fixture_names & report_names)
+    missing = len(fixture_names - report_names)
+    failed = sum(1 for case in report_cases if case.get("status") == "failed")
+    skipped = sum(1 for case in report_cases if case.get("status") == "skipped")
+    return (covered, -failed, -missing, -skipped, path.stat().st_mtime)
 
 
 def merge_case_reports(base: dict[str, Any], partial: dict[str, Any]) -> dict[str, Any]:

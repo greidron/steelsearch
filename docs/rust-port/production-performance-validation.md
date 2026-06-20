@@ -266,13 +266,17 @@ are:
 - the green required live audit for `search-semantic` and `vector-search`
   touches 15 of the 373 in-scope source route rows and leaves 358 in-scope rows
   outside that green live subset;
-- the broader collected unified report touches 86 of the 373 in-scope source
-  route rows, but that report is `blocked` because retained `search-compat` and
-  `search-strict` suite evidence still has failed, missing, or skipped cases.
+- the broader collected unified report now has failed=0 and missing=0 across
+  the retained required suites, including `search-compat` and `search-strict`;
+- that broader report touches 104 of the 373 in-scope source route rows and
+  leaves 269 in-scope rows outside the current live required-suite evidence;
+- the broader report still has 22 known gap or skipped cases, so the stricter
+  no-skip release gate remains limited to `search-semantic` and
+  `vector-search`.
 
 This means current required E2E evidence is clean for its supported fixtures,
 but it must not be read as full OpenSearch REST API coverage. The next API
-compatibility workstream should promote blocked route-parity suites into the
-green required audit one suite at a time, starting from the existing
+compatibility workstream should keep moving skipped cases into implemented or
+explicitly out-of-scope evidence one suite at a time, starting from the existing
 `case_gaps` lists and preserving the source-inventory coverage report as the
 coverage counter.
