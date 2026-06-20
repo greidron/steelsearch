@@ -1372,6 +1372,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "valid": body.get("valid") if isinstance(body, dict) else None,
         }
+    if kind == "mget_summary":
+        docs = body.get("docs") if isinstance(body, dict) else []
+        if not isinstance(docs, list):
+            docs = []
+        return {
+            "status": response["status"],
+            "indices": [doc.get("_index") for doc in docs if isinstance(doc, dict)],
+            "found": [doc.get("found") for doc in docs if isinstance(doc, dict)],
+        }
     if kind == "render_template_output":
         return {
             "status": response["status"],
