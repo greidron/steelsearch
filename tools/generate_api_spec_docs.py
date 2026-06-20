@@ -5,6 +5,7 @@ import csv
 from collections import defaultdict
 import json
 from pathlib import Path
+import tomllib
 
 from runtime_route_normalization import is_concrete_path, normalize_path
 
@@ -21,11 +22,17 @@ GENERATED_ARTIFACTS = [
 ]
 RUNTIME_ROUTE_LEDGER = OUT_DIR / "runtime-route-ledger.json"
 STATEFUL_ROUTE_PROBE_REPORT = OUT_DIR / "runtime-stateful-route-probe-report.json"
+OS_NODE_MANIFEST = ROOT / "crates/os-node/Cargo.toml"
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:
     with path.open() as f:
         return list(csv.DictReader(f, delimiter="\t"))
+
+
+def steelsearch_api_version() -> str:
+    with OS_NODE_MANIFEST.open("rb") as f:
+        return str(tomllib.load(f)["package"]["version"])
 
 
 def include_rest_row(row: dict[str, str]) -> bool:
@@ -737,7 +744,7 @@ def generate_openapi(rows: list[dict[str, str]]) -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Steelsearch API",
-            "version": "0.1.0",
+            "version": steelsearch_api_version(),
             "description": (
                 "Generated OpenAPI companion built from the source-derived REST route "
                 "inventory. This reflects route inventory and evidence ownership, not "

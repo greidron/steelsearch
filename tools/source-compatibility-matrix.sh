@@ -50,6 +50,16 @@ route_status() {
     return
   fi
 
+  if [[ "${source}" == *"/modules/opensearch-dashboards/"* && "${path}" == *'/_opensearch_dashboards'*'route.getPath('* ]]; then
+    echo "out-of-scope"
+    return
+  fi
+
+  if [[ "${source}" == *"/RestDeleteIndexAction.java" && "${method}" == "DELETE" && "${path}" == "/" ]]; then
+    echo "out-of-scope"
+    return
+  fi
+
   case "${method} ${path}" in
     "GET /"|"HEAD /")
       echo "implemented"

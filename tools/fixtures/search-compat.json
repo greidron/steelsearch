@@ -1945,6 +1945,32 @@
       "description": "[admin-cat] list WLM stats node workload group shape"
     },
     {
+      "name": "tier_all_shape",
+      "area": "operational",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "degraded-source",
+      "reason": "OpenSearch target does not expose tiering read handlers in this environment, so tier read coverage is retained as SteelSearch-only route evidence.",
+      "method": "GET",
+      "path": "/_tier/all",
+      "extract": "tier_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] tier all shape"
+    },
+    {
+      "name": "tier_index_shape",
+      "area": "operational",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "degraded-source",
+      "reason": "OpenSearch target does not expose tiering read handlers in this environment, so tier read coverage is retained as SteelSearch-only route evidence.",
+      "method": "GET",
+      "path": "/logs-compat/_tier",
+      "extract": "tier_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] index tier shape"
+    },
+    {
       "name": "grok_processor_patterns",
       "area": "operational",
       "method": "GET",
@@ -4171,6 +4197,45 @@
       "extract": "knn_stats_shape",
       "family": "vector-knn",
       "description": "[vector-knn] knn stats shape"
+    },
+    {
+      "name": "knn_stats_stat_shape",
+      "area": "knn",
+      "method": "GET",
+      "path": "/_plugins/_knn/stats/graph_count",
+      "extract": "knn_stats_shape",
+      "family": "vector-knn",
+      "description": "[vector-knn] knn stat shape"
+    },
+    {
+      "name": "knn_stats_node_shape",
+      "area": "knn",
+      "method": "GET",
+      "path": "/_plugins/_knn/_all/stats",
+      "extract": "knn_stats_shape",
+      "family": "vector-knn",
+      "description": "[vector-knn] knn node stats shape"
+    },
+    {
+      "name": "knn_stats_node_stat_shape",
+      "area": "knn",
+      "method": "GET",
+      "path": "/_plugins/_knn/_all/stats/graph_count",
+      "extract": "knn_stats_shape",
+      "family": "vector-knn",
+      "description": "[vector-knn] knn node stat shape"
+    },
+    {
+      "name": "knn_warmup_get_shape",
+      "area": "knn",
+      "method": "GET",
+      "path": "/_plugins/_knn/warmup/vectors-compat",
+      "body": {
+        "vector_segment_count": 1
+      },
+      "extract": "knn_warmup_basic",
+      "family": "vector-knn",
+      "description": "[vector-knn] knn warmup GET shape"
     },
     {
       "name": "knn_settings_readback",

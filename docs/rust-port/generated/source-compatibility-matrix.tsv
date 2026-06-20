@@ -15,7 +15,7 @@ rest_route	planned	POST	/{index}/_search/template		/home/ubuntu/OpenSearch/modul
 rest_route	planned	GET	/_scripts/painless/_context		/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessContextAction.java	215
 rest_route	planned	GET	/_scripts/painless/_execute		/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
 rest_route	planned	POST	/_scripts/painless/_execute		/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
-rest_route	planned		"/_opensearch_dashboards" + route.getPath(		/home/ubuntu/OpenSearch/modules/opensearch-dashboards/src/main/java/org/opensearch/dashboards/OpenSearchDashboardsModulePlugin.java	176
+rest_route	out-of-scope		"/_opensearch_dashboards" + route.getPath(		/home/ubuntu/OpenSearch/modules/opensearch-dashboards/src/main/java/org/opensearch/dashboards/OpenSearchDashboardsModulePlugin.java	176
 rest_route	planned	GET	"/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	112
 rest_route	planned	POST	"/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	113
 rest_route	planned	GET	"/{index}/" + ENDPOINT		/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	114
@@ -157,7 +157,7 @@ rest_route	planned	GET	/_data_stream/{name}/_stats		/home/ubuntu/OpenSearch/serv
 rest_route	planned	DELETE	/_component_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComponentTemplateAction.java	59
 rest_route	planned	DELETE	/_index_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComposableIndexTemplateAction.java	59
 rest_route	planned	DELETE	/_data_stream/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteDataStreamAction.java	59
-rest_route	planned	DELETE	/		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
+rest_route	out-of-scope	DELETE	/		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
 rest_route	stubbed	DELETE	/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
 rest_route	planned	DELETE	/_template/{name}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexTemplateAction.java	58
 rest_route	planned	GET	/_flush		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	62
