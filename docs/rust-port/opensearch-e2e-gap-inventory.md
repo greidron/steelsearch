@@ -8,6 +8,9 @@ significant-terms pass.
 Latest report:
 `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
 
+Latest audit report:
+`target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
+
 ## Summary
 
 - Total remaining failed rows: 0.
@@ -15,8 +18,13 @@ Latest report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 152 passed, 0 failed, 14 skipped.
+- `search-compat`: 226 passed, 0 failed, 20 skipped.
 - `search-strict`: 146 passed, 0 failed, 5 skipped.
+- `search-semantic`: 49 passed, 0 failed, 0 skipped.
+- `vector-search`: 16 passed, 0 failed, 0 skipped.
+- Combined required classification:
+  `canonical_equal=287`, `strict_equal=146`, `semantic_equal=4`,
+  `failed=0`, `missing=0`.
 
 ## Remaining Gaps
 

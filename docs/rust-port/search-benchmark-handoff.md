@@ -83,13 +83,22 @@ Interpretation:
 Functional OpenSearch E2E comparison status:
 
 - Current unified report: `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
+- Current audit report: `target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
 - Route parity: `ok`
 - Durability parity: `ok`
 - Semantic parity: `ok`
-- Current coverage summary: `canonical_equal=152`, `strict_equal=146`, `semantic_equal=0`, `failed=0`, `missing=0`, `known_gap_or_skipped=19`, `steelsearch_only=0`
-- `search-compat`: `152` passed, `0` failed, `14` skipped.
+- Current coverage summary: `canonical_equal=226`, `strict_equal=146`, `semantic_equal=0`, `failed=0`, `missing=0`, `known_gap_or_skipped=25`, `steelsearch_only=0`
+- Audit coverage summary: `canonical_equal=61`, `strict_equal=0`, `semantic_equal=4`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
+- `search-compat`: `226` passed, `0` failed, `20` skipped.
 - `search-strict`: `146` passed, `0` failed, `5` skipped.
+- `search-semantic`: `49` passed, `0` failed, `0` skipped.
+- `vector-search`: `16` passed, `0` failed, `0` skipped.
 - The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The remaining skipped cases are kNN/ML/plugin or Steelsearch-native telemetry/fail-closed cases, not live comparison failures.
+- Release evidence inventory is complete for the current candidate:
+  `target/release-evidence-inventory-current.json` reports no missing startup
+  or readiness-attachment items, and
+  `target/native-closure-status-final-current.json` reports
+  `final_cutover_ready=true`.
 
 ## Main files changed
 
