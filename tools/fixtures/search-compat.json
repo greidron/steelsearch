@@ -850,6 +850,25 @@
       "description": "[admin-cat] cat nodes text"
     },
     {
+      "name": "cat_segments_targeted_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/segments/logs-compat?format=json",
+      "extract": "cat_segments",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat segments targeted json"
+    },
+    {
+      "name": "cat_segments_targeted_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/segments/logs-compat?v=true",
+      "accept": "text/plain",
+      "extract": "cat_segments",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat segments targeted text"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",
