@@ -780,7 +780,7 @@ and mixed-cluster failure chaos evidence with
 `tools/run-native-closure-validation.py --batch chaos-evidence-current`
 before running that inventory.
 
-Current v0.2.0 release evidence status:
+Current v0.2.1 release evidence status:
 
 - `target/release-evidence-inventory-current.json` reports the full startup
   and readiness-attachment evidence inventory complete, including the live
