@@ -102,6 +102,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             "knn_query_method_parameters_happy_path",
             "knn_byte_vector_subset_happy_path",
             "knn_binary_vector_subset_happy_path",
+            "knn_nested_filtered_happy_path",
             "hybrid_query_happy_path",
             "hybrid_should_query_happy_path",
             "hybrid_minimum_should_match_happy_path",
@@ -115,6 +116,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         self.assertIn("exact-ranking", observed_evidence)
         self.assertIn("byte-vector-subset", observed_evidence)
         self.assertIn("binary-vector-subset", observed_evidence)
+        self.assertIn("nested-filtered-knn", observed_evidence)
         self.assertIn("hybrid-score-merge", observed_evidence)
 
     def test_search_fixture_carries_knn_plugin_report_bound_evidence(self):

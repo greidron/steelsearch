@@ -62,9 +62,8 @@ Families owned by the vector profile:
   - the broad baseline search report may skip k-NN/ML cases when the source
     target is degraded; those skipped cases are not promotion evidence
   - the vector query report covers base, cosine, inner-product, radial,
-    filtered, method-parameter, ignore-unmapped, and hybrid query parity; the
-    remaining vector promotion evidence gap is the nested-filtered k-NN
-    evidence class
+    filtered, nested-filtered, method-parameter, ignore-unmapped, byte/binary,
+    and hybrid query parity
   - k-NN plugin operational API evidence is emitted by
     `knn-plugin-compat-report.json` as Steelsearch runtime evidence because the
     stock OpenSearch 2.19 k-NN plugin does not expose every settings, warmup,

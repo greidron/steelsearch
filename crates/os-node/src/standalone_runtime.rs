@@ -17486,13 +17486,7 @@ impl SteelNode {
         resolved_indices: &[String],
     ) -> Option<RestResponse> {
         let field = extract_knn_field_name(query)?;
-        let query_vector = query
-            .get("knn")
-            .and_then(Value::as_object)
-            .and_then(|knn| knn.values().next())
-            .and_then(Value::as_object)
-            .and_then(|spec| spec.get("vector"))
-            .and_then(Value::as_array);
+        let query_vector = extract_knn_query_vector(query);
         let ignore_unmapped = extract_knn_ignore_unmapped(query);
         let manifest = self
             .metadata_manifest_state
@@ -17500,8 +17494,8 @@ impl SteelNode {
             .expect("metadata manifest state lock poisoned");
         let mut any_mapped = false;
         for index in resolved_indices {
-            let field_mapping = manifest["indices"][index]["mappings"]["properties"][field].clone();
-            let Some(field_object) = field_mapping.as_object() else {
+            let field_mapping = lookup_mapping_property(&manifest["indices"][index]["mappings"], field);
+            let Some(field_object) = field_mapping.and_then(Value::as_object) else {
                 if ignore_unmapped {
                     continue;
                 }
@@ -17662,7 +17656,8 @@ fn build_json_parse_search_response(reason: String) -> RestResponse {
 }
 
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
-    ![
+    !query_contains_nested_knn(body.get("query").unwrap_or(&Value::Null))
+        && ![
         "collapse",
         "profile",
         "rescore",
@@ -17673,6 +17668,37 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     ]
     .iter()
     .any(|key| body.get(*key).is_some())
+}
+
+fn query_contains_nested_knn(query: &Value) -> bool {
+    if query
+        .get("nested")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get("query"))
+        .is_some_and(value_contains_knn_query)
+    {
+        return true;
+    }
+    query.as_object().is_some_and(|object| {
+        object.values().any(|value| match value {
+            Value::Array(values) => values.iter().any(query_contains_nested_knn),
+            Value::Object(_) => query_contains_nested_knn(value),
+            _ => false,
+        })
+    })
+}
+
+fn value_contains_knn_query(value: &Value) -> bool {
+    if value.get("knn").is_some() {
+        return true;
+    }
+    value.as_object().is_some_and(|object| {
+        object.values().any(|child| match child {
+            Value::Array(values) => values.iter().any(value_contains_knn_query),
+            Value::Object(_) => value_contains_knn_query(child),
+            _ => false,
+        })
+    })
 }
 
 fn standalone_native_search_request(
@@ -19168,6 +19194,78 @@ fn extract_knn_field_name(query: &Value) -> Option<&str> {
         }
     }
     None
+}
+
+fn extract_knn_query_vector(query: &Value) -> Option<&Vec<Value>> {
+    if let Some(knn) = query.get("knn").and_then(Value::as_object) {
+        return knn
+            .values()
+            .next()
+            .and_then(Value::as_object)
+            .and_then(|spec| spec.get("vector"))
+            .and_then(Value::as_array);
+    }
+    if let Some(nested_query) = query
+        .get("nested")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get("query"))
+    {
+        return extract_knn_query_vector(nested_query);
+    }
+    if let Some(queries) = query
+        .get("hybrid")
+        .and_then(Value::as_object)
+        .and_then(|hybrid| hybrid.get("queries"))
+        .and_then(Value::as_array)
+    {
+        return queries.iter().find_map(extract_knn_query_vector);
+    }
+    let bool_query = query.get("bool").and_then(Value::as_object)?;
+    for clause_name in ["must", "should", "filter", "must_not"] {
+        if let Some(vector) = bool_query
+            .get(clause_name)
+            .and_then(Value::as_array)
+            .and_then(|clauses| clauses.iter().find_map(extract_knn_query_vector))
+        {
+            return Some(vector);
+        }
+    }
+    None
+}
+
+fn lookup_mapping_property<'a>(mappings: &'a Value, field: &str) -> Option<&'a Value> {
+    let mut properties = mappings.get("properties")?;
+    let mut segments = field.split('.').peekable();
+    while let Some(segment) = segments.next() {
+        let Some(field_mapping) = properties.get(segment) else {
+            return find_mapping_property_by_leaf(
+                mappings.get("properties")?,
+                field.rsplit('.').next()?,
+            );
+        };
+        if segments.peek().is_none() {
+            return Some(field_mapping);
+        }
+        let Some(next_properties) = field_mapping.get("properties") else {
+            return find_mapping_property_by_leaf(
+                mappings.get("properties")?,
+                field.rsplit('.').next()?,
+            );
+        };
+        properties = next_properties;
+    }
+    find_mapping_property_by_leaf(mappings.get("properties")?, field.rsplit('.').next()?)
+}
+
+fn find_mapping_property_by_leaf<'a>(properties: &'a Value, field: &str) -> Option<&'a Value> {
+    let object = properties.as_object()?;
+    if let Some(field_mapping) = object.get(field) {
+        return Some(field_mapping);
+    }
+    object
+        .values()
+        .filter_map(|field_mapping| field_mapping.get("properties"))
+        .find_map(|nested_properties| find_mapping_property_by_leaf(nested_properties, field))
 }
 
 fn apply_search_sort(hits: &mut [Value], sort: &Value) {

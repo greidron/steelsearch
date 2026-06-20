@@ -60,6 +60,23 @@
         "type": "knn_vector",
         "dimension": 8,
         "data_type": "binary"
+      },
+      "segments": {
+        "type": "nested",
+        "properties": {
+          "tag": {
+            "type": "keyword"
+          },
+          "embedding": {
+            "type": "knn_vector",
+            "dimension": 3,
+            "space_type": "l2",
+            "method": {
+              "name": "hnsw",
+              "engine": "lucene"
+            }
+          }
+        }
       }
     }
   },
@@ -92,6 +109,24 @@
         ],
         "embedding_binary": [
           -128
+        ],
+        "segments": [
+          {
+            "tag": "drop",
+            "embedding": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "tag": "drop",
+            "embedding": [
+              2.0,
+              2.0,
+              2.0
+            ]
+          }
         ]
       }
     },
@@ -123,6 +158,16 @@
         ],
         "embedding_binary": [
           64
+        ],
+        "segments": [
+          {
+            "tag": "keep",
+            "embedding": [
+              10.0,
+              10.0,
+              10.0
+            ]
+          }
         ]
       }
     }
@@ -403,6 +448,39 @@
                 -128
               ],
               "k": 1
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_nested_filtered_happy_path",
+      "metadata": {
+        "evidence_classes": [
+          "nested-filtered-knn"
+        ]
+      },
+      "body": {
+        "query": {
+          "nested": {
+            "path": "segments",
+            "query": {
+              "knn": {
+                "segments.embedding": {
+                  "vector": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "k": 2,
+                  "filter": {
+                    "term": {
+                      "segments.tag": "keep"
+                    }
+                  }
+                }
+              }
             }
           }
         },
