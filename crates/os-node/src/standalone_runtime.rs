@@ -3628,7 +3628,20 @@ impl SteelNode {
             return Some(self.handle_data_stream_get_route(None));
         }
         if request.path == "/_data_stream/_stats" && request.method == RestMethod::Get {
-            return Some(self.handle_data_stream_stats_route());
+            return Some(self.handle_data_stream_stats_route(None));
+        }
+        if request.method == RestMethod::Get
+            && request.path.starts_with("/_data_stream/")
+            && request.path.ends_with("/_stats")
+        {
+            let name = request
+                .path
+                .trim_start_matches("/_data_stream/")
+                .trim_end_matches("/_stats")
+                .trim_end_matches('/');
+            if !name.is_empty() {
+                return Some(self.handle_data_stream_stats_route(Some(name)));
+            }
         }
         if request.path.starts_with("/_data_stream/") {
             let name = request.path.trim_start_matches("/_data_stream/");
@@ -6557,7 +6570,7 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "data_streams": entries }))
     }
 
-    fn handle_data_stream_stats_route(&self) -> RestResponse {
+    fn handle_data_stream_stats_route(&self, target: Option<&str>) -> RestResponse {
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -6566,15 +6579,31 @@ impl SteelNode {
             .as_object()
             .cloned()
             .unwrap_or_default();
-        let backing_indices = all
-            .values()
-            .map(|value| value["indices"].as_array().map(|indices| indices.len()).unwrap_or(0))
+        let selected = all
+            .iter()
+            .filter(|(name, _)| target.map(|target| wildcard_match(target, name)).unwrap_or(true))
+            .collect::<Vec<_>>();
+        if target.is_some() && selected.is_empty() {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("data_stream matching [{}] not found", target.unwrap_or_default())
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        let backing_indices = selected
+            .iter()
+            .map(|(_, value)| value["indices"].as_array().map(|indices| indices.len()).unwrap_or(0))
             .sum::<usize>();
         RestResponse::json(
             200,
             serde_json::json!({
                 "_shards": { "total": 1, "successful": 1, "failed": 0 },
-                "data_stream_count": all.len(),
+                "data_stream_count": selected.len(),
                 "backing_indices": backing_indices,
                 "total_store_size_bytes": 0
             }),
@@ -8584,6 +8613,7 @@ impl SteelNode {
                 "contexts": [
                     { "name": "score", "methods": [] },
                     { "name": "filter", "methods": [] },
+                    { "name": "template", "methods": [] },
                     { "name": "update", "methods": [] }
                 ]
             }),
@@ -8614,6 +8644,13 @@ impl SteelNode {
             .get("params")
             .and_then(|params| params.get("value"))
             .cloned()
+            .or_else(|| {
+                payload
+                    .get("script")
+                    .and_then(|script| script.get("params"))
+                    .and_then(|params| params.get("value"))
+                    .cloned()
+            })
             .or_else(|| {
                 payload
                     .get("context_setup")
@@ -15558,7 +15595,8 @@ impl SteelNode {
             .filter(|node| {
                 target
                     .map(|pattern| {
-                        wildcard_match(pattern, &node.node_name)
+                        pattern == "_local"
+                            || wildcard_match(pattern, &node.node_name)
                             || wildcard_match(pattern, &node.transport_address)
                     })
                     .unwrap_or(true)

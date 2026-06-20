@@ -1104,6 +1104,20 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "number_of_shards": str(settings.get("number_of_shards")),
             "number_of_replicas": str(settings.get("number_of_replicas")),
         }
+    if kind == "global_mapping_summary":
+        payload = body if isinstance(body, dict) else {}
+        fixture_indices = {"logs-compat", "logs-mapping-compat-000001"}
+        index_fields: dict[str, list[str]] = {}
+        for index in sorted(fixture_indices & set(payload.keys())):
+            index_body = payload.get(index) or {}
+            mappings = index_body.get("mappings") if isinstance(index_body, dict) else {}
+            properties = (mappings or {}).get("properties") if isinstance(mappings, dict) else {}
+            index_fields[index] = sorted(properties.keys()) if isinstance(properties, dict) else []
+        return {
+            "status": response["status"],
+            "indices": sorted(index_fields.keys()),
+            "index_fields": index_fields,
+        }
     if kind == "mapping_field":
         indices = sorted(body.keys()) if isinstance(body, dict) else []
         first_index = body.get(indices[0], {}) if indices else {}
@@ -1217,7 +1231,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             }
         if isinstance(body, dict) and "index_templates" in body:
             entries = body.get("index_templates") or []
-            first = entries[0] if isinstance(entries, list) and entries else {}
+            first = {}
+            if isinstance(entries, list):
+                first = next(
+                    (
+                        entry for entry in entries
+                        if isinstance(entry, dict) and entry.get("name") == "logs-compat-template"
+                    ),
+                    entries[0] if entries else {},
+                )
             payload = first.get("index_template") if isinstance(first, dict) else {}
             template = payload.get("template") if isinstance(payload, dict) else {}
             settings = ((template.get("settings") or {}).get("index") or {}) if isinstance(template, dict) else {}
@@ -1232,7 +1254,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 "number_of_replicas": str(settings.get("number_of_replicas")) if isinstance(settings, dict) and settings.get("number_of_replicas") is not None else None,
             }
         if isinstance(body, dict) and body:
-            name = sorted(body.keys())[0]
+            name = "logs-template" if "logs-template" in body else sorted(body.keys())[0]
             payload = body.get(name) or {}
             settings = payload.get("settings") or {}
             mappings = ((payload.get("mappings") or {}).get("properties") or {}) if isinstance(payload, dict) else {}
@@ -1268,6 +1290,84 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "total_store_size_bytes_present": (
                 body.get("total_store_size_bytes") is not None if isinstance(body, dict) else False
             ),
+        }
+    if kind == "grok_patterns":
+        patterns = body.get("patterns") if isinstance(body, dict) else {}
+        return {
+            "status": response["status"],
+            "required_patterns_present": sorted(
+                {"GREEDYDATA", "WORD"} & set(patterns.keys())
+            ) if isinstance(patterns, dict) else [],
+        }
+    if kind == "painless_execute":
+        result = body.get("result") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "result": str(result) if result is not None else None,
+        }
+    if kind == "pipeline_collection":
+        names = set()
+        if isinstance(body, dict):
+            pipelines = body.get("pipelines")
+            if isinstance(pipelines, list):
+                names.update(
+                    item.get("id")
+                    for item in pipelines
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
+                )
+            names.update(
+                key for key, value in body.items()
+                if key != "pipelines" and isinstance(value, dict)
+            )
+        return {
+            "status": response["status"],
+            "fixture_pipelines_present": sorted({"logs-pipeline"} & names),
+        }
+    if kind == "ingest_simulate":
+        docs = body.get("docs") if isinstance(body, dict) else []
+        first_doc = docs[0] if isinstance(docs, list) and docs and isinstance(docs[0], dict) else {}
+        source = ((first_doc.get("doc") or {}).get("_source") or {}) if isinstance(first_doc, dict) else {}
+        return {
+            "status": response["status"],
+            "doc_count": len(docs) if isinstance(docs, list) else 0,
+            "message": source.get("message") if isinstance(source, dict) else None,
+        }
+    if kind == "list_summary":
+        if isinstance(body, dict) and isinstance(body.get("_raw"), str):
+            return {
+                "status": response["status"],
+                "fixture_indices_present": [],
+            }
+        indices = []
+        if isinstance(body, dict):
+            raw_indices = body.get("indices") or []
+            if isinstance(raw_indices, list):
+                for item in raw_indices:
+                    if isinstance(item, str):
+                        indices.append(item)
+                    elif isinstance(item, dict) and isinstance(item.get("index"), str):
+                        indices.append(item["index"])
+        fixture_indices = {"logs-compat", "logs-mapping-compat-000001"}
+        return {
+            "status": response["status"],
+            "fixture_indices_present": sorted(fixture_indices & set(indices)),
+        }
+    if kind == "list_shards_summary":
+        shards = body.get("shards") if isinstance(body, dict) else []
+        indices = {
+            shard.get("index")
+            for shard in shards
+            if isinstance(shard, dict) and isinstance(shard.get("index"), str)
+        } if isinstance(shards, list) else set()
+        return {
+            "status": response["status"],
+            "fixture_indices_present": sorted({"logs-compat"} & indices),
+        }
+    if kind == "tier_summary":
+        return {
+            "status": response["status"],
+            "index": body.get("index") if isinstance(body, dict) else None,
+            "tiers_present": isinstance(body.get("tiers"), list) if isinstance(body, dict) else False,
         }
     if kind == "acknowledged":
         return {
@@ -2473,11 +2573,13 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         }
     if kind == "script_context":
         contexts = body.get("contexts") or []
-        names = {
-            item.get("name")
-            for item in contexts
-            if isinstance(item, dict) and isinstance(item.get("name"), str)
-        } if isinstance(contexts, list) else set()
+        names = set()
+        if isinstance(contexts, list):
+            for item in contexts:
+                if isinstance(item, str):
+                    names.add(item)
+                elif isinstance(item, dict) and isinstance(item.get("name"), str):
+                    names.add(item["name"])
         return {
             "status": response["status"],
             "required_contexts_present": sorted({"filter", "score", "template", "update"} & names),

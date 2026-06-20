@@ -812,6 +812,42 @@
       "description": "[admin-cat] cat pending tasks json"
     },
     {
+      "name": "cat_allocation_root_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/allocation?format=json",
+      "extract": "cat_allocation",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat allocation root json"
+    },
+    {
+      "name": "cat_allocation_local_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/allocation/_local?format=json",
+      "extract": "cat_allocation",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat allocation local json"
+    },
+    {
+      "name": "cat_thread_pool_root_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/thread_pool?format=json",
+      "extract": "cat_thread_pool",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat thread pool root json"
+    },
+    {
+      "name": "cat_thread_pool_search_json",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/thread_pool/search?format=json",
+      "extract": "cat_thread_pool",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat thread pool targeted json"
+    },
+    {
       "name": "cat_nodeattrs_json",
       "area": "cat",
       "method": "GET",
@@ -1397,6 +1433,24 @@
       "description": "[admin-cat] composable index template readback"
     },
     {
+      "name": "get_index_template_root_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_index_template",
+      "extract": "template_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] composable index template root readback"
+    },
+    {
+      "name": "get_legacy_template_root_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_template",
+      "extract": "template_metadata",
+      "family": "admin-cat",
+      "description": "[admin-cat] legacy index template root readback"
+    },
+    {
       "name": "templated_index_application_readback",
       "area": "index",
       "method": "GET",
@@ -1456,6 +1510,15 @@
       "description": "[admin-cat] data stream stats readback"
     },
     {
+      "name": "get_data_stream_named_stats_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_data_stream/logs-compat-stream/_stats",
+      "extract": "data_stream_stats",
+      "family": "admin-cat",
+      "description": "[admin-cat] named data stream stats readback"
+    },
+    {
       "name": "delete_data_stream_ack",
       "area": "index",
       "method": "DELETE",
@@ -1486,6 +1549,15 @@
       "extract": "index_metadata",
       "family": "admin-cat",
       "description": "[admin-cat] dynamic mapping readback includes auto-added field"
+    },
+    {
+      "name": "global_mapping_readback",
+      "area": "index",
+      "method": "GET",
+      "path": "/_mapping",
+      "extract": "global_mapping_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] global mapping readback includes fixture indices"
     },
     {
       "name": "settings_targeted_put_ack",
@@ -1688,6 +1760,171 @@
       "extract": "tasks",
       "family": "admin-cat",
       "description": "[admin-cat] tasks shape"
+    },
+    {
+      "name": "grok_processor_patterns",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_ingest/processor/grok",
+      "extract": "grok_patterns",
+      "family": "admin-cat",
+      "description": "[admin-cat] grok processor patterns"
+    },
+    {
+      "name": "painless_context_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_scripts/painless/_context",
+      "extract": "script_context",
+      "family": "admin-cat",
+      "description": "[admin-cat] painless context shape"
+    },
+    {
+      "name": "painless_execute_get_result",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_scripts/painless/_execute",
+      "body": {
+        "script": {
+          "source": "params.value",
+          "lang": "painless",
+          "params": {
+            "value": 7
+          }
+        }
+      },
+      "extract": "painless_execute",
+      "family": "admin-cat",
+      "description": "[admin-cat] painless execute GET result"
+    },
+    {
+      "name": "put_search_pipeline_ack",
+      "area": "operational",
+      "method": "PUT",
+      "path": "/_search/pipeline/logs-pipeline",
+      "body": {
+        "description": "fixture search pipeline",
+        "request_processors": [],
+        "response_processors": []
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] put search pipeline"
+    },
+    {
+      "name": "get_search_pipeline_collection",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_search/pipeline",
+      "extract": "pipeline_collection",
+      "family": "admin-cat",
+      "description": "[admin-cat] search pipeline collection readback"
+    },
+    {
+      "name": "put_ingest_pipeline_ack",
+      "area": "operational",
+      "method": "PUT",
+      "path": "/_ingest/pipeline/logs-pipeline",
+      "body": {
+        "description": "fixture ingest pipeline",
+        "processors": []
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] put ingest pipeline"
+    },
+    {
+      "name": "get_ingest_pipeline_collection",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_ingest/pipeline",
+      "extract": "pipeline_collection",
+      "family": "admin-cat",
+      "description": "[admin-cat] ingest pipeline collection readback"
+    },
+    {
+      "name": "simulate_ingest_pipeline_root_get",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_ingest/pipeline/_simulate",
+      "body": {
+        "pipeline": {
+          "processors": []
+        },
+        "docs": [
+          {
+            "_source": {
+              "message": "root simulate"
+            }
+          }
+        ]
+      },
+      "extract": "ingest_simulate",
+      "family": "admin-cat",
+      "description": "[admin-cat] root ingest pipeline simulate GET"
+    },
+    {
+      "name": "simulate_ingest_pipeline_named_get",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_ingest/pipeline/logs-pipeline/_simulate",
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "named simulate"
+            }
+          }
+        ]
+      },
+      "extract": "ingest_simulate",
+      "family": "admin-cat",
+      "description": "[admin-cat] named ingest pipeline simulate GET"
+    },
+    {
+      "name": "list_root_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list",
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] list root shape"
+    },
+    {
+      "name": "list_indices_root_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/indices",
+      "extract": "list_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] list indices root shape"
+    },
+    {
+      "name": "list_indices_target_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/indices/logs-compat",
+      "extract": "list_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] list indices targeted shape"
+    },
+    {
+      "name": "list_shards_root_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/shards",
+      "extract": "list_shards_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] list shards root shape"
+    },
+    {
+      "name": "list_shards_target_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_list/shards/logs-compat",
+      "extract": "list_shards_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] list shards targeted shape"
     },
     {
       "name": "refresh_root_get_status",
