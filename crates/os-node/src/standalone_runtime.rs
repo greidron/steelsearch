@@ -16079,13 +16079,24 @@ impl SteelNode {
 
     fn handle_recovery_route(&self, target: Option<&str>) -> RestResponse {
         let mut response = serde_json::Map::new();
-        for index in self
+        let created_indices: Vec<String> = self
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
             .iter()
+            .cloned()
+            .collect();
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let matched_indices: Vec<String> = created_indices
+            .into_iter()
             .filter(|index| target.map(|pattern| wildcard_match(pattern, index)).unwrap_or(true))
-        {
+            .filter(|index| !index_metadata_is_hidden(&manifest["indices"][index]))
+            .collect();
+        drop(manifest);
+        for index in matched_indices {
             response.insert(
                 index.clone(),
                 serde_json::json!({
@@ -38771,17 +38782,26 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             RestRequest::new(RestMethod::Put, "/metrics-recovery-000001")
                 .with_json_body(serde_json::json!({})),
         );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-recovery-hidden-000001").with_json_body(
+                serde_json::json!({
+                    "settings": {"index": {"hidden": true}}
+                }),
+            ),
+        );
 
         let global = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_recovery"));
         assert_eq!(global.status, 200);
         assert!(global.body["logs-recovery-000001"]["shards"].is_array());
         assert!(global.body["metrics-recovery-000001"]["shards"].is_array());
+        assert!(global.body.get("logs-recovery-hidden-000001").is_none());
 
         let targeted =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-*/_recovery"));
         assert_eq!(targeted.status, 200);
         assert!(targeted.body.get("logs-recovery-000001").is_some());
         assert!(targeted.body.get("metrics-recovery-000001").is_none());
+        assert!(targeted.body.get("logs-recovery-hidden-000001").is_none());
         assert_eq!(
             targeted.body["logs-recovery-000001"]["shards"][0]["stage"],
             "DONE"

@@ -924,6 +924,24 @@
       "description": "[admin-cat] targeted field caps summary"
     },
     {
+      "name": "recovery_root_get_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_recovery",
+      "extract": "recovery_api",
+      "family": "admin-cat",
+      "description": "[admin-cat] root recovery shape"
+    },
+    {
+      "name": "recovery_target_get_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_recovery",
+      "extract": "recovery_api",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted recovery shape"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",
