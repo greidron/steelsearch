@@ -168,7 +168,8 @@ Required semantic cases:
 - `cluster_state_readback`
 - `cluster_pending_tasks_shape`
 - `node_stats_shape`
-- `allocation_explain_development_shape`
+- `allocation_explain_primary_happy_path`
+- `allocation_explain_replica_unassigned_path`
 
 Distributed-required fields must stay owned by the transport-admin gate instead
 of the standalone route gate. Promotion is blocked if the allowlist boundary

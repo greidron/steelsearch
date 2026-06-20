@@ -75,7 +75,8 @@ def main() -> int:
             "cluster_state_readback",
             "cluster_pending_tasks_shape",
             "node_stats_shape",
-            "allocation_explain_development_shape",
+            "allocation_explain_primary_happy_path",
+            "allocation_explain_replica_unassigned_path",
         },
     )
     ensure_subset(

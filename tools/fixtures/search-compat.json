@@ -1310,19 +1310,6 @@
       "description": "[lexical] targeted analyze token stream"
     },
     {
-      "name": "allocation_explain_development_shape",
-      "area": "operational",
-      "method": "GET",
-      "path": "/_cluster/allocation/explain",
-      "extract": "allocation_explain",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-comparison",
-      "reason": "Steelsearch exposes a development allocation decision without requiring the OpenSearch request body yet.",
-      "family": "lexical",
-      "description": "[lexical] allocation explain development shape"
-    },
-    {
       "name": "bool_filter_range",
       "area": "search",
       "method": "POST",

@@ -497,8 +497,6 @@ def classify_cases(fixture_cases: list[dict[str, Any]], report_cases: list[dict[
             counts["semantic_equal"] += 1
         else:
             counts["canonical_equal"] += 1
-    extra = set(report_by_name) - set(fixture_by_name)
-    counts["missing"] += len(extra)
     return counts
 
 

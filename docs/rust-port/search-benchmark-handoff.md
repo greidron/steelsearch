@@ -86,10 +86,10 @@ Functional OpenSearch E2E comparison status:
 - Route parity: `ok`
 - Durability parity: `ok`
 - Semantic parity: `ok`
-- Current coverage summary: `canonical_equal=404`, `strict_equal=145`, `semantic_equal=4`, `failed=0`, `missing=0`, `known_gap_or_skipped=22`, `steelsearch_only=6`
+- Current coverage summary: `canonical_equal=404`, `strict_equal=145`, `semantic_equal=4`, `failed=0`, `missing=0`, `known_gap_or_skipped=21`, `steelsearch_only=6`
 - `search-compat`: `151` passed, `0` failed, `16` skipped.
 - `search-strict`: `145` passed, `0` failed, `6` skipped.
-- The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly.
+- The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The raw report summary still includes stale skipped rows until those cases are rerun live; fixture classification excludes the removed development-only allocation explain case.
 
 ## Main files changed
 

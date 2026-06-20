@@ -270,7 +270,7 @@ are:
   the retained required suites, including `search-compat` and `search-strict`;
 - that broader report touches 104 of the 373 in-scope source route rows and
   leaves 269 in-scope rows outside the current live required-suite evidence;
-- the broader report still has 22 known gap or skipped cases, so the stricter
+- the broader report still has 21 fixture-classified known gap or skipped cases, so the stricter
   no-skip release gate remains limited to `search-semantic` and
   `vector-search`.
 
