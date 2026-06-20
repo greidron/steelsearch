@@ -12,7 +12,7 @@
         "vector-ml"
       ],
       "report_paths": [
-        "vector-search-compat-report.json"
+        "ml-model-surface-compat-report.json"
       ]
     },
     "semantic_parity": {
@@ -54,7 +54,7 @@
       "tools/run-security-compat-harness.sh --profile single-node-secure"
     ],
     "required_reports": [
-      "vector-search-compat-report.json",
+      "ml-model-surface-compat-report.json",
       "security-authz-compat-report.json"
     ]
   }

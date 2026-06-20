@@ -96,6 +96,7 @@ def main() -> int:
     results: dict[str, dict[str, Any]] = {}
     report = {"name": fixture.get("name", "ml-model-surface-compat"), "fixture": str(Path(args.fixture).resolve()), "target": args.steelsearch_url, "cases": [], "summary": {"passed": 0, "failed": 0}}
     exit_code = 0
+    case_statuses: dict[str, str] = {}
     for case in fixture["cases"]:
         path = resolve_placeholders(case["path"], results)
         body = resolve_placeholders(case.get("body"), results)
@@ -112,10 +113,39 @@ def main() -> int:
             if actual != expected:
                 errors.append(f"path drift {compare_path}: expected={expected!r} actual={actual!r}")
         status = "passed" if not errors else "failed"
+        case_statuses[case["name"]] = status
         report["summary"][status] += 1
         if errors:
             exit_code = 1
-        report["cases"].append({"name": case["name"], "status": status, "response": summary, "errors": errors})
+        result = {"name": case["name"], "status": status, "response": summary, "errors": errors}
+        metadata = case.get("metadata")
+        if isinstance(metadata, dict) and metadata:
+            result["metadata"] = metadata
+        report["cases"].append(result)
+    aggregate = fixture.get("aggregate_case")
+    if isinstance(aggregate, dict):
+        required_cases = aggregate.get("required_cases") or []
+        missing = [name for name in required_cases if name not in case_statuses]
+        failed = [name for name in required_cases if case_statuses.get(name) != "passed"]
+        errors = []
+        if missing:
+            errors.append(f"aggregate missing required cases: {missing}")
+        if failed:
+            errors.append(f"aggregate has non-passed required cases: {failed}")
+        status = "passed" if not errors else "failed"
+        report["summary"][status] += 1
+        if errors:
+            exit_code = 1
+        aggregate_result = {
+            "name": aggregate["name"],
+            "status": status,
+            "response": {"required_cases": required_cases},
+            "errors": errors,
+        }
+        metadata = aggregate.get("metadata")
+        if isinstance(metadata, dict) and metadata:
+            aggregate_result["metadata"] = metadata
+        report["cases"].append(aggregate_result)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding='utf-8')

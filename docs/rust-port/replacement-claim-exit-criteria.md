@@ -450,7 +450,7 @@ runtime or deployment isolation evidence are all present in the same gate.
 
 Required route evidence:
 
-- `vector-search-compat-report.json`
+- `ml-model-surface-compat-report.json`
 
 Required semantic cases:
 

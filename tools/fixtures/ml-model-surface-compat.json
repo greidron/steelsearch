@@ -1,5 +1,22 @@
 {
   "name": "ml-model-surface-compat",
+  "aggregate_case": {
+    "name": "ml_model_lifecycle_shape",
+    "required_cases": [
+      "register_model",
+      "get_model",
+      "deploy_model",
+      "predict_model",
+      "search_model",
+      "undeploy_model"
+    ],
+    "metadata": {
+      "evidence_classes": [
+        "task-lifecycle",
+        "deploy-persistence"
+      ]
+    }
+  },
   "cases": [
     {
       "name": "register_model",

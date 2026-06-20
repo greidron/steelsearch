@@ -846,6 +846,11 @@
     {
       "name": "security_bad_password_ml_register_401",
       "area": "security-authz",
+      "metadata": {
+        "evidence_classes": [
+          "runtime-isolation"
+        ]
+      },
       "bucket": "bad-credential-401",
       "method": "POST",
       "path": "/_plugins/_ml/models/_register",
@@ -862,6 +867,11 @@
     {
       "name": "security_writer_ml_connector_create_403",
       "area": "security-authz",
+      "metadata": {
+        "evidence_classes": [
+          "connector-authz"
+        ]
+      },
       "bucket": "insufficient-role-403",
       "method": "POST",
       "path": "/_plugins/_ml/connectors/_create",
@@ -877,6 +887,11 @@
     {
       "name": "security_admin_ml_connector_create_success",
       "area": "security-authz",
+      "metadata": {
+        "evidence_classes": [
+          "connector-authz"
+        ]
+      },
       "bucket": "minimum-role-success",
       "method": "POST",
       "path": "/_plugins/_ml/connectors/_create",
@@ -892,6 +907,11 @@
     {
       "name": "security_writer_ml_predict_403",
       "area": "security-authz",
+      "metadata": {
+        "evidence_classes": [
+          "deployment-isolation"
+        ]
+      },
       "bucket": "insufficient-role-403",
       "method": "POST",
       "path": "/_plugins/_ml/models/ml-model-1/_predict",

@@ -131,6 +131,37 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             metadata = cases[case_name].get("metadata") or {}
             self.assertEqual(set(metadata.get("evidence_classes") or []), evidence_classes)
 
+    def test_ml_fixture_carries_lifecycle_aggregate_evidence(self):
+        fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "ml-model-surface-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        aggregate = fixture.get("aggregate_case") or {}
+
+        self.assertEqual(aggregate.get("name"), "ml_model_lifecycle_shape")
+        self.assertEqual(
+            set(aggregate.get("metadata", {}).get("evidence_classes") or []),
+            {"task-lifecycle", "deploy-persistence"},
+        )
+        self.assertEqual(
+            set(aggregate.get("required_cases") or []),
+            {"register_model", "get_model", "deploy_model", "predict_model", "search_model", "undeploy_model"},
+        )
+
+    def test_security_fixture_carries_ml_authz_evidence(self):
+        fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "security-authz-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cases = {case["name"]: case for case in fixture["cases"]}
+
+        expected = {
+            "security_bad_password_ml_register_401": {"runtime-isolation"},
+            "security_writer_ml_connector_create_403": {"connector-authz"},
+            "security_admin_ml_connector_create_success": {"connector-authz"},
+            "security_writer_ml_predict_403": {"deployment-isolation"},
+        }
+        for case_name, evidence_classes in expected.items():
+            self.assertIn(case_name, cases)
+            metadata = cases[case_name].get("metadata") or {}
+            self.assertEqual(set(metadata.get("evidence_classes") or []), evidence_classes)
+
 
 if __name__ == "__main__":
     unittest.main()

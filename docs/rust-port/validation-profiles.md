@@ -54,7 +54,7 @@ Families owned by the vector profile:
 - promotion report binding:
   - `tools/check-vector-promotion-gate.py --report <vector-search-compat-report.json>`
   - `tools/check-knn-plugin-promotion-gate.py --report <knn-plugin-compat-report.json>`
-  - `tools/check-ml-promotion-gate.py --report <ml-report.json> --report <security-authz-compat-report.json>`
+  - `tools/check-ml-promotion-gate.py --report <ml-model-surface-compat-report.json> --report <security-authz-compat-report.json>`
   - these report-bound checks are stricter than fixture contract checks: a
     required case must appear in the supplied report with a passing status, and
     required evidence classes must be emitted by passing cases
@@ -68,9 +68,11 @@ Families owned by the vector profile:
   - k-NN plugin operational API evidence is emitted by
     `knn-plugin-compat-report.json` as Steelsearch runtime evidence because the
     stock OpenSearch 2.19 k-NN plugin does not expose every settings, warmup,
-    breaker, and telemetry surface claimed by Steelsearch; full ML/security
-    evidence must still be supplied by report artifacts before those promotion
-    claims are closed
+    breaker, and telemetry surface claimed by Steelsearch
+  - ML lifecycle evidence is emitted by `ml-model-surface-compat-report.json`
+    and ML authz/isolation evidence is carried by `security-authz-compat-report.json`;
+    neural query rewrite, rerank pipeline, and sparse encoder evidence still
+    require report artifacts before the ML promotion claim is closed
 
 ### `snapshot-migration`
 
