@@ -130,6 +130,93 @@ class RestApiCoverageTests(unittest.TestCase):
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["fixture_matched_source_route_count"], 1)
             self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 1)
+            self.assertEqual(payload["summary"]["fixture_matched_source_route_ratio"], 0.5)
+
+    def test_required_suite_errors_can_tolerate_known_gaps_without_tolerating_failures(self):
+        report = {
+            "suite_results": [
+                {
+                    "name": "search",
+                    "required": True,
+                    "status": "ok",
+                    "classification": {
+                        "passed": 10,
+                        "missing": 0,
+                        "failed": 0,
+                        "known_gap_or_skipped": 2,
+                    },
+                },
+                {
+                    "name": "strict",
+                    "required": True,
+                    "status": "ok",
+                    "classification": {
+                        "passed": 8,
+                        "missing": 0,
+                        "failed": 1,
+                        "known_gap_or_skipped": 0,
+                    },
+                },
+            ]
+        }
+
+        strict_errors = self.report.unified_required_suite_errors(report)
+        allowed_gap_errors = self.report.unified_required_suite_errors(
+            report,
+            allow_known_gaps=True,
+        )
+
+        self.assertIn("search: known_gap_or_skipped=2", strict_errors)
+        self.assertNotIn("search: known_gap_or_skipped=2", allowed_gap_errors)
+        self.assertIn("strict: failed=1", allowed_gap_errors)
+
+    def test_required_suite_classification_totals_required_suites_only(self):
+        report = {
+            "suite_results": [
+                {
+                    "required": True,
+                    "classification": {
+                        "canonical_equal": 3,
+                        "strict_equal": 5,
+                        "semantic_equal": 7,
+                        "steelsearch_fail_closed": 11,
+                        "steelsearch_only": 13,
+                        "missing": 1,
+                        "failed": 2,
+                        "known_gap_or_skipped": 4,
+                    },
+                },
+                {
+                    "required": False,
+                    "classification": {
+                        "canonical_equal": 30,
+                        "strict_equal": 50,
+                        "semantic_equal": 70,
+                        "steelsearch_fail_closed": 110,
+                        "steelsearch_only": 130,
+                        "missing": 10,
+                        "failed": 20,
+                        "known_gap_or_skipped": 40,
+                    },
+                },
+            ]
+        }
+
+        self.assertEqual(
+            self.report.required_suite_classification(report),
+            {
+                "canonical_equal": 3,
+                "strict_equal": 5,
+                "semantic_equal": 7,
+                "steelsearch_fail_closed": 11,
+                "steelsearch_only": 13,
+                "missing": 1,
+                "failed": 2,
+                "known_gap_or_skipped": 4,
+                "passed": 0,
+                "total_equal": 26,
+            },
+        )
 
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv

@@ -28,6 +28,11 @@ def main() -> int:
         action="store_true",
         help="fail unless a unified report is present and all required suites are ok",
     )
+    parser.add_argument(
+        "--allow-known-gaps",
+        action="store_true",
+        help="with --require-live-required-suites, tolerate known_gap_or_skipped counts while still failing missing/failed cases",
+    )
     args = parser.parse_args()
 
     source_routes = load_source_routes(Path(args.source))
@@ -48,7 +53,7 @@ def main() -> int:
         if unified is None:
             errors.append("--unified-report is required with --require-live-required-suites")
         else:
-            errors.extend(unified_required_suite_errors(unified))
+            errors.extend(unified_required_suite_errors(unified, allow_known_gaps=args.allow_known_gaps))
 
     report = {
         "status": "ok" if not errors else "failed",
@@ -63,10 +68,25 @@ def main() -> int:
             "fixture_route_count": len(fixture_routes),
             "fixture_matched_source_route_count": len(fixture_coverage["matched_source_route_keys"]),
             "fixture_uncovered_in_scope_route_count": len(fixture_coverage["uncovered_in_scope_source_routes"]),
+            "fixture_matched_source_route_ratio": ratio(
+                len(fixture_coverage["matched_source_route_keys"]),
+                sum(1 for route in source_routes if route["status"] != "out-of-scope"),
+            ),
             "live_required_fixture_route_count": len(live_routes),
             "live_required_matched_source_route_count": len(live_coverage["matched_source_route_keys"]),
             "live_required_uncovered_in_scope_route_count": len(live_coverage["uncovered_in_scope_source_routes"]),
-            "unified_required_suite_status": required_suite_status(unified) if unified is not None else "missing",
+            "live_required_matched_source_route_ratio": ratio(
+                len(live_coverage["matched_source_route_keys"]),
+                sum(1 for route in source_routes if route["status"] != "out-of-scope"),
+            ),
+            "unified_required_suite_status": (
+                required_suite_status(unified, allow_known_gaps=args.allow_known_gaps)
+                if unified is not None
+                else "missing"
+            ),
+            "unified_required_suite_classification": (
+                required_suite_classification(unified) if unified is not None else {}
+            ),
         },
         "source_status_counts": status_counts(source_routes),
         "fixture_coverage": fixture_coverage,
@@ -205,12 +225,22 @@ def status_counts(routes: list[dict[str, str]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def required_suite_status(report: dict[str, Any]) -> str:
-    errors = unified_required_suite_errors(report)
+def ratio(numerator: int, denominator: int) -> float:
+    if denominator == 0:
+        return 0.0
+    return round(numerator / denominator, 4)
+
+
+def required_suite_status(report: dict[str, Any], *, allow_known_gaps: bool = False) -> str:
+    errors = unified_required_suite_errors(report, allow_known_gaps=allow_known_gaps)
     return "ok" if not errors else "failed"
 
 
-def unified_required_suite_errors(report: dict[str, Any]) -> list[str]:
+def unified_required_suite_errors(
+    report: dict[str, Any],
+    *,
+    allow_known_gaps: bool = False,
+) -> list[str]:
     errors: list[str] = []
     for suite in report.get("suite_results") or []:
         if not isinstance(suite, dict) or not suite.get("required"):
@@ -218,10 +248,43 @@ def unified_required_suite_errors(report: dict[str, Any]) -> list[str]:
         if suite.get("status") != "ok":
             errors.append(f"{suite.get('name')}: required suite status is {suite.get('status')}")
         classification = suite.get("classification") or {}
-        for key in ("missing", "failed", "known_gap_or_skipped"):
+        required_zero_keys = ("missing", "failed")
+        if not allow_known_gaps:
+            required_zero_keys = (*required_zero_keys, "known_gap_or_skipped")
+        for key in required_zero_keys:
             if int(classification.get(key) or 0):
                 errors.append(f"{suite.get('name')}: {key}={classification.get(key)}")
     return errors
+
+
+def required_suite_classification(report: dict[str, Any]) -> dict[str, int]:
+    totals = {
+        "canonical_equal": 0,
+        "strict_equal": 0,
+        "semantic_equal": 0,
+        "steelsearch_fail_closed": 0,
+        "steelsearch_only": 0,
+        "missing": 0,
+        "failed": 0,
+        "known_gap_or_skipped": 0,
+        "passed": 0,
+        "total_equal": 0,
+    }
+    for suite in report.get("suite_results") or []:
+        if not isinstance(suite, dict) or not suite.get("required"):
+            continue
+        classification = suite.get("classification") or {}
+        for key in totals:
+            if key == "total_equal":
+                continue
+            totals[key] += int(classification.get(key) or 0)
+    totals["total_equal"] = (
+        totals["canonical_equal"]
+        + totals["strict_equal"]
+        + totals["semantic_equal"]
+        + totals["steelsearch_fail_closed"]
+    )
+    return totals
 
 
 if __name__ == "__main__":
