@@ -656,7 +656,7 @@ def cleanup_target(
         delete_index = http_json(
             base_url,
             "DELETE",
-            f"/{index}",
+            f"/{index}?expand_wildcards=all",
             None,
             timeout,
             request_headers=setup_headers,
@@ -713,7 +713,7 @@ def cleanup_case_step_indices(
         delete_index = http_json(
             base_url,
             "DELETE",
-            f"/{index}",
+            f"/{index}?expand_wildcards=all",
             None,
             timeout,
             request_headers=setup_headers,
@@ -754,7 +754,7 @@ def run_case(
 
     for name, url in selected_targets.items():
         response, steps = run_case_request(url, fixture, case, timeout)
-        if comparison_mode == "steelsearch_only" and name == "steelsearch":
+        if case.get("steps"):
             steps.extend(cleanup_case_step_indices(url, fixture, case, timeout))
         target_results[name] = {
             "status": response["status"],

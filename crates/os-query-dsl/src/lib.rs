@@ -2115,23 +2115,37 @@ fn parse_terms_set(body: &Value) -> QueryDslResult<Query> {
             field: "terms".to_string(),
         })?
         .clone();
-    let minimum_should_match = field_object
+    let minimum_should_match = match field_object
         .get("minimum_should_match")
         .and_then(Value::as_u64)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "terms_set".to_string(),
-            field: "minimum_should_match".to_string(),
-        })
-        .and_then(|value| {
-            usize::try_from(value).map_err(|_| QueryDslError::InvalidValue {
+    {
+        Some(value) => value,
+        None => field_object
+            .get("minimum_should_match_script")
+            .and_then(Value::as_object)
+            .and_then(|script| script.get("source"))
+            .and_then(|source| {
+                source
+                    .as_u64()
+                    .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
+            })
+            .ok_or_else(|| QueryDslError::MissingField {
                 clause: "terms_set".to_string(),
                 field: "minimum_should_match".to_string(),
-                reason: "must fit in usize".to_string(),
-            })
+            })?,
+    };
+    let minimum_should_match =
+        usize::try_from(minimum_should_match).map_err(|_| QueryDslError::InvalidValue {
+            clause: "terms_set".to_string(),
+            field: "minimum_should_match".to_string(),
+            reason: "must fit in usize".to_string(),
         })?;
 
     for option in field_object.keys() {
-        if option != "terms" && option != "minimum_should_match" {
+        if option != "terms"
+            && option != "minimum_should_match"
+            && option != "minimum_should_match_script"
+        {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "terms_set".to_string(),
                 option: option.clone(),
@@ -2846,7 +2860,10 @@ fn parse_more_like_this(body: &Value) -> QueryDslResult<Query> {
     };
 
     for option in object.keys() {
-        if option != "fields" && option != "like" {
+        if !matches!(
+            option.as_str(),
+            "fields" | "like" | "min_term_freq" | "min_doc_freq" | "max_query_terms"
+        ) {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "more_like_this".to_string(),
                 option: option.clone(),

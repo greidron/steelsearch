@@ -15,7 +15,7 @@ Latest report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 152 passed, 0 failed, 15 skipped.
+- `search-compat`: 152 passed, 0 failed, 14 skipped.
 - `search-strict`: 146 passed, 0 failed, 5 skipped.
 
 ## Remaining Gaps

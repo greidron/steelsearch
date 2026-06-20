@@ -18804,6 +18804,16 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             .get("minimum_should_match")
             .and_then(Value::as_u64)
             .is_none()
+            && object
+                .get("minimum_should_match_script")
+                .and_then(Value::as_object)
+                .and_then(|script| script.get("source"))
+                .and_then(|source| {
+                    source
+                        .as_u64()
+                        .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
+                })
+                .is_none()
         {
             return Some(build_unsupported_search_response(
                 "unsupported terms_set minimum_should_match",
@@ -18811,7 +18821,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
         if object
             .keys()
-            .any(|key| key != "terms" && key != "minimum_should_match")
+            .any(|key| {
+                key != "terms"
+                    && key != "minimum_should_match"
+                    && key != "minimum_should_match_script"
+            })
         {
             return Some(build_unsupported_search_response("unsupported terms_set parameter"));
         }
@@ -19042,7 +19056,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         }
         if spec.keys().any(|key| {
-            key != "fields" && key != "like"
+            !matches!(
+                key.as_str(),
+                "fields" | "like" | "min_term_freq" | "min_doc_freq" | "max_query_terms"
+            )
         }) {
             return Some(build_unsupported_search_response(
                 "unsupported more_like_this parameter",
@@ -20779,10 +20796,7 @@ fn value_matches_terms_set(candidate: Option<&Value>, expected: &Value) -> Optio
     let candidate = candidate?;
     let expected_object = expected.as_object()?;
     let terms = expected_object.get("terms")?.as_array()?;
-    let minimum = expected_object
-        .get("minimum_should_match")?
-        .as_u64()
-        .and_then(|value| usize::try_from(value).ok())?;
+    let minimum = terms_set_minimum_should_match(expected_object)?;
     let mut matched_terms = 0usize;
     for term in terms {
         let matched = match candidate {
@@ -20801,6 +20815,24 @@ fn value_matches_terms_set(candidate: Option<&Value>, expected: &Value) -> Optio
             0.0
         },
     ))
+}
+
+fn terms_set_minimum_should_match(expected_object: &serde_json::Map<String, Value>) -> Option<usize> {
+    expected_object
+        .get("minimum_should_match")
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            expected_object
+                .get("minimum_should_match_script")
+                .and_then(Value::as_object)
+                .and_then(|script| script.get("source"))
+                .and_then(|source| {
+                    source
+                        .as_u64()
+                        .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
+                })
+        })
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 fn parse_distance_meters(raw: &str) -> Option<f64> {

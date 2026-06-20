@@ -87,7 +87,7 @@ Functional OpenSearch E2E comparison status:
 - Durability parity: `ok`
 - Semantic parity: `ok`
 - Current coverage summary: `canonical_equal=152`, `strict_equal=146`, `semantic_equal=0`, `failed=0`, `missing=0`, `known_gap_or_skipped=19`, `steelsearch_only=0`
-- `search-compat`: `152` passed, `0` failed, `15` skipped.
+- `search-compat`: `152` passed, `0` failed, `14` skipped.
 - `search-strict`: `146` passed, `0` failed, `5` skipped.
 - The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The remaining skipped cases are kNN/ML/plugin or Steelsearch-native telemetry/fail-closed cases, not live comparison failures.
 
