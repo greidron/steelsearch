@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+from promotion_report_evidence import validate_report_evidence
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -14,6 +16,12 @@ def parse_args() -> argparse.Namespace:
         "fixture",
         nargs="?",
         default="tools/fixtures/knn-plugin-promotion-gate.json",
+    )
+    parser.add_argument(
+        "--report",
+        action="append",
+        default=[],
+        help="Executed compatibility report to validate against required cases/evidence.",
     )
     return parser.parse_args()
 
@@ -46,6 +54,21 @@ def main() -> int:
 
     route = sections["route_parity"]
     semantic = sections["semantic_parity"]
+    required_cases = {
+        "knn_settings_readback",
+        "knn_warmup_basic_shape",
+        "knn_clear_cache_basic_shape",
+        "knn_model_lifecycle_shape",
+        "knn_warmup_budget_failure",
+        "knn_warmup_clear_cache_telemetry_shape",
+    }
+    required_evidence_classes = {
+        "settings-readback",
+        "warmup-cache",
+        "clear-cache",
+        "model-lifecycle",
+        "budget-breaker",
+    }
 
     ensure_subset(
         "route_parity.required_suites",
@@ -60,26 +83,21 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
-            "knn_settings_readback",
-            "knn_warmup_basic_shape",
-            "knn_clear_cache_basic_shape",
-            "knn_model_lifecycle_shape",
-            "knn_warmup_budget_failure",
-            "knn_warmup_clear_cache_telemetry_shape",
-        },
+        required_cases,
     )
     ensure_subset(
         "semantic_parity.required_evidence_classes",
         semantic.get("required_evidence_classes") or [],
-        {
-            "settings-readback",
-            "warmup-cache",
-            "clear-cache",
-            "model-lifecycle",
-            "budget-breaker",
-        },
+        required_evidence_classes,
     )
+    if args.report:
+        report_errors = validate_report_evidence(
+            [Path(report) for report in args.report],
+            required_cases,
+            required_evidence_classes,
+        )
+        if report_errors:
+            raise SystemExit("; ".join(report_errors))
     ensure_subset(
         "excluded_from_standalone_claim",
         fixture.get("excluded_from_standalone_claim") or [],
@@ -103,6 +121,7 @@ def main() -> int:
             {
                 "fixture": str(Path(args.fixture)),
                 "profile": fixture["profile"],
+                "reports": args.report,
                 "source_area": fixture["source_area"],
                 "status": "ok",
             },

@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+from promotion_report_evidence import validate_report_evidence
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -14,6 +16,12 @@ def parse_args() -> argparse.Namespace:
         "fixture",
         nargs="?",
         default="tools/fixtures/ml-promotion-gate.json",
+    )
+    parser.add_argument(
+        "--report",
+        action="append",
+        default=[],
+        help="Executed compatibility report to validate against required cases/evidence.",
     )
     return parser.parse_args()
 
@@ -47,6 +55,23 @@ def main() -> int:
     route = sections["route_parity"]
     semantic = sections["semantic_parity"]
     security = sections["security_parity"]
+    semantic_required_cases = {"ml_model_lifecycle_shape"}
+    semantic_required_evidence_classes = {
+        "task-lifecycle",
+        "connector-authz",
+        "deploy-persistence",
+        "neural-query-rewrite",
+        "rerank-pipeline",
+        "sparse-encoder",
+        "runtime-isolation",
+        "deployment-isolation",
+    }
+    security_required_cases = {
+        "security_bad_password_ml_register_401",
+        "security_writer_ml_connector_create_403",
+        "security_admin_ml_connector_create_success",
+        "security_writer_ml_predict_403",
+    }
 
     ensure_subset(
         "route_parity.required_suites",
@@ -61,21 +86,12 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {"ml_model_lifecycle_shape"},
+        semantic_required_cases,
     )
     ensure_subset(
         "semantic_parity.required_evidence_classes",
         semantic.get("required_evidence_classes") or [],
-        {
-            "task-lifecycle",
-            "connector-authz",
-            "deploy-persistence",
-            "neural-query-rewrite",
-            "rerank-pipeline",
-            "sparse-encoder",
-            "runtime-isolation",
-            "deployment-isolation",
-        },
+        semantic_required_evidence_classes,
     )
     ensure_subset(
         "security_parity.report_paths",
@@ -85,13 +101,16 @@ def main() -> int:
     ensure_subset(
         "security_parity.required_cases",
         security.get("required_cases") or [],
-        {
-            "security_bad_password_ml_register_401",
-            "security_writer_ml_connector_create_403",
-            "security_admin_ml_connector_create_success",
-            "security_writer_ml_predict_403",
-        },
+        security_required_cases,
     )
+    if args.report:
+        report_errors = validate_report_evidence(
+            [Path(report) for report in args.report],
+            semantic_required_cases | security_required_cases,
+            semantic_required_evidence_classes,
+        )
+        if report_errors:
+            raise SystemExit("; ".join(report_errors))
 
     gate = fixture.get("latest_standalone_gate") or {}
     ensure_subset(
@@ -113,6 +132,7 @@ def main() -> int:
             {
                 "fixture": str(Path(args.fixture)),
                 "profile": fixture["profile"],
+                "reports": args.report,
                 "source_area": fixture["source_area"],
                 "status": "ok",
             },

@@ -96,6 +96,14 @@ def error_summary(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def case_report_base(case: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {"name": case["name"]}
+    for key in ("metadata", "evidence_class", "evidence_classes"):
+        if key in case:
+            result[key] = case[key]
+    return result
+
+
 def missing_knn_plugin_response(response: dict[str, Any]) -> bool:
     body = response.get("body") or {}
     error = body.get("error") or {}
@@ -195,9 +203,9 @@ def main() -> int:
         )
         if degraded_reason is not None:
             report["summary"]["skipped"] += 1
-            report["cases"].append(
+            result = case_report_base(case)
+            result.update(
                 {
-                    "name": case["name"],
                     "status": "skipped",
                     "steelsearch": search_summary(steelsearch)
                     if case.get("kind", "search_summary") != "error_shape"
@@ -209,6 +217,7 @@ def main() -> int:
                     "skipped_reason": degraded_reason,
                 }
             )
+            report["cases"].append(result)
             continue
         kind = case.get("kind", "search_summary")
         if kind == "error_shape":
@@ -228,15 +237,16 @@ def main() -> int:
             report["summary"]["failed"] += 1
         else:
             report["summary"]["passed"] += 1
-        report["cases"].append(
+        result = case_report_base(case)
+        result.update(
             {
-                "name": case["name"],
                 "status": status,
                 "steelsearch": steel_summary,
                 "opensearch": open_summary,
                 "errors": errors,
             }
         )
+        report["cases"].append(result)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

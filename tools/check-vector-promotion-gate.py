@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+from promotion_report_evidence import validate_report_evidence
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -14,6 +16,12 @@ def parse_args() -> argparse.Namespace:
         "fixture",
         nargs="?",
         default="tools/fixtures/vector-promotion-gate.json",
+    )
+    parser.add_argument(
+        "--report",
+        action="append",
+        default=[],
+        help="Executed compatibility report to validate against required cases/evidence.",
     )
     return parser.parse_args()
 
@@ -46,6 +54,27 @@ def main() -> int:
 
     route = sections["route_parity"]
     semantic = sections["semantic_parity"]
+    required_cases = {
+        "knn_search",
+        "knn_cosinesimil_search",
+        "knn_innerproduct_search",
+        "knn_query_happy_path",
+        "knn_query_filter_happy_path",
+        "knn_query_ignore_unmapped_happy_path",
+        "knn_query_radial_max_distance_happy_path",
+        "knn_query_method_parameters_happy_path",
+        "hybrid_query_happy_path",
+        "hybrid_should_query_happy_path",
+        "hybrid_minimum_should_match_happy_path",
+    }
+    required_evidence_classes = {
+        "lucene-score-space",
+        "byte-vector-subset",
+        "binary-vector-subset",
+        "nested-filtered-knn",
+        "exact-ranking",
+        "hybrid-score-merge",
+    }
 
     ensure_subset(
         "route_parity.required_suites",
@@ -60,32 +89,21 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
-            "knn_search",
-            "knn_cosinesimil_search",
-            "knn_innerproduct_search",
-            "knn_query_happy_path",
-            "knn_query_filter_happy_path",
-            "knn_query_ignore_unmapped_happy_path",
-            "knn_query_radial_max_distance_happy_path",
-            "knn_query_method_parameters_happy_path",
-            "hybrid_query_happy_path",
-            "hybrid_should_query_happy_path",
-            "hybrid_minimum_should_match_happy_path",
-        },
+        required_cases,
     )
     ensure_subset(
         "semantic_parity.required_evidence_classes",
         semantic.get("required_evidence_classes") or [],
-        {
-            "lucene-score-space",
-            "byte-vector-subset",
-            "binary-vector-subset",
-            "nested-filtered-knn",
-            "exact-ranking",
-            "hybrid-score-merge",
-        },
+        required_evidence_classes,
     )
+    if args.report:
+        report_errors = validate_report_evidence(
+            [Path(report) for report in args.report],
+            required_cases,
+            required_evidence_classes,
+        )
+        if report_errors:
+            raise SystemExit("; ".join(report_errors))
 
     reject = fixture.get("reject_ledger") or {}
     if reject.get("fixture") != "vector-reject-ledger.json":
@@ -113,6 +131,7 @@ def main() -> int:
             {
                 "fixture": str(Path(args.fixture)),
                 "profile": fixture["profile"],
+                "reports": args.report,
                 "source_area": fixture["source_area"],
                 "status": "ok",
             },

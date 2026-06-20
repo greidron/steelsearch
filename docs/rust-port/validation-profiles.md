@@ -18,7 +18,7 @@ The rule is:
 | Profile | Purpose | OpenSearch prerequisite | Steelsearch prerequisite | Canonical entrypoint | Required report / evidence set |
 | --- | --- | --- | --- | --- | --- |
 | `common-baseline` | Default standalone replacement validation for families that do not require special plugin/repository/topology setup. | Local OpenSearch with ordinary REST/search/index capability. | Single-node Steelsearch daemon runtime. | `tools/run-phase-a-acceptance-harness.sh --mode local` | `runtime-precheck-report.json`, root/cluster/node reports, index/metadata reports, document/write-path reports, `search-compat-report.json` for non-specialized search families. |
-| `vector-ml` | Strict vector and ML source comparison for `knn_vector`, `knn` query, hybrid, and `/_plugins/_knn/*` routes. | Docker-backed OpenSearch profile with k-NN plugin surface enabled, including `index.knn`, `knn_vector`, and `knn` query support. | Steelsearch runtime with vector/k-NN routes enabled. | `tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml` | `vector-search-compat-report.json` plus actual Steelsearch runtime traffic evidence for vector routes. |
+| `vector-ml` | Strict vector and ML source comparison for `knn_vector`, `knn` query, hybrid, and `/_plugins/_knn/*` routes. | Docker-backed OpenSearch profile with k-NN plugin surface enabled, including `index.knn`, `knn_vector`, and `knn` query support. | Steelsearch runtime with vector/k-NN routes enabled. | `tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml` | `vector-search-compat-report.json` plus actual Steelsearch runtime traffic evidence for vector routes. Promotion claims should also run the relevant `check-*-promotion-gate.py --report ...` command so required cases and evidence classes are bound to executed reports. |
 | `snapshot-migration` | Strict snapshot and repository comparison for repository-backed snapshot lifecycle and migration rehearsal. | OpenSearch profile with snapshot repository capability, including usable `path.repo` or equivalent repository admission. | Steelsearch runtime with repository/snapshot routes enabled. | `tools/run-phase-a-acceptance-harness.sh --mode local --scope snapshot-migration` | `snapshot-lifecycle-compat-report.json`, migration/cutover evidence, restore-failure executable strict-profile compare. |
 | `transport-admin` | Standalone multi-node operational/admin validation. | None beyond ordinary baseline source target when source comparison is needed; many checks are Steelsearch-only topology checks. | Multi-node Steelsearch cluster with the required node topology. | `tools/run-phase-a-acceptance-harness.sh --mode local --scope transport-admin` | `multi-node-transport-admin-report.json`. |
 | `write-path-multi-node` | Multi-node write propagation and post-write visibility validation. | None; this is Steelsearch-only topology evidence. | Multi-node Steelsearch cluster with replication/write-path topology. | `python3 tools/multi_node_write_path_integration.py ...` or the equivalent harness-owned runner | `multi-node-write-path-report.json`. |
@@ -51,6 +51,20 @@ Families owned by the vector profile:
 - canonical local source target:
   - `tools/run-opensearch-vector-dev.sh`
   - default image `opensearchproject/opensearch:2.19.0`
+- promotion report binding:
+  - `tools/check-vector-promotion-gate.py --report <vector-search-compat-report.json>`
+  - `tools/check-knn-plugin-promotion-gate.py --report <k-nn-plugin-report.json>`
+  - `tools/check-ml-promotion-gate.py --report <ml-report.json> --report <security-authz-compat-report.json>`
+  - these report-bound checks are stricter than fixture contract checks: a
+    required case must appear in the supplied report with a passing status, and
+    required evidence classes must be emitted by passing cases
+- current coverage caveat:
+  - the broad baseline search report may skip k-NN/ML cases when the source
+    target is degraded; those skipped cases are not promotion evidence
+  - the vector query report currently covers vector/hybrid query parity, but
+    byte-vector, binary-vector, nested-filtered k-NN, k-NN plugin operational
+    API, and full ML/security evidence must be supplied by report artifacts
+    before those promotion claims are closed
 
 ### `snapshot-migration`
 
