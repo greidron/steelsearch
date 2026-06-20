@@ -56,6 +56,58 @@ class RestApiCoverageTests(unittest.TestCase):
             coverage["uncovered_in_scope_source_routes"],
             [source[1]],
         )
+        self.assertEqual(
+            coverage["uncovered_in_scope_route_groups"],
+            [{"group": "/_cat", "status": "planned", "count": 1}],
+        )
+
+    def test_uncovered_route_groups_use_first_stable_api_prefix(self):
+        routes = [
+            {
+                "status": "planned",
+                "method": "GET",
+                "path": "/{index}/_search",
+                "source": "Search.java",
+                "line": "1",
+            },
+            {
+                "status": "planned",
+                "method": "POST",
+                "path": "/{index}/_search",
+                "source": "Search.java",
+                "line": "2",
+            },
+            {
+                "status": "stubbed",
+                "method": "GET",
+                "path": "/_cluster/state",
+                "source": "Cluster.java",
+                "line": "3",
+            },
+            {
+                "status": "planned",
+                "method": "GET",
+                "path": "String.format(Locale.ROOT, \"/_plugins/_knn/stats\")",
+                "source": "Knn.java",
+                "line": "4",
+            },
+            {
+                "status": "planned",
+                "method": "POST",
+                "path": "/{index}/_tier/ + targetTier",
+                "source": "Tier.java",
+                "line": "5",
+            },
+        ]
+
+        self.assertEqual(
+            self.report.route_group_counts(routes),
+            [
+                {"group": "/{index}/_search", "status": "planned", "count": 2},
+                {"group": "dynamic-or-unparsed", "status": "planned", "count": 2},
+                {"group": "/_cluster", "status": "stubbed", "count": 1},
+            ],
+        )
 
     def test_live_required_fixture_paths_only_uses_ok_required_suites(self):
         report = {

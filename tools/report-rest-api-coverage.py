@@ -179,6 +179,7 @@ def coverage_for_routes(source_routes: list[dict[str, str]], observed_routes: li
     return {
         "matched_source_route_keys": sorted(matched_keys),
         "uncovered_in_scope_source_routes": uncovered,
+        "uncovered_in_scope_route_groups": route_group_counts(uncovered),
         "unmatched_observed_routes": unmatched_observed,
     }
 
@@ -211,6 +212,39 @@ def split_path(path: str) -> list[str]:
 
 def source_segment_matches(expected: str, actual: str) -> bool:
     return (expected.startswith("{") and expected.endswith("}")) or expected == actual
+
+
+def route_group_counts(routes: list[dict[str, str]]) -> list[dict[str, Any]]:
+    counts: dict[tuple[str, str], int] = {}
+    for route in routes:
+        key = (route_group(route["path"]), route["status"] or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return [
+        {"group": group, "status": status, "count": count}
+        for (group, status), count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1]),
+        )
+    ]
+
+
+def route_group(path: str) -> str:
+    normalized = normalize_path(path)
+    if not normalized or source_path_is_dynamic_expression(path):
+        return "dynamic-or-unparsed"
+    parts = split_path(normalized)
+    if not parts:
+        return "/"
+    first = parts[0]
+    if first.startswith("{") and first.endswith("}"):
+        if len(parts) >= 2:
+            return f"/{{index}}/{parts[1]}"
+        return "/{index}"
+    return f"/{first}"
+
+
+def source_path_is_dynamic_expression(path: str) -> bool:
+    return any(token in path for token in ('"', "+", "String.format", "Locale.ROOT"))
 
 
 def source_key(route: dict[str, str]) -> str:
