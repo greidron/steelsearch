@@ -8,12 +8,18 @@
       "deploy_model",
       "predict_model",
       "search_model",
+      "neural_query_search",
+      "rerank_pipeline_search",
+      "sparse_encoder_search",
       "undeploy_model"
     ],
     "metadata": {
       "evidence_classes": [
         "task-lifecycle",
-        "deploy-persistence"
+        "deploy-persistence",
+        "neural-query-rewrite",
+        "rerank-pipeline",
+        "sparse-encoder"
       ]
     }
   },
@@ -117,6 +123,306 @@
         "hits.total.value": 1,
         "hits.hits.0._id": "${register_model.model_id}",
         "hits.hits.0._source.deployed": true
+      }
+    },
+    {
+      "name": "create_neural_index",
+      "method": "PUT",
+      "path": "/vectors-neural-compat",
+      "body": {
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            },
+            "embedding": {
+              "type": "knn_vector",
+              "dimension": 3,
+              "method": {
+                "name": "hnsw",
+                "engine": "lucene",
+                "space_type": "l2"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "acknowledged"
+      ],
+      "expected_paths": {
+        "acknowledged": true
+      }
+    },
+    {
+      "name": "put_neural_doc_a",
+      "method": "PUT",
+      "path": "/vectors-neural-compat/_doc/doc-a?refresh=true",
+      "body": {
+        "title": "exact neural match",
+        "embedding": [
+          3.0,
+          1.0,
+          3.0
+        ]
+      },
+      "expected_status": 201,
+      "compare_paths": [
+        "result"
+      ],
+      "expected_paths": {
+        "result": "created"
+      }
+    },
+    {
+      "name": "put_neural_doc_b",
+      "method": "PUT",
+      "path": "/vectors-neural-compat/_doc/doc-b?refresh=true",
+      "body": {
+        "title": "farther vector",
+        "embedding": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "expected_status": 201,
+      "compare_paths": [
+        "result"
+      ],
+      "expected_paths": {
+        "result": "created"
+      }
+    },
+    {
+      "name": "put_neural_pipeline",
+      "method": "PUT",
+      "path": "/_search/pipeline/neural-defaults",
+      "body": {
+        "description": "neural default model pipeline",
+        "request_processors": [
+          {
+            "neural_query_enricher": {
+              "default_model_id": "${register_model.model_id}"
+            }
+          }
+        ],
+        "response_processors": []
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "acknowledged"
+      ],
+      "expected_paths": {
+        "acknowledged": true
+      }
+    },
+    {
+      "name": "neural_query_search",
+      "method": "POST",
+      "path": "/vectors-neural-compat/_search?search_pipeline=neural-defaults",
+      "body": {
+        "size": 2,
+        "query": {
+          "neural": {
+            "embedding": {
+              "query_text": "aaa",
+              "k": 2
+            }
+          }
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "hits.total.value",
+        "hits.hits.0._id"
+      ],
+      "expected_paths": {
+        "hits.total.value": 2,
+        "hits.hits.0._id": "doc-a"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "neural-query-rewrite"
+        ]
+      }
+    },
+    {
+      "name": "create_rerank_index",
+      "method": "PUT",
+      "path": "/logs-rerank-compat",
+      "body": {
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            }
+          }
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "acknowledged"
+      ],
+      "expected_paths": {
+        "acknowledged": true
+      }
+    },
+    {
+      "name": "put_rerank_doc_a",
+      "method": "PUT",
+      "path": "/logs-rerank-compat/_doc/doc-a?refresh=true",
+      "body": {
+        "title": "alpha exact winner"
+      },
+      "expected_status": 201,
+      "compare_paths": [
+        "result"
+      ],
+      "expected_paths": {
+        "result": "created"
+      }
+    },
+    {
+      "name": "put_rerank_doc_b",
+      "method": "PUT",
+      "path": "/logs-rerank-compat/_doc/doc-b?refresh=true",
+      "body": {
+        "title": "beta fallback"
+      },
+      "expected_status": 201,
+      "compare_paths": [
+        "result"
+      ],
+      "expected_paths": {
+        "result": "created"
+      }
+    },
+    {
+      "name": "put_rerank_pipeline",
+      "method": "PUT",
+      "path": "/_search/pipeline/rerank-defaults",
+      "body": {
+        "request_processors": [],
+        "response_processors": [
+          {
+            "rerank": {
+              "model_id": "${register_model.model_id}",
+              "field": "title",
+              "query_text": "alpha winner"
+            }
+          }
+        ]
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "acknowledged"
+      ],
+      "expected_paths": {
+        "acknowledged": true
+      }
+    },
+    {
+      "name": "rerank_pipeline_search",
+      "method": "POST",
+      "path": "/logs-rerank-compat/_search?search_pipeline=rerank-defaults",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "hits.hits.0._id"
+      ],
+      "expected_paths": {
+        "hits.hits.0._id": "doc-a"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "rerank-pipeline"
+        ]
+      }
+    },
+    {
+      "name": "create_sparse_index",
+      "method": "PUT",
+      "path": "/logs-sparse-compat",
+      "body": {
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            }
+          }
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "acknowledged"
+      ],
+      "expected_paths": {
+        "acknowledged": true
+      }
+    },
+    {
+      "name": "put_sparse_doc_a",
+      "method": "PUT",
+      "path": "/logs-sparse-compat/_doc/doc-a?refresh=true",
+      "body": {
+        "title": "alpha winner exact"
+      },
+      "expected_status": 201,
+      "compare_paths": [
+        "result"
+      ],
+      "expected_paths": {
+        "result": "created"
+      }
+    },
+    {
+      "name": "put_sparse_doc_b",
+      "method": "PUT",
+      "path": "/logs-sparse-compat/_doc/doc-b?refresh=true",
+      "body": {
+        "title": "beta fallback"
+      },
+      "expected_status": 201,
+      "compare_paths": [
+        "result"
+      ],
+      "expected_paths": {
+        "result": "created"
+      }
+    },
+    {
+      "name": "sparse_encoder_search",
+      "method": "POST",
+      "path": "/logs-sparse-compat/_search",
+      "body": {
+        "query": {
+          "sparse_encoder": {
+            "title": {
+              "query_text": "alpha",
+              "model_id": "${register_model.model_id}"
+            }
+          }
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "hits.total.value",
+        "hits.hits.0._id"
+      ],
+      "expected_paths": {
+        "hits.total.value": 1,
+        "hits.hits.0._id": "doc-a"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "sparse-encoder"
+        ]
       }
     },
     {

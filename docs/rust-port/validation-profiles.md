@@ -69,10 +69,11 @@ Families owned by the vector profile:
     `knn-plugin-compat-report.json` as Steelsearch runtime evidence because the
     stock OpenSearch 2.19 k-NN plugin does not expose every settings, warmup,
     breaker, and telemetry surface claimed by Steelsearch
-  - ML lifecycle evidence is emitted by `ml-model-surface-compat-report.json`
-    and ML authz/isolation evidence is carried by `security-authz-compat-report.json`;
-    neural query rewrite, rerank pipeline, and sparse encoder evidence still
-    require report artifacts before the ML promotion claim is closed
+  - ML lifecycle, neural query rewrite, rerank pipeline, and sparse encoder
+    evidence are emitted by `ml-model-surface-compat-report.json`; ML
+    authz/isolation evidence is carried by `security-authz-compat-report.json`
+    and still requires a secure harness report before the ML promotion claim is
+    closed
 
 ### `snapshot-migration`
 

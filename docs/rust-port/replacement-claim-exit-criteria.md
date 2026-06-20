@@ -455,6 +455,9 @@ Required route evidence:
 Required semantic cases:
 
 - `ml_model_lifecycle_shape`
+- `neural_query_search`
+- `rerank_pipeline_search`
+- `sparse_encoder_search`
 
 Required security cases through `security-authz-compat-report.json`:
 

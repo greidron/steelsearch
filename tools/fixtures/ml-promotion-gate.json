@@ -20,7 +20,10 @@
         "vector-ml"
       ],
       "required_cases": [
-        "ml_model_lifecycle_shape"
+        "ml_model_lifecycle_shape",
+        "neural_query_search",
+        "rerank_pipeline_search",
+        "sparse_encoder_search"
       ],
       "required_evidence_classes": [
         "task-lifecycle",

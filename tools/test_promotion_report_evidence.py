@@ -139,11 +139,27 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         self.assertEqual(aggregate.get("name"), "ml_model_lifecycle_shape")
         self.assertEqual(
             set(aggregate.get("metadata", {}).get("evidence_classes") or []),
-            {"task-lifecycle", "deploy-persistence"},
+            {
+                "task-lifecycle",
+                "deploy-persistence",
+                "neural-query-rewrite",
+                "rerank-pipeline",
+                "sparse-encoder",
+            },
         )
         self.assertEqual(
             set(aggregate.get("required_cases") or []),
-            {"register_model", "get_model", "deploy_model", "predict_model", "search_model", "undeploy_model"},
+            {
+                "register_model",
+                "get_model",
+                "deploy_model",
+                "predict_model",
+                "search_model",
+                "neural_query_search",
+                "rerank_pipeline_search",
+                "sparse_encoder_search",
+                "undeploy_model",
+            },
         )
 
     def test_security_fixture_carries_ml_authz_evidence(self):

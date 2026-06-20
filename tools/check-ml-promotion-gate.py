@@ -55,7 +55,12 @@ def main() -> int:
     route = sections["route_parity"]
     semantic = sections["semantic_parity"]
     security = sections["security_parity"]
-    semantic_required_cases = {"ml_model_lifecycle_shape"}
+    semantic_required_cases = {
+        "ml_model_lifecycle_shape",
+        "neural_query_search",
+        "rerank_pipeline_search",
+        "sparse_encoder_search",
+    }
     semantic_required_evidence_classes = {
         "task-lifecycle",
         "connector-authz",
