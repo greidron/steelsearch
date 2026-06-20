@@ -8743,6 +8743,16 @@ impl SteelNode {
             .iter()
             .find(|index_name| self.index_is_closed(index_name))
         {
+            if request
+                .query_params
+                .get("expand_wildcards")
+                .is_some_and(|value| value == "closed")
+            {
+                return RestResponse::opensearch_error_kind(
+                    os_rest::RestErrorKind::IllegalArgument,
+                    "To expand [CLOSE] wildcard, please set forbid_closed_indices to `false`",
+                );
+            }
             return RestResponse::json(
                 400,
                 serde_json::json!({
@@ -38840,8 +38850,20 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "logs-search-open-000001"
         );
 
+        let closed_wildcard = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-*/_search?expand_wildcards=closed",
+            )
+            .with_json_body(serde_json::json!({"query": {"match_all": {}}})),
+        );
+        assert_eq!(closed_wildcard.status, 400);
+        assert_eq!(
+            closed_wildcard.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
         for path in [
-            "/logs-search-*/_search?expand_wildcards=closed",
             "/logs-search-*/_search?expand_wildcards=all",
             "/logs-search-closed-000001/_search",
         ] {

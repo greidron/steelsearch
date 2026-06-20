@@ -65,8 +65,8 @@ search route: bounded `significant_terms` buckets are now emitted, including the
 
 The failed count moved from 53 to 0:
 
-- `search-compat`: 151 passed, 0 failed, 16 skipped.
-- `search-strict`: 145 passed, 0 failed, 6 skipped.
+- `search-compat`: 152 passed, 0 failed, 15 skipped.
+- `search-strict`: 146 passed, 0 failed, 5 skipped.
 - Remaining failed rows: 0.
 
 No failed cases remain in the latest live `search-compat` plus `search-strict`

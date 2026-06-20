@@ -6,7 +6,7 @@ gap pass, index-visibility/count/stats pass, cluster-state shape pass, and
 significant-terms pass.
 
 Latest report:
-`target/opensearch-e2e-search-compat-significant-terms-fix-2/report/unified-opensearch-e2e-report.json`
+`target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
 
 ## Summary
 
@@ -15,8 +15,8 @@ Latest report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 151 passed, 0 failed, 16 skipped.
-- `search-strict`: 145 passed, 0 failed, 6 skipped.
+- `search-compat`: 152 passed, 0 failed, 15 skipped.
+- `search-strict`: 146 passed, 0 failed, 5 skipped.
 
 ## Remaining Gaps
 
