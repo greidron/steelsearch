@@ -50,6 +50,16 @@
           "engine": "lucene",
           "space_type": "innerproduct"
         }
+      },
+      "embedding_byte": {
+        "type": "knn_vector",
+        "dimension": 3,
+        "data_type": "byte"
+      },
+      "embedding_binary": {
+        "type": "knn_vector",
+        "dimension": 8,
+        "data_type": "binary"
       }
     }
   },
@@ -74,6 +84,14 @@
           0.9,
           0.1,
           0.0
+        ],
+        "embedding_byte": [
+          127,
+          0,
+          0
+        ],
+        "embedding_binary": [
+          -128
         ]
       }
     },
@@ -97,6 +115,14 @@
           0.1,
           0.9,
           0.0
+        ],
+        "embedding_byte": [
+          0,
+          127,
+          0
+        ],
+        "embedding_binary": [
+          64
         ]
       }
     }
@@ -333,6 +359,50 @@
               "method_parameters": {
                 "ef_search": 32
               }
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_byte_vector_subset_happy_path",
+      "metadata": {
+        "evidence_classes": [
+          "byte-vector-subset"
+        ]
+      },
+      "body": {
+        "query": {
+          "knn": {
+            "embedding_byte": {
+              "vector": [
+                127,
+                0,
+                0
+              ],
+              "k": 1
+            }
+          }
+        },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_binary_vector_subset_happy_path",
+      "metadata": {
+        "evidence_classes": [
+          "binary-vector-subset"
+        ]
+      },
+      "body": {
+        "query": {
+          "knn": {
+            "embedding_binary": {
+              "vector": [
+                -128
+              ],
+              "k": 1
             }
           }
         },

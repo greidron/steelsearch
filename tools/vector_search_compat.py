@@ -80,11 +80,20 @@ def search_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
     hits = ((body.get("hits") or {}).get("hits") or [])
     total = ((body.get("hits") or {}).get("total") or {}).get("value")
-    return {
+    summary = {
         "status": response.get("status"),
         "total": total,
         "ids": [hit.get("_id") for hit in hits],
     }
+    if response.get("status") != 200:
+        error = body.get("error") or {}
+        summary["error_type"] = error.get("type")
+        summary["error_reason"] = error.get("reason")
+        caused_by = error.get("caused_by") or {}
+        if caused_by:
+            summary["caused_by_type"] = caused_by.get("type")
+            summary["caused_by_reason"] = caused_by.get("reason")
+    return summary
 
 
 def error_summary(response: dict[str, Any]) -> dict[str, Any]:

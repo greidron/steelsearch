@@ -17537,7 +17537,7 @@ impl SteelNode {
                         if vector.iter().any(|value| {
                             value
                                 .as_i64()
-                                .map_or(true, |number| !(0..=1).contains(&number))
+                                .map_or(true, |number| !(-128..=127).contains(&number))
                         }) {
                             return Some(build_unsupported_search_response(
                                 "unsupported knn binary query vector shape",
@@ -35005,7 +35005,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             ] {
                 assert_eq!(
                     node.handle_rest_request(
-                        RestRequest::new(RestMethod::Put, &format!("/{index}/_doc/{id}"))
+                        RestRequest::new(RestMethod::Put, &format!("/{index}/_doc/{id}?refresh=true"))
                             .with_json_body(serde_json::json!({ "embedding": vector })),
                     )
                     .status,
@@ -35183,7 +35183,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         ] {
             assert_eq!(
                 node.handle_rest_request(
-                    RestRequest::new(RestMethod::Put, &format!("/vectors-unit-byte-000001/_doc/{id}"))
+                    RestRequest::new(RestMethod::Put, &format!("/vectors-unit-byte-000001/_doc/{id}?refresh=true"))
                         .with_json_body(serde_json::json!({ "embedding": vector })),
                 )
                 .status,
@@ -35234,7 +35234,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                             "properties": {
                                 "embedding": {
                                     "type": "knn_vector",
-                                    "dimension": 3,
+                                    "dimension": 8,
                                     "data_type": "binary"
                                 }
                             }
@@ -35246,15 +35246,15 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             200
         );
         for (id, vector) in [
-            ("vec-a", serde_json::json!([1, 0, 0])),
-            ("vec-b", serde_json::json!([0, 1, 0])),
-            ("vec-c", serde_json::json!([0, 0, 1])),
+            ("vec-a", serde_json::json!([-128])),
+            ("vec-b", serde_json::json!([64])),
+            ("vec-c", serde_json::json!([32])),
         ] {
             assert_eq!(
                 node.handle_rest_request(
                     RestRequest::new(
                         RestMethod::Put,
-                        &format!("/vectors-unit-binary-000001/_doc/{id}"),
+                        &format!("/vectors-unit-binary-000001/_doc/{id}?refresh=true"),
                     )
                     .with_json_body(serde_json::json!({ "embedding": vector })),
                 )
@@ -35268,7 +35268,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                     "query": {
                         "knn": {
                             "embedding": {
-                                "vector": [1, 0, 0],
+                                "vector": [-128],
                                 "k": 1
                             }
                         }
@@ -35284,7 +35284,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                     "query": {
                         "knn": {
                             "embedding": {
-                                "vector": [2, 0, 0],
+                                "vector": [128],
                                 "k": 1
                             }
                         }
