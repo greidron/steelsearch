@@ -1280,6 +1280,24 @@
       "description": "[admin-cat] tasks shape"
     },
     {
+      "name": "refresh_root_get_status",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_refresh",
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] root refresh GET status"
+    },
+    {
+      "name": "refresh_target_get_status",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_refresh",
+      "extract": "status_only",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted refresh GET status"
+    },
+    {
       "name": "wildcard_alias_readback",
       "area": "alias",
       "method": "GET",
