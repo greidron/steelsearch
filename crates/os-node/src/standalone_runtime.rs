@@ -8268,7 +8268,8 @@ impl SteelNode {
                 }
             }
         };
-        let query = payload.get("query").unwrap_or(&Value::Null);
+        let default_query = serde_json::json!({ "match_all": {} });
+        let query = payload.get("query").unwrap_or(&default_query);
         let (valid, explanation) = validate_query_payload_for_validate_route(payload.get("query"));
         if !valid {
             return build_unsupported_search_response(&format!(
@@ -32508,6 +32509,16 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         );
         assert_eq!(root_count.status, 200);
         assert_eq!(root_count.body["count"], 2);
+
+        let root_default_count =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_count"));
+        assert_eq!(root_default_count.status, 200);
+        assert_eq!(root_default_count.body["count"], 2);
+
+        let targeted_default_count =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-count-*/_count"));
+        assert_eq!(targeted_default_count.status, 200);
+        assert_eq!(targeted_default_count.body["count"], 1);
 
         let root_term_count = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_count").with_json_body(serde_json::json!({
