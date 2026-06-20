@@ -22325,6 +22325,12 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
         }
         return (false, "term query requires at least one field".to_string());
     }
+    if let Some(match_query) = query.get("match") {
+        if match_query.as_object().is_some_and(|object| !object.is_empty()) {
+            return (true, format!("match query fields: {}", match_query.as_object().map(|object| object.len()).unwrap_or(0)));
+        }
+        return (false, "match query requires at least one field".to_string());
+    }
     if allow_range {
         if let Some(range) = query.get("range") {
             if range.as_object().is_some_and(|object| !object.is_empty()) {
@@ -32614,6 +32620,16 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(root_validate.status, 200);
         assert_eq!(root_validate.body["valid"], true);
 
+        let root_match_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": { "match": { "message": "hello" } }
+                }),
+            ),
+        );
+        assert_eq!(root_match_validate.status, 200);
+        assert_eq!(root_match_validate.body["valid"], true);
+
         let targeted_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-count-*/_validate/query").with_json_body(
                 serde_json::json!({
@@ -32626,6 +32642,17 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(targeted_validate.status, 200);
         assert_eq!(targeted_validate.body["_indices"][0], "logs-count-*");
         assert_eq!(targeted_validate.body["valid"], true);
+
+        let targeted_match_validate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/logs-count-*/_validate/query").with_json_body(
+                serde_json::json!({
+                    "query": { "match": { "message": "hello" } }
+                }),
+            ),
+        );
+        assert_eq!(targeted_match_validate.status, 200);
+        assert_eq!(targeted_match_validate.body["_indices"][0], "logs-count-*");
+        assert_eq!(targeted_match_validate.body["valid"], true);
 
         let root_range_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_validate/query").with_json_body(
