@@ -2290,6 +2290,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "indices": sorted(indices_body.keys()),
         }
+    if kind == "field_caps_summary":
+        fields = body.get("fields") if isinstance(body, dict) else {}
+        if not isinstance(fields, dict):
+            fields = {}
+        selected: dict[str, list[str]] = {}
+        for field_name in ("message", "service", "bytes"):
+            caps = fields.get(field_name)
+            selected[field_name] = sorted(caps.keys()) if isinstance(caps, dict) else []
+        return {
+            "status": response["status"],
+            "field_types": selected,
+        }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {

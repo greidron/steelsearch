@@ -906,6 +906,24 @@
       "description": "[admin-cat] targeted segments shape"
     },
     {
+      "name": "field_caps_root_get_summary",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_field_caps?fields=message,service,bytes",
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] root field caps summary"
+    },
+    {
+      "name": "field_caps_target_get_summary",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_field_caps?fields=message,service,bytes",
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted field caps summary"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",
