@@ -25,6 +25,7 @@ SNAPSHOT_LIFECYCLE_COMPAT_REPORT="${SNAPSHOT_LIFECYCLE_COMPAT_REPORT:-${REHEARSA
 DATA_STREAM_ROLLOVER_COMPAT_REPORT="${DATA_STREAM_ROLLOVER_COMPAT_REPORT:-${REHEARSAL_DIR}/data-stream-rollover-compat-report.json}"
 MIGRATION_CUTOVER_INTEGRATION_REPORT="${MIGRATION_CUTOVER_INTEGRATION_REPORT:-${REHEARSAL_DIR}/migration-cutover-integration-report.json}"
 VECTOR_SEARCH_COMPAT_REPORT="${VECTOR_SEARCH_COMPAT_REPORT:-${REHEARSAL_DIR}/vector-search-compat-report.json}"
+KNN_PLUGIN_COMPAT_REPORT="${KNN_PLUGIN_COMPAT_REPORT:-${REHEARSAL_DIR}/knn-plugin-compat-report.json}"
 ML_MODEL_SURFACE_COMPAT_REPORT="${ML_MODEL_SURFACE_COMPAT_REPORT:-${REHEARSAL_DIR}/ml-model-surface-compat-report.json}"
 MULTI_NODE_TRANSPORT_ADMIN_REPORT="${MULTI_NODE_TRANSPORT_ADMIN_REPORT:-${REHEARSAL_DIR}/multi-node-transport-admin-report.json}"
 STEELSEARCH_READINESS_REPORT="${STEELSEARCH_READINESS_REPORT:-${REHEARSAL_DIR}/steelsearch-readiness.json}"
@@ -66,6 +67,7 @@ Environment:
   SEARCH_COMPAT_FIXTURE        Fixture passed to tools/search_compat.py.
   SEARCH_COMPAT_REPORT         Search compatibility report path.
   SEARCH_COMPAT_CASES          Comma-separated search compatibility cases.
+  KNN_PLUGIN_COMPAT_CASES      Comma-separated k-NN plugin compatibility cases.
   MAPPING_COMPAT_CASES         Comma-separated mapping compatibility cases.
   SNAPSHOT_LIFECYCLE_COMPAT_CASES
                                Comma-separated snapshot lifecycle compatibility cases.
@@ -279,6 +281,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
   export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
   export RUN_MIGRATION_CUTOVER_INTEGRATION=0
   export RUN_VECTOR_SEARCH_COMPAT=1
+  export RUN_KNN_PLUGIN_COMPAT=1
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
 fi
 
@@ -739,6 +742,22 @@ if [[ "${RUN_VECTOR_SEARCH_COMPAT:-0}" == "1" ]]; then
     --opensearch-url "${OPENSEARCH_URL}" \
     --output "${VECTOR_SEARCH_COMPAT_REPORT}"
 fi
+if [[ "${RUN_KNN_PLUGIN_COMPAT:-0}" == "1" ]]; then
+  knn_plugin_cases="${KNN_PLUGIN_COMPAT_CASES:-knn_settings_readback,knn_warmup_basic_shape,knn_clear_cache_basic_shape,knn_model_lifecycle_shape,knn_warmup_budget_failure,knn_warmup_clear_cache_telemetry_shape}"
+  knn_plugin_args=(
+    --steelsearch-url "${STEELSEARCH_URL}"
+    --report "${KNN_PLUGIN_COMPAT_REPORT}"
+    --wait
+    --timeout "${SEARCH_COMPAT_TIMEOUT:-10}"
+  )
+  append_case_args "${knn_plugin_cases}" knn_plugin_args
+  OPENSEARCH_URL= python3 "${ROOT}/tools/search_compat.py" "${knn_plugin_args[@]}"
+  python3 "${ROOT}/tools/check-rest-compat-report.py" \
+    --fixture "${ROOT}/tools/fixtures/search-compat.json" \
+    --report "${KNN_PLUGIN_COMPAT_REPORT}" \
+    --require-report \
+    --allow-partial-report
+fi
 if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
   python3 "${ROOT}/tools/ml_model_surface_compat.py" \
     --steelsearch-url "${STEELSEARCH_URL}" \
@@ -826,6 +845,9 @@ if [[ "${RUN_MIGRATION_CUTOVER_INTEGRATION:-0}" == "1" ]]; then
 fi
 if [[ "${RUN_VECTOR_SEARCH_COMPAT:-0}" == "1" ]]; then
   echo "vector search compatibility report: ${VECTOR_SEARCH_COMPAT_REPORT}"
+fi
+if [[ "${RUN_KNN_PLUGIN_COMPAT:-0}" == "1" ]]; then
+  echo "k-NN plugin compatibility report: ${KNN_PLUGIN_COMPAT_REPORT}"
 fi
 if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
   echo "ml model surface compatibility report: ${ML_MODEL_SURFACE_COMPAT_REPORT}"

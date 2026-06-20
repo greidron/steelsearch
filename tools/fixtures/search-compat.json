@@ -3280,6 +3280,11 @@
     {
       "name": "knn_settings_readback",
       "area": "knn",
+      "metadata": {
+        "evidence_classes": [
+          "settings-readback"
+        ]
+      },
       "extract": "knn_settings",
       "steps": [
         {
@@ -3307,6 +3312,11 @@
     {
       "name": "knn_warmup_basic_shape",
       "area": "knn",
+      "metadata": {
+        "evidence_classes": [
+          "warmup-cache"
+        ]
+      },
       "comparison": "strict",
       "extract": "knn_warmup_basic",
       "steps": [
@@ -3337,6 +3347,11 @@
     {
       "name": "knn_clear_cache_basic_shape",
       "area": "knn",
+      "metadata": {
+        "evidence_classes": [
+          "clear-cache"
+        ]
+      },
       "comparison": "strict",
       "extract": "knn_clear_cache_response",
       "steps": [
@@ -3365,6 +3380,11 @@
     {
       "name": "knn_model_lifecycle_shape",
       "area": "knn",
+      "metadata": {
+        "evidence_classes": [
+          "model-lifecycle"
+        ]
+      },
       "extract": "knn_model_search",
       "steps": [
         {
@@ -3501,6 +3521,11 @@
     {
       "name": "knn_warmup_budget_failure",
       "area": "knn",
+      "metadata": {
+        "evidence_classes": [
+          "budget-breaker"
+        ]
+      },
       "method": "POST",
       "path": "/_plugins/_knn/warmup/vectors-compat",
       "body": {
@@ -3518,6 +3543,12 @@
     {
       "name": "knn_warmup_clear_cache_telemetry_shape",
       "area": "knn",
+      "metadata": {
+        "evidence_classes": [
+          "warmup-cache",
+          "clear-cache"
+        ]
+      },
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 200,
       "skip_scope": "steelsearch-knn-cache-telemetry",

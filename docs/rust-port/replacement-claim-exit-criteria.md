@@ -416,7 +416,7 @@ profile gate.
 
 Required route evidence:
 
-- `vector-search-compat-report.json`
+- `knn-plugin-compat-report.json`
 
 Required semantic cases:
 

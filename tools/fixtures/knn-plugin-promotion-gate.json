@@ -12,7 +12,7 @@
         "vector-ml"
       ],
       "report_paths": [
-        "vector-search-compat-report.json"
+        "knn-plugin-compat-report.json"
       ]
     },
     "semantic_parity": {
@@ -44,7 +44,7 @@
       "tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml"
     ],
     "required_reports": [
-      "vector-search-compat-report.json"
+      "knn-plugin-compat-report.json"
     ]
   }
 }

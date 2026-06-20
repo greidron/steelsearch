@@ -113,6 +113,24 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         self.assertIn("exact-ranking", observed_evidence)
         self.assertIn("hybrid-score-merge", observed_evidence)
 
+    def test_search_fixture_carries_knn_plugin_report_bound_evidence(self):
+        fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "search-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cases = {case["name"]: case for case in fixture["cases"]}
+
+        expected = {
+            "knn_settings_readback": {"settings-readback"},
+            "knn_warmup_basic_shape": {"warmup-cache"},
+            "knn_clear_cache_basic_shape": {"clear-cache"},
+            "knn_model_lifecycle_shape": {"model-lifecycle"},
+            "knn_warmup_budget_failure": {"budget-breaker"},
+            "knn_warmup_clear_cache_telemetry_shape": {"warmup-cache", "clear-cache"},
+        }
+        for case_name, evidence_classes in expected.items():
+            self.assertIn(case_name, cases)
+            metadata = cases[case_name].get("metadata") or {}
+            self.assertEqual(set(metadata.get("evidence_classes") or []), evidence_classes)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,7 +78,7 @@ def main() -> int:
     ensure_subset(
         "route_parity.report_paths",
         route.get("report_paths") or [],
-        {"vector-search-compat-report.json"},
+        {"knn-plugin-compat-report.json"},
     )
     ensure_subset(
         "semantic_parity.required_cases",
@@ -113,7 +113,7 @@ def main() -> int:
     ensure_subset(
         "latest_standalone_gate.required_reports",
         gate.get("required_reports") or [],
-        {"vector-search-compat-report.json"},
+        {"knn-plugin-compat-report.json"},
     )
 
     print(
