@@ -1055,6 +1055,157 @@
       "description": "[admin-cat] targeted count GET value"
     },
     {
+      "name": "search_root_get_default_hits",
+      "area": "search",
+      "method": "GET",
+      "path": "/_search",
+      "extract": "search_total",
+      "family": "admin-cat",
+      "description": "[admin-cat] root search GET default match_all"
+    },
+    {
+      "name": "search_target_get_hits",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "checkout"
+          }
+        },
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted search GET hits"
+    },
+    {
+      "name": "msearch_root_get_summary",
+      "area": "search",
+      "method": "GET",
+      "path": "/_msearch",
+      "raw": true,
+      "body": "{\"index\":\"logs-compat\"}\n{\"query\":{\"match\":{\"message\":\"checkout\"}},\"size\":2}\n",
+      "extract": "msearch_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] root msearch GET summary"
+    },
+    {
+      "name": "msearch_target_get_summary",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_msearch",
+      "raw": true,
+      "body": "{}\n{\"query\":{\"term\":{\"service\":\"catalog\"}},\"size\":2}\n",
+      "extract": "msearch_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted msearch GET summary"
+    },
+    {
+      "name": "explain_target_get_doc",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_explain/log-1",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        }
+      },
+      "extract": "explain_doc_semantic",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted explain GET doc"
+    },
+    {
+      "name": "search_template_root_get_summary",
+      "area": "search",
+      "method": "GET",
+      "path": "/_search/template",
+      "body": {
+        "source": {
+          "query": {
+            "term": {
+              "service": "{{service}}"
+            }
+          },
+          "size": 2
+        },
+        "params": {
+          "service": "checkout"
+        }
+      },
+      "extract": "search_hits",
+      "family": "admin-cat",
+      "description": "[admin-cat] root search template GET summary"
+    },
+    {
+      "name": "search_template_target_get_summary",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_search/template",
+      "body": {
+        "source": {
+          "query": {
+            "term": {
+              "service": "{{service}}"
+            }
+          },
+          "size": 2
+        },
+        "params": {
+          "service": "checkout"
+        }
+      },
+      "extract": "search_hits",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted search template GET summary"
+    },
+    {
+      "name": "msearch_template_root_get_summary",
+      "area": "search",
+      "method": "GET",
+      "path": "/_msearch/template",
+      "raw": true,
+      "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
+      "extract": "msearch_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] root msearch template GET summary"
+    },
+    {
+      "name": "msearch_template_target_get_summary",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_msearch/template",
+      "raw": true,
+      "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
+      "extract": "msearch_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted msearch template GET summary"
+    },
+    {
+      "name": "render_template_get_output",
+      "area": "search",
+      "method": "GET",
+      "path": "/_render/template",
+      "body": {
+        "source": {
+          "query": {
+            "term": {
+              "service": "{{service}}"
+            }
+          }
+        },
+        "params": {
+          "service": "checkout"
+        }
+      },
+      "extract": "render_template_semantic",
+      "family": "admin-cat",
+      "description": "[admin-cat] render template GET output"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",

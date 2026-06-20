@@ -1542,6 +1542,12 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "found": get.get("found") if isinstance(get, dict) else None,
             "description": explanation.get("description") if isinstance(explanation, dict) else None,
         }
+    if kind == "explain_doc_semantic":
+        return {
+            "status": response["status"],
+            "_index": body.get("_index") if isinstance(body, dict) else None,
+            "matched": body.get("matched") if isinstance(body, dict) else None,
+        }
     if kind == "search_profile":
         profile = body.get("profile") or {}
         shards = profile.get("shards") if isinstance(profile, dict) else None

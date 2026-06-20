@@ -7647,6 +7647,28 @@ impl SteelNode {
     }
 
     fn handle_msearch_template_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        match self.parse_msearch_requests(request) {
+            Ok(Some(requests)) => {
+                let responses = requests
+                    .into_iter()
+                    .map(|(header_target, body)| {
+                        let effective_target = header_target.as_deref().or(target);
+                        match self.search_template_payload_body(
+                            effective_target,
+                            &body,
+                            &request.headers,
+                            None,
+                        ) {
+                            Ok(body) => msearch_response_with_status(RestResponse::json(200, body)),
+                            Err(response) => msearch_response_with_status(response),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                return RestResponse::json(200, serde_json::json!({ "responses": responses }));
+            }
+            Ok(None) => {}
+            Err(response) => return response,
+        }
         match self.search_template_search_body(target, request, None) {
             Ok(body) => RestResponse::json(
                 200,
@@ -8188,15 +8210,25 @@ impl SteelNode {
         } else {
             serde_json::from_slice::<Value>(&request.body).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         };
+        self.search_template_payload_body(target, &payload, &request.headers, template_id)
+    }
+
+    fn search_template_payload_body(
+        &self,
+        target: Option<&str>,
+        payload: &Value,
+        request_headers: &std::collections::BTreeMap<String, String>,
+        template_id: Option<&str>,
+    ) -> Result<Value, RestResponse> {
         let body = self.resolve_template_source(
             template_id,
-            &payload,
+            payload,
             TemplateSourceValidation::SearchJsonParseError,
         )?;
         let requested_target = target.unwrap_or("_all");
         let mut search_request = RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
             .with_json_body(body);
-        search_request.headers = request.headers.clone();
+        search_request.headers = request_headers.clone();
         let response = self.handle_index_search_route(requested_target, &search_request);
         if response.status == 200 {
             Ok(response.body)
@@ -8661,19 +8693,23 @@ impl SteelNode {
                 return build_unsupported_search_response("unsupported pre_filter_shard_size");
             }
         }
-        let mut body = match serde_json::from_slice::<Value>(&request.body) {
-            Ok(body) => body,
-            Err(error) => {
-                return RestResponse::json(
-                    400,
-                    serde_json::json!({
-                        "error": {
-                            "type": "unexpected_end_of_input_exception",
-                            "reason": error.to_string()
-                        },
-                        "status": 400
-                    }),
-                );
+        let mut body = if request.body.is_empty() {
+            Value::Object(serde_json::Map::new())
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "unexpected_end_of_input_exception",
+                                "reason": error.to_string()
+                            },
+                            "status": 400
+                        }),
+                    );
+                }
             }
         };
         let search_pipeline_config = match request.query_params.get("search_pipeline") {
@@ -17352,10 +17388,11 @@ impl SteelNode {
         for selector in target.split(',').filter(|selector| !selector.is_empty()) {
             let wildcard_selector =
                 selector == "_all" || selector.contains('*') || selector.contains('?');
+            let effective_selector = if selector == "_all" { "*" } else { selector };
             let mut matched = Vec::new();
             if let Some(indices) = manifest["indices"].as_object() {
                 for (index_name, index_body) in indices {
-                    if selector == index_name || wildcard_match(selector, index_name) {
+                    if effective_selector == index_name || wildcard_match(effective_selector, index_name) {
                         if !Self::search_target_state_matches(
                             index_body,
                             wildcard_selector,
@@ -17370,7 +17407,9 @@ impl SteelNode {
                     }
                     if let Some(aliases) = index_body["aliases"].as_object() {
                         if aliases.contains_key(selector)
-                            || aliases.keys().any(|alias| wildcard_match(selector, alias))
+                            || aliases
+                                .keys()
+                                .any(|alias| wildcard_match(effective_selector, alias))
                         {
                             if !Self::search_target_state_matches(
                                 index_body,
@@ -36422,6 +36461,11 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let root_match_all = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
@@ -36430,6 +36474,18 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         );
         assert_eq!(root_match_all.status, 200);
         assert_eq!(root_match_all.body["hits"]["total"]["value"], 3);
+
+        let root_default_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search"));
+        assert_eq!(root_default_get.status, 200);
+        assert_eq!(root_default_get.body["hits"]["total"]["value"], 3);
+
+        let targeted_default_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-search-semantic-a/_search",
+        ));
+        assert_eq!(targeted_default_get.status, 200);
+        assert_eq!(targeted_default_get.body["hits"]["total"]["value"], 1);
 
         let root_term = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
