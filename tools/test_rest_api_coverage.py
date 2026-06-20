@@ -98,16 +98,69 @@ class RestApiCoverageTests(unittest.TestCase):
                 "source": "Tier.java",
                 "line": "5",
             },
+            {
+                "status": "planned",
+                "method": "GET",
+                "path": 'KNNPlugin.KNN_BASE_URI + "/stats/"',
+                "source": "Knn.java",
+                "line": "6",
+            },
+            {
+                "status": "planned",
+                "method": "GET",
+                "path": "_wlm/stats",
+                "source": "RestWlmStatsAction.java",
+                "line": "7",
+            },
         ]
 
         self.assertEqual(
             self.report.route_group_counts(routes),
             [
                 {"group": "/{index}/_search", "status": "planned", "count": 2},
-                {"group": "dynamic-or-unparsed", "status": "planned", "count": 2},
                 {"group": "/_cluster", "status": "stubbed", "count": 1},
+                {"group": "/_plugins", "status": "planned", "count": 1},
+                {"group": "/_wlm", "status": "planned", "count": 1},
+                {"group": "/{index}/_tier", "status": "planned", "count": 1},
+                {"group": "dynamic-or-unparsed", "status": "planned", "count": 1},
             ],
         )
+
+    def test_known_java_route_expressions_match_concrete_fixture_paths(self):
+        source = [
+            {
+                "status": "planned",
+                "method": "GET",
+                "path": "/{index}/ + ENDPOINT",
+                "source": "RestRankEvalAction.java",
+                "line": "114",
+            },
+            {
+                "status": "planned",
+                "method": "POST",
+                "path": 'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)',
+                "source": "RestClearCacheHandler.java",
+                "line": "58",
+            },
+        ]
+        observed = [
+            {
+                "method": "GET",
+                "path": "/logs-000001/_rank_eval",
+                "fixture": "search.json",
+            },
+            {
+                "method": "POST",
+                "path": "/_plugins/_knn/clear_cache/vectors",
+                "fixture": "knn.json",
+            },
+        ]
+
+        coverage = self.report.coverage_for_routes(source, observed)
+
+        self.assertEqual(len(coverage["matched_source_route_keys"]), 2)
+        self.assertEqual(coverage["uncovered_in_scope_source_routes"], [])
+        self.assertEqual(coverage["uncovered_in_scope_route_groups"], [])
 
     def test_live_required_fixture_paths_only_uses_ok_required_suites(self):
         report = {

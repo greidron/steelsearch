@@ -199,6 +199,9 @@ def route_matches(source: dict[str, str], observed: dict[str, str]) -> bool:
 
 
 def normalize_path(path: str) -> str:
+    path = route_expression_to_path(path)
+    if path.startswith("_"):
+        path = f"/{path}"
     if not path.startswith("/"):
         return ""
     return urlsplit(path).path.rstrip("/") or "/"
@@ -230,7 +233,7 @@ def route_group_counts(routes: list[dict[str, str]]) -> list[dict[str, Any]]:
 
 def route_group(path: str) -> str:
     normalized = normalize_path(path)
-    if not normalized or source_path_is_dynamic_expression(path):
+    if not normalized:
         return "dynamic-or-unparsed"
     parts = split_path(normalized)
     if not parts:
@@ -243,8 +246,34 @@ def route_group(path: str) -> str:
     return f"/{first}"
 
 
-def source_path_is_dynamic_expression(path: str) -> bool:
-    return any(token in path for token in ('"', "+", "String.format", "Locale.ROOT"))
+def route_expression_to_path(path: str) -> str:
+    value = path.strip()
+    exact = {
+        "/ + ENDPOINT": "/_rank_eval",
+        "/{index}/ + ENDPOINT": "/{index}/_rank_eval",
+        "/{index}/_tier/ + targetTier": "/{index}/_tier/{targetTier}",
+        'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"': "/_plugins/_knn/{nodeId}/stats",
+        'KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"': "/_plugins/_knn/{nodeId}/stats/{stat}",
+        'KNNPlugin.KNN_BASE_URI + "/stats/"': "/_plugins/_knn/stats",
+        'KNNPlugin.KNN_BASE_URI + "/stats/{stat}"': "/_plugins/_knn/stats/{stat}",
+        "KNNPlugin.KNN_BASE_URI + URL_PATH": "/_plugins/_knn/warmup/{index}",
+        'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)': (
+            "/_plugins/_knn/clear_cache/{index}"
+        ),
+        'String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': (
+            "/_plugins/_knn/models/{model_id}"
+        ),
+        'String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)': (
+            "/_plugins/_knn/models/_search"
+        ),
+        'String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)': (
+            "/_plugins/_knn/models/{model_id}/_train"
+        ),
+        'String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)': (
+            "/_plugins/_knn/models/_train"
+        ),
+    }
+    return exact.get(value, value)
 
 
 def source_key(route: dict[str, str]) -> str:
