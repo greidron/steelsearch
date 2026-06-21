@@ -225,6 +225,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/shards/search_shards` (rejected fail-closed)
 - `indices:data/read/field_caps` (rejected fail-closed)
 - `indices:monitor/recovery` (rejected fail-closed)
+- `indices:monitor/segment_replication` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
 - `indices:monitor/point_in_time/segments` (rejected fail-closed)
 - `indices:monitor/shard_stores` (rejected fail-closed)
@@ -1159,6 +1160,19 @@ The recovery boundary covers:
   shard recovery metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, detailed
   recovery output, active-only filtering, and recovery execution.
+
+The segment-replication-stats boundary covers:
+
+- OpenSearch `SegmentReplicationStatsRequest` parent task, broadcast indices
+  array, `IndicesOptions.strictExpandOpenAndForbidClosed()`, `detailed`, and
+  `activeOnly` at the wire decode/build layer;
+- explicit fail-closed classification for
+  `indices:monitor/segment_replication` until shard routing, segment
+  replication pressure-service stats, target-service state, primary/replica
+  grouping, and response rendering are implemented;
+- explicit rejection for index filters, custom indices options, detailed stage
+  timing output, active-only filtering, and segment-replication-stats
+  execution.
 
 The indices-segments boundary covers:
 
@@ -2788,6 +2802,25 @@ index options, detailed flag, and active-only flag before rejecting at
 admission. At roughly 1.76M ops/s in the latest local release run, the boundary
 is lighter than the cluster-search-shards reject path and does not expose a
 material wire-codec bottleneck.
+
+Current segment-replication-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin segment-replication-stats-reject-wire-benchmark
+segment_replication_stats_reject_request_encode iterations=500000 elapsed_ms=318.914 ops_per_second=1567823.14 nanos_per_op=637.83
+segment_replication_stats_reject_request_decode iterations=500000 elapsed_ms=313.560 ops_per_second=1594593.43 nanos_per_op=627.12
+segment_replication_stats_reject_validation iterations=500000 elapsed_ms=329.745 ops_per_second=1516321.82 nanos_per_op=659.49
+segment_replication_stats_reject_wire_bottleneck_ops_per_second=1516321.82
+```
+
+The current segment-replication-stats fail-closed boundary bottleneck is
+validation. This path carries the BroadcastRequest parent task, empty index
+array, strict open forbid-closed index options, detailed flag, and active-only
+flag before rejecting at admission. At roughly 1.52M ops/s in the latest local
+release run, the boundary itself is lightweight; the expected performance
+pressure for a future implementation is shard routing, pressure-service stats
+collection, target-service live state lookup, primary/replica grouping, and
+response rendering.
 
 Current indices-segments reject wire microbenchmark:
 

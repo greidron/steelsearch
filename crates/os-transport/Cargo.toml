@@ -390,6 +390,10 @@ name = "get-task-reject-wire-benchmark"
 path = "benchmarks/get_task_reject_wire.rs"
 
 [[bin]]
+name = "segment-replication-stats-reject-wire-benchmark"
+path = "benchmarks/segment_replication_stats_reject_wire.rs"
+
+[[bin]]
 name = "cancel-tasks-wire-benchmark"
 path = "benchmarks/cancel_tasks_wire.rs"
 

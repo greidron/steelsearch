@@ -670,6 +670,15 @@
       "reason": "Recovery transport execution requires shard recovery metadata response rendering before Steelsearch can serve OpenSearch recovery read semantics."
     },
     {
+      "action_name": "indices:monitor/segment_replication",
+      "action_type": "SegmentReplicationStatsAction",
+      "transport_action": "TransportSegmentReplicationStatsAction",
+      "request_wire_type": "SegmentReplicationStatsRequest",
+      "response_wire_type": "SegmentReplicationStatsResponse",
+      "disposition": "rejected",
+      "reason": "Segment-replication-stats transport execution requires shard routing, segment-replication pressure and target-service state, and response rendering before Steelsearch can serve OpenSearch segment-replication stats semantics."
+    },
+    {
       "action_name": "indices:monitor/segments",
       "action_type": "IndicesSegmentsAction",
       "transport_action": "TransportIndicesSegmentsAction",
