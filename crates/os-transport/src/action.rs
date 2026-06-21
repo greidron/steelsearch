@@ -35,6 +35,7 @@ pub const CANCEL_TASKS_ACTION_NAME: &str = "cluster:admin/tasks/cancel";
 pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
 pub const OPENSEARCH_STREAM_SEARCH_ACTION_NAME: &str = "indices:data/read/search/stream";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
+pub const OPENSEARCH_SEARCH_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
@@ -210,6 +211,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "MultiSearchResponse",
         adapter_stage: "search-read",
         next_step: "decode batched search requests and aggregate Rust search responses",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_SEARCH_SCROLL_ACTION_NAME,
+        action_type: "SearchScrollAction",
+        transport_action: "TransportSearchScrollAction",
+        request_wire_type: "SearchScrollRequest",
+        response_wire_type: "SearchResponse",
+        adapter_stage: "search-scroll",
+        next_step: "map scroll context ids and keep-alive updates onto Rust search context lifecycle",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_MAPPINGS_ACTION_NAME,
@@ -600,6 +610,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "multi-search transport execution requires batched search source and response rendering mapping",
+        },
+        OPENSEARCH_SEARCH_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "search-scroll transport execution requires scroll context lifecycle mapping",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2731,6 +2746,44 @@ pub fn read_opensearch_multi_search_request_message(
     OpenSearchMultiSearchRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_search_scroll_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchSearchScrollRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_SEARCH_SCROLL_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_search_scroll_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSearchScrollRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_SEARCH_SCROLL_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_SEARCH_SCROLL_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchSearchScrollRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -4175,6 +4228,65 @@ impl OpenSearchMultiSearchRequestWire {
             shape: "multi-search execution",
             reason:
                 "multi-search transport execution requires batched search source and response rendering mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSearchScrollRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub scroll_id: String,
+    pub keep_alive: Option<TimeValueWire>,
+}
+
+impl Default for OpenSearchSearchScrollRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            scroll_id: "scroll-context".to_string(),
+            keep_alive: Some(TimeValueWire::minutes(1)),
+        }
+    }
+}
+
+impl OpenSearchSearchScrollRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string(&self.scroll_id);
+        write_optional_time_value(output, self.keep_alive.as_ref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            scroll_id: input.read_string()?,
+            keep_alive: read_optional_time_value(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.scroll_id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search scroll empty scroll id",
+                reason: "OpenSearch search-scroll requests require a non-empty scroll id",
+            });
+        }
+        if self.keep_alive.is_none() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search scroll missing keep alive",
+                reason: "search-scroll requests without keep-alive require scroll context defaulting semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search scroll execution",
+            reason: "search-scroll transport execution requires scroll context lifecycle mapping",
         })
     }
 }
@@ -8502,6 +8614,15 @@ mod tests {
                     next_step: "decode batched search requests and aggregate Rust search responses",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/scroll",
+                    action_type: "SearchScrollAction",
+                    transport_action: "TransportSearchScrollAction",
+                    request_wire_type: "SearchScrollRequest",
+                    response_wire_type: "SearchResponse",
+                    adapter_stage: "search-scroll",
+                    next_step: "map scroll context ids and keep-alive updates onto Rust search context lifecycle",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/mappings/get",
                     action_type: "GetMappingsAction",
                     transport_action: "TransportGetMappingsAction",
@@ -8743,6 +8864,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_SEARCH_SCROLL_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -8861,6 +8986,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -13032,6 +13158,77 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "multi-search execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_scroll_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchSearchScrollRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchSearchScrollRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search scroll execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_scroll_request_rejects_unsupported_shapes() {
+        let empty_scroll_id = OpenSearchSearchScrollRequestWire {
+            scroll_id: String::new(),
+            ..OpenSearchSearchScrollRequestWire::default()
+        };
+        assert!(matches!(
+            empty_scroll_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search scroll empty scroll id",
+                ..
+            })
+        ));
+
+        let missing_keep_alive = OpenSearchSearchScrollRequestWire {
+            keep_alive: None,
+            ..OpenSearchSearchScrollRequestWire::default()
+        };
+        assert!(matches!(
+            missing_keep_alive.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search scroll missing keep alive",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_scroll_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchSearchScrollRequestWire::default();
+        let mut frame = build_opensearch_search_scroll_request_message(
+            49,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search-scroll request message");
+        };
+        assert_eq!(
+            read_opensearch_search_scroll_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_search_scroll_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search scroll execution",
                 ..
             })
         ));

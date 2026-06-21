@@ -199,6 +199,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
+- `indices:data/read/scroll` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -453,6 +454,15 @@ The multi-search boundary covers:
   batched search source decoding and response rendering are mapped;
 - explicit rejection for custom multi-search concurrency, empty request batches,
   unsupported nested search request shapes, and multi-search execution.
+
+The search-scroll boundary covers:
+
+- OpenSearch `SearchScrollRequest` parent task, scroll id, and optional
+  keep-alive `Scroll` time value at the wire decode/build layer;
+- explicit fail-closed classification for `indices:data/read/scroll` until
+  scroll context lifecycle and response rendering are mapped;
+- explicit rejection for empty scroll ids, missing keep-alive values, and
+  search-scroll execution.
 
 The indices-stats boundary covers:
 
@@ -994,6 +1004,23 @@ sub-searches/s in the latest local release run, the nested control-envelope
 path is still lightweight; the first performance point to inspect before
 accepting multi-search execution is batched search source decode and response
 aggregation.
+
+Current search-scroll reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin search-scroll-reject-wire-benchmark
+search_scroll_reject_request_encode iterations=400000 elapsed_ms=267.102 ops_per_second=1497553.09 nanos_per_op=667.76
+search_scroll_reject_request_decode iterations=400000 elapsed_ms=255.354 ops_per_second=1566452.39 nanos_per_op=638.39
+search_scroll_reject_validation iterations=400000 elapsed_ms=248.034 ops_per_second=1612682.60 nanos_per_op=620.08
+search_scroll_reject_wire_bottleneck_ops_per_second=1497553.09
+```
+
+The current search-scroll fail-closed boundary bottleneck is request encode.
+This path carries only the ActionRequest parent task, scroll id, and optional
+keep-alive time value before rejecting execution. At roughly 1.50M ops/s in the
+latest local release run, it remains a lightweight scroll control boundary; the
+first performance point to inspect before accepting execution is scroll context
+lookup/update and search response rendering.
 
 Current indices-stats reject wire microbenchmark:
 
