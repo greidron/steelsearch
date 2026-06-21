@@ -45,6 +45,7 @@ def main() -> int:
     }
 
     status = "ok" if not errors else "failed"
+    implemented_count = count_status(actions, "implemented")
     report = {
         "status": status,
         "errors": errors,
@@ -52,14 +53,11 @@ def main() -> int:
         "summary": {
             "passed": not errors,
             "transport_action_count": len(actions),
-            "implemented_action_count": count_status(actions, "implemented"),
+            "implemented_action_count": implemented_count,
             "planned_action_count": count_status(actions, "planned"),
             "stubbed_action_count": count_status(actions, "stubbed"),
             "out_of_scope_action_count": count_status(actions, "out-of-scope"),
-            "action_coverage_claim": (
-                "no OpenSearch ActionModule transport action is currently classified as implemented; "
-                "current evidence covers frame/handshake/observe-only and query-phase backpressure surfaces"
-            ),
+            "action_coverage_claim": action_coverage_claim(implemented_count),
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
         },
         "status_counts": status_counts(actions),
@@ -124,6 +122,18 @@ def status_counts(actions: list[dict[str, str]]) -> dict[str, int]:
         status = action["status"] or "unknown"
         counts[status] = counts.get(status, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def action_coverage_claim(implemented_count: int) -> str:
+    if implemented_count == 0:
+        return (
+            "no OpenSearch ActionModule transport action is currently classified as implemented; "
+            "current evidence covers frame/handshake/observe-only and query-phase backpressure surfaces"
+        )
+    return (
+        "OpenSearch ActionModule transport coverage includes implemented adapters plus explicit "
+        "fail-closed partial boundaries; inspect status_counts for the current split"
+    )
 
 
 if __name__ == "__main__":

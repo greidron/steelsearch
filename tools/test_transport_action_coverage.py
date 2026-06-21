@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "tools" / "report-transport-action-coverage.py"
+SOURCE_TRANSPORT_ACTIONS = ROOT / "docs" / "rust-port" / "generated" / "source-transport-actions.tsv"
+TRANSPORT_INVENTORY = ROOT / "tools" / "fixtures" / "interop-transport-action-inventory.json"
 
 
 def load_report_module():
@@ -35,6 +37,10 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.report.status_counts(actions),
             {"implemented": 1, "planned": 2},
         )
+
+    def test_action_coverage_claim_reflects_implemented_count(self):
+        self.assertIn("no OpenSearch", self.report.action_coverage_claim(0))
+        self.assertIn("implemented adapters", self.report.action_coverage_claim(1))
 
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
@@ -70,6 +76,25 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["transport_action_count"], 1)
             self.assertEqual(payload["summary"]["planned_action_count"], 1)
             self.assertEqual(payload["summary"]["implemented_action_count"], 0)
+
+    def test_inventory_actions_are_not_left_planned_in_source_tsv(self):
+        source_actions = {
+            action["action"].removesuffix(".INSTANCE"): action
+            for action in self.report.load_actions(SOURCE_TRANSPORT_ACTIONS)
+        }
+        inventory = json.loads(TRANSPORT_INVENTORY.read_text(encoding="utf-8"))
+        planned = []
+        for action in inventory["actions"]:
+            source_action = source_actions.get(action["action_type"])
+            if source_action is None:
+                continue
+            if source_action["status"] == "planned":
+                planned.append(
+                    f"{source_action['action']} line {source_action['line']} "
+                    f"covers {action['action_name']} but remains planned"
+                )
+
+        self.assertEqual(planned, [])
 
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
