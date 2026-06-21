@@ -40,6 +40,7 @@ pub const OPENSEARCH_CLEAR_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll/
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_CREATE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/create";
 pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/delete";
+pub const OPENSEARCH_GET_ALL_PITS_ACTION_NAME: &str = "indices:data/read/point_in_time/readall";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
@@ -261,6 +262,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "DeletePitResponse",
         adapter_stage: "search-pit",
         next_step: "map PIT id invalidation onto Rust search context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_ALL_PITS_ACTION_NAME,
+        action_type: "GetAllPitsAction",
+        transport_action: "TransportGetAllPitsAction",
+        request_wire_type: "GetAllPitNodesRequest",
+        response_wire_type: "GetAllPitNodesResponse",
+        adapter_stage: "search-pit",
+        next_step: "map PIT listing onto Rust search context lifecycle and node fanout response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_MAPPINGS_ACTION_NAME,
@@ -690,6 +700,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-pit transport execution requires PIT context lifecycle mapping",
+        },
+        OPENSEARCH_GET_ALL_PITS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-all-PITs transport execution requires PIT context listing response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3049,6 +3064,44 @@ pub fn read_opensearch_delete_pit_request_message(
     OpenSearchDeletePitRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_all_pits_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetAllPitsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_ALL_PITS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_all_pits_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetAllPitsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_ALL_PITS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_ALL_PITS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetAllPitsRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -4991,6 +5044,80 @@ impl OpenSearchDeletePitRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete pit execution",
             reason: "delete-PIT transport execution requires PIT context lifecycle mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetAllPitsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Option<Vec<String>>,
+    pub timeout: Option<TimeValueWire>,
+}
+
+impl Default for OpenSearchGetAllPitsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: None,
+            timeout: None,
+        }
+    }
+}
+
+impl OpenSearchGetAllPitsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_nullable_string_array(output, self.node_ids.as_deref());
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = read_nullable_string_array(&mut input)?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits concrete nodes",
+                reason:
+                    "get-all-PITs concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self
+            .node_ids
+            .as_ref()
+            .is_some_and(|node_ids| !node_ids.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits node filter",
+                reason: "node-scoped PIT listing requires runtime node fanout semantics",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits timeout",
+                reason: "get-all-PITs timeout semantics require runtime PIT listing fanout",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get all pits execution",
+            reason:
+                "get-all-PITs transport execution requires PIT context listing response rendering",
         })
     }
 }
@@ -9061,6 +9188,25 @@ fn read_optional_time_value(
     }
 }
 
+fn write_nullable_string_array(output: &mut StreamOutput, values: Option<&[String]>) {
+    if let Some(values) = values {
+        output.write_bool(true);
+        output.write_string_array(values);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_nullable_string_array(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<String>>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_string_array()?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_optional_string_array(output: &mut StreamOutput, values: Option<&[String]>) {
     if let Some(values) = values {
         output.write_bool(true);
@@ -9382,6 +9528,15 @@ mod tests {
                     next_step: "map PIT id invalidation onto Rust search context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/point_in_time/readall",
+                    action_type: "GetAllPitsAction",
+                    transport_action: "TransportGetAllPitsAction",
+                    request_wire_type: "GetAllPitNodesRequest",
+                    response_wire_type: "GetAllPitNodesResponse",
+                    adapter_stage: "search-pit",
+                    next_step: "map PIT listing onto Rust search context lifecycle and node fanout response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/mappings/get",
                     action_type: "GetMappingsAction",
                     transport_action: "TransportGetMappingsAction",
@@ -9652,6 +9807,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_ALL_PITS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -9780,6 +9939,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -14446,6 +14606,86 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete pit execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_all_pits_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetAllPitsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetAllPitsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_all_pits_request_rejects_unsupported_shapes() {
+        let node_filter = OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec!["node-a".to_string()]),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits node filter",
+                ..
+            })
+        ));
+
+        let timeout = OpenSearchGetAllPitsRequestWire {
+            timeout: Some(TimeValueWire::seconds(30)),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits timeout",
+                ..
+            })
+        ));
+
+        let mut concrete_nodes = StreamOutput::new();
+        write_parent_task_id(&mut concrete_nodes, "", None);
+        write_nullable_string_array(&mut concrete_nodes, None);
+        concrete_nodes.write_bool(true);
+        assert!(matches!(
+            OpenSearchGetAllPitsRequestWire::read(concrete_nodes.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_all_pits_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchGetAllPitsRequestWire::default();
+        let mut frame =
+            build_opensearch_get_all_pits_request_message(55, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get-all-PITs request message");
+        };
+        assert_eq!(
+            read_opensearch_get_all_pits_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_all_pits_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits execution",
                 ..
             })
         ));

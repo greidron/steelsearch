@@ -94,6 +94,10 @@ name = "pit-segments-reject-wire-benchmark"
 path = "benchmarks/pit_segments_reject_wire.rs"
 
 [[bin]]
+name = "get-all-pits-reject-wire-benchmark"
+path = "benchmarks/get_all_pits_reject_wire.rs"
+
+[[bin]]
 name = "indices-shard-stores-reject-wire-benchmark"
 path = "benchmarks/indices_shard_stores_reject_wire.rs"
 

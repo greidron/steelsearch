@@ -205,6 +205,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/explain` (rejected fail-closed)
 - `indices:data/read/point_in_time/create` (rejected fail-closed)
 - `indices:data/read/point_in_time/delete` (rejected fail-closed)
+- `indices:data/read/point_in_time/readall` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -512,6 +513,16 @@ The delete-PIT boundary covers:
   response rendering are mapped;
 - explicit rejection for empty PIT id arrays, empty PIT id entries, and
   delete-PIT execution.
+
+The get-all-PITs boundary covers:
+
+- OpenSearch `GetAllPitNodesRequest` parent task, nullable node ids, concrete
+  node payload presence, and optional timeout at the wire decode/build layer;
+- explicit fail-closed classification for
+  `indices:data/read/point_in_time/readall` until PIT context listing and node
+  fanout response rendering are mapped;
+- explicit rejection for concrete node payloads, node filters, timeout
+  semantics, and get-all-PITs execution.
 
 The create-PIT boundary covers:
 
@@ -1133,6 +1144,24 @@ rejecting execution. At roughly 1.37M ops/s in the latest local release run,
 the boundary itself is lightweight; the first performance point to inspect
 before accepting execution is PIT context lookup/invalidation and delete-PIT
 response rendering.
+
+Current get-all-PITs reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-all-pits-reject-wire-benchmark
+get_all_pits_reject_request_encode iterations=400000 elapsed_ms=239.247 ops_per_second=1671915.35 nanos_per_op=598.12
+get_all_pits_reject_request_decode iterations=400000 elapsed_ms=224.108 ops_per_second=1784851.02 nanos_per_op=560.27
+get_all_pits_reject_validation iterations=400000 elapsed_ms=226.532 ops_per_second=1765751.18 nanos_per_op=566.33
+get_all_pits_reject_wire_bottleneck_ops_per_second=1671915.35
+```
+
+The current get-all-PITs fail-closed boundary bottleneck is request encode.
+This path carries the ActionRequest parent task, nullable node id filters,
+concrete-node presence marker, and optional timeout before rejecting execution.
+At roughly 1.67M ops/s in the latest local release run, the boundary itself is
+lightweight; the first performance point to inspect before accepting execution
+is PIT context enumeration, node fanout, and `GetAllPitNodesResponse`
+rendering.
 
 Current create-PIT reject wire microbenchmark:
 
