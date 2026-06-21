@@ -1,9 +1,10 @@
 use bytes::{Bytes, BytesMut};
 use os_core::Version;
 use os_engine::{
+    BulkWriteItemResponse, BulkWriteOperation, BulkWriteRequest, BulkWriteResponse,
     DeleteDocumentRequest, DocumentMetadata, GetDocumentRequest, GetDocumentResponse,
     IndexDocumentRequest, IndexDocumentResponse, RefreshRequest, RefreshResponse, SearchHit,
-    SearchRequest, SearchShardSearchResult, SearchShardTarget, WriteResult,
+    SearchRequest, SearchShardSearchResult, SearchShardTarget, WriteOperationKind, WriteResult,
 };
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
@@ -272,6 +273,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "multi-get transport adapter is available for the default document subset",
+        },
+        OPENSEARCH_BULK_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "bulk transport adapter is available for the bounded index/delete subset",
         },
         OPENSEARCH_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -627,13 +633,22 @@ const OPENSEARCH_UNASSIGNED_PRIMARY_TERM: i64 = 0;
 const OPENSEARCH_NOT_FOUND_VERSION: i64 = -1;
 const OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT: i32 = -2;
 const OPENSEARCH_REFRESH_POLICY_NONE: u8 = 0;
+const OPENSEARCH_DOC_WRITE_REQUEST_INDEX: u8 = 0;
+const OPENSEARCH_DOC_WRITE_REQUEST_DELETE: u8 = 1;
+const OPENSEARCH_DOC_WRITE_REQUEST_UPDATE: u8 = 2;
 const OPENSEARCH_DOC_WRITE_OP_TYPE_INDEX: u8 = 0;
+const OPENSEARCH_DOC_WRITE_OP_TYPE_DELETE: u8 = 3;
 const OPENSEARCH_UNSET_AUTO_GENERATED_TIMESTAMP: i64 = -1;
 const OPENSEARCH_JSON_MEDIA_TYPE: &str = "application/json";
 const OPENSEARCH_DOC_WRITE_RESULT_CREATED: u8 = 0;
 const OPENSEARCH_DOC_WRITE_RESULT_UPDATED: u8 = 1;
 const OPENSEARCH_DOC_WRITE_RESULT_DELETED: u8 = 2;
 const OPENSEARCH_DOC_WRITE_RESULT_NOT_FOUND: u8 = 3;
+const OPENSEARCH_BULK_RESPONSE_INDEX: u8 = 0;
+const OPENSEARCH_BULK_RESPONSE_DELETE: u8 = 1;
+const OPENSEARCH_BULK_RESPONSE_NONE: u8 = 2;
+const OPENSEARCH_BULK_RESPONSE_UPDATE: u8 = 3;
+const OPENSEARCH_NO_INGEST_TOOK: i64 = -1;
 const OPENSEARCH_UNKNOWN_INDEX_UUID: &str = "_na_";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1416,7 +1431,13 @@ impl OpenSearchIndexRequestWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
         let shard_id_present = input.read_bool()?;
         if shard_id_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -1431,13 +1452,13 @@ impl OpenSearchIndexRequestWire {
             parent_task_id,
             shard_id_present,
             wait_for_active_shards: input.read_i32()?,
-            timeout: TimeValueWire::read(&mut input)?,
+            timeout: TimeValueWire::read(input)?,
             index: input.read_string()?,
             routed_based_on_cluster_version: input.read_vlong()?,
             refresh_policy: input.read_byte()?,
             id: input.read_optional_string()?,
             routing: input.read_optional_string()?,
-            source: read_json_bytes_reference(&mut input)?,
+            source: read_json_bytes_reference(input)?,
             extra_field_values_present: {
                 extra_field_values_present = input.read_bool()?;
                 if extra_field_values_present {
@@ -1465,11 +1486,10 @@ impl OpenSearchIndexRequestWire {
                     None
                 }
             },
-            if_seq_no: read_zlong(&mut input)?,
+            if_seq_no: read_zlong(input)?,
             if_primary_term: input.read_vlong()?,
             require_alias: input.read_bool()?,
         };
-        require_no_trailing_bytes(&input)?;
         Ok(request)
     }
 
@@ -1665,6 +1685,12 @@ impl OpenSearchIndexResponseWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
+        let response = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
         let response = Self {
             shard_total: input.read_vint()?,
             shard_successful: input.read_vint()?,
@@ -1681,8 +1707,8 @@ impl OpenSearchIndexResponseWire {
             index_uuid: input.read_string()?,
             shard_id: input.read_vint()?,
             id: input.read_string()?,
-            version: read_zlong(&mut input)?,
-            seq_no: read_zlong(&mut input)?,
+            version: read_zlong(input)?,
+            seq_no: read_zlong(input)?,
             primary_term: input.read_vlong()?,
             forced_refresh: input.read_bool()?,
             result: input.read_byte()?,
@@ -1695,7 +1721,6 @@ impl OpenSearchIndexResponseWire {
                 reason: "only created and updated index results are decoded by the index adapter",
             });
         }
-        require_no_trailing_bytes(&input)?;
         Ok(response)
     }
 }
@@ -1831,7 +1856,13 @@ impl OpenSearchDeleteRequestWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
         let shard_id_present = input.read_bool()?;
         if shard_id_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -1844,7 +1875,7 @@ impl OpenSearchDeleteRequestWire {
             parent_task_id,
             shard_id_present,
             wait_for_active_shards: input.read_i32()?,
-            timeout: TimeValueWire::read(&mut input)?,
+            timeout: TimeValueWire::read(input)?,
             index: input.read_string()?,
             routed_based_on_cluster_version: input.read_vlong()?,
             refresh_policy: input.read_byte()?,
@@ -1852,10 +1883,9 @@ impl OpenSearchDeleteRequestWire {
             routing: input.read_optional_string()?,
             version: input.read_i64()?,
             version_type: input.read_byte()?,
-            if_seq_no: read_zlong(&mut input)?,
+            if_seq_no: read_zlong(input)?,
             if_primary_term: input.read_vlong()?,
         };
-        require_no_trailing_bytes(&input)?;
         Ok(request)
     }
 
@@ -2005,6 +2035,12 @@ impl OpenSearchDeleteResponseWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
+        let response = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
         let response = Self {
             shard_total: input.read_vint()?,
             shard_successful: input.read_vint()?,
@@ -2022,8 +2058,8 @@ impl OpenSearchDeleteResponseWire {
             index_uuid: input.read_string()?,
             shard_id: input.read_vint()?,
             id: input.read_string()?,
-            version: read_zlong(&mut input)?,
-            seq_no: read_zlong(&mut input)?,
+            version: read_zlong(input)?,
+            seq_no: read_zlong(input)?,
             primary_term: input.read_vlong()?,
             forced_refresh: input.read_bool()?,
             result: input.read_byte()?,
@@ -2037,7 +2073,6 @@ impl OpenSearchDeleteResponseWire {
                     "only deleted and not-found delete results are decoded by the delete adapter",
             });
         }
-        require_no_trailing_bytes(&input)?;
         Ok(response)
     }
 }
@@ -2108,6 +2143,397 @@ pub fn read_opensearch_delete_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     OpenSearchDeleteResponseWire::read(message.body.clone().freeze())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenSearchBulkRequestItemWire {
+    Index(OpenSearchIndexRequestWire),
+    Delete(OpenSearchDeleteRequestWire),
+}
+
+impl OpenSearchBulkRequestItemWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        match self {
+            Self::Index(request) => {
+                output.write_byte(OPENSEARCH_DOC_WRITE_REQUEST_INDEX);
+                request.write(output)
+            }
+            Self::Delete(request) => {
+                output.write_byte(OPENSEARCH_DOC_WRITE_REQUEST_DELETE);
+                request.write(output)
+            }
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_byte()? {
+            OPENSEARCH_DOC_WRITE_REQUEST_INDEX => Ok(Self::Index(
+                OpenSearchIndexRequestWire::read_from_input(input)?,
+            )),
+            OPENSEARCH_DOC_WRITE_REQUEST_DELETE => Ok(Self::Delete(
+                OpenSearchDeleteRequestWire::read_from_input(input)?,
+            )),
+            OPENSEARCH_DOC_WRITE_REQUEST_UPDATE => {
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "bulk request update item",
+                    reason: "update items are not decoded by the bulk adapter yet",
+                })
+            }
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk request item type",
+                reason: "bulk item request type is outside the OpenSearch source-derived range",
+            }),
+        }
+    }
+
+    fn to_engine_operation(&self) -> Result<BulkWriteOperation, TransportActionWireError> {
+        match self {
+            Self::Index(request) => Ok(BulkWriteOperation::Index(request.to_engine_request()?)),
+            Self::Delete(request) => Ok(BulkWriteOperation::Delete(request.to_engine_request()?)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchBulkRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub wait_for_active_shards: i32,
+    pub items: Vec<OpenSearchBulkRequestItemWire>,
+    pub refresh_policy: u8,
+    pub timeout: TimeValueWire,
+}
+
+impl OpenSearchBulkRequestWire {
+    pub fn new(items: Vec<OpenSearchBulkRequestItemWire>) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            wait_for_active_shards: OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT,
+            items,
+            refresh_policy: OPENSEARCH_REFRESH_POLICY_NONE,
+            timeout: TimeValueWire::minutes(1),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_i32(self.wait_for_active_shards);
+        output.write_vint(self.items.len() as i32);
+        for item in &self.items {
+            item.write(output)?;
+        }
+        output.write_byte(self.refresh_policy);
+        self.timeout.write(output);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let item_count;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            wait_for_active_shards: input.read_i32()?,
+            items: {
+                item_count = read_len(&mut input)?;
+                let mut items = Vec::with_capacity(item_count);
+                for _ in 0..item_count {
+                    items.push(OpenSearchBulkRequestItemWire::read(&mut input)?);
+                }
+                items
+            },
+            refresh_policy: input.read_byte()?,
+            timeout: TimeValueWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_request(&self) -> Result<BulkWriteRequest, TransportActionWireError> {
+        if self.wait_for_active_shards != OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk request active shard count",
+                reason:
+                    "custom active-shard waits cannot be mapped onto the current bulk engine request",
+            });
+        }
+        if self.refresh_policy != OPENSEARCH_REFRESH_POLICY_NONE {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk request refresh policy",
+                reason: "bulk refresh policy cannot be mapped onto the current bulk engine request",
+            });
+        }
+        if self.timeout != TimeValueWire::minutes(1) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk request timeout",
+                reason:
+                    "custom replication timeout cannot be mapped onto the current bulk engine request",
+            });
+        }
+        let operations = self
+            .items
+            .iter()
+            .map(OpenSearchBulkRequestItemWire::to_engine_operation)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(BulkWriteRequest { operations })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OpenSearchBulkItemResponseBodyWire {
+    Index(OpenSearchIndexResponseWire),
+    Delete(OpenSearchDeleteResponseWire),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchBulkItemResponseWire {
+    pub item_id: i32,
+    pub op_type: u8,
+    pub response: OpenSearchBulkItemResponseBodyWire,
+}
+
+impl OpenSearchBulkItemResponseWire {
+    pub fn index(item_id: i32, response: OpenSearchIndexResponseWire) -> Self {
+        Self {
+            item_id,
+            op_type: OPENSEARCH_DOC_WRITE_OP_TYPE_INDEX,
+            response: OpenSearchBulkItemResponseBodyWire::Index(response),
+        }
+    }
+
+    pub fn delete(item_id: i32, response: OpenSearchDeleteResponseWire) -> Self {
+        Self {
+            item_id,
+            op_type: OPENSEARCH_DOC_WRITE_OP_TYPE_DELETE,
+            response: OpenSearchBulkItemResponseBodyWire::Delete(response),
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.item_id);
+        output.write_byte(self.op_type);
+        match &self.response {
+            OpenSearchBulkItemResponseBodyWire::Index(response) => {
+                output.write_byte(OPENSEARCH_BULK_RESPONSE_INDEX);
+                response.write(output);
+            }
+            OpenSearchBulkItemResponseBodyWire::Delete(response) => {
+                output.write_byte(OPENSEARCH_BULK_RESPONSE_DELETE);
+                response.write(output);
+            }
+        }
+        output.write_bool(false);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let item_id = input.read_vint()?;
+        let op_type = input.read_byte()?;
+        let response = match input.read_byte()? {
+            OPENSEARCH_BULK_RESPONSE_INDEX => OpenSearchBulkItemResponseBodyWire::Index(
+                OpenSearchIndexResponseWire::read_from_input(input)?,
+            ),
+            OPENSEARCH_BULK_RESPONSE_DELETE => OpenSearchBulkItemResponseBodyWire::Delete(
+                OpenSearchDeleteResponseWire::read_from_input(input)?,
+            ),
+            OPENSEARCH_BULK_RESPONSE_NONE => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "bulk response empty item",
+                    reason: "empty bulk item responses are not decoded by the bulk adapter yet",
+                });
+            }
+            OPENSEARCH_BULK_RESPONSE_UPDATE => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "bulk response update item",
+                    reason: "update bulk item responses are not decoded by the bulk adapter yet",
+                });
+            }
+            _ => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "bulk response item type",
+                    reason:
+                        "bulk item response type is outside the OpenSearch source-derived range",
+                });
+            }
+        };
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk response failure item",
+                reason: "failure bulk item responses are not decoded by the bulk adapter yet",
+            });
+        }
+        Ok(Self {
+            item_id,
+            op_type,
+            response,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchBulkResponseWire {
+    pub items: Vec<OpenSearchBulkItemResponseWire>,
+    pub took_millis: i64,
+    pub ingest_took_millis: i64,
+}
+
+impl OpenSearchBulkResponseWire {
+    pub fn success(items: Vec<OpenSearchBulkItemResponseWire>) -> Self {
+        Self {
+            items,
+            took_millis: 0,
+            ingest_took_millis: OPENSEARCH_NO_INGEST_TOOK,
+        }
+    }
+
+    pub fn from_engine_response(
+        response: BulkWriteResponse,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut items = Vec::with_capacity(response.items.len());
+        for (item_id, item) in response.items.into_iter().enumerate() {
+            items.push(OpenSearchBulkItemResponseWire::from_engine_item(
+                item_id as i32,
+                item,
+            )?);
+        }
+        Ok(Self::success(items))
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.items.len() as i32);
+        for item in &self.items {
+            item.write(output);
+        }
+        output.write_vlong(self.took_millis);
+        output.write_zlong(self.ingest_took_millis);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let item_count = read_len(&mut input)?;
+        let mut items = Vec::with_capacity(item_count);
+        for _ in 0..item_count {
+            items.push(OpenSearchBulkItemResponseWire::read(&mut input)?);
+        }
+        let response = Self {
+            items,
+            took_millis: input.read_vlong()?,
+            ingest_took_millis: read_zlong(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+impl OpenSearchBulkItemResponseWire {
+    fn from_engine_item(
+        item_id: i32,
+        item: BulkWriteItemResponse,
+    ) -> Result<Self, TransportActionWireError> {
+        if item.error_type.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk response failure item",
+                reason: "failure bulk item responses are not encoded by the bulk adapter yet",
+            });
+        }
+        let metadata = item
+            .metadata
+            .ok_or(TransportActionWireError::MissingRequiredField { field: "metadata" })?;
+        let response = IndexDocumentResponse {
+            index: item.index,
+            metadata,
+            coordination: item.coordination.unwrap_or_default(),
+            result: item
+                .result
+                .ok_or(TransportActionWireError::MissingRequiredField { field: "result" })?,
+        };
+        match item.operation {
+            WriteOperationKind::Index => Ok(Self::index(
+                item_id,
+                OpenSearchIndexResponseWire::from_engine_response(response)?,
+            )),
+            WriteOperationKind::Delete => Ok(Self::delete(
+                item_id,
+                OpenSearchDeleteResponseWire::from_engine_response(response)?,
+            )),
+            WriteOperationKind::Create
+            | WriteOperationKind::Update
+            | WriteOperationKind::Replay => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "bulk response operation kind",
+                reason:
+                    "only index and delete bulk item responses are encoded by the bulk adapter yet",
+            }),
+        }
+    }
+}
+
+pub fn build_opensearch_bulk_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchBulkRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_BULK_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_bulk_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchBulkRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_BULK_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_BULK_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchBulkRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_bulk_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchBulkResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_bulk_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchBulkResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchBulkResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3182,6 +3608,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_BULK_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -3201,6 +3631,7 @@ mod tests {
             let decision = classify_opensearch_transport_action(spec.action_name);
             if spec.action_name == OPENSEARCH_GET_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_GET_ACTION_NAME
+                || spec.action_name == OPENSEARCH_BULK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
@@ -3923,6 +4354,259 @@ mod tests {
         assert!(message.status.is_response());
         assert_eq!(
             read_opensearch_delete_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_bulk_request_wire_round_trips_and_maps_to_engine_request() {
+        let request = OpenSearchBulkRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            items: vec![
+                OpenSearchBulkRequestItemWire::Index(OpenSearchIndexRequestWire::new(
+                    "logs-000001".into(),
+                    "doc-1".into(),
+                    json!({ "message": "created" }),
+                )),
+                OpenSearchBulkRequestItemWire::Delete(OpenSearchDeleteRequestWire::new(
+                    "logs-000001".into(),
+                    "doc-2".into(),
+                )),
+            ],
+            ..OpenSearchBulkRequestWire::new(Vec::new())
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchBulkRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_request().unwrap(),
+            BulkWriteRequest {
+                operations: vec![
+                    BulkWriteOperation::Index(IndexDocumentRequest {
+                        index: "logs-000001".into(),
+                        id: "doc-1".into(),
+                        source: json!({ "message": "created" }),
+                    }),
+                    BulkWriteOperation::Delete(DeleteDocumentRequest {
+                        index: "logs-000001".into(),
+                        id: "doc-2".into(),
+                    }),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn opensearch_bulk_request_rejects_unsupported_engine_mapping_options() {
+        let request = OpenSearchBulkRequestWire {
+            refresh_policy: 1,
+            items: vec![OpenSearchBulkRequestItemWire::Index(
+                OpenSearchIndexRequestWire::new(
+                    "logs-000001".into(),
+                    "doc-1".into(),
+                    json!({ "message": "created" }),
+                ),
+            )],
+            ..OpenSearchBulkRequestWire::new(Vec::new())
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "bulk request refresh policy");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchBulkRequestWire::new(vec![OpenSearchBulkRequestItemWire::Index(
+            OpenSearchIndexRequestWire {
+                routing: Some("tenant-a".into()),
+                ..OpenSearchIndexRequestWire::new(
+                    "logs-000001".into(),
+                    "doc-1".into(),
+                    json!({ "message": "created" }),
+                )
+            },
+        )]);
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "index request routing");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensearch_bulk_response_wire_round_trips_successful_items() {
+        let response = OpenSearchBulkResponseWire::success(vec![
+            OpenSearchBulkItemResponseWire::index(
+                0,
+                OpenSearchIndexResponseWire::created(
+                    "logs-000001".into(),
+                    DocumentMetadata {
+                        id: "doc-1".into(),
+                        version: 1,
+                        seq_no: 7,
+                        primary_term: 2,
+                    },
+                ),
+            ),
+            OpenSearchBulkItemResponseWire::delete(
+                1,
+                OpenSearchDeleteResponseWire::deleted(
+                    "logs-000001".into(),
+                    DocumentMetadata {
+                        id: "doc-2".into(),
+                        version: 2,
+                        seq_no: 8,
+                        primary_term: 2,
+                    },
+                ),
+            ),
+        ]);
+
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+        assert_eq!(
+            OpenSearchBulkResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_bulk_response_maps_from_engine_response() {
+        let response = BulkWriteResponse {
+            errors: false,
+            items: vec![
+                BulkWriteItemResponse {
+                    operation: WriteOperationKind::Index,
+                    index: "logs-000001".into(),
+                    id: "doc-1".into(),
+                    status: 201,
+                    result: Some(WriteResult::Created),
+                    metadata: Some(DocumentMetadata {
+                        id: "doc-1".into(),
+                        version: 1,
+                        seq_no: 7,
+                        primary_term: 2,
+                    }),
+                    coordination: Some(WriteCoordinationMetadata::default()),
+                    error_type: None,
+                    reason: None,
+                },
+                BulkWriteItemResponse {
+                    operation: WriteOperationKind::Delete,
+                    index: "logs-000001".into(),
+                    id: "doc-2".into(),
+                    status: 200,
+                    result: Some(WriteResult::Deleted),
+                    metadata: Some(DocumentMetadata {
+                        id: "doc-2".into(),
+                        version: 2,
+                        seq_no: 8,
+                        primary_term: 2,
+                    }),
+                    coordination: Some(WriteCoordinationMetadata::default()),
+                    error_type: None,
+                    reason: None,
+                },
+            ],
+        };
+
+        assert_eq!(
+            OpenSearchBulkResponseWire::from_engine_response(response).unwrap(),
+            OpenSearchBulkResponseWire::success(vec![
+                OpenSearchBulkItemResponseWire::index(
+                    0,
+                    OpenSearchIndexResponseWire::created(
+                        "logs-000001".into(),
+                        DocumentMetadata {
+                            id: "doc-1".into(),
+                            version: 1,
+                            seq_no: 7,
+                            primary_term: 2,
+                        },
+                    ),
+                ),
+                OpenSearchBulkItemResponseWire::delete(
+                    1,
+                    OpenSearchDeleteResponseWire::deleted(
+                        "logs-000001".into(),
+                        DocumentMetadata {
+                            id: "doc-2".into(),
+                            version: 2,
+                            seq_no: 8,
+                            primary_term: 2,
+                        },
+                    ),
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn opensearch_bulk_transport_messages_bind_action_frames() {
+        let request = OpenSearchBulkRequestWire::new(vec![
+            OpenSearchBulkRequestItemWire::Index(OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "created" }),
+            )),
+            OpenSearchBulkRequestItemWire::Delete(OpenSearchDeleteRequestWire::new(
+                "logs-000001".into(),
+                "doc-2".into(),
+            )),
+        ]);
+        let mut frame =
+            build_opensearch_bulk_request_message(25, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 25);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_bulk_request_message(&message).unwrap(),
+            request
+        );
+
+        let response =
+            OpenSearchBulkResponseWire::success(vec![OpenSearchBulkItemResponseWire::index(
+                0,
+                OpenSearchIndexResponseWire::created(
+                    "logs-000001".into(),
+                    DocumentMetadata {
+                        id: "doc-1".into(),
+                        version: 1,
+                        seq_no: 0,
+                        primary_term: 1,
+                    },
+                ),
+            )]);
+        let mut frame =
+            build_opensearch_bulk_response_message(25, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 25);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_bulk_response_message(&message).unwrap(),
             response
         );
     }
