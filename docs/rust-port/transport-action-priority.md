@@ -179,6 +179,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/task`
+- `cluster:monitor/tasks/lists`
 - `indices:data/read/get`
 - `indices:data/read/mget`
 - `indices:data/write/bulk`
@@ -205,6 +206,18 @@ The health adapter covers:
   levels, weighted-routing waits, transport-level level application, embedded
   index health details, and awareness health response payloads until those
   semantics are mapped.
+
+The list-tasks adapter covers:
+
+- OpenSearch `ListTasksRequest` parent task, unset task id filter, unset parent
+  task filter, no node filters, no action filters, no timeout, `detailed=false`,
+  and `wait_for_completion=false`;
+- OpenSearch `ListTasksResponse` with no task failures, no node failures, and
+  no task info entries, matching the current no-active-task transport contract;
+- explicit rejection for task id filters, parent task filters, node filters,
+  action filters, timeout, detailed task info, wait-for-completion, non-empty
+  task failure payloads, non-empty node failure payloads, and non-empty task
+  info payloads until runtime task lifecycle semantics are mapped.
 
 The bulk adapter covers:
 
@@ -349,6 +362,23 @@ JSON source materialization and only validates the bounded enum-set/default
 request shape, so it is materially lighter than index/update/bulk request
 decode. At roughly 1.64M ops/s in the latest local release run, this adapter
 does not introduce a transport-wire bottleneck.
+
+Current list-tasks wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin list-tasks-wire-benchmark
+list_tasks_request_encode ops_per_second=1991760.42 nanos_per_op=502.07
+list_tasks_response_encode ops_per_second=4572593.83 nanos_per_op=218.69
+list_tasks_request_decode ops_per_second=1852258.41 nanos_per_op=539.88
+list_tasks_response_decode ops_per_second=4290654.24 nanos_per_op=233.06
+list_tasks_wire_bottleneck_ops_per_second=1852258.41
+```
+
+The current list-tasks wire bottleneck is request decode. The supported subset
+is an empty task listing with only default filters, so the request path is
+mostly frame/action validation plus task-id and empty-array decoding. At roughly
+1.85M ops/s in the latest local release run, this adapter does not introduce a
+transport-wire bottleneck.
 
 Current get wire microbenchmark:
 

@@ -23,6 +23,7 @@ pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
+pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
 pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
@@ -83,6 +84,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportPendingClusterTasksAction",
         request_wire_type: "PendingClusterTasksRequest",
         response_wire_type: "PendingClusterTasksResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: LIST_TASKS_ACTION_NAME,
+        action_type: "ListTasksAction",
+        transport_action: "TransportListTasksAction",
+        request_wire_type: "ListTasksRequest",
+        response_wire_type: "ListTasksResponse",
     },
 ];
 
@@ -272,6 +280,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "pending-tasks observer transport adapter is available",
+        },
+        LIST_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "list-tasks transport adapter is available for the empty default subset",
         },
         CLUSTER_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1071,6 +1084,292 @@ impl PendingClusterTasksResponseWire {
         require_no_trailing_bytes(&input)?;
         Ok(Self { tasks })
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskIdWire {
+    pub node_id: String,
+    pub id: Option<i64>,
+}
+
+impl TaskIdWire {
+    pub fn unset() -> Self {
+        Self {
+            node_id: String::new(),
+            id: None,
+        }
+    }
+
+    pub fn is_set(&self) -> bool {
+        !self.node_id.is_empty()
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.node_id);
+        if !self.node_id.is_empty() {
+            output.write_i64(self.id.unwrap_or(-1));
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node_id = input.read_string()?;
+        let id = if node_id.is_empty() {
+            None
+        } else {
+            Some(input.read_i64()?)
+        };
+        Ok(Self { node_id, id })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListTasksRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub task_id: TaskIdWire,
+    pub parent_task_filter: TaskIdWire,
+    pub nodes: Vec<String>,
+    pub actions: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub detailed: bool,
+    pub wait_for_completion: bool,
+}
+
+impl Default for ListTasksRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            task_id: TaskIdWire::unset(),
+            parent_task_filter: TaskIdWire::unset(),
+            nodes: Vec::new(),
+            actions: Vec::new(),
+            timeout: None,
+            detailed: false,
+            wait_for_completion: false,
+        }
+    }
+}
+
+impl ListTasksRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.task_id.write(output);
+        self.parent_task_filter.write(output);
+        output.write_string_array(&self.nodes);
+        output.write_string_array(&self.actions);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_bool(self.detailed);
+        output.write_bool(self.wait_for_completion);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            task_id: TaskIdWire::read(&mut input)?,
+            parent_task_filter: TaskIdWire::read(&mut input)?,
+            nodes: input.read_string_array()?,
+            actions: input.read_string_array()?,
+            timeout: read_optional_time_value(&mut input)?,
+            detailed: input.read_bool()?,
+            wait_for_completion: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.task_id.is_set() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task id filter",
+                reason: "point task lookup belongs to the get-task adapter and is not mapped here",
+            });
+        }
+        if self.parent_task_filter.is_set() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks parent task filter",
+                reason: "parent task filtering is not mapped by the empty list-tasks adapter yet",
+            });
+        }
+        if !self.nodes.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks node filter",
+                reason:
+                    "node-scoped task listing is not mapped by the empty list-tasks adapter yet",
+            });
+        }
+        if !self.actions.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks action filter",
+                reason:
+                    "action-scoped task listing is not mapped by the empty list-tasks adapter yet",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks timeout",
+                reason: "list-tasks timeout is not mapped by the empty list-tasks adapter yet",
+            });
+        }
+        if self.detailed {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks detail flag",
+                reason: "detailed task info is not encoded by the empty list-tasks adapter yet",
+            });
+        }
+        if self.wait_for_completion {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks wait for completion",
+                reason: "wait-for-completion semantics require tracked runtime task lifecycle",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListTasksResponseWire {
+    pub task_failure_count: i32,
+    pub node_failure_count: i32,
+    pub task_count: i32,
+}
+
+impl ListTasksResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            task_failure_count: 0,
+            node_failure_count: 0,
+            task_count: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        if self.task_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task failures",
+                reason: "task failure exception payloads are not encoded by this adapter yet",
+            });
+        }
+        if self.node_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks node failures",
+                reason: "node failure exception payloads are not encoded by this adapter yet",
+            });
+        }
+        if self.task_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task info",
+                reason: "task info payloads require runtime task lifecycle mapping",
+            });
+        }
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            task_failure_count: input.read_vint()?,
+            node_failure_count: input.read_vint()?,
+            task_count: input.read_vint()?,
+        };
+        if response.task_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task failures",
+                reason: "task failure exception payloads are not decoded by this adapter yet",
+            });
+        }
+        if response.node_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks node failures",
+                reason: "node failure exception payloads are not decoded by this adapter yet",
+            });
+        }
+        if response.task_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task info",
+                reason: "task info payloads are not decoded by this adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+pub fn build_list_tasks_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ListTasksRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(LIST_TASKS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_list_tasks_request_message(
+    message: &TransportMessage,
+) -> Result<ListTasksRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != LIST_TASKS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: LIST_TASKS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ListTasksRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_list_tasks_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ListTasksResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_list_tasks_response_message(
+    message: &TransportMessage,
+) -> Result<ListTasksResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ListTasksResponseWire::read(message.body.clone().freeze())
 }
 
 const OPENSEARCH_VERSION_TYPE_INTERNAL: u8 = 0;
@@ -4301,6 +4600,25 @@ fn read_optional_i64(input: &mut StreamInput) -> Result<Option<i64>, TransportAc
     }
 }
 
+fn write_optional_time_value(output: &mut StreamOutput, value: Option<&TimeValueWire>) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        value.write(output);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_time_value(
+    input: &mut StreamInput,
+) -> Result<Option<TimeValueWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(TimeValueWire::read(input)?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_optional_string_array(output: &mut StreamOutput, values: Option<&[String]>) {
     if let Some(values) = values {
         output.write_bool(true);
@@ -4458,6 +4776,13 @@ mod tests {
                     request_wire_type: "PendingClusterTasksRequest",
                     response_wire_type: "PendingClusterTasksResponse",
                 },
+                SourceTransportActionSpec {
+                    action_name: "cluster:monitor/tasks/lists",
+                    action_type: "ListTasksAction",
+                    transport_action: "TransportListTasksAction",
+                    request_wire_type: "ListTasksRequest",
+                    response_wire_type: "ListTasksResponse",
+                },
             ]
         );
     }
@@ -4564,6 +4889,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(PENDING_CLUSTER_TASKS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(LIST_TASKS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
@@ -6631,6 +6960,123 @@ mod tests {
         response.write(&mut output);
         assert_eq!(
             PendingClusterTasksResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn list_tasks_request_wire_round_trips_default_empty_subset() {
+        let request = ListTasksRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+
+        assert_eq!(
+            ListTasksRequestWire::read(output.freeze()).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn list_tasks_request_rejects_filters_detail_and_wait_shapes() {
+        let by_task = ListTasksRequestWire {
+            task_id: TaskIdWire {
+                node_id: "node-a".to_string(),
+                id: Some(7),
+            },
+            ..ListTasksRequestWire::default()
+        };
+        assert!(matches!(
+            by_task.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task id filter",
+                ..
+            })
+        ));
+
+        let by_action = ListTasksRequestWire {
+            actions: vec!["indices:data/read/search".to_string()],
+            ..ListTasksRequestWire::default()
+        };
+        assert!(matches!(
+            by_action.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks action filter",
+                ..
+            })
+        ));
+
+        let detailed = ListTasksRequestWire {
+            detailed: true,
+            ..ListTasksRequestWire::default()
+        };
+        assert!(matches!(
+            detailed.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks detail flag",
+                ..
+            })
+        ));
+
+        let wait = ListTasksRequestWire {
+            wait_for_completion: true,
+            ..ListTasksRequestWire::default()
+        };
+        assert!(matches!(
+            wait.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks wait for completion",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn list_tasks_response_wire_round_trips_empty_task_set() {
+        let response = ListTasksResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            ListTasksResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn list_tasks_response_rejects_non_empty_payloads_until_task_info_is_mapped() {
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(1);
+
+        assert!(matches!(
+            ListTasksResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task info",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn list_tasks_transport_messages_bind_action_frames() {
+        let request = ListTasksRequestWire::default();
+        let mut frame =
+            build_list_tasks_request_message(18, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list tasks request message");
+        };
+        assert_eq!(read_list_tasks_request_message(&message).unwrap(), request);
+
+        let response = ListTasksResponseWire::empty();
+        let mut frame =
+            build_list_tasks_response_message(18, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list tasks response message");
+        };
+        assert_eq!(message.request_id, 18);
+        assert_eq!(
+            read_list_tasks_response_message(&message).unwrap(),
             response
         );
     }
