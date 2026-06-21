@@ -1300,6 +1300,16 @@ impl IndexEngine for TantivyEngine {
         };
 
         for index_name in index_names {
+            let requested_target_refreshed_seq_no = {
+                let store = self
+                    .store
+                    .read()
+                    .expect("tantivy engine store rwlock poisoned");
+                let Some(index) = store.indices.get(&index_name) else {
+                    return Err(EngineError::IndexNotFound { index: index_name });
+                };
+                index.next_seq_no - 1
+            };
             'refresh_index: loop {
             let Some(plan) = ({
                 let mut store = self
@@ -1309,7 +1319,7 @@ impl IndexEngine for TantivyEngine {
                 let Some(index) = store.indices.get_mut(&index_name) else {
                     return Err(EngineError::IndexNotFound { index: index_name });
                 };
-                let target_refreshed_seq_no = index.next_seq_no - 1;
+                let target_refreshed_seq_no = requested_target_refreshed_seq_no;
                 if index.refreshed_seq_no >= target_refreshed_seq_no {
                     None
                 } else if index.incremental_refresh_in_progress {
@@ -1404,7 +1414,7 @@ impl IndexEngine for TantivyEngine {
                         let Some(index) = store.indices.get(&index_name) else {
                             return Err(EngineError::IndexNotFound { index: index_name });
                         };
-                        let current_target_refreshed_seq_no = index.next_seq_no - 1;
+                        let current_target_refreshed_seq_no = requested_target_refreshed_seq_no;
                         if index.refreshed_seq_no >= current_target_refreshed_seq_no {
                             None
                         } else {
@@ -35997,6 +36007,87 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(shard_path);
+    }
+
+    #[test]
+    fn refresh_targets_request_time_sequence_number() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "logs".to_string(),
+                id: "before".to_string(),
+                source: serde_json::json!({ "message": "before refresh" }),
+            })
+            .unwrap();
+
+        {
+            let mut store = engine.store.write().unwrap();
+            let index = store.indices.get_mut("logs").unwrap();
+            index.incremental_refresh_in_progress = true;
+        }
+        let refresh_engine = TantivyEngine {
+            store: engine.store.clone(),
+        };
+        let refresh_handle = std::thread::spawn(move || {
+            refresh_engine
+                .refresh(RefreshRequest {
+                    indices: vec!["logs".to_string()],
+                })
+                .unwrap();
+        });
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "logs".to_string(),
+                id: "after".to_string(),
+                source: serde_json::json!({ "message": "after refresh" }),
+            })
+            .unwrap();
+        {
+            let mut store = engine.store.write().unwrap();
+            let index = store.indices.get_mut("logs").unwrap();
+            index.incremental_refresh_in_progress = false;
+        }
+        refresh_handle.join().unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["logs".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+        assert_eq!(response.total_hits, 1);
+        assert_eq!(response.hits[0].metadata.id, "before");
+        {
+            let store = engine.store.read().unwrap();
+            let index = &store.indices["logs"];
+            assert_eq!(index.refreshed_seq_no, 0);
+            assert_eq!(index.next_seq_no - 1, 1);
+        }
     }
 
     #[test]

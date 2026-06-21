@@ -205,6 +205,13 @@ Current 0.2.2 mixed-cluster coverage evidence:
   `docs/rust-port/generated/source-transport-actions.tsv`.
 - The generator is `tools/source-compatibility-matrix.sh`; it currently records
   source-derived route/action inventory, not this human readiness matrix.
+- Current source-derived inventory is not an exhaustive OpenSearch API
+  compatibility closure claim. The generated matrix currently has 754 rows:
+  389 REST routes, 160 transport actions, 127 search registrations, and 78 node
+  runtime entries. Of the REST source rows, 371 are in scope and all are matched
+  by fixtures, but 363 REST rows remain classified as `planned` in the
+  source-derived matrix until each route has an owner-level implementation
+  classification and exhaustive positive/negative live comparison coverage.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
 - Attach native Steelsearch crate/module owner to each planned OpenSearch route

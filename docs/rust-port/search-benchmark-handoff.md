@@ -100,6 +100,27 @@ Functional OpenSearch E2E comparison status:
   `target/native-closure-status-final-current.json` reports
   `final_cutover_ready=true`.
 
+Release load comparison follow-up:
+
+- Current fixed report:
+  `target/release-load-after-refresh-target-direct/http-load-comparison.json`
+- Workload: `write=20,lexical=70,refresh=10`, `clients=4`,
+  `corpus_size=256`, `duration_seconds=20`.
+- Root cause of the earlier slow run: refresh operations chased writes that
+  arrived after the refresh request while another refresh was already in
+  progress. The engine now fixes the refresh target sequence number at request
+  time, matching refresh visibility semantics and avoiding unbounded catch-up
+  under concurrent write load.
+- Overall throughput ratio improved from the earlier release-load result
+  (`0.425x`) to `2.017x` Steelsearch/OpenSearch.
+- Operation ratios in the fixed run:
+
+| Operation | Success-count ratio | Mean latency ratio | p95 latency ratio |
+| --- | ---: | ---: | ---: |
+| lexical | 2.017x | 0.377x | 0.418x |
+| refresh | 2.129x | 0.712x | 1.012x |
+| write | 1.945x | 0.185x | 0.239x |
+
 ## Main files changed
 
 Primary code changes:
