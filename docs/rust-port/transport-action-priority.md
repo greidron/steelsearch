@@ -184,6 +184,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
+- `cluster:admin/repository/get` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -279,6 +280,15 @@ The cluster-update-settings boundary covers:
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
   timeout, transient settings, persistent settings, and update-settings
   execution.
+
+The get-repositories boundary covers:
+
+- OpenSearch `GetRepositoriesRequest` parent task, cluster-manager timeout, and
+  repository name/pattern array at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/repository/get` until
+  repository metadata mapping and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, repository name/pattern
+  selection, and get-repositories execution.
 
 The indices-stats boundary covers:
 
@@ -563,6 +573,22 @@ encode. The request payload writes the parent task, two timeout values, and the
 empty transient/persistent settings maps before failing closed at admission. At
 roughly 1.51M ops/s in the latest local release run, it stays in the same range
 as the lightweight admin transport boundaries.
+
+Current get-repositories reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-repositories-reject-wire-benchmark
+get_repositories_reject_request_encode iterations=400000 elapsed_ms=189.251 ops_per_second=2113597.43 nanos_per_op=473.13
+get_repositories_reject_request_decode iterations=400000 elapsed_ms=197.870 ops_per_second=2021528.91 nanos_per_op=494.68
+get_repositories_reject_validation iterations=400000 elapsed_ms=198.101 ops_per_second=2019170.41 nanos_per_op=495.25
+get_repositories_reject_wire_bottleneck_ops_per_second=2019170.41
+```
+
+The current get-repositories fail-closed boundary bottleneck is validation over
+the decoded default request. The payload is only the ClusterManagerNodeRead
+envelope plus an empty repository-name array, so this remains one of the
+lightest read/admin rejection paths. At roughly 2.02M ops/s in the latest local
+release run, it does not introduce a transport-wire bottleneck.
 
 Current indices-stats reject wire microbenchmark:
 

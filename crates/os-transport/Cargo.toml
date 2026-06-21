@@ -58,6 +58,10 @@ name = "cluster-update-settings-reject-wire-benchmark"
 path = "benchmarks/cluster_update_settings_reject_wire.rs"
 
 [[bin]]
+name = "get-repositories-reject-wire-benchmark"
+path = "benchmarks/get_repositories_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

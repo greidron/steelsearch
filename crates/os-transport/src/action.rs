@@ -27,6 +27,7 @@ pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
+pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
 pub const GET_TASK_ACTION_NAME: &str = "cluster:monitor/task/get";
@@ -121,6 +122,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterUpdateSettingsAction",
         request_wire_type: "ClusterUpdateSettingsRequest",
         response_wire_type: "ClusterUpdateSettingsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: GET_REPOSITORIES_ACTION_NAME,
+        action_type: "GetRepositoriesAction",
+        transport_action: "TransportGetRepositoriesAction",
+        request_wire_type: "GetRepositoriesRequest",
+        response_wire_type: "GetRepositoriesResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -392,6 +400,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster settings mutation is not admitted through transport",
+        },
+        GET_REPOSITORIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-repositories transport execution requires repository metadata mapping",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1953,6 +1966,44 @@ pub fn read_cluster_update_settings_request_message(
     ClusterUpdateSettingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_get_repositories_request_message(
+    request_id: i64,
+    version: Version,
+    request: &GetRepositoriesRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(GET_REPOSITORIES_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_repositories_request_message(
+    message: &TransportMessage,
+) -> Result<GetRepositoriesRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != GET_REPOSITORIES_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: GET_REPOSITORIES_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    GetRepositoriesRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -2028,6 +2079,66 @@ impl ClusterUpdateSettingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cluster update settings execution",
             reason: "cluster settings mutation is not admitted through transport",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetRepositoriesRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub repositories: Vec<String>,
+}
+
+impl Default for GetRepositoriesRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            repositories: Vec::new(),
+        }
+    }
+}
+
+impl GetRepositoriesRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string_array(&self.repositories);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            repositories: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the get-repositories adapter yet",
+            });
+        }
+        if !self.repositories.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories selection",
+                reason:
+                    "repository name and pattern selection requires repository metadata mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get repositories execution",
+            reason: "get-repositories transport execution requires repository metadata mapping",
         })
     }
 }
@@ -6197,6 +6308,13 @@ mod tests {
                     response_wire_type: "ClusterUpdateSettingsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/repository/get",
+                    action_type: "GetRepositoriesAction",
+                    transport_action: "TransportGetRepositoriesAction",
+                    request_wire_type: "GetRepositoriesRequest",
+                    response_wire_type: "GetRepositoriesResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
                     action_type: "PendingClusterTasksAction",
                     transport_action: "TransportPendingClusterTasksAction",
@@ -6375,6 +6493,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(GET_REPOSITORIES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -9174,6 +9296,74 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_repositories_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = GetRepositoriesRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = GetRepositoriesRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_repositories_request_rejects_unsupported_shapes() {
+        let timeout = GetRepositoriesRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..GetRepositoriesRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let selection = GetRepositoriesRequestWire {
+            repositories: vec!["repo-a".to_string()],
+            ..GetRepositoriesRequestWire::default()
+        };
+        assert!(matches!(
+            selection.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories selection",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_repositories_transport_messages_bind_rejected_action_frame() {
+        let request = GetRepositoriesRequestWire::default();
+        let mut frame =
+            build_get_repositories_request_message(34, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get repositories request message");
+        };
+        assert_eq!(
+            read_get_repositories_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_get_repositories_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories execution",
                 ..
             })
         ));

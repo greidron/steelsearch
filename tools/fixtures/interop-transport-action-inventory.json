@@ -76,6 +76,15 @@
       "reason": "Cluster-settings transport mutation is not admitted before Steelsearch maps cluster-manager update, acknowledgement, and publication semantics."
     },
     {
+      "action_name": "cluster:admin/repository/get",
+      "action_type": "GetRepositoriesAction",
+      "transport_action": "TransportGetRepositoriesAction",
+      "request_wire_type": "GetRepositoriesRequest",
+      "response_wire_type": "GetRepositoriesResponse",
+      "disposition": "rejected",
+      "reason": "Get-repositories transport execution requires repository metadata mapping before Steelsearch can serve OpenSearch repository read semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",
