@@ -10,6 +10,13 @@
       "response_evidence": "crates/os-cluster-state/tests/java_fixtures.rs::java_cluster_state_response_fixture_decodes_prefix"
     },
     {
+      "action_name": "cluster:monitor/health",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::cluster_health_transport_messages_bind_action_frames",
+      "response_evidence": "crates/os-transport/src/action.rs::cluster_health_transport_messages_bind_action_frames"
+    },
+    {
       "action_name": "cluster:monitor/task",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",

@@ -27,6 +27,10 @@ impl StreamOutput {
         self.bytes.put_i64(value);
     }
 
+    pub fn write_f64(&mut self, value: f64) {
+        self.bytes.put_f64(value);
+    }
+
     pub fn write_bytes_reference(&mut self, value: &[u8]) {
         self.write_vint(value.len() as i32);
         self.bytes.put_slice(value);

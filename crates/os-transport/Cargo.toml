@@ -26,6 +26,10 @@ name = "refresh-wire-benchmark"
 path = "benchmarks/refresh_wire.rs"
 
 [[bin]]
+name = "cluster-health-wire-benchmark"
+path = "benchmarks/cluster_health_wire.rs"
+
+[[bin]]
 name = "get-wire-benchmark"
 path = "benchmarks/get_wire.rs"
 

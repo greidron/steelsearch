@@ -177,6 +177,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
 - `cluster:monitor/state`
+- `cluster:monitor/health`
 - `cluster:monitor/task`
 - `indices:data/read/get`
 - `indices:data/read/mget`
@@ -185,6 +186,25 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/update`
 - `indices:data/write/delete`
 - `indices:admin/refresh`
+
+The health adapter covers:
+
+- OpenSearch `ClusterHealthRequest` parent task, default cluster-manager
+  timeout, `local=false`, no index scope, default 30s timeout, no wait
+  conditions, `ActiveShardCount.NONE`, default `lenientExpandHidden` indices
+  options, no awareness attribute, `level=CLUSTER`, no weighted-routing wait,
+  and no transport-level index/shard detail filtering;
+- OpenSearch `ClusterHealthResponse` cluster name, green/yellow/red status,
+  cluster-level shard counters, node counters, discovered cluster-manager flag,
+  active shard percentage, pending task counters, timeout flag, in-flight fetch
+  count, delayed unassigned shard count, and task max waiting time;
+- conversion from the standalone REST/runtime health JSON body into the bounded
+  OpenSearch transport response shape;
+- explicit rejection for index-scoped health, custom wait timeouts, wait
+  conditions, non-default indices options, awareness health, index/shard detail
+  levels, weighted-routing waits, transport-level level application, embedded
+  index health details, and awareness health response payloads until those
+  semantics are mapped.
 
 The bulk adapter covers:
 
@@ -312,6 +332,23 @@ request decode across local release runs. At roughly 1.41M ops/s in the latest
 run, this adapter is not the bottleneck relative to the existing HTTP
 search/write/refresh benchmark paths. Re-run the command above after each
 transport adapter change that affects request/response framing.
+
+Current cluster-health wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cluster-health-wire-benchmark
+cluster_health_request_encode ops_per_second=1644852.71 nanos_per_op=607.96
+cluster_health_response_encode ops_per_second=2072369.95 nanos_per_op=482.54
+cluster_health_request_decode ops_per_second=1638275.37 nanos_per_op=610.40
+cluster_health_response_decode ops_per_second=2557542.58 nanos_per_op=391.00
+cluster_health_wire_bottleneck_ops_per_second=1638275.37
+```
+
+The current cluster-health wire bottleneck is request decode. This path has no
+JSON source materialization and only validates the bounded enum-set/default
+request shape, so it is materially lighter than index/update/bulk request
+decode. At roughly 1.64M ops/s in the latest local release run, this adapter
+does not introduce a transport-wire bottleneck.
 
 Current get wire microbenchmark:
 

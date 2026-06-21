@@ -44,6 +44,11 @@ impl StreamInput {
         Ok(self.bytes.get_i64())
     }
 
+    pub fn read_f64(&mut self) -> Result<f64, StreamInputError> {
+        self.ensure(8)?;
+        Ok(self.bytes.get_f64())
+    }
+
     pub fn read_bytes_reference(&mut self) -> Result<Bytes, StreamInputError> {
         let len = self.read_vint()?;
         if len < 0 {

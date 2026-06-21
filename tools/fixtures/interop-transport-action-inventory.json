@@ -13,6 +13,15 @@
       "reason": "Cluster-state fetch and cache refresh are part of the initial Phase B observer baseline."
     },
     {
+      "action_name": "cluster:monitor/health",
+      "action_type": "ClusterHealthAction",
+      "transport_action": "TransportClusterHealthAction",
+      "request_wire_type": "ClusterHealthRequest",
+      "response_wire_type": "ClusterHealthResponse",
+      "disposition": "implemented",
+      "reason": "Standalone cluster-level health request/response transport codec maps onto the Rust health semantic adapter."
+    },
+    {
       "action_name": "cluster:admin/settings/update",
       "action_type": "ClusterUpdateSettingsAction",
       "transport_action": "TransportClusterUpdateSettingsAction",

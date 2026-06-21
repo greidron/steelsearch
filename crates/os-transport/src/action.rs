@@ -20,6 +20,7 @@ use crate::variable_header::{RequestVariableHeader, ResponseVariableHeader};
 use crate::TransportMessage;
 
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
+pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
@@ -61,6 +62,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterStateAction",
         request_wire_type: "ClusterStateRequest",
         response_wire_type: "ClusterStateResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLUSTER_HEALTH_ACTION_NAME,
+        action_type: "ClusterHealthAction",
+        transport_action: "TransportClusterHealthAction",
+        request_wire_type: "ClusterHealthRequest",
+        response_wire_type: "ClusterHealthResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -254,6 +262,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "cluster-state observer transport adapter is available",
+        },
+        CLUSTER_HEALTH_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster-health transport adapter is available for the standalone cluster-level subset",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -478,6 +491,434 @@ impl ClusterStateResponseWire {
         require_no_trailing_bytes(&input)?;
         Ok(response)
     }
+}
+
+const OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN: u8 = 0;
+const OPENSEARCH_CLUSTER_HEALTH_STATUS_YELLOW: u8 = 1;
+const OPENSEARCH_CLUSTER_HEALTH_STATUS_RED: u8 = 2;
+const OPENSEARCH_HEALTH_ACTIVE_SHARD_COUNT_NONE: i32 = 0;
+const OPENSEARCH_HEALTH_LEVEL_CLUSTER: u8 = 0;
+const OPENSEARCH_HEALTH_LENIENT_OPTIONS: &[u8] = &[0, 2];
+const OPENSEARCH_HEALTH_EXPAND_OPEN_CLOSED_HIDDEN: &[u8] = &[0, 1, 2];
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClusterHealthRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub indices: Vec<String>,
+    pub timeout: TimeValueWire,
+    pub wait_for_status: Option<u8>,
+    pub wait_for_no_relocating_shards: bool,
+    pub wait_for_active_shards: i32,
+    pub wait_for_nodes: String,
+    pub wait_for_events: Option<u8>,
+    pub wait_for_no_initializing_shards: bool,
+    pub indices_options: Vec<u8>,
+    pub expand_wildcards: Vec<u8>,
+    pub awareness_attribute: Option<String>,
+    pub level: u8,
+    pub ensure_node_weighed_in: bool,
+    pub apply_level_at_transport_layer: bool,
+}
+
+impl Default for ClusterHealthRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            indices: Vec::new(),
+            timeout: TimeValueWire::seconds(30),
+            wait_for_status: None,
+            wait_for_no_relocating_shards: false,
+            wait_for_active_shards: OPENSEARCH_HEALTH_ACTIVE_SHARD_COUNT_NONE,
+            wait_for_nodes: String::new(),
+            wait_for_events: None,
+            wait_for_no_initializing_shards: false,
+            indices_options: OPENSEARCH_HEALTH_LENIENT_OPTIONS.to_vec(),
+            expand_wildcards: OPENSEARCH_HEALTH_EXPAND_OPEN_CLOSED_HIDDEN.to_vec(),
+            awareness_attribute: None,
+            level: OPENSEARCH_HEALTH_LEVEL_CLUSTER,
+            ensure_node_weighed_in: false,
+            apply_level_at_transport_layer: false,
+        }
+    }
+}
+
+impl ClusterHealthRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.indices);
+        self.timeout.write(output);
+        if let Some(status) = self.wait_for_status {
+            output.write_bool(true);
+            output.write_byte(status);
+        } else {
+            output.write_bool(false);
+        }
+        output.write_bool(self.wait_for_no_relocating_shards);
+        output.write_i32(self.wait_for_active_shards);
+        output.write_string(&self.wait_for_nodes);
+        if let Some(priority) = self.wait_for_events {
+            output.write_bool(true);
+            output.write_byte(priority);
+        } else {
+            output.write_bool(false);
+        }
+        output.write_bool(self.wait_for_no_initializing_shards);
+        write_enum_set(output, &self.indices_options);
+        write_enum_set(output, &self.expand_wildcards);
+        output.write_optional_string(self.awareness_attribute.as_deref());
+        output.write_vint(i32::from(self.level));
+        output.write_bool(self.ensure_node_weighed_in);
+        output.write_bool(self.apply_level_at_transport_layer);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            indices: input.read_string_array()?,
+            timeout: TimeValueWire::read(&mut input)?,
+            wait_for_status: if input.read_bool()? {
+                Some(input.read_byte()?)
+            } else {
+                None
+            },
+            wait_for_no_relocating_shards: input.read_bool()?,
+            wait_for_active_shards: input.read_i32()?,
+            wait_for_nodes: input.read_string()?,
+            wait_for_events: if input.read_bool()? {
+                Some(input.read_byte()?)
+            } else {
+                None
+            },
+            wait_for_no_initializing_shards: input.read_bool()?,
+            indices_options: read_enum_set(&mut input, 6, "cluster health indices options")?,
+            expand_wildcards: read_enum_set(&mut input, 3, "cluster health expand wildcards")?,
+            awareness_attribute: input.read_optional_string()?,
+            level: input.read_vint()? as u8,
+            ensure_node_weighed_in: input.read_bool()?,
+            apply_level_at_transport_layer: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the health adapter yet",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health index scope",
+                reason:
+                    "index-scoped transport health is not mapped by the cluster-level adapter yet",
+            });
+        }
+        if self.timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health timeout",
+                reason: "custom wait timeout is not mapped by the health adapter yet",
+            });
+        }
+        if self.wait_for_status.is_some()
+            || self.wait_for_no_relocating_shards
+            || self.wait_for_active_shards != OPENSEARCH_HEALTH_ACTIVE_SHARD_COUNT_NONE
+            || !self.wait_for_nodes.is_empty()
+            || self.wait_for_events.is_some()
+            || self.wait_for_no_initializing_shards
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health wait condition",
+                reason: "wait conditions are not mapped by the cluster-level health adapter yet",
+            });
+        }
+        if self.indices_options != OPENSEARCH_HEALTH_LENIENT_OPTIONS
+            || self.expand_wildcards != OPENSEARCH_HEALTH_EXPAND_OPEN_CLOSED_HIDDEN
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health indices options",
+                reason: "non-default indices options are not mapped by the health adapter yet",
+            });
+        }
+        if self.awareness_attribute.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health awareness attribute",
+                reason: "awareness health is not mapped by the cluster-level adapter yet",
+            });
+        }
+        if self.level != OPENSEARCH_HEALTH_LEVEL_CLUSTER {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health level",
+                reason: "index, shard, and awareness health levels are not mapped yet",
+            });
+        }
+        if self.ensure_node_weighed_in {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health node weighing",
+                reason: "weighted-routing admission is not mapped by the health adapter yet",
+            });
+        }
+        if self.apply_level_at_transport_layer {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health transport-level level application",
+                reason: "transport-level index/shard health filtering is not mapped yet",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClusterHealthResponseWire {
+    pub cluster_name: String,
+    pub status: u8,
+    pub active_primary_shards: i32,
+    pub active_shards: i32,
+    pub relocating_shards: i32,
+    pub initializing_shards: i32,
+    pub unassigned_shards: i32,
+    pub number_of_nodes: i32,
+    pub number_of_data_nodes: i32,
+    pub discovered_cluster_manager: bool,
+    pub active_shards_percent: f64,
+    pub number_of_pending_tasks: i32,
+    pub timed_out: bool,
+    pub number_of_in_flight_fetch: i32,
+    pub delayed_unassigned_shards: i32,
+    pub task_max_waiting_in_queue: TimeValueWire,
+    pub awareness_health_present: bool,
+}
+
+impl ClusterHealthResponseWire {
+    pub fn green(cluster_name: String) -> Self {
+        Self {
+            cluster_name,
+            status: OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN,
+            active_primary_shards: 0,
+            active_shards: 0,
+            relocating_shards: 0,
+            initializing_shards: 0,
+            unassigned_shards: 0,
+            number_of_nodes: 1,
+            number_of_data_nodes: 1,
+            discovered_cluster_manager: true,
+            active_shards_percent: 100.0,
+            number_of_pending_tasks: 0,
+            timed_out: false,
+            number_of_in_flight_fetch: 0,
+            delayed_unassigned_shards: 0,
+            task_max_waiting_in_queue: TimeValueWire::seconds(0),
+            awareness_health_present: false,
+        }
+    }
+
+    pub fn from_cluster_health_json(value: &Value) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            cluster_name: json_string(value, "cluster_name")?,
+            status: cluster_health_status_from_str(&json_string(value, "status")?)?,
+            active_primary_shards: json_i32(value, "active_primary_shards")?,
+            active_shards: json_i32(value, "active_shards")?,
+            relocating_shards: json_i32(value, "relocating_shards")?,
+            initializing_shards: json_i32(value, "initializing_shards")?,
+            unassigned_shards: json_i32(value, "unassigned_shards")?,
+            number_of_nodes: json_i32(value, "number_of_nodes")?,
+            number_of_data_nodes: json_i32(value, "number_of_data_nodes")?,
+            discovered_cluster_manager: value
+                .get("discovered_cluster_manager")
+                .or_else(|| value.get("discovered_master"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            active_shards_percent: value
+                .get("active_shards_percent_as_number")
+                .and_then(Value::as_f64)
+                .ok_or(TransportActionWireError::MissingRequiredField {
+                    field: "active_shards_percent_as_number",
+                })?,
+            number_of_pending_tasks: json_i32(value, "number_of_pending_tasks")?,
+            timed_out: value
+                .get("timed_out")
+                .and_then(Value::as_bool)
+                .ok_or(TransportActionWireError::MissingRequiredField { field: "timed_out" })?,
+            number_of_in_flight_fetch: json_i32(value, "number_of_in_flight_fetch")?,
+            delayed_unassigned_shards: json_i32(value, "delayed_unassigned_shards")?,
+            task_max_waiting_in_queue: TimeValueWire {
+                duration: i64::from(json_i32(value, "task_max_waiting_in_queue_millis")?),
+                time_unit_ordinal: 2,
+            },
+            awareness_health_present: false,
+        })
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        if self.awareness_health_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health awareness response",
+                reason: "awareness health response payload is not encoded by the adapter yet",
+            });
+        }
+        output.write_string(&self.cluster_name);
+        output.write_byte(self.status);
+        output.write_vint(self.active_primary_shards);
+        output.write_vint(self.active_shards);
+        output.write_vint(self.relocating_shards);
+        output.write_vint(self.initializing_shards);
+        output.write_vint(self.unassigned_shards);
+        output.write_vint(self.number_of_nodes);
+        output.write_vint(self.number_of_data_nodes);
+        output.write_bool(self.discovered_cluster_manager);
+        output.write_byte(self.status);
+        output.write_vint(0);
+        output.write_f64(self.active_shards_percent);
+        output.write_i32(self.number_of_pending_tasks);
+        output.write_bool(self.timed_out);
+        output.write_i32(self.number_of_in_flight_fetch);
+        output.write_i32(self.delayed_unassigned_shards);
+        self.task_max_waiting_in_queue.write(output);
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let status = input.read_byte()?;
+        let active_primary_shards = input.read_vint()?;
+        let active_shards = input.read_vint()?;
+        let relocating_shards = input.read_vint()?;
+        let initializing_shards = input.read_vint()?;
+        let unassigned_shards = input.read_vint()?;
+        let number_of_nodes = input.read_vint()?;
+        let number_of_data_nodes = input.read_vint()?;
+        let discovered_cluster_manager = input.read_bool()?;
+        let state_status = input.read_byte()?;
+        let index_count = read_len(&mut input)?;
+        if index_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health index responses",
+                reason:
+                    "index/shard health details are not decoded by the cluster-level adapter yet",
+            });
+        }
+        let active_shards_percent = input.read_f64()?;
+        let response = Self {
+            cluster_name,
+            status,
+            active_primary_shards,
+            active_shards,
+            relocating_shards,
+            initializing_shards,
+            unassigned_shards,
+            number_of_nodes,
+            number_of_data_nodes,
+            discovered_cluster_manager,
+            active_shards_percent,
+            number_of_pending_tasks: input.read_i32()?,
+            timed_out: input.read_bool()?,
+            number_of_in_flight_fetch: input.read_i32()?,
+            delayed_unassigned_shards: input.read_i32()?,
+            task_max_waiting_in_queue: TimeValueWire::read(&mut input)?,
+            awareness_health_present: input.read_bool()?,
+        };
+        if response.status != state_status {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health status mismatch",
+                reason: "response status and embedded state health status must match",
+            });
+        }
+        if response.awareness_health_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health awareness response",
+                reason: "awareness health response payload is not decoded by the adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+pub fn build_cluster_health_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterHealthRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_HEALTH_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_health_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterHealthRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_HEALTH_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_HEALTH_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterHealthRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_health_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClusterHealthResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_health_response_message(
+    message: &TransportMessage,
+) -> Result<ClusterHealthResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ClusterHealthResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3793,6 +4234,37 @@ fn read_json_value<T: DeserializeOwned>(
     serde_json::from_slice(&value).map_err(TransportActionWireError::JsonDecode)
 }
 
+fn json_string(value: &Value, field: &'static str) -> Result<String, TransportActionWireError> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or(TransportActionWireError::MissingRequiredField { field })
+}
+
+fn json_i32(value: &Value, field: &'static str) -> Result<i32, TransportActionWireError> {
+    let raw = value
+        .get(field)
+        .and_then(Value::as_i64)
+        .ok_or(TransportActionWireError::MissingRequiredField { field })?;
+    i32::try_from(raw).map_err(|_| TransportActionWireError::UnsupportedWireShape {
+        shape: "cluster health numeric field",
+        reason: "cluster health numeric value does not fit the OpenSearch int wire shape",
+    })
+}
+
+fn cluster_health_status_from_str(status: &str) -> Result<u8, TransportActionWireError> {
+    match status {
+        "green" | "GREEN" => Ok(OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN),
+        "yellow" | "YELLOW" => Ok(OPENSEARCH_CLUSTER_HEALTH_STATUS_YELLOW),
+        "red" | "RED" => Ok(OPENSEARCH_CLUSTER_HEALTH_STATUS_RED),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster health status",
+            reason: "cluster health status is outside the OpenSearch green/yellow/red set",
+        }),
+    }
+}
+
 fn write_parent_task_id(output: &mut StreamOutput, node: &str, id: Option<i64>) {
     output.write_string(node);
     if !node.is_empty() {
@@ -3966,6 +4438,13 @@ mod tests {
                     response_wire_type: "ClusterStateResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/health",
+                    action_type: "ClusterHealthAction",
+                    transport_action: "TransportClusterHealthAction",
+                    request_wire_type: "ClusterHealthRequest",
+                    response_wire_type: "ClusterHealthResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -4077,6 +4556,10 @@ mod tests {
     fn opensearch_transport_action_dispatch_classifies_current_adapters() {
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_STATE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLUSTER_HEALTH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
@@ -5959,6 +6442,136 @@ mod tests {
 
         assert_eq!(
             ClusterStateResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn cluster_health_request_wire_round_trips_default_cluster_subset() {
+        let request = ClusterHealthRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+
+        assert_eq!(
+            ClusterHealthRequestWire::read(output.freeze()).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn cluster_health_request_rejects_unsupported_wait_and_detail_shapes() {
+        let mut index_scoped = ClusterHealthRequestWire::default();
+        index_scoped.indices.push("logs-*".to_string());
+        assert!(matches!(
+            index_scoped.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health index scope",
+                ..
+            })
+        ));
+
+        let wait_status = ClusterHealthRequestWire {
+            wait_for_status: Some(OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN),
+            ..ClusterHealthRequestWire::default()
+        };
+        assert!(matches!(
+            wait_status.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health wait condition",
+                ..
+            })
+        ));
+
+        let shard_level = ClusterHealthRequestWire {
+            level: 2,
+            ..ClusterHealthRequestWire::default()
+        };
+        assert!(matches!(
+            shard_level.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health level",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_health_response_wire_round_trips_cluster_level_counters() {
+        let response = ClusterHealthResponseWire {
+            active_primary_shards: 2,
+            active_shards: 2,
+            unassigned_shards: 1,
+            status: OPENSEARCH_CLUSTER_HEALTH_STATUS_YELLOW,
+            active_shards_percent: 66.6666666667,
+            ..ClusterHealthResponseWire::green("steelsearch".to_string())
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            ClusterHealthResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn cluster_health_response_maps_from_runtime_health_json() {
+        let response = ClusterHealthResponseWire::from_cluster_health_json(&json!({
+            "cluster_name": "steel-dev",
+            "status": "yellow",
+            "timed_out": false,
+            "number_of_nodes": 1,
+            "number_of_data_nodes": 1,
+            "active_primary_shards": 1,
+            "active_shards": 1,
+            "relocating_shards": 0,
+            "initializing_shards": 0,
+            "unassigned_shards": 1,
+            "delayed_unassigned_shards": 0,
+            "number_of_pending_tasks": 2,
+            "number_of_in_flight_fetch": 0,
+            "task_max_waiting_in_queue_millis": 15,
+            "active_shards_percent_as_number": 50.0
+        }))
+        .unwrap();
+
+        assert_eq!(response.cluster_name, "steel-dev");
+        assert_eq!(response.status, OPENSEARCH_CLUSTER_HEALTH_STATUS_YELLOW);
+        assert_eq!(response.active_primary_shards, 1);
+        assert_eq!(response.unassigned_shards, 1);
+        assert_eq!(response.number_of_pending_tasks, 2);
+        assert_eq!(
+            response.task_max_waiting_in_queue,
+            TimeValueWire {
+                duration: 15,
+                time_unit_ordinal: 2
+            }
+        );
+    }
+
+    #[test]
+    fn cluster_health_transport_messages_bind_action_frames() {
+        let request = ClusterHealthRequestWire::default();
+        let mut frame =
+            build_cluster_health_request_message(17, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster health request message");
+        };
+        assert_eq!(
+            read_cluster_health_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = ClusterHealthResponseWire::green("steelsearch".to_string());
+        let mut frame =
+            build_cluster_health_response_message(17, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster health response message");
+        };
+        assert_eq!(message.request_id, 17);
+        assert_eq!(
+            read_cluster_health_response_message(&message).unwrap(),
             response
         );
     }
