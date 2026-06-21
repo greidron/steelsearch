@@ -874,6 +874,20 @@ The get-index-templates boundary covers:
 - explicit rejection for custom cluster-manager timeouts, local reads, blank
   template names, name filters, and get-index-templates execution.
 
+The put-index-template boundary covers:
+
+- OpenSearch `PutIndexTemplateRequest` parent task, cluster-manager timeout,
+  cause, template name, index pattern list, order, create flag, string-valued
+  settings map, optional mappings string, zero-alias marker, and optional
+  version at the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/template/put` until
+  legacy index-template validation, metadata mutation, and acknowledged
+  response rendering are implemented against Rust cluster metadata;
+- explicit rejection for custom cluster-manager timeouts, missing template
+  names, missing index patterns, custom causes, non-zero order, create-only
+  writes, settings, mappings, alias payloads, versions, and put-index-template
+  execution.
+
 The delete-index-template boundary covers:
 
 - OpenSearch `DeleteIndexTemplateRequest` parent task, cluster-manager timeout,
@@ -2208,6 +2222,23 @@ all-templates request shape, so validation is light and the remaining
 performance risk is future template metadata matching and response rendering.
 At roughly 1.98M ops/s in the latest local release run, the fail-closed wire
 boundary is not a material bottleneck.
+
+Current put-index-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-index-template-reject-wire-benchmark
+put_index_template_reject_request_encode iterations=400000 elapsed_ms=318.333 ops_per_second=1256545.15 nanos_per_op=795.83
+put_index_template_reject_request_decode iterations=400000 elapsed_ms=308.411 ops_per_second=1296970.95 nanos_per_op=771.03
+put_index_template_reject_validation iterations=400000 elapsed_ms=317.081 ops_per_second=1261506.37 nanos_per_op=792.70
+put_index_template_reject_wire_bottleneck_ops_per_second=1256545.15
+```
+
+The current put-index-template fail-closed boundary bottleneck is request
+encode. The default benchmark writes a valid empty legacy template shape with a
+template name and one index pattern, then rejects before template metadata
+mutation. At roughly 1.26M ops/s in the latest local release run, the remaining
+performance-sensitive work is template validation, metadata publication, and
+acknowledged response rendering.
 
 Current delete-index-template reject wire microbenchmark:
 

@@ -234,6 +234,10 @@ name = "get-index-templates-reject-wire-benchmark"
 path = "benchmarks/get_index_templates_reject_wire.rs"
 
 [[bin]]
+name = "put-index-template-reject-wire-benchmark"
+path = "benchmarks/put_index_template_reject_wire.rs"
+
+[[bin]]
 name = "delete-index-template-reject-wire-benchmark"
 path = "benchmarks/delete_index_template_reject_wire.rs"
 
