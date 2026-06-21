@@ -22,6 +22,7 @@ use crate::TransportMessage;
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
+pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
@@ -82,6 +83,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterStatsAction",
         request_wire_type: "ClusterStatsRequest",
         response_wire_type: "ClusterStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: NODES_INFO_ACTION_NAME,
+        action_type: "NodesInfoAction",
+        transport_action: "TransportNodesInfoAction",
+        request_wire_type: "NodesInfoRequest",
+        response_wire_type: "NodesInfoResponse",
     },
     SourceTransportActionSpec {
         action_name: NODES_STATS_ACTION_NAME,
@@ -322,6 +330,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
+        },
+        NODES_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "nodes-info transport execution requires runtime node info mapping",
         },
         NODES_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1109,6 +1122,110 @@ impl CommonStatsFlagsWire {
     }
 }
 
+const OPENSEARCH_NODES_INFO_DEFAULT_METRICS: &[&str] = &[
+    "settings",
+    "os",
+    "process",
+    "jvm",
+    "thread_pool",
+    "transport",
+    "http",
+    "plugins",
+    "ingest",
+    "aggregations",
+    "indices",
+];
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodesInfoRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub requested_metrics: Vec<String>,
+}
+
+impl Default for NodesInfoRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: Vec::new(),
+            timeout: None,
+            requested_metrics: OPENSEARCH_NODES_INFO_DEFAULT_METRICS
+                .iter()
+                .map(|metric| (*metric).to_string())
+                .collect(),
+        }
+    }
+}
+
+impl NodesInfoRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_string_array(&self.requested_metrics);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info concrete nodes",
+                reason:
+                    "nodes-info concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            requested_metrics: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info node filter",
+                reason: "nodes-info node-scoped routing requires runtime node info mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info timeout",
+                reason: "nodes-info timeout semantics require runtime node info mapping",
+            });
+        }
+        if !nodes_info_metrics_are_default(&self.requested_metrics) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info requested metrics",
+                reason: "nodes-info metric selection requires field-level node info mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "nodes info execution",
+            reason: "nodes-info transport execution requires runtime node info mapping",
+        })
+    }
+}
+
+fn nodes_info_metrics_are_default(metrics: &[String]) -> bool {
+    metrics.len() == OPENSEARCH_NODES_INFO_DEFAULT_METRICS.len()
+        && metrics
+            .iter()
+            .zip(OPENSEARCH_NODES_INFO_DEFAULT_METRICS)
+            .all(|(actual, expected)| actual == expected)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NodesStatsRequestWire {
     pub parent_task_node: String,
@@ -1375,6 +1492,44 @@ pub fn read_cluster_stats_request_message(
         });
     }
     ClusterStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_info_request_message(
+    request_id: i64,
+    version: Version,
+    request: &NodesInfoRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(NODES_INFO_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_info_request_message(
+    message: &TransportMessage,
+) -> Result<NodesInfoRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != NODES_INFO_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: NODES_INFO_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    NodesInfoRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_stats_request_message(
@@ -5631,6 +5786,13 @@ mod tests {
                     response_wire_type: "ClusterStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/nodes/info",
+                    action_type: "NodesInfoAction",
+                    transport_action: "TransportNodesInfoAction",
+                    request_wire_type: "NodesInfoRequest",
+                    response_wire_type: "NodesInfoResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/nodes/stats",
                     action_type: "NodesStatsAction",
                     transport_action: "TransportNodesStatsAction",
@@ -5787,6 +5949,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(NODES_INFO_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -7947,6 +8113,105 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_info_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = NodesInfoRequestWire::default();
+        assert_eq!(
+            request.requested_metrics,
+            OPENSEARCH_NODES_INFO_DEFAULT_METRICS
+                .iter()
+                .map(|metric| (*metric).to_string())
+                .collect::<Vec<_>>()
+        );
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = NodesInfoRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_info_request_rejects_unsupported_shapes() {
+        let node_filter = NodesInfoRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..NodesInfoRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info node filter",
+                ..
+            })
+        ));
+
+        let timeout = NodesInfoRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..NodesInfoRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info timeout",
+                ..
+            })
+        ));
+
+        let requested_metrics = NodesInfoRequestWire {
+            requested_metrics: vec!["settings".to_string()],
+            ..NodesInfoRequestWire::default()
+        };
+        assert!(matches!(
+            requested_metrics.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info requested metrics",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_info_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            NodesInfoRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_info_transport_messages_bind_rejected_action_frame() {
+        let request = NodesInfoRequestWire::default();
+        let mut frame =
+            build_nodes_info_request_message(29, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected nodes info request message");
+        };
+        assert_eq!(read_nodes_info_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_nodes_info_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes info execution",
                 ..
             })
         ));

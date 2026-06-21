@@ -31,6 +31,15 @@
       "reason": "Cluster-stats transport execution requires runtime stats aggregation mapping before Steelsearch can serve OpenSearch cluster-stats semantics."
     },
     {
+      "action_name": "cluster:monitor/nodes/info",
+      "action_type": "NodesInfoAction",
+      "transport_action": "TransportNodesInfoAction",
+      "request_wire_type": "NodesInfoRequest",
+      "response_wire_type": "NodesInfoResponse",
+      "disposition": "rejected",
+      "reason": "Nodes-info transport execution requires runtime node info mapping before Steelsearch can serve OpenSearch nodes-info semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/stats",
       "action_type": "NodesStatsAction",
       "transport_action": "TransportNodesStatsAction",

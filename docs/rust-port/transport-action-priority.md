@@ -179,6 +179,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
+- `cluster:monitor/nodes/info` (rejected fail-closed)
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
@@ -222,6 +223,15 @@ The cluster-stats boundary covers:
 - explicit rejection for concrete node payloads, node filters, timeout,
   aggregated-node response mode, partial metric selection, metric bitsets, and
   cluster-stats execution.
+
+The nodes-info boundary covers:
+
+- OpenSearch `NodesInfoRequest` parent task, node ids, optional timeout, and
+  requested metric names at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/nodes/info` until
+  runtime node-info response mapping is implemented;
+- explicit rejection for concrete node payloads, node filters, timeout,
+  non-default requested metrics, and nodes-info execution.
 
 The nodes-stats boundary covers:
 
@@ -436,6 +446,23 @@ The validation path adds only a small unsupported-shape check on top of decode,
 so the rejection boundary itself is not a new performance bottleneck. At roughly
 1.76M ops/s in the latest local release run, this path is in the same range as
 the lightweight admin transport adapters.
+
+Current nodes-info reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin nodes-info-reject-wire-benchmark
+nodes_info_reject_request_encode ops_per_second=758739.72 nanos_per_op=1317.98
+nodes_info_reject_request_decode ops_per_second=654994.28 nanos_per_op=1526.73
+nodes_info_reject_validation ops_per_second=643305.31 nanos_per_op=1554.47
+nodes_info_reject_wire_bottleneck_ops_per_second=643305.31
+```
+
+The current nodes-info fail-closed boundary bottleneck is validation over the
+decoded request. The dominant cost is the OpenSearch default metric string array
+encode/decode, not the unsupported execution check itself. At roughly 643K ops/s
+in the latest local release run, this boundary is still below the JSON
+source-materializing document paths but is materially heavier than the compact
+cluster-stats request shape.
 
 Current nodes-stats reject wire microbenchmark:
 
