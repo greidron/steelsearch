@@ -37,6 +37,7 @@ pub const OPENSEARCH_INDEX_ACTION_NAME: &str = "indices:data/write/index";
 pub const OPENSEARCH_UPDATE_ACTION_NAME: &str = "indices:data/write/update";
 pub const OPENSEARCH_DELETE_ACTION_NAME: &str = "indices:data/write/delete";
 pub const OPENSEARCH_REFRESH_ACTION_NAME: &str = "indices:admin/refresh";
+pub const OPENSEARCH_INDICES_STATS_ACTION_NAME: &str = "indices:monitor/stats";
 pub const STEELSEARCH_SHARD_SEARCH_ACTION_NAME: &str = "steelsearch:internal/search/shard";
 pub const STEELSEARCH_RECOVERY_START_ACTION_NAME: &str = "steelsearch:internal/recovery/start";
 pub const STEELSEARCH_RECOVERY_CHUNK_ACTION_NAME: &str = "steelsearch:internal/recovery/chunk";
@@ -220,6 +221,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         adapter_stage: "refresh-visibility",
         next_step: "map refresh requests onto Rust visibility barriers and shard status reporting",
     },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_INDICES_STATS_ACTION_NAME,
+        action_type: "IndicesStatsAction",
+        transport_action: "TransportIndicesStatsAction",
+        request_wire_type: "IndicesStatsRequest",
+        response_wire_type: "IndicesStatsResponse",
+        adapter_stage: "stats-admin",
+        next_step: "map bounded index stats requests onto Rust runtime index stats aggregation",
+    },
 ];
 
 pub const STEELSEARCH_SEARCH_ACTIONS: &[SourceTransportActionSpec] = &[SourceTransportActionSpec {
@@ -377,6 +387,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "refresh transport adapter is available",
+        },
+        OPENSEARCH_INDICES_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "indices-stats transport execution requires runtime index stats aggregation mapping",
         },
         _ if OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
             .iter()
@@ -1183,6 +1198,79 @@ impl NodesStatsRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchIndicesStatsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub flags: CommonStatsFlagsWire,
+}
+
+impl Default for OpenSearchIndicesStatsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            flags: CommonStatsFlagsWire::default(),
+        }
+    }
+}
+
+impl OpenSearchIndicesStatsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        self.flags.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            flags: CommonStatsFlagsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats index filter",
+                reason:
+                    "indices-stats index-scoped aggregation requires runtime index stats mapping",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats indices options",
+                reason: "indices-stats non-default indices options require runtime index resolution mapping",
+            });
+        }
+        if !self.flags.is_default_all_stats_shape() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats flags",
+                reason:
+                    "indices-stats metric subsets require field-level stats aggregation mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "indices stats execution",
+            reason:
+                "indices-stats transport execution requires runtime index stats aggregation mapping",
+        })
+    }
+}
+
 pub fn build_cluster_health_request_message(
     request_id: i64,
     version: Version,
@@ -1325,6 +1413,44 @@ pub fn read_nodes_stats_request_message(
         });
     }
     NodesStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_indices_stats_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchIndicesStatsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_INDICES_STATS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_indices_stats_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndicesStatsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_INDICES_STATS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_INDICES_STATS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchIndicesStatsRequestWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5636,6 +5762,15 @@ mod tests {
                     adapter_stage: "refresh-visibility",
                     next_step: "map refresh requests onto Rust visibility barriers and shard status reporting",
                 },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:monitor/stats",
+                    action_type: "IndicesStatsAction",
+                    transport_action: "TransportIndicesStatsAction",
+                    request_wire_type: "IndicesStatsRequest",
+                    response_wire_type: "IndicesStatsResponse",
+                    adapter_stage: "stats-admin",
+                    next_step: "map bounded index stats requests onto Rust runtime index stats aggregation",
+                },
             ]
         );
     }
@@ -5710,6 +5845,10 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_REFRESH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_INDICES_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -5727,6 +5866,15 @@ mod tests {
                 assert_eq!(
                     decision.disposition,
                     OpenSearchTransportActionDisposition::Implemented,
+                    "{}",
+                    spec.action_name
+                );
+                continue;
+            }
+            if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME {
+                assert_eq!(
+                    decision.disposition,
+                    OpenSearchTransportActionDisposition::Rejected,
                     "{}",
                     spec.action_name
                 );
@@ -7907,6 +8055,95 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchIndicesStatsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchIndicesStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_stats_request_rejects_unsupported_shapes() {
+        let index_filter = OpenSearchIndicesStatsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchIndicesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats index filter",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchIndicesStatsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                expand_hidden: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..OpenSearchIndicesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats indices options",
+                ..
+            })
+        ));
+
+        let flags = OpenSearchIndicesStatsRequestWire {
+            flags: CommonStatsFlagsWire {
+                flags: 1 << 9,
+                ..CommonStatsFlagsWire::default()
+            },
+            ..OpenSearchIndicesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            flags.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats flags",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_stats_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchIndicesStatsRequestWire::default();
+        let mut frame = build_opensearch_indices_stats_request_message(
+            23,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected indices stats request message");
+        };
+        assert_eq!(
+            read_opensearch_indices_stats_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_indices_stats_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices stats execution",
                 ..
             })
         ));

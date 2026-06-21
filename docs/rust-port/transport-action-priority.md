@@ -191,6 +191,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/update`
 - `indices:data/write/delete`
 - `indices:admin/refresh`
+- `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
 
@@ -232,6 +233,15 @@ The nodes-stats boundary covers:
 - explicit rejection for concrete node payloads, node filters, timeout,
   non-default index stats flags, requested metric selection, and nodes-stats
   execution.
+
+The indices-stats boundary covers:
+
+- OpenSearch `IndicesStatsRequest` parent task, indices array, indices options,
+  and `CommonStatsFlags` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:monitor/stats` until runtime
+  index stats aggregation and field-level metric mapping are implemented;
+- explicit rejection for index filters, non-default indices options,
+  non-default stats flags, and indices-stats execution.
 
 The list-tasks adapter covers:
 
@@ -442,6 +452,22 @@ adds a full `CommonStatsFlags` default-shape comparison after decode, so it is
 slightly heavier than the cluster-stats rejection boundary. At roughly 1.62M
 ops/s in the latest local release run, it remains in the lightweight admin
 transport range and does not introduce a new source-materialization bottleneck.
+
+Current indices-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin indices-stats-reject-wire-benchmark
+indices_stats_reject_request_encode ops_per_second=1615710.56 nanos_per_op=618.92
+indices_stats_reject_request_decode ops_per_second=1581358.53 nanos_per_op=632.37
+indices_stats_reject_validation ops_per_second=1530091.56 nanos_per_op=653.56
+indices_stats_reject_wire_bottleneck_ops_per_second=1530091.56
+```
+
+The current indices-stats fail-closed boundary bottleneck is validation. This
+path checks both indices options and the full `CommonStatsFlags` default shape
+after decode, so it is slightly heavier than nodes-stats. At roughly 1.53M ops/s
+in the latest local release run, it remains in the lightweight admin transport
+range and does not introduce a source-materialization bottleneck.
 
 Current list-tasks wire microbenchmark:
 

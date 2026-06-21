@@ -59,16 +59,16 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
         by_action.insert(action.action_name.clone(), action);
     }
 
-    let implemented_priority_actions = OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
+    let accepted_priority_actions = OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
         .iter()
         .filter(|spec| {
             classify_opensearch_transport_action(spec.action_name).disposition
-                == OpenSearchTransportActionDisposition::Implemented
+                != OpenSearchTransportActionDisposition::Missing
         })
         .count();
     assert_eq!(
         by_action.len(),
-        SOURCE_DERIVED_CLUSTER_ACTIONS.len() + implemented_priority_actions
+        SOURCE_DERIVED_CLUSTER_ACTIONS.len() + accepted_priority_actions
     );
     for spec in SOURCE_DERIVED_CLUSTER_ACTIONS {
         let action = by_action
@@ -93,7 +93,7 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
     }
     for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
         if classify_opensearch_transport_action(spec.action_name).disposition
-            == OpenSearchTransportActionDisposition::Implemented
+            != OpenSearchTransportActionDisposition::Missing
         {
             let action = by_action.get(spec.action_name).unwrap_or_else(|| {
                 panic!(
