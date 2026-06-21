@@ -48,6 +48,8 @@ pub const OPENSEARCH_GET_INDEX_ACTION_NAME: &str = "indices:admin/get";
 pub const OPENSEARCH_INDICES_EXISTS_ACTION_NAME: &str = "indices:admin/exists";
 pub const OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME: &str = "indices:admin/template/get";
 pub const OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME: &str = "indices:admin/template/delete";
+pub const OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME: &str =
+    "cluster:admin/component_template/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -338,6 +340,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map legacy index-template deletion onto Rust template metadata mutation and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME,
+        action_type: "GetComponentTemplateAction",
+        transport_action: "TransportGetComponentTemplateAction",
+        request_wire_type: "GetComponentTemplateAction.Request",
+        response_wire_type: "GetComponentTemplateAction.Response",
+        adapter_stage: "metadata-read",
+        next_step: "map component-template reads onto Rust template metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
@@ -690,6 +701,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-index-template transport execution requires template metadata mutation and ack rendering",
+        },
+        OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-component-template transport execution requires component template metadata response rendering",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2804,6 +2820,44 @@ pub fn read_opensearch_delete_index_template_request_message(
     OpenSearchDeleteIndexTemplateRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_component_template_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetComponentTemplateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_component_template_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetComponentTemplateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetComponentTemplateRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_field_capabilities_request_message(
     request_id: i64,
     version: Version,
@@ -4227,6 +4281,79 @@ impl OpenSearchDeleteIndexTemplateRequestWire {
             shape: "delete index template execution",
             reason:
                 "delete-index-template transport execution requires template metadata mutation and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetComponentTemplateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub name: Option<String>,
+}
+
+impl Default for OpenSearchGetComponentTemplateRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            name: None,
+        }
+    }
+}
+
+impl OpenSearchGetComponentTemplateRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_optional_string(self.name.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            name: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the get-component-template adapter yet",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template local",
+                reason:
+                    "local component-template reads require local cluster-state response semantics",
+            });
+        }
+        if self.name.as_deref().is_some_and(|name| !name.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template name filter",
+                reason:
+                    "component-template name and wildcard selection requires template metadata lookup semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get component template execution",
+            reason:
+                "get-component-template transport execution requires component template metadata response rendering",
         })
     }
 }
@@ -10534,6 +10661,15 @@ mod tests {
                     next_step: "map legacy index-template deletion onto Rust template metadata mutation and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/component_template/get",
+                    action_type: "GetComponentTemplateAction",
+                    transport_action: "TransportGetComponentTemplateAction",
+                    request_wire_type: "GetComponentTemplateAction.Request",
+                    response_wire_type: "GetComponentTemplateAction.Response",
+                    adapter_stage: "metadata-read",
+                    next_step: "map component-template reads onto Rust template metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -10862,6 +10998,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -10940,6 +11081,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -14517,6 +14659,105 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete index template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_component_template_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetComponentTemplateRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetComponentTemplateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.name, None);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_component_template_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchGetComponentTemplateRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchGetComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetComponentTemplateRequestWire {
+            local: true,
+            ..OpenSearchGetComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template local",
+                ..
+            })
+        ));
+
+        let name_filter = OpenSearchGetComponentTemplateRequestWire {
+            name: Some("logs-*".to_string()),
+            ..OpenSearchGetComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            name_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template name filter",
+                ..
+            })
+        ));
+
+        let empty_name = OpenSearchGetComponentTemplateRequestWire {
+            name: Some(String::new()),
+            ..OpenSearchGetComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            empty_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_component_template_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchGetComponentTemplateRequestWire {
+            name: Some("logs-template".to_string()),
+            ..OpenSearchGetComponentTemplateRequestWire::default()
+        };
+        let mut frame = build_opensearch_get_component_template_request_message(
+            62,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get component template request message");
+        };
+        assert_eq!(
+            read_opensearch_get_component_template_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_component_template_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get component template name filter",
                 ..
             })
         ));

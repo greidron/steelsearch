@@ -90,6 +90,10 @@ name = "delete-index-template-reject-wire-benchmark"
 path = "benchmarks/delete_index_template_reject_wire.rs"
 
 [[bin]]
+name = "get-component-template-reject-wire-benchmark"
+path = "benchmarks/get_component_template_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

@@ -192,6 +192,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (rejected fail-closed)
 - `indices:admin/template/delete` (rejected fail-closed)
+- `cluster:admin/component_template/get` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -393,6 +394,18 @@ The delete-index-template boundary covers:
   rendering are implemented against Rust cluster metadata;
 - explicit rejection for custom cluster-manager timeouts and
   delete-index-template execution.
+
+The get-component-template boundary covers:
+
+- OpenSearch `GetComponentTemplateAction.Request` parent task,
+  cluster-manager timeout, local flag, and optional component-template name at
+  the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/component_template/get` until component-template metadata can
+  be rendered from Rust cluster metadata with OpenSearch-compatible exact and
+  wildcard matching semantics;
+- explicit rejection for custom cluster-manager timeouts, local reads, name
+  filters, and get-component-template execution.
 
 The field-capabilities boundary covers:
 
@@ -1025,6 +1038,22 @@ The current delete-index-template fail-closed boundary bottleneck is request
 encode. This path stays cheap because validation checks only the default
 timeout before failing closed; the future performance-sensitive work is
 template metadata mutation, publication, and acknowledged response rendering.
+
+Current get-component-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-component-template-reject-wire-benchmark
+get_component_template_reject_request_encode iterations=400000 elapsed_ms=223.699 ops_per_second=1788117.75 nanos_per_op=559.25
+get_component_template_reject_request_decode iterations=400000 elapsed_ms=211.078 ops_per_second=1895035.18 nanos_per_op=527.69
+get_component_template_reject_validation iterations=400000 elapsed_ms=212.785 ops_per_second=1879829.53 nanos_per_op=531.96
+get_component_template_reject_wire_bottleneck_ops_per_second=1788117.75
+```
+
+The current get-component-template fail-closed boundary bottleneck is request
+encode. The default benchmark uses an absent optional name, matching the
+OpenSearch all-component-templates request shape; the future
+performance-sensitive work is component-template metadata matching and response
+rendering.
 
 Current field-capabilities reject wire microbenchmark:
 

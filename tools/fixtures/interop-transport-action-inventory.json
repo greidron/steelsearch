@@ -148,6 +148,15 @@
       "reason": "Delete-index-template transport execution requires template metadata mutation and ack rendering before Steelsearch can serve OpenSearch legacy index-template deletes."
     },
     {
+      "action_name": "cluster:admin/component_template/get",
+      "action_type": "GetComponentTemplateAction",
+      "transport_action": "TransportGetComponentTemplateAction",
+      "request_wire_type": "GetComponentTemplateAction.Request",
+      "response_wire_type": "GetComponentTemplateAction.Response",
+      "disposition": "rejected",
+      "reason": "Get-component-template transport execution requires component template metadata response rendering before Steelsearch can serve OpenSearch component-template reads."
+    },
+    {
       "action_name": "indices:admin/aliases/get",
       "action_type": "GetAliasesAction",
       "transport_action": "TransportGetAliasesAction",
