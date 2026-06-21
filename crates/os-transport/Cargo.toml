@@ -122,6 +122,10 @@ name = "get-weighted-routing-reject-wire-benchmark"
 path = "benchmarks/get_weighted_routing_reject_wire.rs"
 
 [[bin]]
+name = "delete-weighted-routing-reject-wire-benchmark"
+path = "benchmarks/delete_weighted_routing_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 

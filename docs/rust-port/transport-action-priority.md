@@ -209,6 +209,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/status` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/get` (rejected fail-closed)
+- `cluster:admin/routing/awareness/weights/delete` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -623,6 +624,19 @@ The get-weighted-routing boundary covers:
   implemented;
 - explicit rejection for custom cluster-manager timeout, local reads, missing
   awareness attribute names, and get-weighted-routing execution.
+
+The delete-weighted-routing boundary covers:
+
+- OpenSearch 3.7 `ClusterDeleteWeightedRoutingRequest` parent task,
+  cluster-manager timeout, weighted routing version, and optional trailing
+  awareness attribute string at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/routing/awareness/weights/delete` until weighted routing
+  metadata deletion, version conflict handling, cluster-state publication, and
+  acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, missing versions,
+  absent or blank awareness attribute names, and delete-weighted-routing
+  execution.
 
 The get-mappings boundary covers:
 
@@ -1741,6 +1755,24 @@ roughly 1.22M ops/s in the latest local release run, this boundary is not the
 primary expected performance risk; the first performance-sensitive work is
 awareness attribute verification, weighted routing metadata lookup, version
 rendering, discovered cluster-manager flag handling, and response rendering.
+
+Current delete-weighted-routing reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-weighted-routing-reject-wire-benchmark
+delete_weighted_routing_reject_request_encode iterations=400000 elapsed_ms=367.886 ops_per_second=1087294.18 nanos_per_op=919.71
+delete_weighted_routing_reject_request_decode iterations=400000 elapsed_ms=314.900 ops_per_second=1270245.61 nanos_per_op=787.25
+delete_weighted_routing_reject_validation iterations=400000 elapsed_ms=322.649 ops_per_second=1239735.90 nanos_per_op=806.62
+delete_weighted_routing_reject_wire_bottleneck_ops_per_second=1087294.18
+```
+
+The current delete-weighted-routing fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager request envelope, weighted
+routing version, and optional trailing awareness attribute before admission
+rejects execution. At roughly 1.09M ops/s in the latest local release run, this
+boundary is not the primary expected performance risk; the first
+performance-sensitive work is version-conflict handling, weighted routing
+metadata deletion, cluster-state publication, and acknowledgement rendering.
 
 Current get-mappings reject wire microbenchmark:
 
