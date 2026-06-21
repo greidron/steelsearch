@@ -2316,16 +2316,16 @@ Current auto-create reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin auto-create-reject-wire-benchmark
-auto_create_reject_request_encode iterations=400000 elapsed_ms=282.254 ops_per_second=1417161.53 nanos_per_op=705.64
-auto_create_reject_request_decode iterations=400000 elapsed_ms=279.195 ops_per_second=1432689.41 nanos_per_op=697.99
-auto_create_reject_validation iterations=400000 elapsed_ms=273.745 ops_per_second=1461213.57 nanos_per_op=684.36
-auto_create_reject_wire_bottleneck_ops_per_second=1417161.53
+auto_create_reject_request_encode iterations=400000 elapsed_ms=275.880 ops_per_second=1449907.21 nanos_per_op=689.70
+auto_create_reject_request_decode iterations=400000 elapsed_ms=268.132 ops_per_second=1491804.71 nanos_per_op=670.33
+auto_create_reject_validation iterations=400000 elapsed_ms=272.505 ops_per_second=1467860.97 nanos_per_op=681.26
+auto_create_reject_wire_bottleneck_ops_per_second=1449907.21
 ```
 
 The current auto-create fail-closed boundary bottleneck is request encode. It
 uses the same `CreateIndexRequest` wire shape as create-index with the
 `indices:admin/auto_create` action frame, so the current overhead remains
-transport frame/request serialization. At roughly 1.42M ops/s in the latest
+transport frame/request serialization. At roughly 1.45M ops/s in the latest
 local release run, the future performance-sensitive work is auto-create
 index/data-stream resolution, cluster-manager metadata mutation, active-shards
 wait, and response rendering.
