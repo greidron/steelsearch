@@ -180,6 +180,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/health`
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
+- `cluster:admin/tasks/cancel`
 - `indices:data/read/get`
 - `indices:data/read/mget`
 - `indices:data/write/bulk`
@@ -218,6 +219,19 @@ The list-tasks adapter covers:
   action filters, timeout, detailed task info, wait-for-completion, non-empty
   task failure payloads, non-empty node failure payloads, and non-empty task
   info payloads until runtime task lifecycle semantics are mapped.
+
+The cancel-tasks adapter covers:
+
+- OpenSearch `CancelTasksRequest` parent task, unset task id filter, unset
+  parent task filter, no node filters, no action filters, no timeout, default
+  reason `by user request`, and `wait_for_completion=false`;
+- OpenSearch `CancelTasksResponse` with no cancelled task entries, no task
+  failures, and no node failures, matching the current no-active-cancellable-task
+  transport contract;
+- explicit rejection for task id filters, parent task filters, node filters,
+  action filters, timeout, custom reason, wait-for-completion, non-empty task
+  failure payloads, non-empty node failure payloads, and non-empty task info
+  payloads until runtime task cancellation lifecycle semantics are mapped.
 
 The bulk adapter covers:
 
@@ -379,6 +393,23 @@ is an empty task listing with only default filters, so the request path is
 mostly frame/action validation plus task-id and empty-array decoding. At roughly
 1.85M ops/s in the latest local release run, this adapter does not introduce a
 transport-wire bottleneck.
+
+Current cancel-tasks wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cancel-tasks-wire-benchmark
+cancel_tasks_request_encode ops_per_second=1270672.41 nanos_per_op=786.98
+cancel_tasks_response_encode ops_per_second=4551448.70 nanos_per_op=219.71
+cancel_tasks_request_decode ops_per_second=1485477.46 nanos_per_op=673.18
+cancel_tasks_response_decode ops_per_second=4250393.89 nanos_per_op=235.27
+cancel_tasks_wire_bottleneck_ops_per_second=1270672.41
+```
+
+The current cancel-tasks wire bottleneck is request encode. Compared with
+list-tasks, the default cancel request also writes the default reason string, so
+the request body is slightly heavier. At roughly 1.27M ops/s in the latest local
+release run, this adapter is still far above the source-materializing write/read
+wire paths and does not introduce a new bottleneck.
 
 Current get wire microbenchmark:
 
