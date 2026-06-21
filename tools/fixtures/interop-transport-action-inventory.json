@@ -454,6 +454,15 @@
       "reason": "Get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering before Steelsearch can serve OpenSearch script language semantics."
     },
     {
+      "action_name": "cluster:admin/ingest/pipeline/put",
+      "action_type": "PutPipelineAction",
+      "transport_action": "PutPipelineTransportAction",
+      "request_wire_type": "PutPipelineRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Put-pipeline transport execution requires ingest pipeline validation, processor availability, cluster metadata mutation, throttling, and ack rendering before Steelsearch can serve OpenSearch ingest pipeline put semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",

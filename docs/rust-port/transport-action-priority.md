@@ -259,6 +259,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script/delete` (rejected fail-closed)
 - `cluster:admin/script_context/get` (rejected fail-closed)
 - `cluster:admin/script_language/get` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -869,6 +870,21 @@ The get-script-language boundary covers:
   response rendering are implemented;
 - explicit rejection for get-script-language execution, plus defensive decode
   rejection for negative type, language, and context counts.
+
+The put-pipeline boundary covers:
+
+- OpenSearch `PutPipelineRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, pipeline id, source bytes, and media type at the
+  OpenSearch 3.x wire decode/build layer;
+- OpenSearch `AcknowledgedResponse` decode/build for the put-pipeline response
+  acknowledgement bit;
+- explicit fail-closed classification for
+  `cluster:admin/ingest/pipeline/put` until ingest pipeline validation,
+  processor availability checks, cluster metadata mutation, throttling, and ack
+  rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing ids, missing source bytes, non-JSON media
+  types, and put-pipeline execution.
 
 The resize boundary covers:
 
@@ -2494,6 +2510,25 @@ types plus the language-to-contexts map before execution is rejected. At roughly
 catalog response decoding. Future performance-sensitive work is building and
 serving the Rust script language catalog without repeated allocation-heavy
 string collection expansion.
+
+Current put-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-pipeline-reject-wire-benchmark
+put_pipeline_reject_request_encode iterations=400000 elapsed_ms=404.405 ops_per_second=989108.66 nanos_per_op=1011.01
+put_pipeline_reject_request_decode iterations=400000 elapsed_ms=374.548 ops_per_second=1067954.06 nanos_per_op=936.37
+put_pipeline_reject_validation iterations=400000 elapsed_ms=377.719 ops_per_second=1058987.13 nanos_per_op=944.30
+put_pipeline_ack_response_decode iterations=400000 elapsed_ms=54.074 ops_per_second=7397212.13 nanos_per_op=135.19
+put_pipeline_reject_wire_bottleneck_ops_per_second=989108.66
+```
+
+The current put-pipeline fail-closed boundary bottleneck is request encode. The
+request path carries the acknowledged cluster-manager envelope, pipeline id,
+source bytes, and media type before rejecting execution. At roughly 989K ops/s
+in the latest local release run, current overhead is transport serialization.
+Future performance-sensitive work is ingest pipeline source parsing, processor
+availability validation, cluster metadata mutation, throttling, and ack
+rendering.
 
 Current resize reject wire microbenchmark:
 
