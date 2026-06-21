@@ -112,6 +112,15 @@
       "reason": "Get-field-mappings transport execution requires field mapping metadata response rendering before Steelsearch can serve OpenSearch field mapping read semantics."
     },
     {
+      "action_name": "indices:admin/delete",
+      "action_type": "DeleteIndexAction",
+      "transport_action": "TransportDeleteIndexAction",
+      "request_wire_type": "DeleteIndexRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering before Steelsearch can serve OpenSearch index deletion semantics."
+    },
+    {
       "action_name": "indices:admin/get",
       "action_type": "GetIndexAction",
       "transport_action": "TransportGetIndexAction",

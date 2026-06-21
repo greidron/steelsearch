@@ -353,6 +353,19 @@ The get-field-mappings boundary covers:
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and get-field-mappings execution.
 
+The delete-index boundary covers:
+
+- OpenSearch `DeleteIndexRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, indices array, and delete-index default
+  `IndicesOptions.fromOptions(false, true, true, true, false, false, true,
+  false)` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/delete` until index
+  metadata mutation, shard cleanup, and acknowledged response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, empty or blank index targets, custom indices
+  options, and delete-index execution.
+
 The get-index boundary covers:
 
 - OpenSearch `GetIndexRequest` parent task, cluster-manager timeout, local
@@ -1010,6 +1023,23 @@ encode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
+
+Current delete-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-index-reject-wire-benchmark
+delete_index_reject_request_encode iterations=400000 elapsed_ms=287.248 ops_per_second=1392526.50 nanos_per_op=718.12
+delete_index_reject_request_decode iterations=400000 elapsed_ms=275.243 ops_per_second=1453261.93 nanos_per_op=688.11
+delete_index_reject_validation iterations=400000 elapsed_ms=283.962 ops_per_second=1408637.38 nanos_per_op=709.91
+delete_index_reject_wire_bottleneck_ops_per_second=1392526.50
+```
+
+The current delete-index fail-closed boundary bottleneck is request encode. The
+request carries an acknowledged-request envelope, non-empty index target, and
+delete-index default indices options before the execution boundary rejects. At
+roughly 1.39M ops/s in the latest local release run, the future
+performance-sensitive work is index metadata mutation, shard cleanup, and
+acknowledged response rendering rather than the fail-closed wire boundary.
 
 Current get-index reject wire microbenchmark:
 

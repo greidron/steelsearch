@@ -44,6 +44,7 @@ pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_
 pub const OPENSEARCH_GET_ALL_PITS_ACTION_NAME: &str = "indices:data/read/point_in_time/readall";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
+pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
 pub const OPENSEARCH_GET_INDEX_ACTION_NAME: &str = "indices:admin/get";
 pub const OPENSEARCH_INDICES_EXISTS_ACTION_NAME: &str = "indices:admin/exists";
 pub const OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME: &str = "indices:admin/template/get";
@@ -310,6 +311,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetFieldMappingsResponse",
         adapter_stage: "metadata-read",
         next_step: "map bounded field-mapping reads onto Rust cluster metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_DELETE_INDEX_ACTION_NAME,
+        action_type: "DeleteIndexAction",
+        transport_action: "TransportDeleteIndexAction",
+        request_wire_type: "DeleteIndexRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map index deletion onto Rust cluster metadata mutation, shard cleanup, and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_INDEX_ACTION_NAME,
@@ -714,6 +724,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
+        },
+        OPENSEARCH_DELETE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering",
         },
         OPENSEARCH_GET_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2834,6 +2849,44 @@ pub fn read_opensearch_get_index_templates_request_message(
     OpenSearchGetIndexTemplatesRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_delete_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchDeleteIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_DELETE_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDeleteIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_DELETE_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_DELETE_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchDeleteIndexRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_delete_index_template_request_message(
     request_id: i64,
     version: Version,
@@ -4395,6 +4448,94 @@ impl OpenSearchGetIndexTemplatesRequestWire {
             shape: "get index templates execution",
             reason:
                 "get-index-templates transport execution requires template metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDeleteIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl Default for OpenSearchDeleteIndexRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::delete_index_default(),
+        }
+    }
+}
+
+impl OpenSearchDeleteIndexRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the delete-index adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index ack timeout",
+                reason: "custom ack timeout is not mapped by the delete-index adapter yet",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index empty indices",
+                reason: "OpenSearch delete-index requests require at least one index expression",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index blank index",
+                reason: "blank delete-index targets require index validation before execution",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::delete_index_default() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index indices options",
+                reason:
+                    "custom delete-index indices options require index resolution and deletion semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete index execution",
+            reason:
+                "delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering",
         })
     }
 }
@@ -9909,6 +10050,20 @@ impl OpenSearchIndicesOptionsWire {
         }
     }
 
+    pub const fn delete_index_default() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: false,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: true,
+            forbid_closed_indices: true,
+            ignore_throttled: false,
+            expand_open: true,
+            expand_closed: true,
+            expand_hidden: false,
+        }
+    }
+
     pub const fn lenient_expand_open() -> Self {
         Self {
             ignore_unavailable: true,
@@ -10977,6 +11132,15 @@ mod tests {
                     next_step: "map bounded field-mapping reads onto Rust cluster metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/delete",
+                    action_type: "DeleteIndexAction",
+                    transport_action: "TransportDeleteIndexAction",
+                    request_wire_type: "DeleteIndexRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map index deletion onto Rust cluster metadata mutation, shard cleanup, and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/get",
                     action_type: "GetIndexAction",
                     transport_action: "TransportGetIndexAction",
@@ -11359,6 +11523,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -11475,6 +11643,7 @@ mod tests {
             if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
@@ -14988,6 +15157,114 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get index templates execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_index_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchDeleteIndexRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchDeleteIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.indices, vec!["logs-000001"]);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_index_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchDeleteIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchDeleteIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchDeleteIndexRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchDeleteIndexRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index ack timeout",
+                ..
+            })
+        ));
+
+        let empty_indices = OpenSearchDeleteIndexRequestWire {
+            indices: Vec::new(),
+            ..OpenSearchDeleteIndexRequestWire::default()
+        };
+        assert!(matches!(
+            empty_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index empty indices",
+                ..
+            })
+        ));
+
+        let blank_index = OpenSearchDeleteIndexRequestWire {
+            indices: vec![" ".to_string()],
+            ..OpenSearchDeleteIndexRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = OpenSearchDeleteIndexRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..OpenSearchIndicesOptionsWire::delete_index_default()
+            },
+            ..OpenSearchDeleteIndexRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index indices options",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_index_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchDeleteIndexRequestWire::default();
+        let mut frame =
+            build_opensearch_delete_index_request_message(66, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete index request message");
+        };
+        assert_eq!(
+            read_opensearch_delete_index_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_delete_index_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index execution",
                 ..
             })
         ));
