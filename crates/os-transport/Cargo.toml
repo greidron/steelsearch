@@ -62,6 +62,10 @@ name = "get-repositories-reject-wire-benchmark"
 path = "benchmarks/get_repositories_reject_wire.rs"
 
 [[bin]]
+name = "get-mappings-reject-wire-benchmark"
+path = "benchmarks/get_mappings_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

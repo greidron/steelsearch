@@ -85,6 +85,15 @@
       "reason": "Get-repositories transport execution requires repository metadata mapping before Steelsearch can serve OpenSearch repository read semantics."
     },
     {
+      "action_name": "indices:admin/mappings/get",
+      "action_type": "GetMappingsAction",
+      "transport_action": "TransportGetMappingsAction",
+      "request_wire_type": "GetMappingsRequest",
+      "response_wire_type": "GetMappingsResponse",
+      "disposition": "rejected",
+      "reason": "Get-mappings transport execution requires mapping metadata response rendering before Steelsearch can serve OpenSearch mapping read semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",

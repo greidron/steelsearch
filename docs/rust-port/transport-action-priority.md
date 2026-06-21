@@ -185,6 +185,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
+- `indices:admin/mappings/get` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -289,6 +290,15 @@ The get-repositories boundary covers:
   repository metadata mapping and response rendering are implemented;
 - explicit rejection for custom cluster-manager timeout, repository name/pattern
   selection, and get-repositories execution.
+
+The get-mappings boundary covers:
+
+- OpenSearch `GetMappingsRequest` parent task, cluster-manager timeout, indices
+  array, and `IndicesOptions.strictExpandOpen()` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/mappings/get` until
+  mapping metadata response rendering is implemented;
+- explicit rejection for custom cluster-manager timeout, index filters, custom
+  indices options, and get-mappings execution.
 
 The indices-stats boundary covers:
 
@@ -589,6 +599,22 @@ the decoded default request. The payload is only the ClusterManagerNodeRead
 envelope plus an empty repository-name array, so this remains one of the
 lightest read/admin rejection paths. At roughly 2.02M ops/s in the latest local
 release run, it does not introduce a transport-wire bottleneck.
+
+Current get-mappings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-mappings-reject-wire-benchmark
+get_mappings_reject_request_encode iterations=400000 elapsed_ms=213.124 ops_per_second=1876843.85 nanos_per_op=532.81
+get_mappings_reject_request_decode iterations=400000 elapsed_ms=213.498 ops_per_second=1873550.75 nanos_per_op=533.75
+get_mappings_reject_validation iterations=400000 elapsed_ms=215.836 ops_per_second=1853255.04 nanos_per_op=539.59
+get_mappings_reject_wire_bottleneck_ops_per_second=1853255.04
+```
+
+The current get-mappings fail-closed boundary bottleneck is validation after
+decode. The payload adds `IndicesOptions.strictExpandOpen()` to the
+ClusterManagerNodeRead envelope and empty index array, so it is slightly heavier
+than get-repositories but still well inside the lightweight admin transport
+range at roughly 1.85M ops/s in the latest local release run.
 
 Current indices-stats reject wire microbenchmark:
 
