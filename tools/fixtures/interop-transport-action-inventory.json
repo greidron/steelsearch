@@ -877,6 +877,15 @@
       "reason": "Get-view transport execution requires view lookup and view response rendering before Steelsearch can serve OpenSearch view read semantics."
     },
     {
+      "action_name": "cluster:admin/views/update",
+      "action_type": "UpdateViewAction",
+      "transport_action": "UpdateViewAction.TransportAction",
+      "request_wire_type": "CreateViewAction.Request",
+      "response_wire_type": "GetViewAction.Response",
+      "disposition": "rejected",
+      "reason": "Update-view transport execution requires view validation, target resolution, cluster metadata mutation, and view response rendering before Steelsearch can serve OpenSearch view update semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

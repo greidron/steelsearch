@@ -414,6 +414,10 @@ name = "get-view-reject-wire-benchmark"
 path = "benchmarks/get_view_reject_wire.rs"
 
 [[bin]]
+name = "update-view-reject-wire-benchmark"
+path = "benchmarks/update_view_reject_wire.rs"
+
+[[bin]]
 name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 

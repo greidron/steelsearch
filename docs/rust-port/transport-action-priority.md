@@ -238,6 +238,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/views/create` (rejected fail-closed)
 - `cluster:admin/views/delete` (rejected fail-closed)
 - `views:data/read/get` (rejected fail-closed)
+- `cluster:admin/views/update` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1471,6 +1472,21 @@ The get-view boundary covers:
   lookup and view response rendering are implemented;
 - explicit rejection for custom cluster-manager timeouts, missing names, and
   get-view execution.
+
+The update-view boundary covers:
+
+- OpenSearch `UpdateViewAction.TransportAction` using
+  `CreateViewAction.Request` parent task, cluster-manager timeout, view name,
+  description, and target index-pattern list at the wire decode/build layer;
+- OpenSearch `GetViewAction.Response` decode/build for the returned `View`
+  payload, including name, optional description, created/modified timestamps,
+  and sorted target index patterns;
+- explicit fail-closed classification for `cluster:admin/views/update` until
+  view validation, target resolution, cluster metadata mutation, and view
+  response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, missing or oversized
+  names, oversized descriptions, missing or excessive targets, blank target
+  patterns, oversized target patterns, and update-view execution.
 
 The search boundary covers:
 
@@ -3434,6 +3450,24 @@ admission, while response decode covers the `View` payload shape already shared
 with create-view. At roughly 1.77M ops/s in the latest local release run, the
 current wire boundary remains lightweight; future performance-sensitive work is
 view lookup and response rendering.
+
+Current update-view reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin update-view-reject-wire-benchmark
+update_view_reject_request_encode iterations=400000 elapsed_ms=376.565 ops_per_second=1062233.21 nanos_per_op=941.41
+update_view_reject_request_decode iterations=400000 elapsed_ms=326.892 ops_per_second=1223646.53 nanos_per_op=817.23
+update_view_reject_validation iterations=400000 elapsed_ms=337.159 ops_per_second=1186384.28 nanos_per_op=842.90
+update_view_response_decode iterations=400000 elapsed_ms=202.532 ops_per_second=1974996.66 nanos_per_op=506.33
+update_view_reject_wire_bottleneck_ops_per_second=1062233.21
+```
+
+The current update-view fail-closed boundary bottleneck is request encode. This
+path carries the same `CreateViewAction.Request` payload as create-view under
+the OpenSearch update action name before rejecting at admission. At roughly
+1.06M ops/s in the latest local release run, it is slightly slower than the
+latest create-view run on this machine; future performance-sensitive work is
+view validation, target resolution, metadata mutation, and response rendering.
 
 Current search reject wire microbenchmark:
 

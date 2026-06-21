@@ -143,6 +143,7 @@ pub const OPENSEARCH_RESOLVE_INDEX_ACTION_NAME: &str = "indices:admin/resolve/in
 pub const OPENSEARCH_CREATE_VIEW_ACTION_NAME: &str = "cluster:admin/views/create";
 pub const OPENSEARCH_DELETE_VIEW_ACTION_NAME: &str = "cluster:admin/views/delete";
 pub const OPENSEARCH_GET_VIEW_ACTION_NAME: &str = "views:data/read/get";
+pub const OPENSEARCH_UPDATE_VIEW_ACTION_NAME: &str = "cluster:admin/views/update";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1107,6 +1108,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map view lookup and view response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPDATE_VIEW_ACTION_NAME,
+        action_type: "UpdateViewAction",
+        transport_action: "UpdateViewAction.TransportAction",
+        request_wire_type: "CreateViewAction.Request",
+        response_wire_type: "GetViewAction.Response",
+        adapter_stage: "view-admin",
+        next_step: "map view validation, target resolution, metadata mutation, and view response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1788,6 +1798,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-view transport execution requires view lookup and view response rendering",
+        },
+        OPENSEARCH_UPDATE_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7398,6 +7413,73 @@ pub fn build_opensearch_get_view_response_message(
 }
 
 pub fn read_opensearch_get_view_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetViewResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchGetViewResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_view_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchCreateViewRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPDATE_VIEW_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_view_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCreateViewRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPDATE_VIEW_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPDATE_VIEW_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchCreateViewRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_view_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetViewResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_view_response_message(
     message: &TransportMessage,
 ) -> Result<OpenSearchGetViewResponseWire, TransportActionWireError> {
     if message.status.is_request() {
@@ -15123,6 +15205,71 @@ impl OpenSearchCreateViewRequestWire {
             reason: "create-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering",
         })
     }
+}
+
+pub fn reject_opensearch_update_view_execution(
+    request: &OpenSearchCreateViewRequestWire,
+) -> Result<(), TransportActionWireError> {
+    if request.cluster_manager_timeout != TimeValueWire::seconds(30) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view cluster-manager timeout",
+            reason: "custom cluster-manager timeout is not mapped by the update-view adapter yet",
+        });
+    }
+    if request.name.trim().is_empty() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view missing name",
+            reason: "OpenSearch update-view requests require a view name",
+        });
+    }
+    if request.name.len() > 64 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view name length",
+            reason: "OpenSearch update-view names must be at most 64 characters",
+        });
+    }
+    if request.description.len() > 256 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view description length",
+            reason: "OpenSearch update-view descriptions must be at most 256 characters",
+        });
+    }
+    if request.targets.is_empty() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view missing targets",
+            reason: "OpenSearch update-view requests require at least one target",
+        });
+    }
+    if request.targets.len() > 25 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view target count",
+            reason: "OpenSearch update-view requests allow at most 25 targets",
+        });
+    }
+    if request
+        .targets
+        .iter()
+        .any(|target| target.index_pattern.trim().is_empty())
+    {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view blank target",
+            reason: "OpenSearch update-view targets require an index pattern",
+        });
+    }
+    if request
+        .targets
+        .iter()
+        .any(|target| target.index_pattern.len() > 64)
+    {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update view target index pattern length",
+            reason: "OpenSearch update-view target index patterns must be at most 64 characters",
+        });
+    }
+    Err(TransportActionWireError::UnsupportedWireShape {
+        shape: "update view execution",
+        reason: "update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering",
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23715,6 +23862,15 @@ mod tests {
                     next_step: "map view lookup and view response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/views/update",
+                    action_type: "UpdateViewAction",
+                    transport_action: "UpdateViewAction.TransportAction",
+                    request_wire_type: "CreateViewAction.Request",
+                    response_wire_type: "GetViewAction.Response",
+                    adapter_stage: "view-admin",
+                    next_step: "map view validation, target resolution, metadata mutation, and view response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -24307,6 +24463,10 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_GET_VIEW_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPDATE_VIEW_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -24394,6 +24554,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -38470,6 +38631,194 @@ mod tests {
             panic!("expected get view response message");
         };
         let decoded = read_opensearch_get_view_response_message(&message).unwrap();
+        assert_eq!(
+            decoded.view.targets,
+            vec!["logs-*".to_string(), "metrics-*".to_string()]
+        );
+        assert_eq!(decoded.view.name, response.view.name);
+        assert_eq!(decoded.view.description, response.view.description);
+    }
+
+    #[test]
+    fn opensearch_update_view_request_reuses_create_view_wire_and_rejects_execution_boundary() {
+        let request = OpenSearchCreateViewRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(10),
+            description: "updated application logs".to_string(),
+            targets: vec![
+                OpenSearchCreateViewTargetWire::new("logs-*"),
+                OpenSearchCreateViewTargetWire::new("metrics-*"),
+            ],
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchCreateViewRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.name, "logs-view");
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&decoded),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_update_view_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchCreateViewRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&timeout),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_name = OpenSearchCreateViewRequestWire {
+            name: " ".to_string(),
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&missing_name),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view missing name",
+                ..
+            })
+        ));
+
+        let long_name = OpenSearchCreateViewRequestWire {
+            name: "v".repeat(65),
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&long_name),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view name length",
+                ..
+            })
+        ));
+
+        let long_description = OpenSearchCreateViewRequestWire {
+            description: "d".repeat(257),
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&long_description),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view description length",
+                ..
+            })
+        ));
+
+        let missing_targets = OpenSearchCreateViewRequestWire {
+            targets: Vec::new(),
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&missing_targets),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view missing targets",
+                ..
+            })
+        ));
+
+        let too_many_targets = OpenSearchCreateViewRequestWire {
+            targets: (0..26)
+                .map(|index| OpenSearchCreateViewTargetWire::new(format!("logs-{index}")))
+                .collect(),
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&too_many_targets),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view target count",
+                ..
+            })
+        ));
+
+        let blank_target = OpenSearchCreateViewRequestWire {
+            targets: vec![OpenSearchCreateViewTargetWire::new(" ")],
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&blank_target),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view blank target",
+                ..
+            })
+        ));
+
+        let long_target = OpenSearchCreateViewRequestWire {
+            targets: vec![OpenSearchCreateViewTargetWire::new("i".repeat(65))],
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        assert!(matches!(
+            reject_opensearch_update_view_execution(&long_target),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view target index pattern length",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_update_view_transport_messages_bind_rejected_action_frame_and_view_response() {
+        let request = OpenSearchCreateViewRequestWire {
+            description: "updated application logs".to_string(),
+            targets: vec![
+                OpenSearchCreateViewTargetWire::new("logs-*"),
+                OpenSearchCreateViewTargetWire::new("metrics-*"),
+            ],
+            ..OpenSearchCreateViewRequestWire::default()
+        };
+        let mut frame =
+            build_opensearch_update_view_request_message(83, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update view request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_update_view_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            reject_opensearch_update_view_execution(
+                &read_opensearch_update_view_request_message(&message).unwrap()
+            ),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update view execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchGetViewResponseWire {
+            view: OpenSearchViewWire {
+                targets: vec!["metrics-*".to_string(), "logs-*".to_string()],
+                ..OpenSearchViewWire::default()
+            },
+        };
+        let mut frame = build_opensearch_update_view_response_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update view response message");
+        };
+        let decoded = read_opensearch_update_view_response_message(&message).unwrap();
         assert_eq!(
             decoded.view.targets,
             vec!["logs-*".to_string(), "metrics-*".to_string()]
