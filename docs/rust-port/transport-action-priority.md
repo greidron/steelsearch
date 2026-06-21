@@ -938,6 +938,24 @@ The delete-component-template boundary covers:
 - explicit rejection for custom cluster-manager timeouts and
   delete-component-template execution.
 
+The put-composable-index-template boundary covers:
+
+- OpenSearch `PutComposableIndexTemplateAction.Request` parent task,
+  cluster-manager timeout, composable index-template name, optional cause,
+  create flag, index patterns, optional empty nested `Template`, optional
+  composed-of list, optional priority, optional version, absent metadata map,
+  absent data stream marker, and absent context marker at the OpenSearch 3.x
+  wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/index_template/put`
+  until composable index-template validation, metadata mutation, and
+  acknowledged response rendering are implemented against Rust cluster
+  metadata;
+- explicit rejection for custom cluster-manager timeouts, missing template
+  names, missing index patterns, custom causes, create-only writes, settings,
+  mappings, aliases, composed-of component references, priorities, versions,
+  metadata payloads, data stream templates, contexts, and
+  put-composable-index-template execution.
+
 The get-composable-index-template boundary covers:
 
 - OpenSearch `GetComposableIndexTemplateAction.Request` parent task,
@@ -2320,6 +2338,25 @@ request encode. This path stays cheap because validation checks only the
 default timeout before failing closed; the future performance-sensitive work is
 component-template metadata mutation, publication, and acknowledged response
 rendering.
+
+Current put-composable-index-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-composable-index-template-reject-wire-benchmark
+put_composable_index_template_reject_request_encode iterations=400000 elapsed_ms=355.942 ops_per_second=1123778.17 nanos_per_op=889.86
+put_composable_index_template_reject_request_decode iterations=400000 elapsed_ms=338.706 ops_per_second=1180965.02 nanos_per_op=846.77
+put_composable_index_template_reject_validation iterations=400000 elapsed_ms=349.263 ops_per_second=1145267.34 nanos_per_op=873.16
+put_composable_index_template_reject_wire_bottleneck_ops_per_second=1123778.17
+```
+
+The current put-composable-index-template fail-closed boundary bottleneck is
+request encode. The default benchmark writes the cluster-manager request
+envelope, template name, absent cause, create flag, one index pattern, absent
+nested template, absent composed-of list, absent priority/version, absent
+metadata map, absent data-stream marker, and absent context marker before
+rejecting execution. At roughly 1.12M ops/s in the latest local release run,
+the remaining performance-sensitive work is composable index-template
+validation, metadata publication, and acknowledged response rendering.
 
 Current get-composable-index-template reject wire microbenchmark:
 
