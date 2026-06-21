@@ -992,6 +992,19 @@ The simulate-index-template boundary covers:
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
   index names, inline template bodies, and simulate-index-template execution.
 
+The simulate-template boundary covers:
+
+- OpenSearch `SimulateTemplateAction.Request` parent task, cluster-manager
+  timeout, local flag, optional template name, and optional nested
+  `PutComposableIndexTemplateAction.Request` marker at the OpenSearch 3.x wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:admin/index_template/simulate`
+  until named or inline composable template resolution and simulated metadata
+  response rendering are implemented against Rust cluster metadata;
+- explicit rejection for custom cluster-manager timeouts, local reads, missing
+  template name/body targets, empty template names, inline template bodies, and
+  simulate-template execution.
+
 The field-capabilities boundary covers:
 
 - OpenSearch `FieldCapabilitiesRequest` parent task, fields array, indices
@@ -2419,6 +2432,23 @@ local flag, index name, and absent inline template body before rejecting
 execution. At roughly 1.36M ops/s in the latest local release run, the
 remaining performance-sensitive work is composable template resolution,
 simulation merge logic, and simulated metadata response rendering.
+
+Current simulate-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin simulate-template-reject-wire-benchmark
+simulate_template_reject_request_encode iterations=400000 elapsed_ms=307.807 ops_per_second=1299516.72 nanos_per_op=769.52
+simulate_template_reject_request_decode iterations=400000 elapsed_ms=277.956 ops_per_second=1439076.19 nanos_per_op=694.89
+simulate_template_reject_validation iterations=400000 elapsed_ms=357.403 ops_per_second=1119186.03 nanos_per_op=893.51
+simulate_template_reject_wire_bottleneck_ops_per_second=1119186.03
+```
+
+The current simulate-template fail-closed boundary bottleneck is validation.
+The default benchmark writes the cluster-manager read request envelope, local
+flag, template name, and absent inline template body before rejecting
+execution. At roughly 1.12M ops/s in the latest local release run, the
+remaining performance-sensitive work is named/inline composable template
+resolution, simulation merge logic, and simulated metadata response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 
