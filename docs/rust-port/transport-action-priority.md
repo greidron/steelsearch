@@ -262,6 +262,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/get` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/delete` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/simulate` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -915,6 +916,22 @@ The delete-pipeline boundary covers:
   and ack rendering are implemented;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing ids, and delete-pipeline execution.
+
+The simulate-pipeline boundary covers:
+
+- OpenSearch `SimulatePipelineRequest` parent task, optional pipeline id,
+  verbose flag, source bytes, and media type at the OpenSearch 3.x wire
+  decode/build layer;
+- OpenSearch `SimulatePipelineResponse` optional pipeline id, verbose flag,
+  and empty result count decode/build, with explicit rejection for non-empty
+  document/processor result payloads until those result shapes are modeled;
+- explicit fail-closed classification for
+  `cluster:admin/ingest/pipeline/simulate` until ingest pipeline source
+  parsing, processor execution, verbose result capture, and response rendering
+  are implemented;
+- explicit rejection for missing source bytes, non-JSON media types, and
+  simulate-pipeline execution, plus defensive decode rejection for negative
+  response result counts.
 
 The resize boundary covers:
 
@@ -2596,6 +2613,24 @@ release run, current overhead is transport serialization. Future
 performance-sensitive work is wildcard matching against the Rust ingest
 pipeline metadata catalog, missing-pipeline response handling, metadata
 mutation, throttling, and ack rendering.
+
+Current simulate-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin simulate-pipeline-reject-wire-benchmark
+simulate_pipeline_reject_request_encode iterations=400000 elapsed_ms=388.827 ops_per_second=1028733.92 nanos_per_op=972.07
+simulate_pipeline_reject_request_decode iterations=400000 elapsed_ms=368.415 ops_per_second=1085732.62 nanos_per_op=921.04
+simulate_pipeline_reject_validation iterations=400000 elapsed_ms=376.035 ops_per_second=1063729.46 nanos_per_op=940.09
+simulate_pipeline_empty_response_decode iterations=400000 elapsed_ms=95.969 ops_per_second=4168018.49 nanos_per_op=239.92
+simulate_pipeline_reject_wire_bottleneck_ops_per_second=1028733.92
+```
+
+The current simulate-pipeline fail-closed boundary bottleneck is request
+encode. The request path carries optional pipeline id, verbose flag, source
+bytes, and media type before rejecting execution. At roughly 1.03M ops/s in the
+latest local release run, current overhead is transport serialization. Future
+performance-sensitive work is JSON source parsing, processor execution,
+verbose result capture, and non-empty simulate response rendering.
 
 Current resize reject wire microbenchmark:
 
