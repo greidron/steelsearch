@@ -130,6 +130,24 @@
       "reason": "Delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering before Steelsearch can serve OpenSearch index deletion semantics."
     },
     {
+      "action_name": "indices:admin/open",
+      "action_type": "OpenIndexAction",
+      "transport_action": "TransportOpenIndexAction",
+      "request_wire_type": "OpenIndexRequest",
+      "response_wire_type": "OpenIndexResponse",
+      "disposition": "rejected",
+      "reason": "Open-index transport execution requires index metadata mutation, shard allocation, and shards-ack rendering before Steelsearch can serve OpenSearch index opening semantics."
+    },
+    {
+      "action_name": "indices:admin/close",
+      "action_type": "CloseIndexAction",
+      "transport_action": "TransportCloseIndexAction",
+      "request_wire_type": "CloseIndexRequest",
+      "response_wire_type": "CloseIndexResponse",
+      "disposition": "rejected",
+      "reason": "Close-index transport execution requires index metadata mutation, shard state transition, and close response rendering before Steelsearch can serve OpenSearch index closing semantics."
+    },
+    {
       "action_name": "indices:admin/get",
       "action_type": "GetIndexAction",
       "transport_action": "TransportGetIndexAction",

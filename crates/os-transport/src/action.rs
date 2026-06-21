@@ -46,6 +46,8 @@ pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/ge
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
+pub const OPENSEARCH_OPEN_INDEX_ACTION_NAME: &str = "indices:admin/open";
+pub const OPENSEARCH_CLOSE_INDEX_ACTION_NAME: &str = "indices:admin/close";
 pub const OPENSEARCH_GET_INDEX_ACTION_NAME: &str = "indices:admin/get";
 pub const OPENSEARCH_INDICES_EXISTS_ACTION_NAME: &str = "indices:admin/exists";
 pub const OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME: &str = "indices:admin/template/get";
@@ -330,6 +332,24 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map index deletion onto Rust cluster metadata mutation, shard cleanup, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_OPEN_INDEX_ACTION_NAME,
+        action_type: "OpenIndexAction",
+        transport_action: "TransportOpenIndexAction",
+        request_wire_type: "OpenIndexRequest",
+        response_wire_type: "OpenIndexResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map index opening onto Rust cluster metadata mutation, shard allocation, and shards-ack response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_CLOSE_INDEX_ACTION_NAME,
+        action_type: "CloseIndexAction",
+        transport_action: "TransportCloseIndexAction",
+        request_wire_type: "CloseIndexRequest",
+        response_wire_type: "CloseIndexResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map index closing onto Rust cluster metadata mutation, shard state transition, and per-index close response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_INDEX_ACTION_NAME,
@@ -744,6 +764,16 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering",
+        },
+        OPENSEARCH_OPEN_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "open-index transport execution requires index metadata mutation, shard allocation, and shards-ack rendering",
+        },
+        OPENSEARCH_CLOSE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "close-index transport execution requires index metadata mutation, shard state transition, and close response rendering",
         },
         OPENSEARCH_GET_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2940,6 +2970,82 @@ pub fn read_opensearch_delete_index_request_message(
     OpenSearchDeleteIndexRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_open_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchOpenIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_OPEN_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_open_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchOpenIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_OPEN_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_OPEN_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchOpenIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_close_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchCloseIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_CLOSE_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_close_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCloseIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_CLOSE_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_CLOSE_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchCloseIndexRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_delete_index_template_request_message(
     request_id: i64,
     version: Version,
@@ -4745,6 +4851,202 @@ impl OpenSearchDeleteIndexRequestWire {
             shape: "delete index execution",
             reason:
                 "delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchOpenIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub wait_for_active_shards: i32,
+}
+
+impl Default for OpenSearchOpenIndexRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::open_index_default(),
+            wait_for_active_shards: -2,
+        }
+    }
+}
+
+impl OpenSearchOpenIndexRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_i32(self.wait_for_active_shards);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            wait_for_active_shards: input.read_i32()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the open-index adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index ack timeout",
+                reason: "custom ack timeout is not mapped by the open-index adapter yet",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index empty indices",
+                reason: "OpenSearch open-index requests require at least one index expression",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index blank index",
+                reason: "blank open-index targets require index validation before execution",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::open_index_default() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index indices options",
+                reason: "custom open-index indices options require index resolution semantics",
+            });
+        }
+        if self.wait_for_active_shards != -2 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index wait-for-active-shards",
+                reason:
+                    "custom wait-for-active-shards requires shard allocation acknowledgement semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "open index execution",
+            reason:
+                "open-index transport execution requires index metadata mutation, shard allocation, and shards-ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCloseIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub wait_for_active_shards: i32,
+}
+
+impl Default for OpenSearchCloseIndexRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            wait_for_active_shards: 0,
+        }
+    }
+}
+
+impl OpenSearchCloseIndexRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_i32(self.wait_for_active_shards);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            wait_for_active_shards: input.read_i32()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the close-index adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index ack timeout",
+                reason: "custom ack timeout is not mapped by the close-index adapter yet",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index empty indices",
+                reason: "OpenSearch close-index requests require at least one index expression",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index blank index",
+                reason: "blank close-index targets require index validation before execution",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index indices options",
+                reason: "custom close-index indices options require index resolution semantics",
+            });
+        }
+        if self.wait_for_active_shards != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index wait-for-active-shards",
+                reason:
+                    "custom wait-for-active-shards requires shard state acknowledgement semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "close index execution",
+            reason:
+                "close-index transport execution requires index metadata mutation, shard state transition, and close response rendering",
         })
     }
 }
@@ -10273,6 +10575,20 @@ impl OpenSearchIndicesOptionsWire {
         }
     }
 
+    pub const fn open_index_default() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: false,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: false,
+            ignore_throttled: false,
+            expand_open: false,
+            expand_closed: true,
+            expand_hidden: false,
+        }
+    }
+
     pub const fn lenient_expand_open() -> Self {
         Self {
             ignore_unavailable: true,
@@ -11391,6 +11707,24 @@ mod tests {
                     next_step: "map index deletion onto Rust cluster metadata mutation, shard cleanup, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/open",
+                    action_type: "OpenIndexAction",
+                    transport_action: "TransportOpenIndexAction",
+                    request_wire_type: "OpenIndexRequest",
+                    response_wire_type: "OpenIndexResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map index opening onto Rust cluster metadata mutation, shard allocation, and shards-ack response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/close",
+                    action_type: "CloseIndexAction",
+                    transport_action: "TransportCloseIndexAction",
+                    request_wire_type: "CloseIndexRequest",
+                    response_wire_type: "CloseIndexResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map index closing onto Rust cluster metadata mutation, shard state transition, and per-index close response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/get",
                     action_type: "GetIndexAction",
                     transport_action: "TransportGetIndexAction",
@@ -11781,6 +12115,14 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_OPEN_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CLOSE_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -11899,6 +12241,8 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
@@ -15710,6 +16054,242 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_open_index_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchOpenIndexRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchOpenIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.indices, vec!["logs-000001"]);
+        assert_eq!(decoded.wait_for_active_shards, -2);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_open_index_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchOpenIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchOpenIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchOpenIndexRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchOpenIndexRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index ack timeout",
+                ..
+            })
+        ));
+
+        let empty_indices = OpenSearchOpenIndexRequestWire {
+            indices: Vec::new(),
+            ..OpenSearchOpenIndexRequestWire::default()
+        };
+        assert!(matches!(
+            empty_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index empty indices",
+                ..
+            })
+        ));
+
+        let blank_index = OpenSearchOpenIndexRequestWire {
+            indices: vec![" ".to_string()],
+            ..OpenSearchOpenIndexRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = OpenSearchOpenIndexRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ..OpenSearchOpenIndexRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index indices options",
+                ..
+            })
+        ));
+
+        let wait_for_active_shards = OpenSearchOpenIndexRequestWire {
+            wait_for_active_shards: 1,
+            ..OpenSearchOpenIndexRequestWire::default()
+        };
+        assert!(matches!(
+            wait_for_active_shards.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index wait-for-active-shards",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_open_index_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchOpenIndexRequestWire::default();
+        let mut frame =
+            build_opensearch_open_index_request_message(68, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected open index request message");
+        };
+        assert_eq!(
+            read_opensearch_open_index_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_open_index_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "open index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_close_index_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchCloseIndexRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchCloseIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.indices, vec!["logs-000001"]);
+        assert_eq!(decoded.wait_for_active_shards, 0);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_close_index_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchCloseIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCloseIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchCloseIndexRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCloseIndexRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index ack timeout",
+                ..
+            })
+        ));
+
+        let empty_indices = OpenSearchCloseIndexRequestWire {
+            indices: Vec::new(),
+            ..OpenSearchCloseIndexRequestWire::default()
+        };
+        assert!(matches!(
+            empty_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index empty indices",
+                ..
+            })
+        ));
+
+        let blank_index = OpenSearchCloseIndexRequestWire {
+            indices: vec![" ".to_string()],
+            ..OpenSearchCloseIndexRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = OpenSearchCloseIndexRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::open_index_default(),
+            ..OpenSearchCloseIndexRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index indices options",
+                ..
+            })
+        ));
+
+        let wait_for_active_shards = OpenSearchCloseIndexRequestWire {
+            wait_for_active_shards: 1,
+            ..OpenSearchCloseIndexRequestWire::default()
+        };
+        assert!(matches!(
+            wait_for_active_shards.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index wait-for-active-shards",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_close_index_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchCloseIndexRequestWire::default();
+        let mut frame =
+            build_opensearch_close_index_request_message(69, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected close index request message");
+        };
+        assert_eq!(
+            read_opensearch_close_index_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_close_index_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index execution",
                 ..
             })
         ));

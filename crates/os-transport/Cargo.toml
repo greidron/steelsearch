@@ -86,6 +86,14 @@ name = "delete-index-reject-wire-benchmark"
 path = "benchmarks/delete_index_reject_wire.rs"
 
 [[bin]]
+name = "open-index-reject-wire-benchmark"
+path = "benchmarks/open_index_reject_wire.rs"
+
+[[bin]]
+name = "close-index-reject-wire-benchmark"
+path = "benchmarks/close_index_reject_wire.rs"
+
+[[bin]]
 name = "indices-exists-reject-wire-benchmark"
 path = "benchmarks/indices_exists_reject_wire.rs"
 

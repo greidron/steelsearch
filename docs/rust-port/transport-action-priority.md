@@ -380,6 +380,31 @@ The delete-index boundary covers:
   acknowledgement timeouts, empty or blank index targets, custom indices
   options, and delete-index execution.
 
+The open-index boundary covers:
+
+- OpenSearch `OpenIndexRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, indices array, `IndicesOptions.fromOptions(false,
+  true, false, true)`, and default `ActiveShardCount` at the wire decode/build
+  layer;
+- explicit fail-closed classification for `indices:admin/open` until index
+  metadata mutation, shard allocation, and shards-ack response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, empty or blank index targets, custom indices
+  options, custom wait-for-active-shards, and open-index execution.
+
+The close-index boundary covers:
+
+- OpenSearch `CloseIndexRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, indices array, `IndicesOptions.strictExpandOpen()`,
+  and `ActiveShardCount.NONE` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/close` until index
+  metadata mutation, shard state transition, and close response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, empty or blank index targets, custom indices
+  options, custom wait-for-active-shards, and close-index execution.
+
 The get-index boundary covers:
 
 - OpenSearch `GetIndexRequest` parent task, cluster-manager timeout, local
@@ -1072,6 +1097,43 @@ delete-index default indices options before the execution boundary rejects. At
 roughly 1.39M ops/s in the latest local release run, the future
 performance-sensitive work is index metadata mutation, shard cleanup, and
 acknowledged response rendering rather than the fail-closed wire boundary.
+
+Current open-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin open-index-reject-wire-benchmark
+open_index_reject_request_encode iterations=400000 elapsed_ms=276.449 ops_per_second=1446921.63 nanos_per_op=691.12
+open_index_reject_request_decode iterations=400000 elapsed_ms=292.761 ops_per_second=1366300.88 nanos_per_op=731.90
+open_index_reject_validation iterations=400000 elapsed_ms=425.628 ops_per_second=939787.79 nanos_per_op=1064.07
+open_index_reject_wire_bottleneck_ops_per_second=939787.79
+```
+
+The current open-index fail-closed boundary bottleneck is validation over the
+decoded request. The request carries an acknowledged-request envelope,
+non-empty index target, open-index default indices options, and default
+wait-for-active-shards before the execution boundary rejects. At roughly 0.94M
+ops/s in the latest local release run, the fail-closed boundary remains cheap,
+but the validation branch is the local bottleneck to revisit if this path becomes
+hot before the real index metadata mutation, shard allocation, and shards-ack
+response rendering work lands.
+
+Current close-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin close-index-reject-wire-benchmark
+close_index_reject_request_encode iterations=400000 elapsed_ms=281.995 ops_per_second=1418467.36 nanos_per_op=704.99
+close_index_reject_request_decode iterations=400000 elapsed_ms=272.221 ops_per_second=1469395.14 nanos_per_op=680.55
+close_index_reject_validation iterations=400000 elapsed_ms=276.253 ops_per_second=1447946.76 nanos_per_op=690.63
+close_index_reject_wire_bottleneck_ops_per_second=1418467.36
+```
+
+The current close-index fail-closed boundary bottleneck is request encode. The
+request carries an acknowledged-request envelope, non-empty index target,
+close-index default indices options, and `ActiveShardCount.NONE` before the
+execution boundary rejects. At roughly 1.42M ops/s in the latest local release
+run, the future performance-sensitive work is index metadata mutation, shard
+state transition, and close response rendering rather than the fail-closed wire
+boundary.
 
 Current get-index reject wire microbenchmark:
 
