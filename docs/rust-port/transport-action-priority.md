@@ -195,6 +195,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/allocation/explain` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/reroute` (rejected fail-closed)
+- `cluster:admin/filecache/prune` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
@@ -437,6 +438,17 @@ The cluster-reroute boundary covers:
 - explicit rejection for non-empty allocation commands, custom
   cluster-manager timeout, custom acknowledgement timeout, dry-run execution,
   explanation rendering, retry-failed execution, and reroute execution.
+
+The prune-file-cache boundary covers:
+
+- OpenSearch `PruneFileCacheRequest` parent task, node id selector array,
+  optional concrete node payload marker, and optional timeout at the wire
+  decode/build layer;
+- explicit fail-closed classification for `cluster:admin/filecache/prune`
+  until warm-node file cache pruning, node response collection, and aggregate
+  response rendering are implemented;
+- explicit rejection for concrete node payloads, node filters, timeout, and
+  prune-file-cache execution.
 
 The get-repositories boundary covers:
 
@@ -1193,6 +1205,24 @@ and shard filter array before admission rejects execution. At roughly 1.53M
 ops/s in the latest local release run, this boundary is not a material
 transport bottleneck; the first performance-sensitive work is remote store
 shard metadata collection and response rendering.
+
+Current prune-file-cache reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin prune-file-cache-reject-wire-benchmark
+prune_file_cache_reject_request_encode iterations=400000 elapsed_ms=211.141 ops_per_second=1894469.76 nanos_per_op=527.85
+prune_file_cache_reject_request_decode iterations=400000 elapsed_ms=201.026 ops_per_second=1989794.16 nanos_per_op=502.56
+prune_file_cache_reject_validation iterations=400000 elapsed_ms=200.998 ops_per_second=1990068.57 nanos_per_op=502.50
+prune_file_cache_reject_wire_bottleneck_ops_per_second=1894469.76
+```
+
+The current prune-file-cache fail-closed boundary bottleneck is request encode.
+The payload includes the base nodes request envelope, node selector array,
+concrete-node payload marker, and optional timeout before admission rejects
+execution. At roughly 1.89M ops/s in the latest local release run, this
+boundary is not a material transport bottleneck; the first
+performance-sensitive work is warm-node resolution, file cache pruning, and
+node response aggregation.
 
 Current nodes-usage reject wire microbenchmark:
 

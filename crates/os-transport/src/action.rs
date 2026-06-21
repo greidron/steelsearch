@@ -42,6 +42,7 @@ pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/up
 pub const CLUSTER_REROUTE_ACTION_NAME: &str = "cluster:admin/reroute";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
+pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
 pub const GET_TASK_ACTION_NAME: &str = "cluster:monitor/task/get";
 pub const CANCEL_TASKS_ACTION_NAME: &str = "cluster:admin/tasks/cancel";
@@ -249,6 +250,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterRerouteAction",
         request_wire_type: "ClusterRerouteRequest",
         response_wire_type: "ClusterRerouteResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: PRUNE_FILE_CACHE_ACTION_NAME,
+        action_type: "PruneFileCacheAction",
+        transport_action: "TransportPruneFileCacheAction",
+        request_wire_type: "PruneFileCacheRequest",
+        response_wire_type: "PruneFileCacheResponse",
     },
     SourceTransportActionSpec {
         action_name: GET_REPOSITORIES_ACTION_NAME,
@@ -856,6 +864,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "pending-tasks observer transport adapter is available",
+        },
+        PRUNE_FILE_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "prune-file-cache transport execution requires warm-node file cache pruning and response rendering",
         },
         LIST_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2413,6 +2426,65 @@ impl RemoteStoreMetadataRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct PruneFileCacheRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+}
+
+impl PruneFileCacheRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache concrete nodes",
+                reason:
+                    "prune-file-cache concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache node filter",
+                reason: "prune-file-cache node filtering requires warm-node resolution",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache timeout",
+                reason:
+                    "prune-file-cache timeout semantics require transport nodes action execution",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "prune file cache execution",
+            reason: "prune-file-cache transport execution requires warm-node file cache pruning and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct NodesUsageRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -3128,6 +3200,44 @@ pub fn read_remote_store_metadata_request_message(
         });
     }
     RemoteStoreMetadataRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_prune_file_cache_request_message(
+    request_id: i64,
+    version: Version,
+    request: &PruneFileCacheRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(PRUNE_FILE_CACHE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_prune_file_cache_request_message(
+    message: &TransportMessage,
+) -> Result<PruneFileCacheRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != PRUNE_FILE_CACHE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: PRUNE_FILE_CACHE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    PruneFileCacheRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_usage_request_message(
@@ -13061,6 +13171,13 @@ mod tests {
                     response_wire_type: "ClusterRerouteResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/filecache/prune",
+                    action_type: "PruneFileCacheAction",
+                    transport_action: "TransportPruneFileCacheAction",
+                    request_wire_type: "PruneFileCacheRequest",
+                    response_wire_type: "PruneFileCacheResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/repository/get",
                     action_type: "GetRepositoriesAction",
                     transport_action: "TransportGetRepositoriesAction",
@@ -13531,6 +13648,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_STORE_METADATA_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(PRUNE_FILE_CACHE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -16701,6 +16822,94 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "remote store metadata execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn prune_file_cache_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = PruneFileCacheRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(30),
+            ..PruneFileCacheRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = PruneFileCacheRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn prune_file_cache_request_rejects_unsupported_shapes() {
+        let node_filter = PruneFileCacheRequestWire {
+            node_ids: vec!["warm-node-1".to_string()],
+            ..PruneFileCacheRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache node filter",
+                ..
+            })
+        ));
+
+        let timeout = PruneFileCacheRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..PruneFileCacheRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache timeout",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn prune_file_cache_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            PruneFileCacheRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn prune_file_cache_transport_messages_bind_rejected_action_frame() {
+        let request = PruneFileCacheRequestWire::default();
+        let mut frame =
+            build_prune_file_cache_request_message(30, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected prune file cache request message");
+        };
+        assert_eq!(
+            read_prune_file_cache_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_prune_file_cache_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache execution",
                 ..
             })
         ));

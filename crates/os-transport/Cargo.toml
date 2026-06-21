@@ -70,6 +70,10 @@ name = "remote-store-metadata-reject-wire-benchmark"
 path = "benchmarks/remote_store_metadata_reject_wire.rs"
 
 [[bin]]
+name = "prune-file-cache-reject-wire-benchmark"
+path = "benchmarks/prune_file_cache_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 
