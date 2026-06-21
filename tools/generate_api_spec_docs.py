@@ -86,6 +86,11 @@ def transport_family(row: dict[str, str]) -> str:
         return "vector-and-ml"
     if any(token in action for token in ("Search", "Pit", "Explain", "RankEval", "Suggest")):
         return "search"
+    if any(
+        token in action
+        for token in ("GetIndex", "GetMappings", "GetFieldMappings", "GetAliases", "GetSettings")
+    ):
+        return "index-and-metadata"
     if any(token in action for token in ("Index", "Delete", "Update", "Bulk", "Refresh", "Reindex", "DeleteByQuery", "UpdateByQuery")):
         return "document-and-bulk"
     if any(token in action for token in ("Cluster", "Nodes", "Task", "Voting", "Wlm", "MainAction")):
@@ -246,6 +251,11 @@ def transport_meaning(action: str) -> str:
         return "Transport action for task listing, lookup, completion, or cancellation."
     if "Search" in text or "Pit" in text or "Suggest" in text or "RankEval" in text:
         return "Transport action used by search or search-adjacent features."
+    if any(
+        token in text
+        for token in ("GetIndex", "GetMappings", "GetFieldMappings", "GetAliases", "GetSettings")
+    ):
+        return "Transport action used by index metadata read features."
     if "Bulk" in text or "Index" in text or "Update" in text or "Delete" in text or "Refresh" in text:
         return "Transport action used by write-path or document lifecycle features."
     if "Snapshot" in text or "Repository" in text or "Dangling" in text or "RemoteStore" in text:
@@ -266,6 +276,8 @@ def transport_gap(status: str, family: str) -> str:
         return "Write transport parity still needs sequencing, replication semantics, and conflict behavior."
     if family == "root-cluster-node":
         return "Operational transport parity still needs admin runtime, tasking, and cluster-coordination semantics."
+    if family == "index-and-metadata":
+        return "Metadata transport parity still needs index resolution and response rendering semantics."
     return "Transport parity remains incomplete."
 
 

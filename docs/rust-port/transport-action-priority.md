@@ -188,6 +188,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
+- `indices:admin/get` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -344,6 +345,20 @@ The get-field-mappings boundary covers:
   until field mapping metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and get-field-mappings execution.
+
+The get-index boundary covers:
+
+- OpenSearch `GetIndexRequest` parent task, cluster-manager timeout, local
+  flag, indices array, `IndicesOptions.strictExpandOpen()`, feature byte array
+  (`ALIASES`, `MAPPINGS`, `SETTINGS`, `CONTEXT`), `humanReadable`, and
+  `includeDefaults` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/get` until aliases,
+  mappings, settings, and index context metadata can be rendered from Rust
+  cluster metadata with OpenSearch-compatible semantics;
+- explicit rejection for custom cluster-manager timeouts, index filters, local
+  reads, custom indices options, partial feature selection, human-readable
+  settings rendering, default setting expansion, unknown feature ids, and
+  get-index execution.
 
 The field-capabilities boundary covers:
 
@@ -910,6 +925,23 @@ encode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
+
+Current get-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-index-reject-wire-benchmark
+get_index_reject_request_encode iterations=400000 elapsed_ms=214.228 ops_per_second=1867165.60 nanos_per_op=535.57
+get_index_reject_request_decode iterations=400000 elapsed_ms=221.578 ops_per_second=1805236.92 nanos_per_op=553.94
+get_index_reject_validation iterations=400000 elapsed_ms=225.751 ops_per_second=1771860.54 nanos_per_op=564.38
+get_index_reject_wire_bottleneck_ops_per_second=1771860.54
+```
+
+The current get-index fail-closed boundary bottleneck is validation over the
+decoded request. The request carries the ClusterManagerNodeRead envelope, empty
+index array, `IndicesOptions.strictExpandOpen()`, default feature byte array,
+and two boolean rendering flags. At roughly 1.77M ops/s in the latest local
+release run, the remaining performance risk is not the wire boundary; it is the
+future aliases/mappings/settings/context metadata response rendering path.
 
 Current field-capabilities reject wire microbenchmark:
 

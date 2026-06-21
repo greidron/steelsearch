@@ -44,6 +44,7 @@ pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_
 pub const OPENSEARCH_GET_ALL_PITS_ACTION_NAME: &str = "indices:data/read/point_in_time/readall";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
+pub const OPENSEARCH_GET_INDEX_ACTION_NAME: &str = "indices:admin/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -298,6 +299,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetFieldMappingsResponse",
         adapter_stage: "metadata-read",
         next_step: "map bounded field-mapping reads onto Rust cluster metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_INDEX_ACTION_NAME,
+        action_type: "GetIndexAction",
+        transport_action: "TransportGetIndexAction",
+        request_wire_type: "GetIndexRequest",
+        response_wire_type: "GetIndexResponse",
+        adapter_stage: "metadata-read",
+        next_step: "map bounded index metadata reads onto Rust cluster metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
@@ -630,6 +640,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
+        },
+        OPENSEARCH_GET_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-index transport execution requires index metadata response rendering",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2592,6 +2607,44 @@ pub fn read_opensearch_get_field_mappings_request_message(
     OpenSearchGetFieldMappingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetIndexRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_field_capabilities_request_message(
     request_id: i64,
     version: Version,
@@ -3668,6 +3721,137 @@ impl OpenSearchGetFieldMappingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get field mappings execution",
             reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
+        })
+    }
+}
+
+pub const OPENSEARCH_GET_INDEX_DEFAULT_FEATURES: &[u8] = &[0, 1, 2, 3];
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub features: Vec<u8>,
+    pub human_readable: bool,
+    pub include_defaults: bool,
+}
+
+impl Default for OpenSearchGetIndexRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            features: OPENSEARCH_GET_INDEX_DEFAULT_FEATURES.to_vec(),
+            human_readable: false,
+            include_defaults: false,
+        }
+    }
+}
+
+impl OpenSearchGetIndexRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_vint(self.features.len() as i32);
+        for feature in &self.features {
+            output.write_byte(*feature);
+        }
+        output.write_bool(self.human_readable);
+        output.write_bool(self.include_defaults);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let local = input.read_bool()?;
+        let indices = input.read_string_array()?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let feature_count = read_len(&mut input)?;
+        let mut features = Vec::with_capacity(feature_count);
+        for _ in 0..feature_count {
+            let feature = input.read_byte()?;
+            if feature > 3 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get index feature id",
+                    reason: "get-index feature id must match OpenSearch GetIndexRequest.Feature",
+                });
+            }
+            features.push(feature);
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            local,
+            indices,
+            indices_options,
+            features,
+            human_readable: input.read_bool()?,
+            include_defaults: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the get-index adapter yet",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index index filter",
+                reason: "index-scoped metadata reads require index metadata response rendering",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index local",
+                reason: "local get-index reads require local cluster-state response semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index indices options",
+                reason:
+                    "custom get-index indices options require cluster metadata resolution semantics",
+            });
+        }
+        if self.features != OPENSEARCH_GET_INDEX_DEFAULT_FEATURES {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index feature selection",
+                reason: "partial get-index feature rendering is not mapped by this adapter",
+            });
+        }
+        if self.human_readable {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index human readable",
+                reason: "human-readable settings rendering is not mapped by this adapter",
+            });
+        }
+        if self.include_defaults {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index include defaults",
+                reason: "default setting expansion is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get index execution",
+            reason: "get-index transport execution requires index metadata response rendering",
         })
     }
 }
@@ -9925,6 +10109,15 @@ mod tests {
                     next_step: "map bounded field-mapping reads onto Rust cluster metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/get",
+                    action_type: "GetIndexAction",
+                    transport_action: "TransportGetIndexAction",
+                    request_wire_type: "GetIndexRequest",
+                    response_wire_type: "GetIndexResponse",
+                    adapter_stage: "metadata-read",
+                    next_step: "map bounded index metadata reads onto Rust cluster metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -10235,6 +10428,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -10309,6 +10506,7 @@ mod tests {
             if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -13469,6 +13667,156 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get field mappings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_index_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetIndexRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.features, OPENSEARCH_GET_INDEX_DEFAULT_FEATURES);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_index_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchGetIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let index_filter = OpenSearchGetIndexRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index index filter",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetIndexRequestWire {
+            local: true,
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index local",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchGetIndexRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open()
+            },
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index indices options",
+                ..
+            })
+        ));
+
+        let feature_selection = OpenSearchGetIndexRequestWire {
+            features: vec![1, 2],
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            feature_selection.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index feature selection",
+                ..
+            })
+        ));
+
+        let human_readable = OpenSearchGetIndexRequestWire {
+            human_readable: true,
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            human_readable.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index human readable",
+                ..
+            })
+        ));
+
+        let include_defaults = OpenSearchGetIndexRequestWire {
+            include_defaults: true,
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        assert!(matches!(
+            include_defaults.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index include defaults",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_index_request_rejects_unknown_feature_ids() {
+        let request = OpenSearchGetIndexRequestWire {
+            features: vec![0, 4],
+            ..OpenSearchGetIndexRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        assert!(matches!(
+            OpenSearchGetIndexRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index feature id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_index_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchGetIndexRequestWire::default();
+        let mut frame =
+            build_opensearch_get_index_request_message(58, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get index request message");
+        };
+        assert_eq!(
+            read_opensearch_get_index_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_index_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get index execution",
                 ..
             })
         ));
