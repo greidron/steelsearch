@@ -1735,6 +1735,44 @@ pub fn read_opensearch_indices_stats_request_message(
     OpenSearchIndicesStatsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_cluster_update_settings_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterUpdateSettingsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_update_settings_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterUpdateSettingsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_UPDATE_SETTINGS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterUpdateSettingsRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -1780,6 +1818,37 @@ impl ClusterUpdateSettingsRequestWire {
         };
         require_no_trailing_bytes(&input)?;
         Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not admitted through transport settings mutation",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings ack timeout",
+                reason: "custom acknowledgement timeout is not admitted through transport settings mutation",
+            });
+        }
+        if !self.transient_settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings transient settings",
+                reason: "transient cluster-settings mutation is not admitted through transport",
+            });
+        }
+        if !self.persistent_settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings persistent settings",
+                reason: "persistent cluster-settings mutation is not admitted through transport",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster update settings execution",
+            reason: "cluster settings mutation is not admitted through transport",
+        })
     }
 }
 
@@ -8683,6 +8752,96 @@ mod tests {
             AcknowledgedResponseWire::read(output.freeze()).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn update_settings_request_rejects_unsupported_transport_execution() {
+        let default_request = ClusterUpdateSettingsRequestWire::default();
+        assert!(matches!(
+            default_request.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings execution",
+                ..
+            })
+        ));
+
+        let cluster_manager_timeout = ClusterUpdateSettingsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..ClusterUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = ClusterUpdateSettingsRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..ClusterUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings ack timeout",
+                ..
+            })
+        ));
+
+        let transient_settings = ClusterUpdateSettingsRequestWire {
+            transient_settings: BTreeMap::from([(
+                "cluster.routing.allocation.enable".to_string(),
+                "all".to_string(),
+            )]),
+            ..ClusterUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            transient_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings transient settings",
+                ..
+            })
+        ));
+
+        let persistent_settings = ClusterUpdateSettingsRequestWire {
+            persistent_settings: BTreeMap::from([(
+                "cluster.max_shards_per_node".to_string(),
+                "1000".to_string(),
+            )]),
+            ..ClusterUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            persistent_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings persistent settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_settings_transport_messages_bind_rejected_action_frame() {
+        let request = ClusterUpdateSettingsRequestWire::default();
+        let mut frame =
+            build_cluster_update_settings_request_message(32, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster update settings request message");
+        };
+        assert_eq!(
+            read_cluster_update_settings_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_cluster_update_settings_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster update settings execution",
+                ..
+            })
+        ));
     }
 
     #[test]

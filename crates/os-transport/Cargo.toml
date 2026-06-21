@@ -50,6 +50,10 @@ name = "indices-stats-reject-wire-benchmark"
 path = "benchmarks/indices_stats_reject_wire.rs"
 
 [[bin]]
+name = "cluster-update-settings-reject-wire-benchmark"
+path = "benchmarks/cluster_update_settings_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

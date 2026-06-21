@@ -64,7 +64,7 @@
       "request_wire_type": "ClusterUpdateSettingsRequest",
       "response_wire_type": "ClusterUpdateSettingsResponse",
       "disposition": "rejected",
-      "reason": "Cluster-setting mutation is outside the initial read-mostly Phase B contract."
+      "reason": "Cluster-settings transport mutation is not admitted before Steelsearch maps cluster-manager update, acknowledgement, and publication semantics."
     },
     {
       "action_name": "cluster:monitor/task",

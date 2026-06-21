@@ -182,6 +182,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/info` (rejected fail-closed)
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
+- `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -253,6 +254,19 @@ The nodes-usage boundary covers:
   runtime usage telemetry mapping is implemented;
 - explicit rejection for concrete node payloads, node filters, timeout,
   `restActions`, `aggregations`, and nodes-usage execution.
+
+The cluster-update-settings boundary covers:
+
+- OpenSearch `ClusterUpdateSettingsRequest` parent task, cluster-manager
+  timeout, acknowledgement timeout, transient settings map, and persistent
+  settings map at the wire decode/build layer;
+- OpenSearch acknowledged response boolean decode/build shape;
+- explicit fail-closed classification for `cluster:admin/settings/update` until
+  cluster-manager update, acknowledgement, and publication semantics are mapped
+  for transport mutation;
+- explicit rejection for custom cluster-manager timeout, custom acknowledgement
+  timeout, transient settings, persistent settings, and update-settings
+  execution.
 
 The indices-stats boundary covers:
 
@@ -505,6 +519,22 @@ request payload is compact, with only the BaseNodesRequest envelope and two
 boolean usage flags, so validation does not add measurable overhead. At roughly
 1.91M ops/s in the latest local release run, this is one of the lightest admin
 transport boundaries.
+
+Current cluster-update-settings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cluster-update-settings-reject-wire-benchmark
+cluster_update_settings_reject_request_encode iterations=400000 elapsed_ms=264.946 ops_per_second=1509739.46 nanos_per_op=662.37
+cluster_update_settings_reject_request_decode iterations=400000 elapsed_ms=214.076 ops_per_second=1868494.10 nanos_per_op=535.19
+cluster_update_settings_reject_validation iterations=400000 elapsed_ms=214.743 ops_per_second=1862692.52 nanos_per_op=536.86
+cluster_update_settings_reject_wire_bottleneck_ops_per_second=1509739.46
+```
+
+The current cluster-update-settings fail-closed boundary bottleneck is request
+encode. The request payload writes the parent task, two timeout values, and the
+empty transient/persistent settings maps before failing closed at admission. At
+roughly 1.51M ops/s in the latest local release run, it stays in the same range
+as the lightweight admin transport boundaries.
 
 Current indices-stats reject wire microbenchmark:
 
