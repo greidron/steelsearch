@@ -2,8 +2,8 @@ use bytes::{Bytes, BytesMut};
 use os_core::Version;
 use os_engine::{
     DeleteDocumentRequest, DocumentMetadata, GetDocumentRequest, GetDocumentResponse,
-    IndexDocumentResponse, RefreshRequest, RefreshResponse, SearchHit, SearchRequest,
-    SearchShardSearchResult, SearchShardTarget, WriteResult,
+    IndexDocumentRequest, IndexDocumentResponse, RefreshRequest, RefreshResponse, SearchHit,
+    SearchRequest, SearchShardSearchResult, SearchShardTarget, WriteResult,
 };
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
@@ -272,6 +272,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "multi-get transport adapter is available for the default document subset",
+        },
+        OPENSEARCH_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "index transport adapter is available for the default single-document subset",
         },
         OPENSEARCH_DELETE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -622,6 +627,11 @@ const OPENSEARCH_UNASSIGNED_PRIMARY_TERM: i64 = 0;
 const OPENSEARCH_NOT_FOUND_VERSION: i64 = -1;
 const OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT: i32 = -2;
 const OPENSEARCH_REFRESH_POLICY_NONE: u8 = 0;
+const OPENSEARCH_DOC_WRITE_OP_TYPE_INDEX: u8 = 0;
+const OPENSEARCH_UNSET_AUTO_GENERATED_TIMESTAMP: i64 = -1;
+const OPENSEARCH_JSON_MEDIA_TYPE: &str = "application/json";
+const OPENSEARCH_DOC_WRITE_RESULT_CREATED: u8 = 0;
+const OPENSEARCH_DOC_WRITE_RESULT_UPDATED: u8 = 1;
 const OPENSEARCH_DOC_WRITE_RESULT_DELETED: u8 = 2;
 const OPENSEARCH_DOC_WRITE_RESULT_NOT_FOUND: u8 = 3;
 const OPENSEARCH_UNKNOWN_INDEX_UUID: &str = "_na_";
@@ -1297,6 +1307,465 @@ pub fn read_opensearch_multi_get_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     OpenSearchMultiGetResponseWire::read(message.body.clone().freeze())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub shard_id_present: bool,
+    pub wait_for_active_shards: i32,
+    pub timeout: TimeValueWire,
+    pub index: String,
+    pub routed_based_on_cluster_version: i64,
+    pub refresh_policy: u8,
+    pub id: Option<String>,
+    pub routing: Option<String>,
+    pub source: Value,
+    pub extra_field_values_present: bool,
+    pub op_type: u8,
+    pub version: i64,
+    pub version_type: u8,
+    pub pipeline: Option<String>,
+    pub final_pipeline: Option<String>,
+    pub system_ingest_pipeline: Option<String>,
+    pub pipeline_resolved: bool,
+    pub retry: bool,
+    pub auto_generated_timestamp: i64,
+    pub content_type: Option<String>,
+    pub if_seq_no: i64,
+    pub if_primary_term: i64,
+    pub require_alias: bool,
+}
+
+impl OpenSearchIndexRequestWire {
+    pub fn new(index: String, id: String, source: Value) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            shard_id_present: false,
+            wait_for_active_shards: OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT,
+            timeout: TimeValueWire::minutes(1),
+            index,
+            routed_based_on_cluster_version: 0,
+            refresh_policy: OPENSEARCH_REFRESH_POLICY_NONE,
+            id: Some(id),
+            routing: None,
+            source,
+            extra_field_values_present: false,
+            op_type: OPENSEARCH_DOC_WRITE_OP_TYPE_INDEX,
+            version: OPENSEARCH_MATCH_ANY_VERSION,
+            version_type: OPENSEARCH_VERSION_TYPE_INTERNAL,
+            pipeline: None,
+            final_pipeline: None,
+            system_ingest_pipeline: None,
+            pipeline_resolved: false,
+            retry: false,
+            auto_generated_timestamp: OPENSEARCH_UNSET_AUTO_GENERATED_TIMESTAMP,
+            content_type: Some(OPENSEARCH_JSON_MEDIA_TYPE.into()),
+            if_seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+            if_primary_term: OPENSEARCH_UNASSIGNED_PRIMARY_TERM,
+            require_alias: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        if self.shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request shard id",
+                reason: "explicit shard ids are not encoded by the index adapter yet",
+            });
+        }
+        output.write_bool(false);
+        output.write_i32(self.wait_for_active_shards);
+        self.timeout.write(output);
+        output.write_string(&self.index);
+        output.write_vlong(self.routed_based_on_cluster_version);
+        output.write_byte(self.refresh_policy);
+        output.write_optional_string(self.id.as_deref());
+        output.write_optional_string(self.routing.as_deref());
+        write_json_bytes_reference(output, &self.source)?;
+        if self.extra_field_values_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request extra field values",
+                reason: "extra field values are not encoded by the index adapter yet",
+            });
+        }
+        output.write_bool(false);
+        output.write_byte(self.op_type);
+        output.write_i64(self.version);
+        output.write_byte(self.version_type);
+        output.write_optional_string(self.pipeline.as_deref());
+        output.write_optional_string(self.final_pipeline.as_deref());
+        output.write_optional_string(self.system_ingest_pipeline.as_deref());
+        output.write_bool(self.pipeline_resolved);
+        output.write_bool(self.retry);
+        output.write_i64(self.auto_generated_timestamp);
+        if let Some(content_type) = self.content_type.as_deref() {
+            output.write_bool(true);
+            output.write_string(content_type);
+        } else {
+            output.write_bool(false);
+        }
+        output.write_zlong(self.if_seq_no);
+        output.write_vlong(self.if_primary_term);
+        output.write_bool(self.require_alias);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let shard_id_present = input.read_bool()?;
+        if shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request shard id",
+                reason: "explicit shard ids are not decoded by the index adapter yet",
+            });
+        }
+        let extra_field_values_present;
+        let content_type_present;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            shard_id_present,
+            wait_for_active_shards: input.read_i32()?,
+            timeout: TimeValueWire::read(&mut input)?,
+            index: input.read_string()?,
+            routed_based_on_cluster_version: input.read_vlong()?,
+            refresh_policy: input.read_byte()?,
+            id: input.read_optional_string()?,
+            routing: input.read_optional_string()?,
+            source: read_json_bytes_reference(&mut input)?,
+            extra_field_values_present: {
+                extra_field_values_present = input.read_bool()?;
+                if extra_field_values_present {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "index request extra field values",
+                        reason: "extra field values are not decoded by the index adapter yet",
+                    });
+                }
+                extra_field_values_present
+            },
+            op_type: input.read_byte()?,
+            version: input.read_i64()?,
+            version_type: input.read_byte()?,
+            pipeline: input.read_optional_string()?,
+            final_pipeline: input.read_optional_string()?,
+            system_ingest_pipeline: input.read_optional_string()?,
+            pipeline_resolved: input.read_bool()?,
+            retry: input.read_bool()?,
+            auto_generated_timestamp: input.read_i64()?,
+            content_type: {
+                content_type_present = input.read_bool()?;
+                if content_type_present {
+                    Some(input.read_string()?)
+                } else {
+                    None
+                }
+            },
+            if_seq_no: read_zlong(&mut input)?,
+            if_primary_term: input.read_vlong()?,
+            require_alias: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_request(&self) -> Result<IndexDocumentRequest, TransportActionWireError> {
+        if self.shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request shard id",
+                reason: "explicit shard ids cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.wait_for_active_shards != OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request active shard count",
+                reason:
+                    "custom active-shard waits cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.timeout != TimeValueWire::minutes(1) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request timeout",
+                reason:
+                    "custom replication timeout cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.routed_based_on_cluster_version != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request routed cluster version",
+                reason:
+                    "routed cluster version cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.refresh_policy != OPENSEARCH_REFRESH_POLICY_NONE {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request refresh policy",
+                reason:
+                    "index refresh policy cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request routing",
+                reason: "routing cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.extra_field_values_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request extra field values",
+                reason: "extra field values cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.op_type != OPENSEARCH_DOC_WRITE_OP_TYPE_INDEX {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request op type",
+                reason: "create op type cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.version_type != OPENSEARCH_VERSION_TYPE_INTERNAL
+            || self.version != OPENSEARCH_MATCH_ANY_VERSION
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request versioning",
+                reason: "versioned index cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.pipeline.is_some()
+            || self.final_pipeline.is_some()
+            || self.system_ingest_pipeline.is_some()
+            || self.pipeline_resolved
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request pipeline",
+                reason: "ingest pipelines cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.retry {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request retry flag",
+                reason: "retry state cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.auto_generated_timestamp != OPENSEARCH_UNSET_AUTO_GENERATED_TIMESTAMP {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request auto generated timestamp",
+                reason: "auto-generated ids cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.content_type.as_deref() != Some(OPENSEARCH_JSON_MEDIA_TYPE) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request content type",
+                reason: "only JSON index sources are mapped onto the current index engine request",
+            });
+        }
+        if self.if_seq_no != OPENSEARCH_UNASSIGNED_SEQ_NO
+            || self.if_primary_term != OPENSEARCH_UNASSIGNED_PRIMARY_TERM
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request optimistic concurrency",
+                reason:
+                    "optimistic-concurrency index cannot be mapped onto the current index engine request",
+            });
+        }
+        if self.require_alias {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index request require alias",
+                reason:
+                    "require-alias writes cannot be mapped onto the current index engine request",
+            });
+        }
+        Ok(IndexDocumentRequest {
+            index: self.index.clone(),
+            id: self
+                .id
+                .clone()
+                .ok_or(TransportActionWireError::MissingRequiredField { field: "id" })?,
+            source: self.source.clone(),
+        })
+    }
+}
+
+impl From<IndexDocumentRequest> for OpenSearchIndexRequestWire {
+    fn from(request: IndexDocumentRequest) -> Self {
+        Self::new(request.index, request.id, request.source)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchIndexResponseWire {
+    pub shard_total: i32,
+    pub shard_successful: i32,
+    pub index: String,
+    pub index_uuid: String,
+    pub shard_id: i32,
+    pub id: String,
+    pub version: i64,
+    pub seq_no: i64,
+    pub primary_term: i64,
+    pub forced_refresh: bool,
+    pub result: u8,
+}
+
+impl OpenSearchIndexResponseWire {
+    pub fn created(index: String, metadata: DocumentMetadata) -> Self {
+        Self::from_metadata(index, metadata, OPENSEARCH_DOC_WRITE_RESULT_CREATED)
+    }
+
+    pub fn updated(index: String, metadata: DocumentMetadata) -> Self {
+        Self::from_metadata(index, metadata, OPENSEARCH_DOC_WRITE_RESULT_UPDATED)
+    }
+
+    fn from_metadata(index: String, metadata: DocumentMetadata, result: u8) -> Self {
+        Self {
+            shard_total: 1,
+            shard_successful: 1,
+            index,
+            index_uuid: OPENSEARCH_UNKNOWN_INDEX_UUID.into(),
+            shard_id: 0,
+            id: metadata.id,
+            version: metadata.version as i64,
+            seq_no: metadata.seq_no,
+            primary_term: metadata.primary_term as i64,
+            forced_refresh: false,
+            result,
+        }
+    }
+
+    pub fn from_engine_response(
+        response: IndexDocumentResponse,
+    ) -> Result<Self, TransportActionWireError> {
+        match response.result {
+            WriteResult::Created => Ok(Self::created(response.index, response.metadata)),
+            WriteResult::Updated => Ok(Self::updated(response.index, response.metadata)),
+            WriteResult::Deleted => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index response write result",
+                reason: "deleted engine responses cannot be encoded as IndexResponse",
+            }),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.shard_total);
+        output.write_vint(self.shard_successful);
+        output.write_vint(0);
+        output.write_string(&self.index);
+        output.write_string(&self.index_uuid);
+        output.write_vint(self.shard_id);
+        output.write_string(&self.id);
+        output.write_zlong(self.version);
+        output.write_zlong(self.seq_no);
+        output.write_vlong(self.primary_term);
+        output.write_bool(self.forced_refresh);
+        output.write_byte(self.result);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            shard_total: input.read_vint()?,
+            shard_successful: input.read_vint()?,
+            index: {
+                let shard_failure_count = input.read_vint()?;
+                if shard_failure_count != 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "index response shard failures",
+                        reason: "non-empty failure arrays are not decoded by the index adapter yet",
+                    });
+                }
+                input.read_string()?
+            },
+            index_uuid: input.read_string()?,
+            shard_id: input.read_vint()?,
+            id: input.read_string()?,
+            version: read_zlong(&mut input)?,
+            seq_no: read_zlong(&mut input)?,
+            primary_term: input.read_vlong()?,
+            forced_refresh: input.read_bool()?,
+            result: input.read_byte()?,
+        };
+        if response.result != OPENSEARCH_DOC_WRITE_RESULT_CREATED
+            && response.result != OPENSEARCH_DOC_WRITE_RESULT_UPDATED
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index response result",
+                reason: "only created and updated index results are decoded by the index adapter",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+pub fn build_opensearch_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchIndexResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_index_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndexResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchIndexResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2713,6 +3182,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -2728,6 +3201,7 @@ mod tests {
             let decision = classify_opensearch_transport_action(spec.action_name);
             if spec.action_name == OPENSEARCH_GET_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_GET_ACTION_NAME
+                || spec.action_name == OPENSEARCH_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
             {
@@ -3045,6 +3519,242 @@ mod tests {
         assert!(message.status.is_response());
         assert_eq!(
             read_opensearch_multi_get_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_index_request_wire_round_trips_and_maps_to_engine_request() {
+        let request = OpenSearchIndexRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "hello", "tenant": "tenant-a" }),
+            )
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchIndexRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_request().unwrap(),
+            IndexDocumentRequest {
+                index: "logs-000001".into(),
+                id: "doc-1".into(),
+                source: json!({ "message": "hello", "tenant": "tenant-a" }),
+            }
+        );
+    }
+
+    #[test]
+    fn opensearch_index_request_rejects_unsupported_engine_mapping_options() {
+        let request = OpenSearchIndexRequestWire {
+            routing: Some("tenant-a".into()),
+            ..OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "hello" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "index request routing");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchIndexRequestWire {
+            op_type: 1,
+            ..OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "hello" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "index request op type");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchIndexRequestWire {
+            pipeline: Some("logs-pipeline".into()),
+            ..OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "hello" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "index request pipeline");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchIndexRequestWire {
+            id: None,
+            ..OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "hello" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::MissingRequiredField { field } => {
+                assert_eq!(field, "id");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensearch_index_response_wire_round_trips_created_and_updated_documents() {
+        let created = OpenSearchIndexResponseWire::created(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 1,
+                seq_no: 7,
+                primary_term: 2,
+            },
+        );
+
+        let mut output = StreamOutput::new();
+        created.write(&mut output);
+        assert_eq!(
+            OpenSearchIndexResponseWire::read(output.freeze()).unwrap(),
+            created
+        );
+
+        let updated = OpenSearchIndexResponseWire::updated(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 2,
+                seq_no: 8,
+                primary_term: 2,
+            },
+        );
+        let mut output = StreamOutput::new();
+        updated.write(&mut output);
+        assert_eq!(
+            OpenSearchIndexResponseWire::read(output.freeze()).unwrap(),
+            updated
+        );
+    }
+
+    #[test]
+    fn opensearch_index_response_maps_from_engine_created_and_updated_responses() {
+        let created = IndexDocumentResponse {
+            index: "logs-000001".into(),
+            metadata: DocumentMetadata {
+                id: "doc-1".into(),
+                version: 1,
+                seq_no: 7,
+                primary_term: 2,
+            },
+            coordination: WriteCoordinationMetadata::default(),
+            result: WriteResult::Created,
+        };
+
+        assert_eq!(
+            OpenSearchIndexResponseWire::from_engine_response(created).unwrap(),
+            OpenSearchIndexResponseWire::created(
+                "logs-000001".into(),
+                DocumentMetadata {
+                    id: "doc-1".into(),
+                    version: 1,
+                    seq_no: 7,
+                    primary_term: 2,
+                },
+            )
+        );
+
+        let updated = IndexDocumentResponse {
+            index: "logs-000001".into(),
+            metadata: DocumentMetadata {
+                id: "doc-1".into(),
+                version: 2,
+                seq_no: 8,
+                primary_term: 2,
+            },
+            coordination: WriteCoordinationMetadata::default(),
+            result: WriteResult::Updated,
+        };
+
+        assert_eq!(
+            OpenSearchIndexResponseWire::from_engine_response(updated).unwrap(),
+            OpenSearchIndexResponseWire::updated(
+                "logs-000001".into(),
+                DocumentMetadata {
+                    id: "doc-1".into(),
+                    version: 2,
+                    seq_no: 8,
+                    primary_term: 2,
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn opensearch_index_transport_messages_bind_action_frames() {
+        let request = OpenSearchIndexRequestWire::new(
+            "logs-000001".into(),
+            "doc-1".into(),
+            json!({ "message": "hello" }),
+        );
+        let mut frame =
+            build_opensearch_index_request_message(24, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 24);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_index_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = OpenSearchIndexResponseWire::created(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 1,
+                seq_no: 0,
+                primary_term: 1,
+            },
+        );
+        let mut frame =
+            build_opensearch_index_response_message(24, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 24);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_index_response_message(&message).unwrap(),
             response
         );
     }
