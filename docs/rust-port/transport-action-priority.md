@@ -193,6 +193,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/template/get` (rejected fail-closed)
 - `indices:admin/template/delete` (rejected fail-closed)
 - `cluster:admin/component_template/get` (rejected fail-closed)
+- `cluster:admin/component_template/delete` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -406,6 +407,18 @@ The get-component-template boundary covers:
   wildcard matching semantics;
 - explicit rejection for custom cluster-manager timeouts, local reads, name
   filters, and get-component-template execution.
+
+The delete-component-template boundary covers:
+
+- OpenSearch `DeleteComponentTemplateAction.Request` parent task,
+  cluster-manager timeout, and component-template name at the wire decode/build
+  layer;
+- explicit fail-closed classification for
+  `cluster:admin/component_template/delete` until component-template metadata
+  mutation and acknowledged response rendering are implemented against Rust
+  cluster metadata;
+- explicit rejection for custom cluster-manager timeouts and
+  delete-component-template execution.
 
 The field-capabilities boundary covers:
 
@@ -1053,6 +1066,22 @@ The current get-component-template fail-closed boundary bottleneck is request
 encode. The default benchmark uses an absent optional name, matching the
 OpenSearch all-component-templates request shape; the future
 performance-sensitive work is component-template metadata matching and response
+rendering.
+
+Current delete-component-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-component-template-reject-wire-benchmark
+delete_component_template_reject_request_encode iterations=400000 elapsed_ms=371.948 ops_per_second=1075418.58 nanos_per_op=929.87
+delete_component_template_reject_request_decode iterations=400000 elapsed_ms=297.206 ops_per_second=1345866.73 nanos_per_op=743.02
+delete_component_template_reject_validation iterations=400000 elapsed_ms=340.260 ops_per_second=1175570.74 nanos_per_op=850.65
+delete_component_template_reject_wire_bottleneck_ops_per_second=1075418.58
+```
+
+The current delete-component-template fail-closed boundary bottleneck is
+request encode. This path stays cheap because validation checks only the
+default timeout before failing closed; the future performance-sensitive work is
+component-template metadata mutation, publication, and acknowledged response
 rendering.
 
 Current field-capabilities reject wire microbenchmark:
