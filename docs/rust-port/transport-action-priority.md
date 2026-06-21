@@ -173,14 +173,31 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
 
 ## Current Server-Side Transport Adapters
 
-As of the multi-get transport adapter pass, the explicit dispatcher contract in
+As of the delete transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
 - `cluster:monitor/state`
 - `cluster:monitor/task`
 - `indices:data/read/get`
 - `indices:data/read/mget`
+- `indices:data/write/delete`
 - `indices:admin/refresh`
+
+The delete adapter covers:
+
+- OpenSearch `DeleteRequest` parent task, default replication request header,
+  refresh policy `NONE`, document id, internal version type, match-any version,
+  and unset optimistic-concurrency markers;
+- OpenSearch `DeleteResponse` / `DocWriteResponse` shard info, shard id,
+  document id, version, seq no, primary term, forced refresh flag, and
+  `DELETED` / `NOT_FOUND` result codes for the no-failure response shape;
+- conversion from the default delete request wire subset into the Rust
+  `DeleteDocumentRequest` engine type, and conversion from Rust deleted write
+  responses into OpenSearch delete responses;
+- explicit rejection for explicit shard ids, custom active-shard waits, custom
+  replication timeout, routed cluster version, refresh policies, routing,
+  versioned deletes, and optimistic-concurrency deletes until those semantics
+  are mapped.
 
 The multi-get adapter covers:
 
@@ -222,15 +239,15 @@ Current refresh wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin refresh-wire-benchmark
-refresh_request_encode ops_per_second=1417470.66 nanos_per_op=705.48
-refresh_response_encode ops_per_second=4334563.27 nanos_per_op=230.70
-refresh_request_decode ops_per_second=1213053.89 nanos_per_op=824.37
-refresh_response_decode ops_per_second=3983807.58 nanos_per_op=251.02
-refresh_wire_bottleneck_ops_per_second=1213053.89
+refresh_request_encode ops_per_second=1414129.13 nanos_per_op=707.15
+refresh_response_encode ops_per_second=4358988.79 nanos_per_op=229.41
+refresh_request_decode ops_per_second=1449436.62 nanos_per_op=689.92
+refresh_response_decode ops_per_second=4221082.13 nanos_per_op=236.91
+refresh_wire_bottleneck_ops_per_second=1414129.13
 ```
 
 The current refresh wire bottleneck alternates between request encode and
-request decode across local release runs. At roughly 1.21M ops/s in the latest
+request decode across local release runs. At roughly 1.41M ops/s in the latest
 run, this adapter is not the bottleneck relative to the existing HTTP
 search/write/refresh benchmark paths. Re-run the command above after each
 transport adapter change that affects request/response framing.
@@ -239,15 +256,15 @@ Current get wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-wire-benchmark
-get_request_encode ops_per_second=1321329.18 nanos_per_op=756.81
-get_response_encode ops_per_second=1287337.52 nanos_per_op=776.80
-get_request_decode ops_per_second=1456526.71 nanos_per_op=686.56
-get_response_decode ops_per_second=1123797.39 nanos_per_op=889.84
-get_wire_bottleneck_ops_per_second=1123797.39
+get_request_encode ops_per_second=1312291.67 nanos_per_op=762.03
+get_response_encode ops_per_second=1267425.89 nanos_per_op=789.00
+get_request_decode ops_per_second=1434274.33 nanos_per_op=697.22
+get_response_decode ops_per_second=1073579.33 nanos_per_op=931.46
+get_wire_bottleneck_ops_per_second=1073579.33
 ```
 
 The current get wire bottleneck is response decode, which includes JSON source
-decode for the benchmark payload. At roughly 1.12M ops/s in the latest local
+decode for the benchmark payload. At roughly 1.07M ops/s in the latest local
 release run, this adapter is also not the bottleneck relative to the existing
 HTTP search/write/refresh benchmark paths. Re-run the command above after each
 get transport adapter change that affects request/response framing or source
@@ -257,20 +274,37 @@ Current multi-get wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin multi-get-wire-benchmark
-multi_get_request_encode ops_per_second=488012.29 nanos_per_op=2049.13
-multi_get_response_encode ops_per_second=327754.66 nanos_per_op=3051.06
-multi_get_request_decode ops_per_second=445337.44 nanos_per_op=2245.49
-multi_get_response_decode ops_per_second=161153.85 nanos_per_op=6205.25
-multi_get_wire_bottleneck_ops_per_second=161153.85
-multi_get_wire_bottleneck_items_per_second=1289230.82
+multi_get_request_encode ops_per_second=481323.60 nanos_per_op=2077.60
+multi_get_response_encode ops_per_second=326168.22 nanos_per_op=3065.90
+multi_get_request_decode ops_per_second=446069.34 nanos_per_op=2241.80
+multi_get_response_decode ops_per_second=165391.54 nanos_per_op=6046.26
+multi_get_wire_bottleneck_ops_per_second=165391.54
+multi_get_wire_bottleneck_items_per_second=1323132.34
 ```
 
 The current multi-get wire bottleneck is response decode for an 8-item batch,
 again because the benchmark includes JSON source decode for each found item.
-At roughly 1.29M decoded items/s in the latest local release run, this adapter
+At roughly 1.32M decoded items/s in the latest local release run, this adapter
 is still below the existing HTTP path bottleneck risk. Re-run the command above
 after each multi-get transport adapter change that affects response framing,
 failure items, or source materialization.
+
+Current delete wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-wire-benchmark
+delete_request_encode ops_per_second=1254594.58 nanos_per_op=797.07
+delete_response_encode ops_per_second=1810216.55 nanos_per_op=552.42
+delete_request_decode ops_per_second=1427579.64 nanos_per_op=700.49
+delete_response_decode ops_per_second=1985773.03 nanos_per_op=503.58
+delete_wire_bottleneck_ops_per_second=1254594.58
+```
+
+The current delete wire bottleneck is request encode, driven by request frame
+construction and the replication request header fields. Response encode/decode
+is materially faster than get and multi-get because delete responses do not
+carry JSON source material. At roughly 1.25M ops/s in the latest local release
+run, this adapter does not introduce a new transport-wire bottleneck.
 
 ## Tier 1 Implementation And Test Ownership Draft
 

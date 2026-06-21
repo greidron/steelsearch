@@ -56,6 +56,15 @@
       "response_wire_type": "MultiGetResponse",
       "disposition": "implemented",
       "reason": "Default multi-document get request/response transport codec maps onto batched Rust get semantic adapters."
+    },
+    {
+      "action_name": "indices:data/write/delete",
+      "action_type": "DeleteAction",
+      "transport_action": "TransportDeleteAction",
+      "request_wire_type": "DeleteRequest",
+      "response_wire_type": "DeleteResponse",
+      "disposition": "implemented",
+      "reason": "Default single-document delete request/response transport codec maps onto the Rust delete semantic adapter."
     }
   ]
 }

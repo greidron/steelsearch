@@ -1,8 +1,9 @@
 use bytes::{Bytes, BytesMut};
 use os_core::Version;
 use os_engine::{
-    DocumentMetadata, GetDocumentRequest, GetDocumentResponse, RefreshRequest, RefreshResponse,
-    SearchHit, SearchRequest, SearchShardSearchResult, SearchShardTarget,
+    DeleteDocumentRequest, DocumentMetadata, GetDocumentRequest, GetDocumentResponse,
+    IndexDocumentResponse, RefreshRequest, RefreshResponse, SearchHit, SearchRequest,
+    SearchShardSearchResult, SearchShardTarget, WriteResult,
 };
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
@@ -271,6 +272,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "multi-get transport adapter is available for the default document subset",
+        },
+        OPENSEARCH_DELETE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete transport adapter is available for the default single-document subset",
         },
         OPENSEARCH_REFRESH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -614,6 +620,11 @@ const OPENSEARCH_MATCH_ANY_VERSION: i64 = -3;
 const OPENSEARCH_UNASSIGNED_SEQ_NO: i64 = -2;
 const OPENSEARCH_UNASSIGNED_PRIMARY_TERM: i64 = 0;
 const OPENSEARCH_NOT_FOUND_VERSION: i64 = -1;
+const OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT: i32 = -2;
+const OPENSEARCH_REFRESH_POLICY_NONE: u8 = 0;
+const OPENSEARCH_DOC_WRITE_RESULT_DELETED: u8 = 2;
+const OPENSEARCH_DOC_WRITE_RESULT_NOT_FOUND: u8 = 3;
+const OPENSEARCH_UNKNOWN_INDEX_UUID: &str = "_na_";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchGetRequestWire {
@@ -1286,6 +1297,348 @@ pub fn read_opensearch_multi_get_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     OpenSearchMultiGetResponseWire::read(message.body.clone().freeze())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDeleteRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub shard_id_present: bool,
+    pub wait_for_active_shards: i32,
+    pub timeout: TimeValueWire,
+    pub index: String,
+    pub routed_based_on_cluster_version: i64,
+    pub refresh_policy: u8,
+    pub id: String,
+    pub routing: Option<String>,
+    pub version: i64,
+    pub version_type: u8,
+    pub if_seq_no: i64,
+    pub if_primary_term: i64,
+}
+
+impl OpenSearchDeleteRequestWire {
+    pub fn new(index: String, id: String) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            shard_id_present: false,
+            wait_for_active_shards: OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT,
+            timeout: TimeValueWire::minutes(1),
+            index,
+            routed_based_on_cluster_version: 0,
+            refresh_policy: OPENSEARCH_REFRESH_POLICY_NONE,
+            id,
+            routing: None,
+            version: OPENSEARCH_MATCH_ANY_VERSION,
+            version_type: OPENSEARCH_VERSION_TYPE_INTERNAL,
+            if_seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+            if_primary_term: OPENSEARCH_UNASSIGNED_PRIMARY_TERM,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        if self.shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request shard id",
+                reason: "explicit shard ids are not encoded by the delete adapter yet",
+            });
+        }
+        output.write_bool(false);
+        output.write_i32(self.wait_for_active_shards);
+        self.timeout.write(output);
+        output.write_string(&self.index);
+        output.write_vlong(self.routed_based_on_cluster_version);
+        output.write_byte(self.refresh_policy);
+        output.write_string(&self.id);
+        output.write_optional_string(self.routing.as_deref());
+        output.write_i64(self.version);
+        output.write_byte(self.version_type);
+        output.write_zlong(self.if_seq_no);
+        output.write_vlong(self.if_primary_term);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let shard_id_present = input.read_bool()?;
+        if shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request shard id",
+                reason: "explicit shard ids are not decoded by the delete adapter yet",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            shard_id_present,
+            wait_for_active_shards: input.read_i32()?,
+            timeout: TimeValueWire::read(&mut input)?,
+            index: input.read_string()?,
+            routed_based_on_cluster_version: input.read_vlong()?,
+            refresh_policy: input.read_byte()?,
+            id: input.read_string()?,
+            routing: input.read_optional_string()?,
+            version: input.read_i64()?,
+            version_type: input.read_byte()?,
+            if_seq_no: read_zlong(&mut input)?,
+            if_primary_term: input.read_vlong()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_request(&self) -> Result<DeleteDocumentRequest, TransportActionWireError> {
+        if self.shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request shard id",
+                reason:
+                    "explicit shard ids cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.wait_for_active_shards != OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request active shard count",
+                reason: "custom active-shard waits cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.timeout != TimeValueWire::minutes(1) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request timeout",
+                reason: "custom replication timeout cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.routed_based_on_cluster_version != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request routed cluster version",
+                reason:
+                    "routed cluster version cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.refresh_policy != OPENSEARCH_REFRESH_POLICY_NONE {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request refresh policy",
+                reason:
+                    "delete refresh policy cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request routing",
+                reason: "routing cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.version_type != OPENSEARCH_VERSION_TYPE_INTERNAL
+            || self.version != OPENSEARCH_MATCH_ANY_VERSION
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request versioning",
+                reason: "versioned delete cannot be mapped onto the current delete engine request",
+            });
+        }
+        if self.if_seq_no != OPENSEARCH_UNASSIGNED_SEQ_NO
+            || self.if_primary_term != OPENSEARCH_UNASSIGNED_PRIMARY_TERM
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete request optimistic concurrency",
+                reason: "optimistic-concurrency delete cannot be mapped onto the current delete engine request",
+            });
+        }
+        Ok(DeleteDocumentRequest {
+            index: self.index.clone(),
+            id: self.id.clone(),
+        })
+    }
+}
+
+impl From<DeleteDocumentRequest> for OpenSearchDeleteRequestWire {
+    fn from(request: DeleteDocumentRequest) -> Self {
+        Self::new(request.index, request.id)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDeleteResponseWire {
+    pub shard_total: i32,
+    pub shard_successful: i32,
+    pub index: String,
+    pub index_uuid: String,
+    pub shard_id: i32,
+    pub id: String,
+    pub version: i64,
+    pub seq_no: i64,
+    pub primary_term: i64,
+    pub forced_refresh: bool,
+    pub result: u8,
+}
+
+impl OpenSearchDeleteResponseWire {
+    pub fn deleted(index: String, metadata: DocumentMetadata) -> Self {
+        Self {
+            shard_total: 1,
+            shard_successful: 1,
+            index,
+            index_uuid: OPENSEARCH_UNKNOWN_INDEX_UUID.into(),
+            shard_id: 0,
+            id: metadata.id,
+            version: metadata.version as i64,
+            seq_no: metadata.seq_no,
+            primary_term: metadata.primary_term as i64,
+            forced_refresh: false,
+            result: OPENSEARCH_DOC_WRITE_RESULT_DELETED,
+        }
+    }
+
+    pub fn not_found(index: String, id: String) -> Self {
+        Self {
+            shard_total: 1,
+            shard_successful: 1,
+            index,
+            index_uuid: OPENSEARCH_UNKNOWN_INDEX_UUID.into(),
+            shard_id: 0,
+            id,
+            version: OPENSEARCH_NOT_FOUND_VERSION,
+            seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+            primary_term: OPENSEARCH_UNASSIGNED_PRIMARY_TERM,
+            forced_refresh: false,
+            result: OPENSEARCH_DOC_WRITE_RESULT_NOT_FOUND,
+        }
+    }
+
+    pub fn from_engine_response(
+        response: IndexDocumentResponse,
+    ) -> Result<Self, TransportActionWireError> {
+        if response.result != WriteResult::Deleted {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete response write result",
+                reason: "only deleted engine responses can be encoded as DeleteResponse",
+            });
+        }
+        Ok(Self::deleted(response.index, response.metadata))
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.shard_total);
+        output.write_vint(self.shard_successful);
+        output.write_vint(0);
+        output.write_string(&self.index);
+        output.write_string(&self.index_uuid);
+        output.write_vint(self.shard_id);
+        output.write_string(&self.id);
+        output.write_zlong(self.version);
+        output.write_zlong(self.seq_no);
+        output.write_vlong(self.primary_term);
+        output.write_bool(self.forced_refresh);
+        output.write_byte(self.result);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            shard_total: input.read_vint()?,
+            shard_successful: input.read_vint()?,
+            index: {
+                let shard_failure_count = input.read_vint()?;
+                if shard_failure_count != 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "delete response shard failures",
+                        reason:
+                            "non-empty failure arrays are not decoded by the delete adapter yet",
+                    });
+                }
+                input.read_string()?
+            },
+            index_uuid: input.read_string()?,
+            shard_id: input.read_vint()?,
+            id: input.read_string()?,
+            version: read_zlong(&mut input)?,
+            seq_no: read_zlong(&mut input)?,
+            primary_term: input.read_vlong()?,
+            forced_refresh: input.read_bool()?,
+            result: input.read_byte()?,
+        };
+        if response.result != OPENSEARCH_DOC_WRITE_RESULT_DELETED
+            && response.result != OPENSEARCH_DOC_WRITE_RESULT_NOT_FOUND
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete response result",
+                reason:
+                    "only deleted and not-found delete results are decoded by the delete adapter",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+pub fn build_opensearch_delete_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchDeleteRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_DELETE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDeleteRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_DELETE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_DELETE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchDeleteRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_delete_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchDeleteResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDeleteResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchDeleteResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2208,7 +2561,7 @@ mod tests {
     use os_core::OPENSEARCH_3_7_0_TRANSPORT;
     use os_engine::{
         DocumentMetadata, SearchFetchSubphase, SearchFetchSubphaseResult, SearchHit, SearchPhase,
-        SearchPhaseResult, SearchResponse, SortSpec,
+        SearchPhaseResult, SearchResponse, SortSpec, WriteCoordinationMetadata,
     };
     use serde::Deserialize;
     use serde_json::json;
@@ -2360,6 +2713,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_DELETE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_REFRESH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -2371,6 +2728,7 @@ mod tests {
             let decision = classify_opensearch_transport_action(spec.action_name);
             if spec.action_name == OPENSEARCH_GET_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_GET_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
             {
                 assert_eq!(
@@ -2687,6 +3045,174 @@ mod tests {
         assert!(message.status.is_response());
         assert_eq!(
             read_opensearch_multi_get_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_delete_request_wire_round_trips_and_maps_to_engine_request() {
+        let request = OpenSearchDeleteRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchDeleteRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchDeleteRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_request().unwrap(),
+            DeleteDocumentRequest {
+                index: "logs-000001".into(),
+                id: "doc-1".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn opensearch_delete_request_rejects_unsupported_engine_mapping_options() {
+        let request = OpenSearchDeleteRequestWire {
+            routing: Some("tenant-a".into()),
+            ..OpenSearchDeleteRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "delete request routing");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchDeleteRequestWire {
+            refresh_policy: 1,
+            ..OpenSearchDeleteRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "delete request refresh policy");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchDeleteRequestWire {
+            if_seq_no: 7,
+            if_primary_term: 2,
+            ..OpenSearchDeleteRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "delete request optimistic concurrency");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensearch_delete_response_wire_round_trips_deleted_and_missing_documents() {
+        let deleted = OpenSearchDeleteResponseWire::deleted(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 3,
+                seq_no: 7,
+                primary_term: 2,
+            },
+        );
+
+        let mut output = StreamOutput::new();
+        deleted.write(&mut output);
+        assert_eq!(
+            OpenSearchDeleteResponseWire::read(output.freeze()).unwrap(),
+            deleted
+        );
+
+        let missing =
+            OpenSearchDeleteResponseWire::not_found("logs-000001".into(), "doc-404".into());
+        let mut output = StreamOutput::new();
+        missing.write(&mut output);
+        assert_eq!(
+            OpenSearchDeleteResponseWire::read(output.freeze()).unwrap(),
+            missing
+        );
+    }
+
+    #[test]
+    fn opensearch_delete_response_maps_from_engine_deleted_response() {
+        let response = IndexDocumentResponse {
+            index: "logs-000001".into(),
+            metadata: DocumentMetadata {
+                id: "doc-1".into(),
+                version: 3,
+                seq_no: 7,
+                primary_term: 2,
+            },
+            coordination: WriteCoordinationMetadata::default(),
+            result: WriteResult::Deleted,
+        };
+
+        assert_eq!(
+            OpenSearchDeleteResponseWire::from_engine_response(response).unwrap(),
+            OpenSearchDeleteResponseWire::deleted(
+                "logs-000001".into(),
+                DocumentMetadata {
+                    id: "doc-1".into(),
+                    version: 3,
+                    seq_no: 7,
+                    primary_term: 2,
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn opensearch_delete_transport_messages_bind_action_frames() {
+        let request = OpenSearchDeleteRequestWire::new("logs-000001".into(), "doc-1".into());
+        let mut frame =
+            build_opensearch_delete_request_message(23, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 23);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_delete_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = OpenSearchDeleteResponseWire::deleted(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 1,
+                seq_no: 0,
+                primary_term: 1,
+            },
+        );
+        let mut frame =
+            build_opensearch_delete_response_message(23, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 23);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_delete_response_message(&message).unwrap(),
             response
         );
     }
