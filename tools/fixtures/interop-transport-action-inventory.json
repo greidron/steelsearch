@@ -463,6 +463,15 @@
       "reason": "Put-pipeline transport execution requires ingest pipeline validation, processor availability, cluster metadata mutation, throttling, and ack rendering before Steelsearch can serve OpenSearch ingest pipeline put semantics."
     },
     {
+      "action_name": "cluster:admin/ingest/pipeline/get",
+      "action_type": "GetPipelineAction",
+      "transport_action": "GetPipelineTransportAction",
+      "request_wire_type": "GetPipelineRequest",
+      "response_wire_type": "GetPipelineResponse",
+      "disposition": "rejected",
+      "reason": "Get-pipeline transport execution requires ingest pipeline metadata lookup, id/wildcard resolution, and response rendering before Steelsearch can serve OpenSearch ingest pipeline get semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",

@@ -89,6 +89,7 @@ pub const OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/scr
 pub const OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME: &str = "cluster:admin/script_context/get";
 pub const OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME: &str = "cluster:admin/script_language/get";
 pub const OPENSEARCH_PUT_PIPELINE_ACTION_NAME: &str = "cluster:admin/ingest/pipeline/put";
+pub const OPENSEARCH_GET_PIPELINE_ACTION_NAME: &str = "cluster:admin/ingest/pipeline/get";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
@@ -681,6 +682,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "ingest-metadata-write",
         next_step: "map ingest pipeline validation, processor availability, cluster metadata mutation, throttling, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_PIPELINE_ACTION_NAME,
+        action_type: "GetPipelineAction",
+        transport_action: "GetPipelineTransportAction",
+        request_wire_type: "GetPipelineRequest",
+        response_wire_type: "GetPipelineResponse",
+        adapter_stage: "ingest-metadata-read",
+        next_step: "map ingest pipeline metadata lookup, id/wildcard resolution, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_RESIZE_ACTION_NAME,
@@ -1469,6 +1479,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "put-pipeline transport execution requires ingest pipeline validation, processor availability, metadata mutation, throttling, and ack rendering",
+        },
+        OPENSEARCH_GET_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-pipeline transport execution requires ingest pipeline metadata lookup, id/wildcard resolution, and response rendering",
         },
         OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5719,6 +5734,73 @@ pub fn read_opensearch_put_pipeline_response_message(
         });
     }
     AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_pipeline_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetPipelineRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_PIPELINE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_pipeline_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetPipelineRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_PIPELINE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_PIPELINE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetPipelineRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_pipeline_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetPipelineResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_pipeline_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetPipelineResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchGetPipelineResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_resize_request_message(
@@ -11106,6 +11188,144 @@ impl OpenSearchPutPipelineRequestWire {
             shape: "put pipeline execution",
             reason: "put-pipeline transport execution requires ingest pipeline validation, processor availability, cluster metadata mutation, throttling, and ack rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetPipelineRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub ids: Vec<String>,
+}
+
+impl Default for OpenSearchGetPipelineRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            ids: vec!["pipeline-1".to_string()],
+        }
+    }
+}
+
+impl OpenSearchGetPipelineRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.ids);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let local = input.read_bool()?;
+        let ids = input.read_string_array()?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            local,
+            ids,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the get-pipeline adapter yet",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline local flag",
+                reason: "local cluster-state reads are not mapped by the get-pipeline adapter yet",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get pipeline execution",
+            reason: "get-pipeline transport execution requires ingest pipeline metadata lookup, id/wildcard resolution, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchPipelineConfigurationWire {
+    pub id: String,
+    pub config: Bytes,
+    pub media_type: String,
+}
+
+impl Default for OpenSearchPipelineConfigurationWire {
+    fn default() -> Self {
+        Self {
+            id: "pipeline-1".to_string(),
+            config: Bytes::from_static(br#"{"processors":[]}"#),
+            media_type: "application/json; charset=UTF-8".to_string(),
+        }
+    }
+}
+
+impl OpenSearchPipelineConfigurationWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.id);
+        output.write_bytes_reference(&self.config);
+        output.write_string(&self.media_type);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            id: input.read_string()?,
+            config: input.read_bytes_reference()?,
+            media_type: input.read_string()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetPipelineResponseWire {
+    pub pipelines: Vec<OpenSearchPipelineConfigurationWire>,
+}
+
+impl Default for OpenSearchGetPipelineResponseWire {
+    fn default() -> Self {
+        Self {
+            pipelines: vec![OpenSearchPipelineConfigurationWire::default()],
+        }
+    }
+}
+
+impl OpenSearchGetPipelineResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.pipelines.len() as i32);
+        for pipeline in &self.pipelines {
+            pipeline.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let count = input.read_vint()?;
+        if count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline response pipeline count",
+                reason: "OpenSearch get-pipeline response pipeline count cannot be negative",
+            });
+        }
+        let mut pipelines = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            pipelines.push(OpenSearchPipelineConfigurationWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { pipelines })
     }
 }
 
@@ -21823,6 +22043,15 @@ mod tests {
                     next_step: "map ingest pipeline validation, processor availability, cluster metadata mutation, throttling, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/ingest/pipeline/get",
+                    action_type: "GetPipelineAction",
+                    transport_action: "GetPipelineTransportAction",
+                    request_wire_type: "GetPipelineRequest",
+                    response_wire_type: "GetPipelineResponse",
+                    adapter_stage: "ingest-metadata-read",
+                    next_step: "map ingest pipeline metadata lookup, id/wildcard resolution, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/resize",
                     action_type: "ResizeAction",
                     transport_action: "TransportResizeAction",
@@ -22543,6 +22772,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_PIPELINE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -22762,6 +22995,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_PIPELINE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_PIPELINE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
@@ -31677,6 +31911,137 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_put_pipeline_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetPipelineRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetPipelineRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.ids, vec!["pipeline-1".to_string()]);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline execution",
+                ..
+            })
+        ));
+
+        let all_pipelines = OpenSearchGetPipelineRequestWire {
+            ids: Vec::new(),
+            ..OpenSearchGetPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            all_pipelines.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_pipeline_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchGetPipelineRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchGetPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetPipelineRequestWire {
+            local: true,
+            ..OpenSearchGetPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline local flag",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_pipeline_response_wire_round_trips_and_rejects_negative_count() {
+        let response = OpenSearchGetPipelineResponseWire::default();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = OpenSearchGetPipelineResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert_eq!(decoded.pipelines[0].id, "pipeline-1");
+        assert_eq!(
+            decoded.pipelines[0].config,
+            Bytes::from_static(br#"{"processors":[]}"#)
+        );
+        assert_eq!(
+            decoded.pipelines[0].media_type,
+            "application/json; charset=UTF-8"
+        );
+
+        let mut output = StreamOutput::new();
+        output.write_vint(-1);
+        assert!(matches!(
+            OpenSearchGetPipelineResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline response pipeline count",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_pipeline_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = OpenSearchGetPipelineRequestWire::default();
+        let mut frame =
+            build_opensearch_get_pipeline_request_message(75, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get pipeline request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_get_pipeline_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_pipeline_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get pipeline execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchGetPipelineResponseWire::default();
+        let mut frame = build_opensearch_get_pipeline_response_message(
+            75,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get pipeline response message");
+        };
+        assert_eq!(
+            read_opensearch_get_pipeline_response_message(&message).unwrap(),
             response
         );
     }

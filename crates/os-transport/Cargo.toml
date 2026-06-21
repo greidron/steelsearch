@@ -234,6 +234,10 @@ name = "put-pipeline-reject-wire-benchmark"
 path = "benchmarks/put_pipeline_reject_wire.rs"
 
 [[bin]]
+name = "get-pipeline-reject-wire-benchmark"
+path = "benchmarks/get_pipeline_reject_wire.rs"
+
+[[bin]]
 name = "resize-reject-wire-benchmark"
 path = "benchmarks/resize_reject_wire.rs"
 

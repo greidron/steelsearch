@@ -260,6 +260,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script_context/get` (rejected fail-closed)
 - `cluster:admin/script_language/get` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/get` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -885,6 +886,20 @@ The put-pipeline boundary covers:
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing ids, missing source bytes, non-JSON media
   types, and put-pipeline execution.
+
+The get-pipeline boundary covers:
+
+- OpenSearch `GetPipelineRequest` parent task, cluster-manager timeout, local
+  flag, and pipeline ids at the OpenSearch 3.x wire decode/build layer;
+- OpenSearch `GetPipelineResponse` pipeline count and repeated
+  `PipelineConfiguration` id, config bytes, and media type at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/ingest/pipeline/get` until ingest pipeline metadata lookup,
+  id/wildcard resolution, and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, local cluster-state
+  reads, and get-pipeline execution, plus defensive decode rejection for
+  negative response pipeline counts.
 
 The resize boundary covers:
 
@@ -2529,6 +2544,24 @@ in the latest local release run, current overhead is transport serialization.
 Future performance-sensitive work is ingest pipeline source parsing, processor
 availability validation, cluster metadata mutation, throttling, and ack
 rendering.
+
+Current get-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-pipeline-reject-wire-benchmark
+get_pipeline_reject_request_encode iterations=400000 elapsed_ms=279.526 ops_per_second=1430994.16 nanos_per_op=698.81
+get_pipeline_reject_request_decode iterations=400000 elapsed_ms=267.343 ops_per_second=1496207.08 nanos_per_op=668.36
+get_pipeline_reject_validation iterations=400000 elapsed_ms=262.613 ops_per_second=1523156.23 nanos_per_op=656.53
+get_pipeline_response_decode iterations=400000 elapsed_ms=220.165 ops_per_second=1816815.99 nanos_per_op=550.41
+get_pipeline_reject_wire_bottleneck_ops_per_second=1430994.16
+```
+
+The current get-pipeline fail-closed boundary bottleneck is request encode. The
+request path carries the cluster-manager read envelope, local flag, and ids
+array before rejecting execution. At roughly 1.43M ops/s in the latest local
+release run, current overhead is transport serialization rather than response
+decode. Future performance-sensitive work is serving the Rust ingest pipeline
+metadata catalog without allocation-heavy id/wildcard expansion.
 
 Current resize reject wire microbenchmark:
 
