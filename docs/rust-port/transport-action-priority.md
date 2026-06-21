@@ -181,6 +181,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/stats` (rejected fail-closed)
 - `cluster:monitor/nodes/info` (rejected fail-closed)
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
+- `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -243,6 +244,15 @@ The nodes-stats boundary covers:
 - explicit rejection for concrete node payloads, node filters, timeout,
   non-default index stats flags, requested metric selection, and nodes-stats
   execution.
+
+The nodes-usage boundary covers:
+
+- OpenSearch `NodesUsageRequest` parent task, node ids, optional timeout,
+  `restActions`, and `aggregations` flags at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/nodes/usage` until
+  runtime usage telemetry mapping is implemented;
+- explicit rejection for concrete node payloads, node filters, timeout,
+  `restActions`, `aggregations`, and nodes-usage execution.
 
 The indices-stats boundary covers:
 
@@ -479,6 +489,22 @@ adds a full `CommonStatsFlags` default-shape comparison after decode, so it is
 slightly heavier than the cluster-stats rejection boundary. At roughly 1.62M
 ops/s in the latest local release run, it remains in the lightweight admin
 transport range and does not introduce a new source-materialization bottleneck.
+
+Current nodes-usage reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin nodes-usage-reject-wire-benchmark
+nodes_usage_reject_request_encode iterations=400000 elapsed_ms=209.850 ops_per_second=1906122.53 nanos_per_op=524.63
+nodes_usage_reject_request_decode iterations=400000 elapsed_ms=196.421 ops_per_second=2036446.99 nanos_per_op=491.05
+nodes_usage_reject_validation iterations=400000 elapsed_ms=205.378 ops_per_second=1947629.65 nanos_per_op=513.44
+nodes_usage_reject_wire_bottleneck_ops_per_second=1906122.53
+```
+
+The current nodes-usage fail-closed boundary bottleneck is request encode. The
+request payload is compact, with only the BaseNodesRequest envelope and two
+boolean usage flags, so validation does not add measurable overhead. At roughly
+1.91M ops/s in the latest local release run, this is one of the lightest admin
+transport boundaries.
 
 Current indices-stats reject wire microbenchmark:
 

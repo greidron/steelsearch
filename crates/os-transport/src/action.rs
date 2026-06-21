@@ -24,6 +24,7 @@ pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
 pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
+pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -97,6 +98,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportNodesStatsAction",
         request_wire_type: "NodesStatsRequest",
         response_wire_type: "NodesStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: NODES_USAGE_ACTION_NAME,
+        action_type: "NodesUsageAction",
+        transport_action: "TransportNodesUsageAction",
+        request_wire_type: "NodesUsageRequest",
+        response_wire_type: "NodesUsageResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -340,6 +348,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "nodes-stats transport execution requires runtime node telemetry mapping",
+        },
+        NODES_USAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "nodes-usage transport execution requires runtime usage telemetry mapping",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1315,6 +1328,82 @@ impl NodesStatsRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct NodesUsageRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub rest_actions: bool,
+    pub aggregations: bool,
+}
+
+impl NodesUsageRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_bool(self.rest_actions);
+        output.write_bool(self.aggregations);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage concrete nodes",
+                reason:
+                    "nodes-usage concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            rest_actions: input.read_bool()?,
+            aggregations: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage node filter",
+                reason: "nodes-usage node-scoped routing requires runtime usage telemetry mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage timeout",
+                reason: "nodes-usage timeout semantics require runtime usage telemetry mapping",
+            });
+        }
+        if self.rest_actions {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage rest actions",
+                reason: "REST action usage telemetry is not mapped by this adapter",
+            });
+        }
+        if self.aggregations {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage aggregations",
+                reason: "aggregation usage telemetry is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "nodes usage execution",
+            reason: "nodes-usage transport execution requires runtime usage telemetry mapping",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchIndicesStatsRequestWire {
     pub parent_task_node: String,
@@ -1568,6 +1657,44 @@ pub fn read_nodes_stats_request_message(
         });
     }
     NodesStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_usage_request_message(
+    request_id: i64,
+    version: Version,
+    request: &NodesUsageRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(NODES_USAGE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_usage_request_message(
+    message: &TransportMessage,
+) -> Result<NodesUsageRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != NODES_USAGE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: NODES_USAGE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    NodesUsageRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_indices_stats_request_message(
@@ -5800,6 +5927,13 @@ mod tests {
                     response_wire_type: "NodesStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/nodes/usage",
+                    action_type: "NodesUsageAction",
+                    transport_action: "TransportNodesUsageAction",
+                    request_wire_type: "NodesUsageRequest",
+                    response_wire_type: "NodesUsageResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -5957,6 +6091,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(NODES_USAGE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -8320,6 +8458,110 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_usage_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = NodesUsageRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = NodesUsageRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_usage_request_rejects_unsupported_shapes() {
+        let node_filter = NodesUsageRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..NodesUsageRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage node filter",
+                ..
+            })
+        ));
+
+        let timeout = NodesUsageRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..NodesUsageRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage timeout",
+                ..
+            })
+        ));
+
+        let rest_actions = NodesUsageRequestWire {
+            rest_actions: true,
+            ..NodesUsageRequestWire::default()
+        };
+        assert!(matches!(
+            rest_actions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage rest actions",
+                ..
+            })
+        ));
+
+        let aggregations = NodesUsageRequestWire {
+            aggregations: true,
+            ..NodesUsageRequestWire::default()
+        };
+        assert!(matches!(
+            aggregations.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage aggregations",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_usage_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            NodesUsageRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_usage_transport_messages_bind_rejected_action_frame() {
+        let request = NodesUsageRequestWire::default();
+        let mut frame =
+            build_nodes_usage_request_message(31, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected nodes usage request message");
+        };
+        assert_eq!(read_nodes_usage_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_nodes_usage_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage execution",
                 ..
             })
         ));
