@@ -49,6 +49,7 @@ pub const GET_SNAPSHOTS_ACTION_NAME: &str = "cluster:admin/snapshot/get";
 pub const DELETE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/delete";
 pub const CREATE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/create";
 pub const CLONE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/clone";
+pub const RESTORE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/restore";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -328,6 +329,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportCloneSnapshotAction",
         request_wire_type: "CloneSnapshotRequest",
         response_wire_type: "AcknowledgedResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: RESTORE_SNAPSHOT_ACTION_NAME,
+        action_type: "RestoreSnapshotAction",
+        transport_action: "TransportRestoreSnapshotAction",
+        request_wire_type: "RestoreSnapshotRequest",
+        response_wire_type: "RestoreSnapshotResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -1003,6 +1011,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "clone-snapshot transport execution requires snapshot clone coordination and acknowledgement rendering",
+        },
+        RESTORE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3990,6 +4003,44 @@ pub fn read_clone_snapshot_request_message(
     CloneSnapshotRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_restore_snapshot_request_message(
+    request_id: i64,
+    version: Version,
+    request: &RestoreSnapshotRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(RESTORE_SNAPSHOT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_restore_snapshot_request_message(
+    message: &TransportMessage,
+) -> Result<RestoreSnapshotRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != RESTORE_SNAPSHOT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: RESTORE_SNAPSHOT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    RestoreSnapshotRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_mappings_request_message(
     request_id: i64,
     version: Version,
@@ -6195,6 +6246,281 @@ impl CloneSnapshotRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "clone snapshot execution",
             reason: "clone-snapshot transport execution requires snapshot clone coordination and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RestoreSnapshotStorageTypeWire {
+    Local,
+    RemoteSnapshot,
+}
+
+impl RestoreSnapshotStorageTypeWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(match self {
+            Self::Local => 0,
+            Self::RemoteSnapshot => 1,
+        });
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_vint()? {
+            0 => Ok(Self::Local),
+            1 => Ok(Self::RemoteSnapshot),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot storage type",
+                reason: "unknown OpenSearch restore-snapshot storage type ordinal",
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RestoreSnapshotAliasWriteIndexPolicyWire {
+    Preserve,
+    StripWriteIndex,
+}
+
+impl RestoreSnapshotAliasWriteIndexPolicyWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(match self {
+            Self::Preserve => 0,
+            Self::StripWriteIndex => 1,
+        });
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_vint()? {
+            0 => Ok(Self::Preserve),
+            1 => Ok(Self::StripWriteIndex),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot alias write index policy",
+                reason: "unknown OpenSearch restore-snapshot alias write-index policy ordinal",
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreSnapshotRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub snapshot: String,
+    pub repository: String,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub rename_pattern: Option<String>,
+    pub rename_replacement: Option<String>,
+    pub wait_for_completion: bool,
+    pub include_global_state: bool,
+    pub partial: bool,
+    pub include_aliases: bool,
+    pub index_settings: BTreeMap<String, String>,
+    pub ignore_index_settings: Vec<String>,
+    pub snapshot_uuid: Option<String>,
+    pub storage_type: RestoreSnapshotStorageTypeWire,
+    pub source_remote_store_repository: Option<String>,
+    pub source_remote_translog_repository: Option<String>,
+    pub rename_alias_pattern: Option<String>,
+    pub rename_alias_replacement: Option<String>,
+    pub alias_write_index_policy: RestoreSnapshotAliasWriteIndexPolicyWire,
+}
+
+impl Default for RestoreSnapshotRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            snapshot: "snap".to_string(),
+            repository: "repo".to_string(),
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            rename_pattern: None,
+            rename_replacement: None,
+            wait_for_completion: false,
+            include_global_state: false,
+            partial: false,
+            include_aliases: true,
+            index_settings: BTreeMap::new(),
+            ignore_index_settings: Vec::new(),
+            snapshot_uuid: None,
+            storage_type: RestoreSnapshotStorageTypeWire::Local,
+            source_remote_store_repository: None,
+            source_remote_translog_repository: None,
+            rename_alias_pattern: None,
+            rename_alias_replacement: None,
+            alias_write_index_policy: RestoreSnapshotAliasWriteIndexPolicyWire::Preserve,
+        }
+    }
+}
+
+impl RestoreSnapshotRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.snapshot);
+        output.write_string(&self.repository);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_optional_string(self.rename_pattern.as_deref());
+        output.write_optional_string(self.rename_replacement.as_deref());
+        output.write_bool(self.wait_for_completion);
+        output.write_bool(self.include_global_state);
+        output.write_bool(self.partial);
+        output.write_bool(self.include_aliases);
+        output.write_string_map(&self.index_settings);
+        output.write_string_array(&self.ignore_index_settings);
+        output.write_optional_string(self.snapshot_uuid.as_deref());
+        self.storage_type.write(output);
+        output.write_optional_string(self.source_remote_store_repository.as_deref());
+        output.write_optional_string(self.source_remote_translog_repository.as_deref());
+        output.write_optional_string(self.rename_alias_pattern.as_deref());
+        output.write_optional_string(self.rename_alias_replacement.as_deref());
+        self.alias_write_index_policy.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            snapshot: input.read_string()?,
+            repository: input.read_string()?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            rename_pattern: input.read_optional_string()?,
+            rename_replacement: input.read_optional_string()?,
+            wait_for_completion: input.read_bool()?,
+            include_global_state: input.read_bool()?,
+            partial: input.read_bool()?,
+            include_aliases: input.read_bool()?,
+            index_settings: input.read_string_map()?,
+            ignore_index_settings: input.read_string_array()?,
+            snapshot_uuid: input.read_optional_string()?,
+            storage_type: RestoreSnapshotStorageTypeWire::read(&mut input)?,
+            source_remote_store_repository: input.read_optional_string()?,
+            source_remote_translog_repository: input.read_optional_string()?,
+            rename_alias_pattern: input.read_optional_string()?,
+            rename_alias_replacement: input.read_optional_string()?,
+            alias_write_index_policy: RestoreSnapshotAliasWriteIndexPolicyWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires snapshot restore coordination semantics",
+            });
+        }
+        if self.snapshot.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot missing snapshot",
+                reason: "OpenSearch restore-snapshot requests require a snapshot name",
+            });
+        }
+        if self.repository.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot missing repository",
+                reason: "OpenSearch restore-snapshot requests require a repository name",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot blank index selector",
+                reason: "OpenSearch restore-snapshot index selectors must not be blank",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot indices options",
+                reason: "custom restore-snapshot indices options require OpenSearch index selection semantics",
+            });
+        }
+        if self.rename_pattern.is_some() || self.rename_replacement.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot rename indices",
+                reason: "index rename rules require restore metadata rewrite semantics",
+            });
+        }
+        if self.wait_for_completion {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot wait for completion",
+                reason: "wait-for-completion requires restore completion listener and response rendering",
+            });
+        }
+        if self.include_global_state {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot global state",
+                reason: "global-state restore requires cluster metadata replacement semantics",
+            });
+        }
+        if self.partial {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot partial",
+                reason: "partial restore requires shard-level restore failure semantics",
+            });
+        }
+        if !self.include_aliases {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot aliases",
+                reason: "alias exclusion requires restore metadata filtering semantics",
+            });
+        }
+        if !self.index_settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot index settings",
+                reason: "index setting overrides require restore index metadata rewrite semantics",
+            });
+        }
+        if !self.ignore_index_settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot ignore index settings",
+                reason: "ignored index settings require restore index metadata filtering semantics",
+            });
+        }
+        if self.snapshot_uuid.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot uuid",
+                reason: "snapshot UUID pinning requires repository snapshot identity resolution",
+            });
+        }
+        if self.storage_type != RestoreSnapshotStorageTypeWire::Local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot storage type",
+                reason: "remote-snapshot restore requires remote snapshot storage semantics",
+            });
+        }
+        if self.source_remote_store_repository.is_some()
+            || self.source_remote_translog_repository.is_some()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot remote repositories",
+                reason: "source remote repositories require remote-store restore semantics",
+            });
+        }
+        if self.rename_alias_pattern.is_some() || self.rename_alias_replacement.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot rename aliases",
+                reason: "alias rename rules require restore alias metadata rewrite semantics",
+            });
+        }
+        if self.alias_write_index_policy != RestoreSnapshotAliasWriteIndexPolicyWire::Preserve {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot alias write index policy",
+                reason: "alias write-index policy changes require restore alias metadata rewrite semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "restore snapshot execution",
+            reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
         })
     }
 }
@@ -14523,6 +14849,13 @@ mod tests {
                     response_wire_type: "AcknowledgedResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/snapshot/restore",
+                    action_type: "RestoreSnapshotAction",
+                    transport_action: "TransportRestoreSnapshotAction",
+                    request_wire_type: "RestoreSnapshotRequest",
+                    response_wire_type: "RestoreSnapshotResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
                     action_type: "PendingClusterTasksAction",
                     transport_action: "TransportPendingClusterTasksAction",
@@ -20178,6 +20511,265 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restore_snapshot_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = RestoreSnapshotRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(36),
+            snapshot: "snap-a".to_string(),
+            repository: "repo-a".to_string(),
+            indices: vec!["logs-*".to_string()],
+            ..RestoreSnapshotRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = RestoreSnapshotRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restore_snapshot_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = RestoreSnapshotRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_snapshot = RestoreSnapshotRequestWire {
+            snapshot: " ".to_string(),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            missing_snapshot.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot missing snapshot",
+                ..
+            })
+        ));
+
+        let missing_repository = RestoreSnapshotRequestWire {
+            repository: " ".to_string(),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            missing_repository.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot missing repository",
+                ..
+            })
+        ));
+
+        let blank_index = RestoreSnapshotRequestWire {
+            indices: vec!["index".to_string(), " ".to_string()],
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot blank index selector",
+                ..
+            })
+        ));
+
+        let indices_options = RestoreSnapshotRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_hidden(),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot indices options",
+                ..
+            })
+        ));
+
+        let rename_indices = RestoreSnapshotRequestWire {
+            rename_pattern: Some("(.+)".to_string()),
+            rename_replacement: Some("restored-$1".to_string()),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            rename_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot rename indices",
+                ..
+            })
+        ));
+
+        let wait_for_completion = RestoreSnapshotRequestWire {
+            wait_for_completion: true,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            wait_for_completion.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot wait for completion",
+                ..
+            })
+        ));
+
+        let include_global_state = RestoreSnapshotRequestWire {
+            include_global_state: true,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            include_global_state.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot global state",
+                ..
+            })
+        ));
+
+        let partial = RestoreSnapshotRequestWire {
+            partial: true,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            partial.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot partial",
+                ..
+            })
+        ));
+
+        let no_aliases = RestoreSnapshotRequestWire {
+            include_aliases: false,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            no_aliases.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot aliases",
+                ..
+            })
+        ));
+
+        let mut index_settings = BTreeMap::new();
+        index_settings.insert("index.number_of_replicas".to_string(), "0".to_string());
+        let custom_index_settings = RestoreSnapshotRequestWire {
+            index_settings,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            custom_index_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot index settings",
+                ..
+            })
+        ));
+
+        let ignore_index_settings = RestoreSnapshotRequestWire {
+            ignore_index_settings: vec!["index.refresh_interval".to_string()],
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            ignore_index_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot ignore index settings",
+                ..
+            })
+        ));
+
+        let snapshot_uuid = RestoreSnapshotRequestWire {
+            snapshot_uuid: Some("uuid".to_string()),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            snapshot_uuid.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot uuid",
+                ..
+            })
+        ));
+
+        let remote_storage = RestoreSnapshotRequestWire {
+            storage_type: RestoreSnapshotStorageTypeWire::RemoteSnapshot,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            remote_storage.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot storage type",
+                ..
+            })
+        ));
+
+        let remote_repository = RestoreSnapshotRequestWire {
+            source_remote_store_repository: Some("remote-store".to_string()),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            remote_repository.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot remote repositories",
+                ..
+            })
+        ));
+
+        let rename_aliases = RestoreSnapshotRequestWire {
+            rename_alias_pattern: Some("(.+)".to_string()),
+            rename_alias_replacement: Some("restored-$1".to_string()),
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            rename_aliases.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot rename aliases",
+                ..
+            })
+        ));
+
+        let alias_policy = RestoreSnapshotRequestWire {
+            alias_write_index_policy: RestoreSnapshotAliasWriteIndexPolicyWire::StripWriteIndex,
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            alias_policy.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot alias write index policy",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restore_snapshot_transport_messages_bind_rejected_action_frame() {
+        let request = RestoreSnapshotRequestWire::default();
+        let mut frame =
+            build_restore_snapshot_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected restore snapshot request message");
+        };
+        assert_eq!(
+            read_restore_snapshot_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_restore_snapshot_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot execution",
                 ..
             })
         ));

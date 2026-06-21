@@ -193,6 +193,15 @@
       "reason": "Clone-snapshot transport execution requires snapshot clone coordination and acknowledgement rendering before Steelsearch can serve OpenSearch snapshot clone semantics."
     },
     {
+      "action_name": "cluster:admin/snapshot/restore",
+      "action_type": "RestoreSnapshotAction",
+      "transport_action": "TransportRestoreSnapshotAction",
+      "request_wire_type": "RestoreSnapshotRequest",
+      "response_wire_type": "RestoreSnapshotResponse",
+      "disposition": "rejected",
+      "reason": "Restore-snapshot transport execution requires snapshot restore coordination and restore response rendering before Steelsearch can serve OpenSearch snapshot restore semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "action_type": "NodesUsageAction",
       "transport_action": "TransportNodesUsageAction",

@@ -205,6 +205,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/delete` (rejected fail-closed)
 - `cluster:admin/snapshot/create` (rejected fail-closed)
 - `cluster:admin/snapshot/clone` (rejected fail-closed)
+- `cluster:admin/snapshot/restore` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -560,6 +561,24 @@ The clone-snapshot boundary covers:
 - explicit rejection for custom cluster-manager timeout, blank repository
   names, blank source snapshot names, blank target snapshot names, empty or
   blank index selectors, custom indices options, and clone-snapshot execution.
+
+The restore-snapshot boundary covers:
+
+- OpenSearch 3.7 `RestoreSnapshotRequest` parent task, cluster-manager timeout,
+  snapshot name, repository name, index selector array,
+  `IndicesOptions.strictExpandOpen()` wire flags, index and alias rename
+  options, wait/global-state/partial/alias flags, index settings,
+  ignored-index-settings, snapshot UUID, storage type, source remote
+  repositories, and alias write-index policy at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/snapshot/restore`
+  until snapshot restore coordination and restore response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, blank snapshot or
+  repository names, blank index selectors, custom indices options, index or
+  alias rename rules, wait-for-completion, global-state restore, partial
+  restore, alias exclusion, index setting overrides, ignored index settings,
+  snapshot UUID pinning, remote snapshot storage, source remote repositories,
+  alias write-index policy changes, and restore-snapshot execution.
 
 The get-mappings boundary covers:
 
@@ -1601,6 +1620,27 @@ ops/s in the latest local release run, this boundary is not a material
 transport bottleneck; the first performance-sensitive work is snapshot clone
 coordination, source snapshot metadata loading, index selection, repository
 write planning, cluster-state publication, and acknowledgement rendering.
+
+Current restore-snapshot reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin restore-snapshot-reject-wire-benchmark
+restore_snapshot_reject_request_encode iterations=400000 elapsed_ms=368.962 ops_per_second=1084122.20 nanos_per_op=922.41
+restore_snapshot_reject_request_decode iterations=400000 elapsed_ms=332.305 ops_per_second=1203712.31 nanos_per_op=830.76
+restore_snapshot_reject_validation iterations=400000 elapsed_ms=337.415 ops_per_second=1185483.46 nanos_per_op=843.54
+restore_snapshot_reject_wire_bottleneck_ops_per_second=1084122.20
+```
+
+The current restore-snapshot fail-closed boundary bottleneck is request encode.
+The payload includes the cluster-manager request envelope, snapshot and
+repository names, index selector array, indices options, rename fields,
+restore flags, index settings, ignored settings, snapshot UUID, storage type,
+source remote repositories, alias rename fields, and alias write-index policy
+before admission rejects execution. At roughly 1.08M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is snapshot restore coordination, repository
+snapshot metadata loading, index metadata rewrite, shard restore planning,
+cluster-state publication, restore completion tracking, and response rendering.
 
 Current get-mappings reject wire microbenchmark:
 
