@@ -1,4 +1,7 @@
-use os_transport::action::SOURCE_DERIVED_CLUSTER_ACTIONS;
+use os_transport::action::{
+    classify_opensearch_transport_action, OpenSearchTransportActionDisposition,
+    SOURCE_DERIVED_CLUSTER_ACTIONS,
+};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -84,4 +87,27 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
         by_action["cluster:monitor/task"].disposition,
         "implemented"
     );
+}
+
+#[test]
+fn interop_transport_action_inventory_matches_dispatch_classifier() {
+    let inventory: Inventory = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/interop-transport-action-inventory.json"
+    ))
+    .unwrap();
+
+    for action in inventory.actions {
+        let expected = match action.disposition.as_str() {
+            "implemented" => OpenSearchTransportActionDisposition::Implemented,
+            "rejected" => OpenSearchTransportActionDisposition::Rejected,
+            "phase_c" => OpenSearchTransportActionDisposition::Missing,
+            other => panic!("unexpected disposition {other} for {}", action.action_name),
+        };
+        assert_eq!(
+            classify_opensearch_transport_action(&action.action_name).disposition,
+            expected,
+            "{}",
+            action.action_name
+        );
+    }
 }

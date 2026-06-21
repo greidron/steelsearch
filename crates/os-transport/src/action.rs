@@ -118,6 +118,60 @@ pub const STEELSEARCH_REPLICATION_ACTIONS: &[SourceTransportActionSpec] =
         response_wire_type: "SteelsearchReplicaOperationResponse",
     }];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchTransportActionDisposition {
+    Implemented,
+    Rejected,
+    Missing,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchTransportDispatchDecision {
+    pub action_name: String,
+    pub disposition: OpenSearchTransportActionDisposition,
+    pub reason: &'static str,
+}
+
+pub fn classify_opensearch_transport_action(
+    action_name: &str,
+) -> OpenSearchTransportDispatchDecision {
+    match action_name {
+        CLUSTER_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster-state observer transport adapter is available",
+        },
+        PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "pending-tasks observer transport adapter is available",
+        },
+        CLUSTER_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cluster settings mutation is not admitted through transport",
+        },
+        _ => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Missing,
+            reason: "no OpenSearch transport action adapter is registered",
+        },
+    }
+}
+
+pub fn classify_opensearch_transport_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchTransportDispatchDecision, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    Ok(classify_opensearch_transport_action(&header.action))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeValueWire {
     pub duration: i64,
@@ -1035,6 +1089,66 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn opensearch_transport_action_dispatch_classifies_current_adapters() {
+        assert_eq!(
+            classify_opensearch_transport_action(CLUSTER_STATE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(PENDING_CLUSTER_TASKS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action("indices:data/read/search").disposition,
+            OpenSearchTransportActionDisposition::Missing
+        );
+    }
+
+    #[test]
+    fn opensearch_transport_request_dispatch_reads_action_from_header() {
+        let message = TransportMessage {
+            request_id: 7,
+            status: TransportStatus::request(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            variable_header: BytesMut::from(
+                &RequestVariableHeader::new(CLUSTER_STATE_ACTION_NAME).to_bytes()[..],
+            ),
+            body: BytesMut::new(),
+        };
+
+        let decision = classify_opensearch_transport_request_message(&message).unwrap();
+
+        assert_eq!(decision.action_name, CLUSTER_STATE_ACTION_NAME);
+        assert_eq!(
+            decision.disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+    }
+
+    #[test]
+    fn opensearch_transport_request_dispatch_rejects_response_messages() {
+        let message = TransportMessage {
+            request_id: 7,
+            status: TransportStatus::response(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+            body: BytesMut::new(),
+        };
+
+        match classify_opensearch_transport_request_message(&message).unwrap_err() {
+            TransportActionWireError::UnexpectedMessageStatus { expected, actual } => {
+                assert_eq!(expected, "request");
+                assert_eq!(actual, TransportStatus::response().bits());
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
     }
 
     #[test]

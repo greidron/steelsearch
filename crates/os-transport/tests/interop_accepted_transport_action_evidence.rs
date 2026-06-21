@@ -1,4 +1,7 @@
-use os_transport::action::SOURCE_DERIVED_CLUSTER_ACTIONS;
+use os_transport::action::{
+    classify_opensearch_transport_action, OpenSearchTransportActionDisposition,
+    SOURCE_DERIVED_CLUSTER_ACTIONS,
+};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,6 +57,12 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_source_ac
     let mut by_action = BTreeMap::new();
     for action in ledger.actions {
         assert_eq!(action.disposition, "implemented", "{}", action.action_name);
+        assert_eq!(
+            classify_opensearch_transport_action(&action.action_name).disposition,
+            OpenSearchTransportActionDisposition::Implemented,
+            "{}",
+            action.action_name
+        );
         assert!(
             matches!(action.evidence_kind.as_str(), "java_fixture" | "wire_round_trip" | "live_probe"),
             "unexpected evidence kind for {}",
