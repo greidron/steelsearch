@@ -238,6 +238,15 @@
       "reason": "Explain transport execution requires query explain response rendering mapping before Steelsearch can serve OpenSearch explain semantics."
     },
     {
+      "action_name": "indices:data/read/point_in_time/delete",
+      "action_type": "DeletePitAction",
+      "transport_action": "TransportDeletePitAction",
+      "request_wire_type": "DeletePitRequest",
+      "response_wire_type": "DeletePitResponse",
+      "disposition": "rejected",
+      "reason": "Delete-PIT transport execution requires PIT context lifecycle mapping before Steelsearch can serve OpenSearch PIT deletion semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",

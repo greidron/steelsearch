@@ -202,6 +202,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/scroll` (rejected fail-closed)
 - `indices:data/read/scroll/clear` (rejected fail-closed)
 - `indices:data/read/explain` (rejected fail-closed)
+- `indices:data/read/point_in_time/delete` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -487,6 +488,16 @@ The explain boundary covers:
 - explicit rejection for concrete shard ids, missing index/id/query fields,
   routing, preference, alias filters, stored fields, fetch-source context, and
   explain execution.
+
+The delete-PIT boundary covers:
+
+- OpenSearch `DeletePitRequest` parent task and PIT id array at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `indices:data/read/point_in_time/delete` until PIT context invalidation and
+  response rendering are mapped;
+- explicit rejection for empty PIT id arrays, empty PIT id entries, and
+  delete-PIT execution.
 
 The indices-stats boundary covers:
 
@@ -1079,6 +1090,23 @@ markers, stored-field marker, and fetch-source marker before rejecting
 execution. At roughly 1.34M ops/s in the latest local release run, the boundary
 itself is lightweight; the first performance point to inspect before accepting
 execution is query builder decode/rewrite plus explanation tree rendering.
+
+Current delete-PIT reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-pit-reject-wire-benchmark
+delete_pit_reject_request_encode iterations=400000 elapsed_ms=283.001 ops_per_second=1413423.68 nanos_per_op=707.50
+delete_pit_reject_request_decode iterations=400000 elapsed_ms=291.271 ops_per_second=1373290.90 nanos_per_op=728.18
+delete_pit_reject_validation iterations=400000 elapsed_ms=268.519 ops_per_second=1489655.16 nanos_per_op=671.30
+delete_pit_reject_wire_bottleneck_ops_per_second=1373290.90
+```
+
+The current delete-PIT fail-closed boundary bottleneck is request decode. This
+path carries only the ActionRequest parent task and PIT id array before
+rejecting execution. At roughly 1.37M ops/s in the latest local release run,
+the boundary itself is lightweight; the first performance point to inspect
+before accepting execution is PIT context lookup/invalidation and delete-PIT
+response rendering.
 
 Current indices-stats reject wire microbenchmark:
 

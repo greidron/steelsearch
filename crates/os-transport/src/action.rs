@@ -38,6 +38,7 @@ pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch
 pub const OPENSEARCH_SEARCH_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll";
 pub const OPENSEARCH_CLEAR_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll/clear";
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
+pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/delete";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
@@ -240,6 +241,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "ExplainResponse",
         adapter_stage: "search-read",
         next_step: "map explain query builders and explanation rendering onto the Rust search executor",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_DELETE_PIT_ACTION_NAME,
+        action_type: "DeletePitAction",
+        transport_action: "TransportDeletePitAction",
+        request_wire_type: "DeletePitRequest",
+        response_wire_type: "DeletePitResponse",
+        adapter_stage: "search-pit",
+        next_step: "map PIT id invalidation onto Rust search context lifecycle",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_MAPPINGS_ACTION_NAME,
@@ -645,6 +655,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "explain transport execution requires query explain response rendering mapping",
+        },
+        OPENSEARCH_DELETE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "delete-pit transport execution requires PIT context lifecycle mapping",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2890,6 +2905,44 @@ pub fn read_opensearch_explain_request_message(
     OpenSearchExplainRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_delete_pit_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchDeletePitRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_DELETE_PIT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_pit_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDeletePitRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_DELETE_PIT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_DELETE_PIT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchDeletePitRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -4582,6 +4635,61 @@ impl OpenSearchExplainRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "explain request execution",
             reason: "explain transport execution requires query explain response rendering mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDeletePitRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub pit_ids: Vec<String>,
+}
+
+impl Default for OpenSearchDeletePitRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_ids: vec!["pit-context".to_string()],
+        }
+    }
+}
+
+impl OpenSearchDeletePitRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.pit_ids);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            pit_ids: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.pit_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit empty ids",
+                reason: "OpenSearch delete-PIT requests require at least one PIT id",
+            });
+        }
+        if self.pit_ids.iter().any(String::is_empty) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit empty id",
+                reason: "OpenSearch delete-PIT requests require non-empty PIT ids",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete pit execution",
+            reason: "delete-PIT transport execution requires PIT context lifecycle mapping",
         })
     }
 }
@@ -8955,6 +9063,15 @@ mod tests {
                     next_step: "map explain query builders and explanation rendering onto the Rust search executor",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/point_in_time/delete",
+                    action_type: "DeletePitAction",
+                    transport_action: "TransportDeletePitAction",
+                    request_wire_type: "DeletePitRequest",
+                    response_wire_type: "DeletePitResponse",
+                    adapter_stage: "search-pit",
+                    next_step: "map PIT id invalidation onto Rust search context lifecycle",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/mappings/get",
                     action_type: "GetMappingsAction",
                     transport_action: "TransportGetMappingsAction",
@@ -9208,6 +9325,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_DELETE_PIT_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -9329,6 +9450,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -13740,6 +13862,74 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "explain request execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_pit_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchDeletePitRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchDeletePitRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_pit_request_rejects_unsupported_shapes() {
+        let empty_ids = OpenSearchDeletePitRequestWire {
+            pit_ids: Vec::new(),
+            ..OpenSearchDeletePitRequestWire::default()
+        };
+        assert!(matches!(
+            empty_ids.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit empty ids",
+                ..
+            })
+        ));
+
+        let empty_id = OpenSearchDeletePitRequestWire {
+            pit_ids: vec![String::new()],
+            ..OpenSearchDeletePitRequestWire::default()
+        };
+        assert!(matches!(
+            empty_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit empty id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_pit_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchDeletePitRequestWire::default();
+        let mut frame =
+            build_opensearch_delete_pit_request_message(52, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete-PIT request message");
+        };
+        assert_eq!(
+            read_opensearch_delete_pit_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_delete_pit_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit execution",
                 ..
             })
         ));
