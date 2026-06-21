@@ -210,6 +210,10 @@ name = "auto-create-reject-wire-benchmark"
 path = "benchmarks/auto_create_reject_wire.rs"
 
 [[bin]]
+name = "put-stored-script-reject-wire-benchmark"
+path = "benchmarks/put_stored_script_reject_wire.rs"
+
+[[bin]]
 name = "resize-reject-wire-benchmark"
 path = "benchmarks/resize_reject_wire.rs"
 

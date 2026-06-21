@@ -254,6 +254,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/delete`
 - `indices:admin/create` (rejected fail-closed)
 - `indices:admin/auto_create` (rejected fail-closed)
+- `cluster:admin/script/put` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -797,6 +798,21 @@ The auto-create boundary covers:
   acknowledgement timeouts, missing index names, custom cause strings,
   settings, mappings, aliases, custom wait-for-active-shards, context payloads,
   and auto-create execution.
+
+The put-stored-script boundary covers:
+
+- OpenSearch `PutStoredScriptRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, optional stored script id, content
+  `BytesReference`, media type string, optional context, and
+  `StoredScriptSource` language/source/options at the OpenSearch 3.x wire
+  decode/build layer;
+- explicit fail-closed classification for `cluster:admin/script/put` until
+  script source parsing, script context validation, cluster metadata mutation,
+  and acknowledgement response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing or invalid ids, empty content, non-JSON
+  media types, explicit script contexts, missing language/source fields,
+  compiler options, and put-stored-script execution.
 
 The resize boundary covers:
 
@@ -2329,6 +2345,25 @@ transport frame/request serialization. At roughly 1.45M ops/s in the latest
 local release run, the future performance-sensitive work is auto-create
 index/data-stream resolution, cluster-manager metadata mutation, active-shards
 wait, and response rendering.
+
+Current put-stored-script reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-stored-script-reject-wire-benchmark
+put_stored_script_reject_request_encode iterations=400000 elapsed_ms=481.887 ops_per_second=830069.93 nanos_per_op=1204.72
+put_stored_script_reject_request_decode iterations=400000 elapsed_ms=480.088 ops_per_second=833181.05 nanos_per_op=1200.22
+put_stored_script_reject_validation iterations=400000 elapsed_ms=494.523 ops_per_second=808860.27 nanos_per_op=1236.31
+put_stored_script_reject_wire_bottleneck_ops_per_second=808860.27
+```
+
+The current put-stored-script fail-closed boundary bottleneck is validation.
+The path decodes an acknowledged cluster-manager request, optional id, script
+content `BytesReference`, media type string, optional context, and
+`StoredScriptSource` language/source/options before rejecting execution. At
+roughly 0.81M ops/s in the latest local release run, current overhead is still
+bounded wire validation; future performance-sensitive work is script source
+parsing, script context validation, cluster metadata mutation, and ack
+rendering.
 
 Current resize reject wire microbenchmark:
 

@@ -409,6 +409,15 @@
       "reason": "Auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and response rendering before Steelsearch can serve OpenSearch auto-create semantics."
     },
     {
+      "action_name": "cluster:admin/script/put",
+      "action_type": "PutStoredScriptAction",
+      "transport_action": "TransportPutStoredScriptAction",
+      "request_wire_type": "PutStoredScriptRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Put-stored-script transport execution requires script source parsing, context validation, cluster metadata mutation, and ack rendering before Steelsearch can serve OpenSearch stored script semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",
