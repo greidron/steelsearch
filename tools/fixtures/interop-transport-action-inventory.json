@@ -445,6 +445,15 @@
       "reason": "Get-script-context transport execution requires Rust script context catalog mapping and response rendering before Steelsearch can serve OpenSearch script context semantics."
     },
     {
+      "action_name": "cluster:admin/script_language/get",
+      "action_type": "GetScriptLanguageAction",
+      "transport_action": "TransportGetScriptLanguageAction",
+      "request_wire_type": "GetScriptLanguageRequest",
+      "response_wire_type": "GetScriptLanguageResponse",
+      "disposition": "rejected",
+      "reason": "Get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering before Steelsearch can serve OpenSearch script language semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",

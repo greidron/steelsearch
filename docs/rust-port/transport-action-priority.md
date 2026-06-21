@@ -258,6 +258,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script/get` (rejected fail-closed)
 - `cluster:admin/script/delete` (rejected fail-closed)
 - `cluster:admin/script_context/get` (rejected fail-closed)
+- `cluster:admin/script_language/get` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -855,6 +856,19 @@ The get-script-context boundary covers:
   are implemented;
 - explicit rejection for get-script-context execution, plus defensive decode
   rejection for negative context, getter, and parameter counts.
+
+The get-script-language boundary covers:
+
+- OpenSearch `GetScriptLanguageRequest` parent task at the OpenSearch 3.x wire
+  decode/build layer;
+- OpenSearch `GetScriptLanguageResponse` / `ScriptLanguagesInfo`
+  `types_allowed` string collection and language-to-contexts string collection
+  map at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/script_language/get`
+  until Rust-supported script language/type/context catalog mapping and
+  response rendering are implemented;
+- explicit rejection for get-script-language execution, plus defensive decode
+  rejection for negative type, language, and context counts.
 
 The resize boundary covers:
 
@@ -2461,6 +2475,25 @@ At roughly 1.04M ops/s in the latest local release run, current overhead is
 script context response structure decoding. Future performance-sensitive work is
 building the Rust script context catalog without repeated allocation-heavy
 method metadata expansion.
+
+Current get-script-language reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-script-language-reject-wire-benchmark
+get_script_language_reject_request_encode iterations=400000 elapsed_ms=211.420 ops_per_second=1891966.13 nanos_per_op=528.55
+get_script_language_reject_request_decode iterations=400000 elapsed_ms=202.714 ops_per_second=1973219.13 nanos_per_op=506.79
+get_script_language_reject_validation iterations=400000 elapsed_ms=202.727 ops_per_second=1973099.22 nanos_per_op=506.82
+get_script_language_response_decode iterations=400000 elapsed_ms=415.345 ops_per_second=963054.44 nanos_per_op=1038.36
+get_script_language_reject_wire_bottleneck_ops_per_second=963054.44
+```
+
+The current get-script-language fail-closed boundary bottleneck is response
+decode. The request path is thin, but the response path expands allowed script
+types plus the language-to-contexts map before execution is rejected. At roughly
+963K ops/s in the latest local release run, current overhead is script language
+catalog response decoding. Future performance-sensitive work is building and
+serving the Rust script language catalog without repeated allocation-heavy
+string collection expansion.
 
 Current resize reject wire microbenchmark:
 

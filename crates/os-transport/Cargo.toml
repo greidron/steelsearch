@@ -226,6 +226,10 @@ name = "get-script-context-reject-wire-benchmark"
 path = "benchmarks/get_script_context_reject_wire.rs"
 
 [[bin]]
+name = "get-script-language-reject-wire-benchmark"
+path = "benchmarks/get_script_language_reject_wire.rs"
+
+[[bin]]
 name = "resize-reject-wire-benchmark"
 path = "benchmarks/resize_reject_wire.rs"
 

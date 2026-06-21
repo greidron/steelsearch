@@ -87,6 +87,7 @@ pub const OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/script
 pub const OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/script/get";
 pub const OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/script/delete";
 pub const OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME: &str = "cluster:admin/script_context/get";
+pub const OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME: &str = "cluster:admin/script_language/get";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
@@ -661,6 +662,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetScriptContextResponse",
         adapter_stage: "script-context-catalog",
         next_step: "map script context catalog metadata onto Rust-supported script contexts and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME,
+        action_type: "GetScriptLanguageAction",
+        transport_action: "TransportGetScriptLanguageAction",
+        request_wire_type: "GetScriptLanguageRequest",
+        response_wire_type: "GetScriptLanguageResponse",
+        adapter_stage: "script-language-catalog",
+        next_step: "map script language/type/context availability onto Rust-supported script engines and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_RESIZE_ACTION_NAME,
@@ -1439,6 +1449,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-script-context transport execution requires Rust script context catalog mapping and response rendering",
+        },
+        OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering",
         },
         OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5555,6 +5570,73 @@ pub fn read_opensearch_get_script_context_response_message(
         });
     }
     OpenSearchGetScriptContextResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_script_language_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetScriptLanguageRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_script_language_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetScriptLanguageRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetScriptLanguageRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_script_language_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetScriptLanguageResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_script_language_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetScriptLanguageResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchGetScriptLanguageResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_resize_request_message(
@@ -10756,6 +10838,96 @@ impl OpenSearchGetScriptContextResponseWire {
         }
         require_no_trailing_bytes(&input)?;
         Ok(Self { contexts })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetScriptLanguageRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+}
+
+impl Default for OpenSearchGetScriptLanguageRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+        }
+    }
+}
+
+impl OpenSearchGetScriptLanguageRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get script language execution",
+            reason: "get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetScriptLanguageResponseWire {
+    pub types_allowed: Vec<String>,
+    pub language_contexts: BTreeMap<String, Vec<String>>,
+}
+
+impl Default for OpenSearchGetScriptLanguageResponseWire {
+    fn default() -> Self {
+        Self {
+            types_allowed: vec!["inline".to_string(), "stored".to_string()],
+            language_contexts: BTreeMap::from([(
+                "painless".to_string(),
+                vec!["score".to_string(), "template".to_string()],
+            )]),
+        }
+    }
+}
+
+impl OpenSearchGetScriptLanguageResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_string_collection(output, &self.types_allowed);
+        output.write_vint(self.language_contexts.len() as i32);
+        for (language, contexts) in &self.language_contexts {
+            output.write_string(language);
+            write_string_collection(output, contexts);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let types_allowed = read_string_collection(&mut input, "get script language types count")?;
+        let language_count = input.read_vint()?;
+        if language_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script language language count",
+                reason: "OpenSearch script language response language count cannot be negative",
+            });
+        }
+        let mut language_contexts = BTreeMap::new();
+        for _ in 0..language_count {
+            let language = input.read_string()?;
+            let contexts = read_string_collection(&mut input, "get script language context count")?;
+            language_contexts.insert(language, contexts);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            types_allowed,
+            language_contexts,
+        })
     }
 }
 
@@ -20474,6 +20646,31 @@ fn read_optional_string_array(
     }
 }
 
+fn write_string_collection(output: &mut StreamOutput, values: &[String]) {
+    output.write_vint(values.len() as i32);
+    for value in values {
+        output.write_string(value);
+    }
+}
+
+fn read_string_collection(
+    input: &mut StreamInput,
+    negative_count_shape: &'static str,
+) -> Result<Vec<String>, TransportActionWireError> {
+    let count = input.read_vint()?;
+    if count < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: negative_count_shape,
+            reason: "OpenSearch string collection count cannot be negative",
+        });
+    }
+    let mut values = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        values.push(input.read_string()?);
+    }
+    Ok(values)
+}
+
 fn write_generic_map_presence(output: &mut StreamOutput, has_entries: bool) {
     if has_entries {
         output.write_byte(10);
@@ -21430,6 +21627,15 @@ mod tests {
                     next_step: "map script context catalog metadata onto Rust-supported script contexts and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/script_language/get",
+                    action_type: "GetScriptLanguageAction",
+                    transport_action: "TransportGetScriptLanguageAction",
+                    request_wire_type: "GetScriptLanguageRequest",
+                    response_wire_type: "GetScriptLanguageResponse",
+                    adapter_stage: "script-language-catalog",
+                    next_step: "map script language/type/context availability onto Rust-supported script engines and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/resize",
                     action_type: "ResizeAction",
                     transport_action: "TransportResizeAction",
@@ -22141,6 +22347,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -22358,6 +22569,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
@@ -31021,6 +31233,132 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_get_script_context_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_script_language_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetScriptLanguageRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetScriptLanguageRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script language execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_script_language_response_wire_round_trips_languages_and_contexts() {
+        let response = OpenSearchGetScriptLanguageResponseWire {
+            types_allowed: vec!["inline".to_string(), "stored".to_string()],
+            language_contexts: BTreeMap::from([
+                (
+                    "expression".to_string(),
+                    vec!["score".to_string(), "number_sort".to_string()],
+                ),
+                (
+                    "painless".to_string(),
+                    vec!["score".to_string(), "template".to_string()],
+                ),
+            ]),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        assert_eq!(
+            OpenSearchGetScriptLanguageResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_script_language_response_rejects_negative_counts() {
+        let mut types_count = StreamOutput::new();
+        types_count.write_vint(-1);
+        assert!(matches!(
+            OpenSearchGetScriptLanguageResponseWire::read(types_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script language types count",
+                ..
+            })
+        ));
+
+        let mut language_count = StreamOutput::new();
+        language_count.write_vint(0);
+        language_count.write_vint(-1);
+        assert!(matches!(
+            OpenSearchGetScriptLanguageResponseWire::read(language_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script language language count",
+                ..
+            })
+        ));
+
+        let mut context_count = StreamOutput::new();
+        context_count.write_vint(0);
+        context_count.write_vint(1);
+        context_count.write_string("painless");
+        context_count.write_vint(-1);
+        assert!(matches!(
+            OpenSearchGetScriptLanguageResponseWire::read(context_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script language context count",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_script_language_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = OpenSearchGetScriptLanguageRequestWire::default();
+        let mut frame = build_opensearch_get_script_language_request_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get script language request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_get_script_language_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_script_language_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script language execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchGetScriptLanguageResponseWire::default();
+        let mut frame = build_opensearch_get_script_language_response_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get script language response message");
+        };
+        assert_eq!(
+            read_opensearch_get_script_language_response_message(&message).unwrap(),
             response
         );
     }
