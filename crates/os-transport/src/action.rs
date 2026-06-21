@@ -86,6 +86,7 @@ pub const OPENSEARCH_AUTO_CREATE_ACTION_NAME: &str = "indices:admin/auto_create"
 pub const OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/script/put";
 pub const OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/script/get";
 pub const OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME: &str = "cluster:admin/script/delete";
+pub const OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME: &str = "cluster:admin/script_context/get";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
@@ -651,6 +652,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "script-metadata-write",
         next_step: "map stored-script deletes onto Rust script metadata mutation, delete throttling, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME,
+        action_type: "GetScriptContextAction",
+        transport_action: "TransportGetScriptContextAction",
+        request_wire_type: "GetScriptContextRequest",
+        response_wire_type: "GetScriptContextResponse",
+        adapter_stage: "script-context-catalog",
+        next_step: "map script context catalog metadata onto Rust-supported script contexts and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_RESIZE_ACTION_NAME,
@@ -1424,6 +1434,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-stored-script transport execution requires script metadata mutation, delete throttling, and ack rendering",
+        },
+        OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-script-context transport execution requires Rust script context catalog mapping and response rendering",
         },
         OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5473,6 +5488,73 @@ pub fn read_opensearch_delete_stored_script_request_message(
         });
     }
     OpenSearchDeleteStoredScriptRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_script_context_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetScriptContextRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_script_context_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetScriptContextRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetScriptContextRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_script_context_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetScriptContextResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_script_context_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetScriptContextResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchGetScriptContextResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_resize_request_message(
@@ -10460,6 +10542,220 @@ impl OpenSearchDeleteStoredScriptRequestWire {
             shape: "delete stored script execution",
             reason: "delete-stored-script transport execution requires script metadata mutation, delete throttling, and ack rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetScriptContextRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+}
+
+impl Default for OpenSearchGetScriptContextRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+        }
+    }
+}
+
+impl OpenSearchGetScriptContextRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get script context execution",
+            reason: "get-script-context transport execution requires Rust script context catalog mapping and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchScriptContextParameterInfoWire {
+    pub r#type: String,
+    pub name: String,
+}
+
+impl OpenSearchScriptContextParameterInfoWire {
+    pub fn new(r#type: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            r#type: r#type.into(),
+            name: name.into(),
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.r#type);
+        output.write_string(&self.name);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            r#type: input.read_string()?,
+            name: input.read_string()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchScriptContextMethodInfoWire {
+    pub name: String,
+    pub return_type: String,
+    pub parameters: Vec<OpenSearchScriptContextParameterInfoWire>,
+}
+
+impl OpenSearchScriptContextMethodInfoWire {
+    pub fn new(
+        name: impl Into<String>,
+        return_type: impl Into<String>,
+        parameters: Vec<OpenSearchScriptContextParameterInfoWire>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            return_type: return_type.into(),
+            parameters,
+        }
+    }
+
+    fn execute_void() -> Self {
+        Self::new("execute", "void", Vec::new())
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.name);
+        output.write_string(&self.return_type);
+        output.write_i32(self.parameters.len() as i32);
+        for parameter in &self.parameters {
+            parameter.write(output);
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let name = input.read_string()?;
+        let return_type = input.read_string()?;
+        let parameter_count = input.read_i32()?;
+        if parameter_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context parameter count",
+                reason: "OpenSearch script context parameter count cannot be negative",
+            });
+        }
+        let mut parameters = Vec::with_capacity(parameter_count as usize);
+        for _ in 0..parameter_count {
+            parameters.push(OpenSearchScriptContextParameterInfoWire::read(input)?);
+        }
+        Ok(Self {
+            name,
+            return_type,
+            parameters,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchScriptContextInfoWire {
+    pub name: String,
+    pub execute: OpenSearchScriptContextMethodInfoWire,
+    pub getters: Vec<OpenSearchScriptContextMethodInfoWire>,
+}
+
+impl OpenSearchScriptContextInfoWire {
+    pub fn new(
+        name: impl Into<String>,
+        execute: OpenSearchScriptContextMethodInfoWire,
+        getters: Vec<OpenSearchScriptContextMethodInfoWire>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            execute,
+            getters,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.name);
+        self.execute.write(output);
+        output.write_i32(self.getters.len() as i32);
+        for getter in &self.getters {
+            getter.write(output);
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let name = input.read_string()?;
+        let execute = OpenSearchScriptContextMethodInfoWire::read(input)?;
+        let getter_count = input.read_i32()?;
+        if getter_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context getter count",
+                reason: "OpenSearch script context getter count cannot be negative",
+            });
+        }
+        let mut getters = Vec::with_capacity(getter_count as usize);
+        for _ in 0..getter_count {
+            getters.push(OpenSearchScriptContextMethodInfoWire::read(input)?);
+        }
+        Ok(Self {
+            name,
+            execute,
+            getters,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetScriptContextResponseWire {
+    pub contexts: Vec<OpenSearchScriptContextInfoWire>,
+}
+
+impl Default for OpenSearchGetScriptContextResponseWire {
+    fn default() -> Self {
+        Self {
+            contexts: vec![OpenSearchScriptContextInfoWire::new(
+                "template",
+                OpenSearchScriptContextMethodInfoWire::execute_void(),
+                Vec::new(),
+            )],
+        }
+    }
+}
+
+impl OpenSearchGetScriptContextResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_i32(self.contexts.len() as i32);
+        for context in &self.contexts {
+            context.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let context_count = input.read_i32()?;
+        if context_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context count",
+                reason: "OpenSearch script context response count cannot be negative",
+            });
+        }
+        let mut contexts = Vec::with_capacity(context_count as usize);
+        for _ in 0..context_count {
+            contexts.push(OpenSearchScriptContextInfoWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { contexts })
     }
 }
 
@@ -21125,6 +21421,15 @@ mod tests {
                     next_step: "map stored-script deletes onto Rust script metadata mutation, delete throttling, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/script_context/get",
+                    action_type: "GetScriptContextAction",
+                    transport_action: "TransportGetScriptContextAction",
+                    request_wire_type: "GetScriptContextRequest",
+                    response_wire_type: "GetScriptContextResponse",
+                    adapter_stage: "script-context-catalog",
+                    next_step: "map script context catalog metadata onto Rust-supported script contexts and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/resize",
                     action_type: "ResizeAction",
                     transport_action: "TransportResizeAction",
@@ -21831,6 +22136,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -22047,6 +22357,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
@@ -30576,6 +30887,142 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn opensearch_get_script_context_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetScriptContextRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetScriptContextRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_script_context_response_wire_round_trips_context_methods() {
+        let response = OpenSearchGetScriptContextResponseWire {
+            contexts: vec![OpenSearchScriptContextInfoWire::new(
+                "score",
+                OpenSearchScriptContextMethodInfoWire::new(
+                    "execute",
+                    "double",
+                    vec![OpenSearchScriptContextParameterInfoWire::new(
+                        "java.util.Map",
+                        "params",
+                    )],
+                ),
+                vec![OpenSearchScriptContextMethodInfoWire::new(
+                    "getDoc",
+                    "java.util.Map",
+                    Vec::new(),
+                )],
+            )],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        assert_eq!(
+            OpenSearchGetScriptContextResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_script_context_response_rejects_negative_counts() {
+        let mut context_count = StreamOutput::new();
+        context_count.write_i32(-1);
+        assert!(matches!(
+            OpenSearchGetScriptContextResponseWire::read(context_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context count",
+                ..
+            })
+        ));
+
+        let mut parameter_count = StreamOutput::new();
+        parameter_count.write_i32(1);
+        parameter_count.write_string("score");
+        parameter_count.write_string("execute");
+        parameter_count.write_string("double");
+        parameter_count.write_i32(-1);
+        assert!(matches!(
+            OpenSearchGetScriptContextResponseWire::read(parameter_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context parameter count",
+                ..
+            })
+        ));
+
+        let mut getter_count = StreamOutput::new();
+        getter_count.write_i32(1);
+        getter_count.write_string("score");
+        getter_count.write_string("execute");
+        getter_count.write_string("double");
+        getter_count.write_i32(0);
+        getter_count.write_i32(-1);
+        assert!(matches!(
+            OpenSearchGetScriptContextResponseWire::read(getter_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context getter count",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_script_context_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = OpenSearchGetScriptContextRequestWire::default();
+        let mut frame = build_opensearch_get_script_context_request_message(
+            72,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get script context request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_get_script_context_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_script_context_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get script context execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchGetScriptContextResponseWire::default();
+        let mut frame = build_opensearch_get_script_context_response_message(
+            72,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get script context response message");
+        };
+        assert_eq!(
+            read_opensearch_get_script_context_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

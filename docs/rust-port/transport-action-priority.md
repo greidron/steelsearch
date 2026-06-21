@@ -257,6 +257,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script/put` (rejected fail-closed)
 - `cluster:admin/script/get` (rejected fail-closed)
 - `cluster:admin/script/delete` (rejected fail-closed)
+- `cluster:admin/script_context/get` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -841,6 +842,19 @@ The delete-stored-script boundary covers:
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing ids, invalid ids, and
   delete-stored-script execution.
+
+The get-script-context boundary covers:
+
+- OpenSearch `GetScriptContextRequest` parent task at the OpenSearch 3.x wire
+  decode/build layer;
+- OpenSearch `GetScriptContextResponse` context count and `ScriptContextInfo`
+  name, execute method, getter methods, and method parameter metadata at the
+  wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/script_context/get`
+  until Rust-supported script context catalog mapping and response rendering
+  are implemented;
+- explicit rejection for get-script-context execution, plus defensive decode
+  rejection for negative context, getter, and parameter counts.
 
 The resize boundary covers:
 
@@ -2428,6 +2442,25 @@ stored script id before rejecting execution. At roughly 1.43M ops/s in the
 latest local release run, current overhead is transport serialization; future
 performance-sensitive work is script metadata mutation, delete-task throttling,
 and ack rendering.
+
+Current get-script-context reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-script-context-reject-wire-benchmark
+get_script_context_reject_request_encode iterations=400000 elapsed_ms=222.431 ops_per_second=1798308.72 nanos_per_op=556.08
+get_script_context_reject_request_decode iterations=400000 elapsed_ms=223.940 ops_per_second=1786189.27 nanos_per_op=559.85
+get_script_context_reject_validation iterations=400000 elapsed_ms=249.352 ops_per_second=1604159.30 nanos_per_op=623.38
+get_script_context_response_decode iterations=400000 elapsed_ms=384.613 ops_per_second=1040005.61 nanos_per_op=961.53
+get_script_context_reject_wire_bottleneck_ops_per_second=1040005.61
+```
+
+The current get-script-context fail-closed boundary bottleneck is response
+decode. The request path is thin, but the response path expands
+`ScriptContextInfo` method and parameter metadata before execution is rejected.
+At roughly 1.04M ops/s in the latest local release run, current overhead is
+script context response structure decoding. Future performance-sensitive work is
+building the Rust script context catalog without repeated allocation-heavy
+method metadata expansion.
 
 Current resize reject wire microbenchmark:
 
