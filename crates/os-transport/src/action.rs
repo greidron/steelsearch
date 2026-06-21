@@ -36,6 +36,7 @@ pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
 pub const OPENSEARCH_STREAM_SEARCH_ACTION_NAME: &str = "indices:data/read/search/stream";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_SEARCH_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll";
+pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
@@ -220,6 +221,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "SearchResponse",
         adapter_stage: "search-scroll",
         next_step: "map scroll context ids and keep-alive updates onto Rust search context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_EXPLAIN_ACTION_NAME,
+        action_type: "ExplainAction",
+        transport_action: "TransportExplainAction",
+        request_wire_type: "ExplainRequest",
+        response_wire_type: "ExplainResponse",
+        adapter_stage: "search-read",
+        next_step: "map explain query builders and explanation rendering onto the Rust search executor",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_MAPPINGS_ACTION_NAME,
@@ -615,6 +625,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "search-scroll transport execution requires scroll context lifecycle mapping",
+        },
+        OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "explain transport execution requires query explain response rendering mapping",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2784,6 +2799,44 @@ pub fn read_opensearch_search_scroll_request_message(
     OpenSearchSearchScrollRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_explain_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchExplainRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_EXPLAIN_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_explain_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchExplainRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_EXPLAIN_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_EXPLAIN_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchExplainRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -4287,6 +4340,140 @@ impl OpenSearchSearchScrollRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search scroll execution",
             reason: "search-scroll transport execution requires scroll context lifecycle mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchExplainRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub index: Option<String>,
+    pub id: String,
+    pub routing: Option<String>,
+    pub preference: Option<String>,
+    pub query_name: String,
+    pub alias_names: Vec<String>,
+    pub alias_filter_name: Option<String>,
+    pub stored_fields: Option<Vec<String>>,
+    pub fetch_source_context_present: bool,
+    pub now_in_millis: i64,
+}
+
+impl Default for OpenSearchExplainRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            index: Some("logs".to_string()),
+            id: "doc-1".to_string(),
+            routing: None,
+            preference: None,
+            query_name: "match_all".to_string(),
+            alias_names: Vec::new(),
+            alias_filter_name: None,
+            stored_fields: None,
+            fetch_source_context_present: false,
+            now_in_millis: 0,
+        }
+    }
+}
+
+impl OpenSearchExplainRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_bool(false);
+        output.write_optional_string(self.index.as_deref());
+        output.write_string(&self.id);
+        output.write_optional_string(self.routing.as_deref());
+        output.write_optional_string(self.preference.as_deref());
+        output.write_string(&self.query_name);
+        output.write_string_array(&self.alias_names);
+        write_optional_named_writeable_marker(output, self.alias_filter_name.as_deref());
+        write_optional_string_array(output, self.stored_fields.as_deref());
+        output.write_bool(self.fetch_source_context_present);
+        output.write_vlong(self.now_in_millis);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request concrete shard id",
+                reason: "single-shard explain routing requires concrete shard id mapping",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            index: input.read_optional_string()?,
+            id: input.read_string()?,
+            routing: input.read_optional_string()?,
+            preference: input.read_optional_string()?,
+            query_name: input.read_string()?,
+            alias_names: input.read_string_array()?,
+            alias_filter_name: read_optional_named_writeable_marker(&mut input)?,
+            stored_fields: read_optional_string_array(&mut input)?,
+            fetch_source_context_present: input.read_bool()?,
+            now_in_millis: input.read_vlong()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.index.as_deref().unwrap_or_default().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request index",
+                reason: "OpenSearch explain requests require a non-empty concrete index target",
+            });
+        }
+        if self.id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request id",
+                reason: "OpenSearch explain requests require a non-empty document id",
+            });
+        }
+        if self.query_name.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request query",
+                reason: "OpenSearch explain requests require a query builder",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request routing",
+                reason: "routing-aware explain requires operation routing semantics",
+            });
+        }
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request preference",
+                reason: "preference-aware explain requires shard iterator ordering semantics",
+            });
+        }
+        if !self.alias_names.is_empty() || self.alias_filter_name.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request alias filter",
+                reason: "alias-filtered explain requires alias query rewriting semantics",
+            });
+        }
+        if self.stored_fields.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request stored fields",
+                reason: "stored-field explain fetches are not mapped by this adapter",
+            });
+        }
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request fetch source context",
+                reason: "fetch-source explain response shaping is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "explain request execution",
+            reason: "explain transport execution requires query explain response rendering mapping",
         })
     }
 }
@@ -8376,6 +8563,25 @@ fn read_optional_string_array(
     }
 }
 
+fn write_optional_named_writeable_marker(output: &mut StreamOutput, name: Option<&str>) {
+    if let Some(name) = name {
+        output.write_bool(true);
+        output.write_string(name);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_named_writeable_marker(
+    input: &mut StreamInput,
+) -> Result<Option<String>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_string()?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_enum_set(output: &mut StreamOutput, ordinals: &[u8]) {
     output.write_vint(ordinals.len() as i32);
     for ordinal in ordinals {
@@ -8623,6 +8829,15 @@ mod tests {
                     next_step: "map scroll context ids and keep-alive updates onto Rust search context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/explain",
+                    action_type: "ExplainAction",
+                    transport_action: "TransportExplainAction",
+                    request_wire_type: "ExplainRequest",
+                    response_wire_type: "ExplainResponse",
+                    adapter_stage: "search-read",
+                    next_step: "map explain query builders and explanation rendering onto the Rust search executor",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/mappings/get",
                     action_type: "GetMappingsAction",
                     transport_action: "TransportGetMappingsAction",
@@ -8868,6 +9083,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -8987,6 +9206,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
+                || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -13234,6 +13454,107 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn opensearch_explain_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchExplainRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchExplainRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_explain_request_rejects_unsupported_shapes() {
+        let missing_index = OpenSearchExplainRequestWire {
+            index: None,
+            ..OpenSearchExplainRequestWire::default()
+        };
+        assert!(matches!(
+            missing_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request index",
+                ..
+            })
+        ));
+
+        let missing_query = OpenSearchExplainRequestWire {
+            query_name: String::new(),
+            ..OpenSearchExplainRequestWire::default()
+        };
+        assert!(matches!(
+            missing_query.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request query",
+                ..
+            })
+        ));
+
+        let routed = OpenSearchExplainRequestWire {
+            routing: Some("tenant-a".to_string()),
+            ..OpenSearchExplainRequestWire::default()
+        };
+        assert!(matches!(
+            routed.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request routing",
+                ..
+            })
+        ));
+
+        let stored_fields = OpenSearchExplainRequestWire {
+            stored_fields: Some(vec!["message".to_string()]),
+            ..OpenSearchExplainRequestWire::default()
+        };
+        assert!(matches!(
+            stored_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request stored fields",
+                ..
+            })
+        ));
+
+        let concrete_shard = explain_request_body_with_concrete_shard_marker();
+        assert!(matches!(
+            OpenSearchExplainRequestWire::read(concrete_shard.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request concrete shard id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_explain_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchExplainRequestWire::default();
+        let mut frame =
+            build_opensearch_explain_request_message(50, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected explain request message");
+        };
+        assert_eq!(
+            read_opensearch_explain_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_explain_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request execution",
+                ..
+            })
+        ));
+    }
+
     fn search_request_body_with_optional_writeable_shape(
         scroll_present: bool,
         source_present: bool,
@@ -13249,6 +13570,13 @@ mod tests {
             return BytesMut::from(&output.freeze()[..]);
         }
         output.write_bool(source_present);
+        BytesMut::from(&output.freeze()[..])
+    }
+
+    fn explain_request_body_with_concrete_shard_marker() -> BytesMut {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_bool(true);
         BytesMut::from(&output.freeze()[..])
     }
 

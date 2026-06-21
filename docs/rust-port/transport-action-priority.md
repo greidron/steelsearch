@@ -200,6 +200,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
 - `indices:data/read/scroll` (rejected fail-closed)
+- `indices:data/read/explain` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -463,6 +464,18 @@ The search-scroll boundary covers:
   scroll context lifecycle and response rendering are mapped;
 - explicit rejection for empty scroll ids, missing keep-alive values, and
   search-scroll execution.
+
+The explain boundary covers:
+
+- OpenSearch `ExplainRequest` parent task, single-shard prefix, index, id,
+  routing, preference, query named-writeable marker, alias filter marker,
+  optional stored fields, fetch-source context marker, and `nowInMillis` at the
+  bounded wire decode/build layer;
+- explicit fail-closed classification for `indices:data/read/explain` until
+  query builder decoding and explanation response rendering are mapped;
+- explicit rejection for concrete shard ids, missing index/id/query fields,
+  routing, preference, alias filters, stored fields, fetch-source context, and
+  explain execution.
 
 The indices-stats boundary covers:
 
@@ -1021,6 +1034,23 @@ keep-alive time value before rejecting execution. At roughly 1.50M ops/s in the
 latest local release run, it remains a lightweight scroll control boundary; the
 first performance point to inspect before accepting execution is scroll context
 lookup/update and search response rendering.
+
+Current explain reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin explain-reject-wire-benchmark
+explain_reject_request_encode iterations=400000 elapsed_ms=291.836 ops_per_second=1370630.91 nanos_per_op=729.59
+explain_reject_request_decode iterations=400000 elapsed_ms=296.173 ops_per_second=1350561.07 nanos_per_op=740.43
+explain_reject_validation iterations=400000 elapsed_ms=299.151 ops_per_second=1337117.22 nanos_per_op=747.88
+explain_reject_wire_bottleneck_ops_per_second=1337117.22
+```
+
+The current explain fail-closed boundary bottleneck is validation. This path
+checks the bounded single-shard request envelope, query marker, alias/filter
+markers, stored-field marker, and fetch-source marker before rejecting
+execution. At roughly 1.34M ops/s in the latest local release run, the boundary
+itself is lightweight; the first performance point to inspect before accepting
+execution is query builder decode/rewrite plus explanation tree rendering.
 
 Current indices-stats reject wire microbenchmark:
 
