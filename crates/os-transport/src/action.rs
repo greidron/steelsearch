@@ -42,6 +42,7 @@ pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/sh
 pub const OPENSEARCH_RECOVERY_ACTION_NAME: &str = "indices:monitor/recovery";
 pub const OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME: &str = "indices:monitor/segments";
 pub const OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME: &str = "indices:monitor/shard_stores";
+pub const OPENSEARCH_GET_DATA_STREAM_ACTION_NAME: &str = "indices:admin/data_stream/get";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
@@ -271,6 +272,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "IndicesShardStoresResponse",
         adapter_stage: "shard-store-admin",
         next_step: "map bounded shard-store reads onto Rust shard allocation/store metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_DATA_STREAM_ACTION_NAME,
+        action_type: "GetDataStreamAction",
+        transport_action: "GetDataStreamAction.TransportAction",
+        request_wire_type: "GetDataStreamAction.Request",
+        response_wire_type: "GetDataStreamAction.Response",
+        adapter_stage: "data-stream-admin",
+        next_step: "map bounded data-stream reads onto Rust data-stream metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
@@ -528,6 +538,12 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "indices-shard-stores transport execution requires shard allocation/store metadata response rendering",
+        },
+        OPENSEARCH_GET_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason:
+                "get-data-stream transport execution requires data-stream metadata response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2431,6 +2447,44 @@ pub fn read_opensearch_indices_shard_stores_request_message(
     OpenSearchIndicesShardStoresRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_data_stream_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetDataStreamRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_DATA_STREAM_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_data_stream_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetDataStreamRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_DATA_STREAM_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_DATA_STREAM_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetDataStreamRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -3358,6 +3412,86 @@ impl OpenSearchIndicesShardStoresRequestWire {
             shape: "indices shard stores execution",
             reason:
                 "indices-shard-stores transport execution requires shard allocation/store metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetDataStreamRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub names: Option<Vec<String>>,
+}
+
+impl Default for OpenSearchGetDataStreamRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            names: Some(Vec::new()),
+        }
+    }
+}
+
+impl OpenSearchGetDataStreamRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        write_optional_string_array(output, self.names.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            names: read_optional_string_array(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the get-data-stream adapter yet",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream local",
+                reason: "local data-stream reads require local cluster-state response semantics",
+            });
+        }
+        match &self.names {
+            Some(names) if names.is_empty() => {}
+            Some(_) => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get data stream name filter",
+                    reason:
+                        "name-filtered data-stream reads require data-stream metadata filtering",
+                });
+            }
+            None => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get data stream null names",
+                    reason: "null data-stream name arrays are not emitted by the REST default path",
+                });
+            }
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get data stream execution",
+            reason: "get-data-stream transport execution requires data-stream metadata response rendering",
         })
     }
 }
@@ -7717,6 +7851,15 @@ mod tests {
                     next_step: "map bounded shard-store reads onto Rust shard allocation/store metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/data_stream/get",
+                    action_type: "GetDataStreamAction",
+                    transport_action: "GetDataStreamAction.TransportAction",
+                    request_wire_type: "GetDataStreamAction.Request",
+                    response_wire_type: "GetDataStreamAction.Response",
+                    adapter_stage: "data-stream-admin",
+                    next_step: "map bounded data-stream reads onto Rust data-stream metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -7918,6 +8061,11 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_DATA_STREAM_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -7949,6 +8097,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -11684,6 +11833,101 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices shard stores execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_data_stream_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetDataStreamRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetDataStreamRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_data_stream_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchGetDataStreamRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchGetDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetDataStreamRequestWire {
+            local: true,
+            ..OpenSearchGetDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream local",
+                ..
+            })
+        ));
+
+        let name_filter = OpenSearchGetDataStreamRequestWire {
+            names: Some(vec!["logs".to_string()]),
+            ..OpenSearchGetDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            name_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream name filter",
+                ..
+            })
+        ));
+
+        let null_names = OpenSearchGetDataStreamRequestWire {
+            names: None,
+            ..OpenSearchGetDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            null_names.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream null names",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_data_stream_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchGetDataStreamRequestWire::default();
+        let mut frame = build_opensearch_get_data_stream_request_message(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get data stream request message");
+        };
+        assert_eq!(
+            read_opensearch_get_data_stream_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_data_stream_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream execution",
                 ..
             })
         ));

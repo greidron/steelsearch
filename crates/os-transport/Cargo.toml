@@ -94,6 +94,10 @@ name = "indices-shard-stores-reject-wire-benchmark"
 path = "benchmarks/indices_shard_stores_reject_wire.rs"
 
 [[bin]]
+name = "get-data-stream-reject-wire-benchmark"
+path = "benchmarks/get_data_stream_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

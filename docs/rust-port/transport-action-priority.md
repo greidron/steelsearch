@@ -193,6 +193,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/recovery` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
 - `indices:monitor/shard_stores` (rejected fail-closed)
+- `indices:admin/data_stream/get` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -386,6 +387,17 @@ The indices-shard-stores boundary covers:
 - explicit rejection for custom cluster-manager timeout, local reads, index
   filters, custom shard health status filters, custom indices options, and
   indices-shard-stores execution.
+
+The get-data-stream boundary covers:
+
+- OpenSearch `GetDataStreamAction.Request` parent task, cluster-manager
+  timeout, `local` flag, and optional data-stream name array at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:admin/data_stream/get` until
+  data-stream metadata response rendering is implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, name
+  filters, null name arrays outside the REST default path, and get-data-stream
+  execution.
 
 The indices-stats boundary covers:
 
@@ -821,6 +833,22 @@ index options before rejecting at admission. At roughly 1.59M ops/s in the
 latest local release run, decode is slightly heavier than the recovery and
 indices-segments reject boundaries because it must parse timeout/local and the
 status byte set.
+
+Current get-data-stream reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-data-stream-reject-wire-benchmark
+get_data_stream_reject_request_encode iterations=400000 elapsed_ms=234.321 ops_per_second=1707063.45 nanos_per_op=585.80
+get_data_stream_reject_request_decode iterations=400000 elapsed_ms=205.351 ops_per_second=1947881.97 nanos_per_op=513.38
+get_data_stream_reject_validation iterations=400000 elapsed_ms=206.320 ops_per_second=1938732.74 nanos_per_op=515.80
+get_data_stream_reject_wire_bottleneck_ops_per_second=1707063.45
+```
+
+The current get-data-stream fail-closed boundary bottleneck is request encode.
+This path carries the ClusterManagerNodeRead envelope and default empty optional
+data-stream name array before rejecting at admission. At roughly 1.71M ops/s in
+the latest local release run, the boundary remains in the lightweight admin
+transport range and does not expose a material wire-codec bottleneck.
 
 Current indices-stats reject wire microbenchmark:
 
