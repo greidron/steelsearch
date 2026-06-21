@@ -177,6 +177,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
 - `cluster:monitor/main` (rejected fail-closed)
+- `cluster:monitor/remote/info` (rejected fail-closed)
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
@@ -257,6 +258,14 @@ The main boundary covers:
   rendering are implemented;
 - explicit rejection at execution so Steelsearch does not emit incomplete root
   info semantics through transport.
+
+The remote-info boundary covers:
+
+- OpenSearch `RemoteInfoRequest` parent task at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/remote/info` until
+  remote connection info collection and response rendering are implemented;
+- explicit rejection at execution so Steelsearch does not emit incomplete remote
+  cluster info semantics through transport.
 
 The cluster-stats boundary covers:
 
@@ -938,6 +947,22 @@ parent-task-only request frame. At roughly 2.22M ops/s in the latest local
 release run, this boundary is not a material performance bottleneck; the first
 performance-sensitive work is main response rendering from node, cluster,
 version, and build metadata.
+
+Current remote-info reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin remote-info-reject-wire-benchmark
+remote_info_reject_request_encode iterations=400000 elapsed_ms=192.187 ops_per_second=2081306.99 nanos_per_op=480.47
+remote_info_reject_request_decode iterations=400000 elapsed_ms=189.142 ops_per_second=2114817.44 nanos_per_op=472.85
+remote_info_reject_validation iterations=400000 elapsed_ms=190.136 ops_per_second=2103758.30 nanos_per_op=475.34
+remote_info_reject_wire_bottleneck_ops_per_second=2081306.99
+```
+
+The current remote-info fail-closed boundary bottleneck is request encode over
+the parent-task-only request frame. At roughly 2.08M ops/s in the latest local
+release run, this boundary is not a material performance bottleneck; the first
+performance-sensitive work is remote connection info collection and response
+rendering.
 
 Current cluster-stats reject wire microbenchmark:
 
