@@ -237,6 +237,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/resolve/index` (rejected fail-closed)
 - `cluster:admin/views/create` (rejected fail-closed)
 - `cluster:admin/views/delete` (rejected fail-closed)
+- `views:data/read/get` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1458,6 +1459,18 @@ The delete-view boundary covers:
   implemented;
 - explicit rejection for custom cluster-manager timeouts, missing names, and
   delete-view execution.
+
+The get-view boundary covers:
+
+- OpenSearch `GetViewAction.Request` parent task, cluster-manager timeout, and
+  view name at the wire decode/build layer;
+- OpenSearch `GetViewAction.Response` decode/build for the returned `View`
+  payload, including name, optional description, created/modified timestamps,
+  and sorted target index patterns;
+- explicit fail-closed classification for `views:data/read/get` until view
+  lookup and view response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, missing names, and
+  get-view execution.
 
 The search boundary covers:
 
@@ -3403,6 +3416,24 @@ path carries the ClusterManagerNode envelope and view name before rejecting at
 admission. At roughly 1.64M ops/s in the latest local release run, it is back
 in the lightweight metadata transport range; future performance-sensitive work
 is view lookup, metadata deletion, and acknowledgement rendering.
+
+Current get-view reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-view-reject-wire-benchmark
+get_view_reject_request_encode iterations=400000 elapsed_ms=225.375 ops_per_second=1774818.77 nanos_per_op=563.44
+get_view_reject_request_decode iterations=400000 elapsed_ms=216.097 ops_per_second=1851017.89 nanos_per_op=540.24
+get_view_reject_validation iterations=400000 elapsed_ms=223.282 ops_per_second=1791452.81 nanos_per_op=558.21
+get_view_response_decode iterations=400000 elapsed_ms=200.093 ops_per_second=1999067.56 nanos_per_op=500.23
+get_view_reject_wire_bottleneck_ops_per_second=1774818.77
+```
+
+The current get-view fail-closed boundary bottleneck is request encode. This
+path carries the ClusterManagerNode envelope and view name before rejecting at
+admission, while response decode covers the `View` payload shape already shared
+with create-view. At roughly 1.77M ops/s in the latest local release run, the
+current wire boundary remains lightweight; future performance-sensitive work is
+view lookup and response rendering.
 
 Current search reject wire microbenchmark:
 

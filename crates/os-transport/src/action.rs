@@ -142,6 +142,7 @@ pub const OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME: &str = "indices:monitor/dat
 pub const OPENSEARCH_RESOLVE_INDEX_ACTION_NAME: &str = "indices:admin/resolve/index";
 pub const OPENSEARCH_CREATE_VIEW_ACTION_NAME: &str = "cluster:admin/views/create";
 pub const OPENSEARCH_DELETE_VIEW_ACTION_NAME: &str = "cluster:admin/views/delete";
+pub const OPENSEARCH_GET_VIEW_ACTION_NAME: &str = "views:data/read/get";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1097,6 +1098,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map view lookup, metadata deletion, and acknowledgement rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_VIEW_ACTION_NAME,
+        action_type: "GetViewAction",
+        transport_action: "GetViewAction.TransportAction",
+        request_wire_type: "GetViewAction.Request",
+        response_wire_type: "GetViewAction.Response",
+        adapter_stage: "view-admin",
+        next_step: "map view lookup and view response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1773,6 +1783,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-view transport execution requires view lookup, metadata deletion, and acknowledgement rendering",
+        },
+        OPENSEARCH_GET_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-view transport execution requires view lookup and view response rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7325,6 +7340,73 @@ pub fn read_opensearch_delete_view_response_message(
         });
     }
     AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_view_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetViewRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_VIEW_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_view_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetViewRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_VIEW_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_VIEW_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetViewRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_view_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetViewResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_view_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetViewResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchGetViewResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_search_request_message(
@@ -15184,6 +15266,66 @@ impl OpenSearchDeleteViewRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete view execution",
             reason: "delete-view transport execution requires view lookup, metadata deletion, and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetViewRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub name: String,
+}
+
+impl Default for OpenSearchGetViewRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            name: "logs-view".to_string(),
+        }
+    }
+}
+
+impl OpenSearchGetViewRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.name);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let name = input.read_string()?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            name,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get view cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the get-view adapter yet",
+            });
+        }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get view missing name",
+                reason: "OpenSearch get-view requests require a view name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get view execution",
+            reason: "get-view transport execution requires view lookup and view response rendering",
         })
     }
 }
@@ -23564,6 +23706,15 @@ mod tests {
                     next_step: "map view lookup, metadata deletion, and acknowledgement rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "views:data/read/get",
+                    action_type: "GetViewAction",
+                    transport_action: "GetViewAction.TransportAction",
+                    request_wire_type: "GetViewAction.Request",
+                    response_wire_type: "GetViewAction.Response",
+                    adapter_stage: "view-admin",
+                    next_step: "map view lookup and view response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -24152,6 +24303,10 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_DELETE_VIEW_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_VIEW_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -24238,6 +24393,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -38221,6 +38377,105 @@ mod tests {
             read_opensearch_delete_view_response_message(&message).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn opensearch_get_view_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetViewRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(9),
+            ..OpenSearchGetViewRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetViewRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.name, "logs-view");
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get view execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_view_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchGetViewRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchGetViewRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get view cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_name = OpenSearchGetViewRequestWire {
+            name: " ".to_string(),
+            ..OpenSearchGetViewRequestWire::default()
+        };
+        assert!(matches!(
+            missing_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get view missing name",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_view_transport_messages_bind_rejected_action_frame_and_view_response() {
+        let request = OpenSearchGetViewRequestWire::default();
+        let mut frame =
+            build_opensearch_get_view_request_message(82, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get view request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_get_view_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_view_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get view execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchGetViewResponseWire {
+            view: OpenSearchViewWire {
+                targets: vec!["metrics-*".to_string(), "logs-*".to_string()],
+                ..OpenSearchViewWire::default()
+            },
+        };
+        let mut frame =
+            build_opensearch_get_view_response_message(82, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get view response message");
+        };
+        let decoded = read_opensearch_get_view_response_message(&message).unwrap();
+        assert_eq!(
+            decoded.view.targets,
+            vec!["logs-*".to_string(), "metrics-*".to_string()]
+        );
+        assert_eq!(decoded.view.name, response.view.name);
+        assert_eq!(decoded.view.description, response.view.description);
     }
 
     #[test]
