@@ -194,6 +194,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/template/delete` (rejected fail-closed)
 - `cluster:admin/component_template/get` (rejected fail-closed)
 - `cluster:admin/component_template/delete` (rejected fail-closed)
+- `indices:admin/index_template/get` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -419,6 +420,17 @@ The delete-component-template boundary covers:
   cluster metadata;
 - explicit rejection for custom cluster-manager timeouts and
   delete-component-template execution.
+
+The get-composable-index-template boundary covers:
+
+- OpenSearch `GetComposableIndexTemplateAction.Request` parent task,
+  cluster-manager timeout, local flag, and optional composable index-template
+  name at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/index_template/get`
+  until composable index-template metadata can be rendered from Rust cluster
+  metadata with OpenSearch-compatible exact and wildcard matching semantics;
+- explicit rejection for custom cluster-manager timeouts, local reads, name
+  filters, and get-composable-index-template execution.
 
 The field-capabilities boundary covers:
 
@@ -1083,6 +1095,22 @@ request encode. This path stays cheap because validation checks only the
 default timeout before failing closed; the future performance-sensitive work is
 component-template metadata mutation, publication, and acknowledged response
 rendering.
+
+Current get-composable-index-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-composable-index-template-reject-wire-benchmark
+get_composable_index_template_reject_request_encode iterations=400000 elapsed_ms=219.349 ops_per_second=1823579.62 nanos_per_op=548.37
+get_composable_index_template_reject_request_decode iterations=400000 elapsed_ms=199.533 ops_per_second=2004682.03 nanos_per_op=498.83
+get_composable_index_template_reject_validation iterations=400000 elapsed_ms=200.343 ops_per_second=1996570.90 nanos_per_op=500.86
+get_composable_index_template_reject_wire_bottleneck_ops_per_second=1823579.62
+```
+
+The current get-composable-index-template fail-closed boundary bottleneck is
+request encode. The default benchmark uses an absent optional name, matching
+the OpenSearch all-composable-index-templates request shape; the future
+performance-sensitive work is composable index-template metadata matching and
+response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 
