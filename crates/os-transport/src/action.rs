@@ -4,7 +4,8 @@ use os_engine::{
     BulkWriteItemResponse, BulkWriteOperation, BulkWriteRequest, BulkWriteResponse,
     DeleteDocumentRequest, DocumentMetadata, GetDocumentRequest, GetDocumentResponse,
     IndexDocumentRequest, IndexDocumentResponse, RefreshRequest, RefreshResponse, SearchHit,
-    SearchRequest, SearchShardSearchResult, SearchShardTarget, WriteOperationKind, WriteResult,
+    SearchRequest, SearchShardSearchResult, SearchShardTarget, UpdateDocumentRequest,
+    WriteOperationKind, WriteResult,
 };
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
@@ -283,6 +284,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "index transport adapter is available for the default single-document subset",
+        },
+        OPENSEARCH_UPDATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "update transport adapter is available for the default doc-update subset",
         },
         OPENSEARCH_DELETE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -644,6 +650,7 @@ const OPENSEARCH_DOC_WRITE_RESULT_CREATED: u8 = 0;
 const OPENSEARCH_DOC_WRITE_RESULT_UPDATED: u8 = 1;
 const OPENSEARCH_DOC_WRITE_RESULT_DELETED: u8 = 2;
 const OPENSEARCH_DOC_WRITE_RESULT_NOT_FOUND: u8 = 3;
+const OPENSEARCH_DOC_WRITE_RESULT_NOOP: u8 = 4;
 const OPENSEARCH_BULK_RESPONSE_INDEX: u8 = 0;
 const OPENSEARCH_BULK_RESPONSE_DELETE: u8 = 1;
 const OPENSEARCH_BULK_RESPONSE_NONE: u8 = 2;
@@ -1791,6 +1798,491 @@ pub fn read_opensearch_index_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     OpenSearchIndexResponseWire::read(message.body.clone().freeze())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchUpdateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub index: String,
+    pub shard_id_present: bool,
+    pub timeout: TimeValueWire,
+    pub concrete_index: Option<String>,
+    pub wait_for_active_shards: i32,
+    pub id: String,
+    pub routing: Option<String>,
+    pub script_present: bool,
+    pub retry_on_conflict: i32,
+    pub refresh_policy: u8,
+    pub doc: Option<OpenSearchIndexRequestWire>,
+    pub fetch_source_context_present: bool,
+    pub upsert: Option<OpenSearchIndexRequestWire>,
+    pub doc_as_upsert: bool,
+    pub if_seq_no: i64,
+    pub if_primary_term: i64,
+    pub detect_noop: bool,
+    pub scripted_upsert: bool,
+    pub require_alias: bool,
+}
+
+impl OpenSearchUpdateRequestWire {
+    pub fn new(index: String, id: String, doc: Value) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            index: index.clone(),
+            shard_id_present: false,
+            timeout: TimeValueWire::minutes(1),
+            concrete_index: None,
+            wait_for_active_shards: OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT,
+            id: id.clone(),
+            routing: None,
+            script_present: false,
+            retry_on_conflict: 0,
+            refresh_policy: OPENSEARCH_REFRESH_POLICY_NONE,
+            doc: Some(OpenSearchIndexRequestWire::new(index, id, doc)),
+            fetch_source_context_present: false,
+            upsert: None,
+            doc_as_upsert: false,
+            if_seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+            if_primary_term: OPENSEARCH_UNASSIGNED_PRIMARY_TERM,
+            detect_noop: true,
+            scripted_upsert: false,
+            require_alias: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string(&self.index);
+        if self.shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request shard id",
+                reason: "explicit shard ids are not encoded by the update adapter yet",
+            });
+        }
+        output.write_bool(false);
+        self.timeout.write(output);
+        output.write_optional_string(self.concrete_index.as_deref());
+        output.write_i32(self.wait_for_active_shards);
+        output.write_string(&self.id);
+        output.write_optional_string(self.routing.as_deref());
+        if self.script_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request script",
+                reason: "scripted updates are not encoded by the update adapter yet",
+            });
+        }
+        output.write_bool(false);
+        output.write_vint(self.retry_on_conflict);
+        output.write_byte(self.refresh_policy);
+        if let Some(doc) = &self.doc {
+            output.write_bool(true);
+            doc.write(output)?;
+        } else {
+            output.write_bool(false);
+        }
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request fetch source context",
+                reason: "fetch source context is not encoded by the update adapter yet",
+            });
+        }
+        output.write_bool(false);
+        if let Some(upsert) = &self.upsert {
+            output.write_bool(true);
+            upsert.write(output)?;
+        } else {
+            output.write_bool(false);
+        }
+        output.write_bool(self.doc_as_upsert);
+        output.write_zlong(self.if_seq_no);
+        output.write_vlong(self.if_primary_term);
+        output.write_bool(self.detect_noop);
+        output.write_bool(self.scripted_upsert);
+        output.write_bool(self.require_alias);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let index = input.read_string()?;
+        let shard_id_present = input.read_bool()?;
+        if shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request shard id",
+                reason: "explicit shard ids are not decoded by the update adapter yet",
+            });
+        }
+        let timeout = TimeValueWire::read(&mut input)?;
+        let concrete_index = input.read_optional_string()?;
+        let wait_for_active_shards = input.read_i32()?;
+        let id = input.read_string()?;
+        let routing = input.read_optional_string()?;
+        let script_present = input.read_bool()?;
+        if script_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request script",
+                reason: "scripted updates are not decoded by the update adapter yet",
+            });
+        }
+        let retry_on_conflict = input.read_vint()?;
+        let refresh_policy = input.read_byte()?;
+        let doc = if input.read_bool()? {
+            Some(OpenSearchIndexRequestWire::read_from_input(&mut input)?)
+        } else {
+            None
+        };
+        let fetch_source_context_present = input.read_bool()?;
+        if fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request fetch source context",
+                reason: "fetch source context is not decoded by the update adapter yet",
+            });
+        }
+        let upsert = if input.read_bool()? {
+            Some(OpenSearchIndexRequestWire::read_from_input(&mut input)?)
+        } else {
+            None
+        };
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            index,
+            shard_id_present,
+            timeout,
+            concrete_index,
+            wait_for_active_shards,
+            id,
+            routing,
+            script_present,
+            retry_on_conflict,
+            refresh_policy,
+            doc,
+            fetch_source_context_present,
+            upsert,
+            doc_as_upsert: input.read_bool()?,
+            if_seq_no: read_zlong(&mut input)?,
+            if_primary_term: input.read_vlong()?,
+            detect_noop: input.read_bool()?,
+            scripted_upsert: input.read_bool()?,
+            require_alias: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_request(&self) -> Result<UpdateDocumentRequest, TransportActionWireError> {
+        if self.shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request shard id",
+                reason:
+                    "explicit shard ids cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.timeout != TimeValueWire::minutes(1) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request timeout",
+                reason: "custom timeout cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.concrete_index.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request concrete index",
+                reason: "concrete index override cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.wait_for_active_shards != OPENSEARCH_ACTIVE_SHARD_COUNT_DEFAULT {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request active shard count",
+                reason:
+                    "custom active-shard waits cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request routing",
+                reason: "routing cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.script_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request script",
+                reason: "scripted updates cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.retry_on_conflict != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request retry on conflict",
+                reason: "retry-on-conflict cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.refresh_policy != OPENSEARCH_REFRESH_POLICY_NONE {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request refresh policy",
+                reason:
+                    "update refresh policy cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request fetch source context",
+                reason: "fetch source cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.upsert.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request upsert",
+                reason: "explicit upsert cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.if_seq_no != OPENSEARCH_UNASSIGNED_SEQ_NO
+            || self.if_primary_term != OPENSEARCH_UNASSIGNED_PRIMARY_TERM
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request optimistic concurrency",
+                reason:
+                    "optimistic-concurrency update cannot be mapped onto the current update engine request",
+            });
+        }
+        if !self.detect_noop {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request detect noop",
+                reason: "detect_noop=false cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.scripted_upsert {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request scripted upsert",
+                reason: "scripted upsert cannot be mapped onto the current update engine request",
+            });
+        }
+        if self.require_alias {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request require alias",
+                reason:
+                    "require-alias updates cannot be mapped onto the current update engine request",
+            });
+        }
+        let doc = self
+            .doc
+            .as_ref()
+            .ok_or(TransportActionWireError::MissingRequiredField { field: "doc" })?;
+        let doc_request = doc.to_engine_request()?;
+        if doc_request.index != self.index || doc_request.id != self.id {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update request doc identity",
+                reason: "nested update doc identity must match the update request identity",
+            });
+        }
+        Ok(UpdateDocumentRequest {
+            index: self.index.clone(),
+            id: self.id.clone(),
+            doc: doc_request.source,
+            doc_as_upsert: self.doc_as_upsert,
+        })
+    }
+}
+
+impl From<UpdateDocumentRequest> for OpenSearchUpdateRequestWire {
+    fn from(request: UpdateDocumentRequest) -> Self {
+        let mut wire = Self::new(request.index, request.id, request.doc);
+        wire.doc_as_upsert = request.doc_as_upsert;
+        wire
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpdateResponseWire {
+    pub shard_total: i32,
+    pub shard_successful: i32,
+    pub index: String,
+    pub index_uuid: String,
+    pub shard_id: i32,
+    pub id: String,
+    pub version: i64,
+    pub seq_no: i64,
+    pub primary_term: i64,
+    pub forced_refresh: bool,
+    pub result: u8,
+    pub get_result_present: bool,
+}
+
+impl OpenSearchUpdateResponseWire {
+    pub fn updated(index: String, metadata: DocumentMetadata) -> Self {
+        Self::from_metadata(index, metadata, OPENSEARCH_DOC_WRITE_RESULT_UPDATED)
+    }
+
+    pub fn created(index: String, metadata: DocumentMetadata) -> Self {
+        Self::from_metadata(index, metadata, OPENSEARCH_DOC_WRITE_RESULT_CREATED)
+    }
+
+    fn from_metadata(index: String, metadata: DocumentMetadata, result: u8) -> Self {
+        Self {
+            shard_total: 1,
+            shard_successful: 1,
+            index,
+            index_uuid: OPENSEARCH_UNKNOWN_INDEX_UUID.into(),
+            shard_id: 0,
+            id: metadata.id,
+            version: metadata.version as i64,
+            seq_no: metadata.seq_no,
+            primary_term: metadata.primary_term as i64,
+            forced_refresh: false,
+            result,
+            get_result_present: false,
+        }
+    }
+
+    pub fn from_engine_response(
+        response: IndexDocumentResponse,
+    ) -> Result<Self, TransportActionWireError> {
+        match response.result {
+            WriteResult::Created => Ok(Self::created(response.index, response.metadata)),
+            WriteResult::Updated => Ok(Self::updated(response.index, response.metadata)),
+            WriteResult::Deleted => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update response write result",
+                reason: "deleted engine responses cannot be encoded as UpdateResponse",
+            }),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_vint(self.shard_total);
+        output.write_vint(self.shard_successful);
+        output.write_vint(0);
+        output.write_string(&self.index);
+        output.write_string(&self.index_uuid);
+        output.write_vint(self.shard_id);
+        output.write_string(&self.id);
+        output.write_zlong(self.version);
+        output.write_zlong(self.seq_no);
+        output.write_vlong(self.primary_term);
+        output.write_bool(self.forced_refresh);
+        output.write_byte(self.result);
+        if self.get_result_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update response get result",
+                reason: "embedded get results are not encoded by the update adapter yet",
+            });
+        }
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            shard_total: input.read_vint()?,
+            shard_successful: input.read_vint()?,
+            index: {
+                let shard_failure_count = input.read_vint()?;
+                if shard_failure_count != 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "update response shard failures",
+                        reason:
+                            "non-empty failure arrays are not decoded by the update adapter yet",
+                    });
+                }
+                input.read_string()?
+            },
+            index_uuid: input.read_string()?,
+            shard_id: input.read_vint()?,
+            id: input.read_string()?,
+            version: read_zlong(&mut input)?,
+            seq_no: read_zlong(&mut input)?,
+            primary_term: input.read_vlong()?,
+            forced_refresh: input.read_bool()?,
+            result: input.read_byte()?,
+            get_result_present: input.read_bool()?,
+        };
+        if response.result != OPENSEARCH_DOC_WRITE_RESULT_CREATED
+            && response.result != OPENSEARCH_DOC_WRITE_RESULT_UPDATED
+            && response.result != OPENSEARCH_DOC_WRITE_RESULT_NOOP
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update response result",
+                reason: "only created, updated, and noop update results are decoded by the update adapter",
+            });
+        }
+        if response.get_result_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update response get result",
+                reason: "embedded get results are not decoded by the update adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+pub fn build_opensearch_update_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchUpdateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPDATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpdateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPDATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPDATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchUpdateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchUpdateResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpdateResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchUpdateResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3616,6 +4108,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPDATE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -3633,6 +4129,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_MULTI_GET_ACTION_NAME
                 || spec.action_name == OPENSEARCH_BULK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
             {
@@ -4186,6 +4683,222 @@ mod tests {
         assert!(message.status.is_response());
         assert_eq!(
             read_opensearch_index_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_update_request_wire_round_trips_and_maps_to_engine_request() {
+        let request = OpenSearchUpdateRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchUpdateRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "patched" }),
+            )
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchUpdateRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_request().unwrap(),
+            UpdateDocumentRequest {
+                index: "logs-000001".into(),
+                id: "doc-1".into(),
+                doc: json!({ "message": "patched" }),
+                doc_as_upsert: false,
+            }
+        );
+    }
+
+    #[test]
+    fn opensearch_update_request_rejects_unsupported_engine_mapping_options() {
+        let request = OpenSearchUpdateRequestWire {
+            routing: Some("tenant-a".into()),
+            ..OpenSearchUpdateRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "patched" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "update request routing");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchUpdateRequestWire {
+            retry_on_conflict: 1,
+            ..OpenSearchUpdateRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "patched" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "update request retry on conflict");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchUpdateRequestWire {
+            upsert: Some(OpenSearchIndexRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "upsert" }),
+            )),
+            ..OpenSearchUpdateRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "patched" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "update request upsert");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchUpdateRequestWire {
+            doc: None,
+            ..OpenSearchUpdateRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+                json!({ "message": "patched" }),
+            )
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::MissingRequiredField { field } => {
+                assert_eq!(field, "doc");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensearch_update_response_wire_round_trips_updated_and_created_documents() {
+        let updated = OpenSearchUpdateResponseWire::updated(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 2,
+                seq_no: 8,
+                primary_term: 2,
+            },
+        );
+
+        let mut output = StreamOutput::new();
+        updated.write(&mut output).unwrap();
+        assert_eq!(
+            OpenSearchUpdateResponseWire::read(output.freeze()).unwrap(),
+            updated
+        );
+
+        let created = OpenSearchUpdateResponseWire::created(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-2".into(),
+                version: 1,
+                seq_no: 9,
+                primary_term: 2,
+            },
+        );
+        let mut output = StreamOutput::new();
+        created.write(&mut output).unwrap();
+        assert_eq!(
+            OpenSearchUpdateResponseWire::read(output.freeze()).unwrap(),
+            created
+        );
+    }
+
+    #[test]
+    fn opensearch_update_response_maps_from_engine_updated_response() {
+        let response = IndexDocumentResponse {
+            index: "logs-000001".into(),
+            metadata: DocumentMetadata {
+                id: "doc-1".into(),
+                version: 2,
+                seq_no: 8,
+                primary_term: 2,
+            },
+            coordination: WriteCoordinationMetadata::default(),
+            result: WriteResult::Updated,
+        };
+
+        assert_eq!(
+            OpenSearchUpdateResponseWire::from_engine_response(response).unwrap(),
+            OpenSearchUpdateResponseWire::updated(
+                "logs-000001".into(),
+                DocumentMetadata {
+                    id: "doc-1".into(),
+                    version: 2,
+                    seq_no: 8,
+                    primary_term: 2,
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn opensearch_update_transport_messages_bind_action_frames() {
+        let request = OpenSearchUpdateRequestWire::new(
+            "logs-000001".into(),
+            "doc-1".into(),
+            json!({ "message": "patched" }),
+        );
+        let mut frame =
+            build_opensearch_update_request_message(26, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 26);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_update_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = OpenSearchUpdateResponseWire::updated(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 2,
+                seq_no: 1,
+                primary_term: 1,
+            },
+        );
+        let mut frame =
+            build_opensearch_update_response_message(26, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 26);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_update_response_message(&message).unwrap(),
             response
         );
     }

@@ -38,6 +38,10 @@ name = "index-wire-benchmark"
 path = "benchmarks/index_wire.rs"
 
 [[bin]]
+name = "update-wire-benchmark"
+path = "benchmarks/update_wire.rs"
+
+[[bin]]
 name = "bulk-wire-benchmark"
 path = "benchmarks/bulk_wire.rs"
 

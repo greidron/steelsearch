@@ -52,6 +52,13 @@
       "response_evidence": "crates/os-transport/src/action.rs::opensearch_index_transport_messages_bind_action_frames"
     },
     {
+      "action_name": "indices:data/write/update",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_update_transport_messages_bind_action_frames",
+      "response_evidence": "crates/os-transport/src/action.rs::opensearch_update_transport_messages_bind_action_frames"
+    },
+    {
       "action_name": "indices:data/write/delete",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",
