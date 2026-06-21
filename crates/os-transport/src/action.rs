@@ -35,6 +35,7 @@ pub const CANCEL_TASKS_ACTION_NAME: &str = "cluster:admin/tasks/cancel";
 pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
+pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
@@ -199,6 +200,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetMappingsResponse",
         adapter_stage: "metadata-read",
         next_step: "map bounded mapping reads onto Rust cluster metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME,
+        action_type: "GetFieldMappingsAction",
+        transport_action: "TransportGetFieldMappingsAction",
+        request_wire_type: "GetFieldMappingsRequest",
+        response_wire_type: "GetFieldMappingsResponse",
+        adapter_stage: "metadata-read",
+        next_step: "map bounded field-mapping reads onto Rust cluster metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
@@ -420,6 +430,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-mappings transport execution requires mapping metadata response rendering",
+        },
+        OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2057,6 +2072,44 @@ pub fn read_opensearch_get_mappings_request_message(
     OpenSearchGetMappingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_field_mappings_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetFieldMappingsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_field_mappings_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetFieldMappingsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetFieldMappingsRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -2262,6 +2315,96 @@ impl OpenSearchGetMappingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get mappings execution",
             reason: "get-mappings transport execution requires mapping metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetFieldMappingsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub local: bool,
+    pub fields: Vec<String>,
+    pub include_defaults: bool,
+}
+
+impl Default for OpenSearchGetFieldMappingsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            local: false,
+            fields: Vec::new(),
+            include_defaults: false,
+        }
+    }
+}
+
+impl OpenSearchGetFieldMappingsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.fields);
+        output.write_bool(self.include_defaults);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            local: input.read_bool()?,
+            fields: input.read_string_array()?,
+            include_defaults: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings index filter",
+                reason:
+                    "index-scoped field-mapping reads require cluster metadata response rendering",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings indices options",
+                reason: "custom get-field-mappings indices options require cluster metadata resolution semantics",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings local",
+                reason: "local field-mapping reads require local cluster-state response semantics",
+            });
+        }
+        if !self.fields.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings field filter",
+                reason: "field-scoped mapping reads require field mapping response rendering",
+            });
+        }
+        if self.include_defaults {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings include defaults",
+                reason: "field-mapping default expansion is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get field mappings execution",
+            reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
         })
     }
 }
@@ -6516,6 +6659,15 @@ mod tests {
                     next_step: "map bounded mapping reads onto Rust cluster metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/mappings/fields/get",
+                    action_type: "GetFieldMappingsAction",
+                    transport_action: "TransportGetFieldMappingsAction",
+                    request_wire_type: "GetFieldMappingsRequest",
+                    response_wire_type: "GetFieldMappingsResponse",
+                    adapter_stage: "metadata-read",
+                    next_step: "map bounded field-mapping reads onto Rust cluster metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -6685,6 +6837,11 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_GET_MAPPINGS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -6709,6 +6866,7 @@ mod tests {
             }
             if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -9599,6 +9757,116 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get mappings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_field_mappings_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetFieldMappingsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetFieldMappingsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_field_mappings_request_rejects_unsupported_shapes() {
+        let index_filter = OpenSearchGetFieldMappingsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchGetFieldMappingsRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings index filter",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchGetFieldMappingsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                allow_no_indices: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open()
+            },
+            ..OpenSearchGetFieldMappingsRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings indices options",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetFieldMappingsRequestWire {
+            local: true,
+            ..OpenSearchGetFieldMappingsRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings local",
+                ..
+            })
+        ));
+
+        let field_filter = OpenSearchGetFieldMappingsRequestWire {
+            fields: vec!["message".to_string()],
+            ..OpenSearchGetFieldMappingsRequestWire::default()
+        };
+        assert!(matches!(
+            field_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings field filter",
+                ..
+            })
+        ));
+
+        let include_defaults = OpenSearchGetFieldMappingsRequestWire {
+            include_defaults: true,
+            ..OpenSearchGetFieldMappingsRequestWire::default()
+        };
+        assert!(matches!(
+            include_defaults.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings include defaults",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_field_mappings_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchGetFieldMappingsRequestWire::default();
+        let mut frame = build_opensearch_get_field_mappings_request_message(
+            36,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get field mappings request message");
+        };
+        assert_eq!(
+            read_opensearch_get_field_mappings_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_field_mappings_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get field mappings execution",
                 ..
             })
         ));

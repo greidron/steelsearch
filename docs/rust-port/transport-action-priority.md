@@ -186,6 +186,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
+- `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -299,6 +300,16 @@ The get-mappings boundary covers:
   mapping metadata response rendering is implemented;
 - explicit rejection for custom cluster-manager timeout, index filters, custom
   indices options, and get-mappings execution.
+
+The get-field-mappings boundary covers:
+
+- OpenSearch `GetFieldMappingsRequest` parent task, indices array,
+  `IndicesOptions.strictExpandOpen()`, `local`, fields array, and
+  `includeDefaults` at the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/mappings/fields/get`
+  until field mapping metadata response rendering is implemented;
+- explicit rejection for index filters, custom indices options, local reads,
+  field filters, include-default expansion, and get-field-mappings execution.
 
 The indices-stats boundary covers:
 
@@ -615,6 +626,22 @@ decode. The payload adds `IndicesOptions.strictExpandOpen()` to the
 ClusterManagerNodeRead envelope and empty index array, so it is slightly heavier
 than get-repositories but still well inside the lightweight admin transport
 range at roughly 1.85M ops/s in the latest local release run.
+
+Current get-field-mappings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-field-mappings-reject-wire-benchmark
+get_field_mappings_reject_request_encode iterations=400000 elapsed_ms=231.846 ops_per_second=1725283.69 nanos_per_op=579.61
+get_field_mappings_reject_request_decode iterations=400000 elapsed_ms=231.593 ops_per_second=1727171.45 nanos_per_op=578.98
+get_field_mappings_reject_validation iterations=400000 elapsed_ms=239.155 ops_per_second=1672556.32 nanos_per_op=597.89
+get_field_mappings_reject_wire_bottleneck_ops_per_second=1672556.32
+```
+
+The current get-field-mappings fail-closed boundary bottleneck is validation
+after decode. This path checks indices options, local execution, field filters,
+and include-default expansion after reading the OpenSearch 3.x request body, so
+it is slightly heavier than get-mappings. At roughly 1.67M ops/s in the latest
+local release run, it remains in the lightweight admin transport range.
 
 Current indices-stats reject wire microbenchmark:
 
