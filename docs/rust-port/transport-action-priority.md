@@ -192,6 +192,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/shards/search_shards` (rejected fail-closed)
 - `indices:monitor/recovery` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
+- `indices:monitor/shard_stores` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -374,6 +375,17 @@ The indices-segments boundary covers:
   shard segment metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, verbose segment
   output, and indices-segments execution.
+
+The indices-shard-stores boundary covers:
+
+- OpenSearch `IndicesShardStoresRequest` parent task, cluster-manager timeout,
+  `local` flag, indices array, shard health status byte set, and
+  `IndicesOptions.strictExpand()` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:monitor/shard_stores` until
+  shard allocation/store metadata response rendering is implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, index
+  filters, custom shard health status filters, custom indices options, and
+  indices-shard-stores execution.
 
 The indices-stats boundary covers:
 
@@ -791,6 +803,24 @@ forbid-closed index options, and verbose flag before rejecting at admission. At
 roughly 1.77M ops/s in the latest local release run, it is effectively the same
 weight as the recovery reject boundary and does not expose a material wire-codec
 bottleneck.
+
+Current indices-shard-stores reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin indices-shard-stores-reject-wire-benchmark
+indices_shard_stores_reject_request_encode iterations=400000 elapsed_ms=236.859 ops_per_second=1688769.08 nanos_per_op=592.15
+indices_shard_stores_reject_request_decode iterations=400000 elapsed_ms=252.123 ops_per_second=1586527.13 nanos_per_op=630.31
+indices_shard_stores_reject_validation iterations=400000 elapsed_ms=243.427 ops_per_second=1643206.27 nanos_per_op=608.57
+indices_shard_stores_reject_wire_bottleneck_ops_per_second=1586527.13
+```
+
+The current indices-shard-stores fail-closed boundary bottleneck is request
+decode. This path carries the ClusterManagerNodeRead envelope, empty index
+array, default yellow/red shard health status filter, and strict open/closed
+index options before rejecting at admission. At roughly 1.59M ops/s in the
+latest local release run, decode is slightly heavier than the recovery and
+indices-segments reject boundaries because it must parse timeout/local and the
+status byte set.
 
 Current indices-stats reject wire microbenchmark:
 

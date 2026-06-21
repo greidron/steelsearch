@@ -148,6 +148,15 @@
       "reason": "Indices-segments transport execution requires shard segment metadata response rendering before Steelsearch can serve OpenSearch segment read semantics."
     },
     {
+      "action_name": "indices:monitor/shard_stores",
+      "action_type": "IndicesShardStoresAction",
+      "transport_action": "TransportIndicesShardStoresAction",
+      "request_wire_type": "IndicesShardStoresRequest",
+      "response_wire_type": "IndicesShardStoresResponse",
+      "disposition": "rejected",
+      "reason": "Indices-shard-stores transport execution requires shard allocation/store metadata response rendering before Steelsearch can serve OpenSearch shard-store read semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",
