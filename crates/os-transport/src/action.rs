@@ -267,6 +267,11 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "get transport adapter is available for the default single-document subset",
         },
+        OPENSEARCH_MULTI_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "multi-get transport adapter is available for the default document subset",
+        },
         OPENSEARCH_REFRESH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
@@ -847,14 +852,20 @@ impl OpenSearchGetResponseWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
+        let response = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
         let index = input.read_string()?;
         let id = input.read_string()?;
-        let seq_no = read_zlong(&mut input)?;
+        let seq_no = read_zlong(input)?;
         let primary_term = input.read_vlong()?;
         let version = input.read_i64()?;
         let found = input.read_bool()?;
         let source = if found {
-            let source = read_json_bytes_reference(&mut input)?;
+            let source = read_json_bytes_reference(input)?;
             let document_field_count = input.read_vint()?;
             if document_field_count != 0 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
@@ -873,7 +884,6 @@ impl OpenSearchGetResponseWire {
         } else {
             None
         };
-        require_no_trailing_bytes(&input)?;
         Ok(Self {
             index,
             id,
@@ -969,6 +979,313 @@ pub fn read_opensearch_get_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     OpenSearchGetResponseWire::read(message.body.clone().freeze())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchMultiGetItemRequestWire {
+    pub index: String,
+    pub id: String,
+    pub routing: Option<String>,
+    pub stored_fields: Option<Vec<String>>,
+    pub version: i64,
+    pub version_type: u8,
+    pub fetch_source_context_present: bool,
+}
+
+impl OpenSearchMultiGetItemRequestWire {
+    pub fn new(index: String, id: String) -> Self {
+        Self {
+            index,
+            id,
+            routing: None,
+            stored_fields: None,
+            version: OPENSEARCH_MATCH_ANY_VERSION,
+            version_type: OPENSEARCH_VERSION_TYPE_INTERNAL,
+            fetch_source_context_present: false,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_string(&self.index);
+        output.write_string(&self.id);
+        output.write_optional_string(self.routing.as_deref());
+        write_optional_string_array(output, self.stored_fields.as_deref());
+        output.write_i64(self.version);
+        output.write_byte(self.version_type);
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request item fetch source context",
+                reason:
+                    "fetch source context encoding is not implemented by the multi-get adapter yet",
+            });
+        }
+        output.write_bool(false);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let item = Self {
+            index: input.read_string()?,
+            id: input.read_string()?,
+            routing: input.read_optional_string()?,
+            stored_fields: read_optional_string_array(input)?,
+            version: input.read_i64()?,
+            version_type: input.read_byte()?,
+            fetch_source_context_present: input.read_bool()?,
+        };
+        if item.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request item fetch source context",
+                reason:
+                    "fetch source context decoding is not implemented by the multi-get adapter yet",
+            });
+        }
+        Ok(item)
+    }
+
+    pub fn to_engine_request(&self) -> Result<GetDocumentRequest, TransportActionWireError> {
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request item routing",
+                reason: "routing cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.stored_fields.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request item stored fields",
+                reason: "stored fields cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.version_type != OPENSEARCH_VERSION_TYPE_INTERNAL
+            || self.version != OPENSEARCH_MATCH_ANY_VERSION
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request item versioning",
+                reason: "versioned reads cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request item fetch source context",
+                reason:
+                    "fetch source filtering cannot be mapped onto the current get engine request",
+            });
+        }
+        Ok(GetDocumentRequest {
+            index: self.index.clone(),
+            id: self.id.clone(),
+        })
+    }
+}
+
+impl From<GetDocumentRequest> for OpenSearchMultiGetItemRequestWire {
+    fn from(request: GetDocumentRequest) -> Self {
+        Self::new(request.index, request.id)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchMultiGetRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub preference: Option<String>,
+    pub refresh: bool,
+    pub realtime: bool,
+    pub items: Vec<OpenSearchMultiGetItemRequestWire>,
+}
+
+impl OpenSearchMultiGetRequestWire {
+    pub fn new(items: Vec<OpenSearchMultiGetItemRequestWire>) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            preference: None,
+            refresh: false,
+            realtime: true,
+            items,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_optional_string(self.preference.as_deref());
+        output.write_bool(self.refresh);
+        output.write_bool(self.realtime);
+        output.write_vint(self.items.len() as i32);
+        for item in &self.items {
+            item.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let preference = input.read_optional_string()?;
+        let refresh = input.read_bool()?;
+        let realtime = input.read_bool()?;
+        let item_count = read_len(&mut input)?;
+        let mut items = Vec::with_capacity(item_count);
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            preference,
+            refresh,
+            realtime,
+            items: {
+                for _ in 0..item_count {
+                    items.push(OpenSearchMultiGetItemRequestWire::read(&mut input)?);
+                }
+                items
+            },
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_requests(&self) -> Result<Vec<GetDocumentRequest>, TransportActionWireError> {
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request preference",
+                reason: "preference cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.refresh {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request refresh",
+                reason: "pre-get refresh is not part of the current multi-get adapter subset",
+            });
+        }
+        if !self.realtime {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get request realtime flag",
+                reason:
+                    "non-realtime multi-get cannot be mapped onto the current get engine request",
+            });
+        }
+        self.items
+            .iter()
+            .map(OpenSearchMultiGetItemRequestWire::to_engine_request)
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMultiGetItemResponseWire {
+    pub response: OpenSearchGetResponseWire,
+}
+
+impl OpenSearchMultiGetItemResponseWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_bool(false);
+        self.response.write(output)
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-get failure item",
+                reason: "failure items are not decoded by the multi-get adapter yet",
+            });
+        }
+        Ok(Self {
+            response: OpenSearchGetResponseWire::read_from_input(input)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMultiGetResponseWire {
+    pub items: Vec<OpenSearchMultiGetItemResponseWire>,
+}
+
+impl OpenSearchMultiGetResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_vint(self.items.len() as i32);
+        for item in &self.items {
+            item.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let item_count = read_len(&mut input)?;
+        let mut items = Vec::with_capacity(item_count);
+        for _ in 0..item_count {
+            items.push(OpenSearchMultiGetItemResponseWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { items })
+    }
+}
+
+pub fn build_opensearch_multi_get_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchMultiGetRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_MULTI_GET_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_multi_get_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchMultiGetRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_MULTI_GET_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_MULTI_GET_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchMultiGetRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_multi_get_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchMultiGetResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_multi_get_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchMultiGetResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchMultiGetResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2039,6 +2356,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_MULTI_GET_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_REFRESH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -2049,6 +2370,7 @@ mod tests {
         for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
             let decision = classify_opensearch_transport_action(spec.action_name);
             if spec.action_name == OPENSEARCH_GET_ACTION_NAME
+                || spec.action_name == OPENSEARCH_MULTI_GET_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
             {
                 assert_eq!(
@@ -2212,6 +2534,159 @@ mod tests {
         assert!(message.status.is_response());
         assert_eq!(
             read_opensearch_get_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_multi_get_request_wire_round_trips_and_maps_to_engine_requests() {
+        let request = OpenSearchMultiGetRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            items: vec![
+                OpenSearchMultiGetItemRequestWire::new("logs-000001".into(), "doc-1".into()),
+                OpenSearchMultiGetItemRequestWire::new("metrics-000001".into(), "doc-2".into()),
+            ],
+            ..OpenSearchMultiGetRequestWire::new(Vec::new())
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchMultiGetRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_requests().unwrap(),
+            vec![
+                GetDocumentRequest {
+                    index: "logs-000001".into(),
+                    id: "doc-1".into(),
+                },
+                GetDocumentRequest {
+                    index: "metrics-000001".into(),
+                    id: "doc-2".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn opensearch_multi_get_request_rejects_unsupported_engine_mapping_options() {
+        let request = OpenSearchMultiGetRequestWire {
+            preference: Some("_primary".into()),
+            items: vec![OpenSearchMultiGetItemRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+            )],
+            ..OpenSearchMultiGetRequestWire::new(Vec::new())
+        };
+
+        match request.to_engine_requests().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "multi-get request preference");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+
+        let request = OpenSearchMultiGetRequestWire::new(vec![OpenSearchMultiGetItemRequestWire {
+            routing: Some("tenant-a".into()),
+            ..OpenSearchMultiGetItemRequestWire::new("logs-000001".into(), "doc-1".into())
+        }]);
+
+        match request.to_engine_requests().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "multi-get request item routing");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensearch_multi_get_response_wire_round_trips_successful_items() {
+        let response = OpenSearchMultiGetResponseWire {
+            items: vec![
+                OpenSearchMultiGetItemResponseWire {
+                    response: OpenSearchGetResponseWire::found(
+                        "logs-000001".into(),
+                        DocumentMetadata {
+                            id: "doc-1".into(),
+                            version: 3,
+                            seq_no: 7,
+                            primary_term: 2,
+                        },
+                        json!({ "message": "hello" }),
+                    ),
+                },
+                OpenSearchMultiGetItemResponseWire {
+                    response: OpenSearchGetResponseWire::not_found(
+                        "logs-000001".into(),
+                        "doc-404".into(),
+                    ),
+                },
+            ],
+        };
+
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+        assert_eq!(
+            OpenSearchMultiGetResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_multi_get_transport_messages_bind_action_frames() {
+        let request = OpenSearchMultiGetRequestWire::new(vec![
+            OpenSearchMultiGetItemRequestWire::new("logs-000001".into(), "doc-1".into()),
+            OpenSearchMultiGetItemRequestWire::new("logs-000001".into(), "doc-2".into()),
+        ]);
+        let mut frame =
+            build_opensearch_multi_get_request_message(22, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 22);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_multi_get_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = OpenSearchMultiGetResponseWire {
+            items: vec![OpenSearchMultiGetItemResponseWire {
+                response: OpenSearchGetResponseWire::found(
+                    "logs-000001".into(),
+                    DocumentMetadata {
+                        id: "doc-1".into(),
+                        version: 1,
+                        seq_no: 0,
+                        primary_term: 1,
+                    },
+                    json!({ "message": "hello" }),
+                ),
+            }],
+        };
+        let mut frame =
+            build_opensearch_multi_get_response_message(22, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 22);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_multi_get_response_message(&message).unwrap(),
             response
         );
     }

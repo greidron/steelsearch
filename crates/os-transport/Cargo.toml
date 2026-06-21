@@ -28,3 +28,7 @@ path = "benchmarks/refresh_wire.rs"
 [[bin]]
 name = "get-wire-benchmark"
 path = "benchmarks/get_wire.rs"
+
+[[bin]]
+name = "multi-get-wire-benchmark"
+path = "benchmarks/multi_get_wire.rs"

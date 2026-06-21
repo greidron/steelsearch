@@ -47,6 +47,15 @@
       "response_wire_type": "GetResponse",
       "disposition": "implemented",
       "reason": "Default single-document get request/response transport codec maps onto the Rust get semantic adapter."
+    },
+    {
+      "action_name": "indices:data/read/mget",
+      "action_type": "MultiGetAction",
+      "transport_action": "TransportMultiGetAction",
+      "request_wire_type": "MultiGetRequest",
+      "response_wire_type": "MultiGetResponse",
+      "disposition": "implemented",
+      "reason": "Default multi-document get request/response transport codec maps onto batched Rust get semantic adapters."
     }
   ]
 }

@@ -173,13 +173,28 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
 
 ## Current Server-Side Transport Adapters
 
-As of the get transport adapter pass, the explicit dispatcher contract in
+As of the multi-get transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
 - `cluster:monitor/state`
 - `cluster:monitor/task`
 - `indices:data/read/get`
+- `indices:data/read/mget`
 - `indices:admin/refresh`
+
+The multi-get adapter covers:
+
+- OpenSearch `MultiGetRequest` parent task, preference/refresh/realtime flags,
+  and item list wire shape;
+- default item wire shape for index, id, internal version type, and match-any
+  version;
+- OpenSearch `MultiGetResponse` item arrays containing successful found and
+  not-found `GetResponse` payloads;
+- conversion from default multi-get item requests into batched Rust
+  `GetDocumentRequest` values;
+- explicit rejection for top-level preference, pre-get refresh, non-realtime
+  reads, item routing, item stored fields, item versioned reads, item fetch
+  source context, and failure response items until those semantics are mapped.
 
 The get adapter covers:
 
@@ -237,6 +252,25 @@ release run, this adapter is also not the bottleneck relative to the existing
 HTTP search/write/refresh benchmark paths. Re-run the command above after each
 get transport adapter change that affects request/response framing or source
 materialization.
+
+Current multi-get wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin multi-get-wire-benchmark
+multi_get_request_encode ops_per_second=488012.29 nanos_per_op=2049.13
+multi_get_response_encode ops_per_second=327754.66 nanos_per_op=3051.06
+multi_get_request_decode ops_per_second=445337.44 nanos_per_op=2245.49
+multi_get_response_decode ops_per_second=161153.85 nanos_per_op=6205.25
+multi_get_wire_bottleneck_ops_per_second=161153.85
+multi_get_wire_bottleneck_items_per_second=1289230.82
+```
+
+The current multi-get wire bottleneck is response decode for an 8-item batch,
+again because the benchmark includes JSON source decode for each found item.
+At roughly 1.29M decoded items/s in the latest local release run, this adapter
+is still below the existing HTTP path bottleneck risk. Re-run the command above
+after each multi-get transport adapter change that affects response framing,
+failure items, or source materialization.
 
 ## Tier 1 Implementation And Test Ownership Draft
 
