@@ -278,6 +278,10 @@ name = "validate-query-reject-wire-benchmark"
 path = "benchmarks/validate_query_reject_wire.rs"
 
 [[bin]]
+name = "flush-reject-wire-benchmark"
+path = "benchmarks/flush_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

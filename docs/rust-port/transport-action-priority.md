@@ -251,6 +251,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/update`
 - `indices:data/write/delete`
 - `indices:admin/refresh`
+- `indices:admin/flush` (rejected fail-closed)
 - `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
@@ -1017,6 +1018,18 @@ The validate-query boundary covers:
 - explicit rejection for index filters, custom indices options, non-`match_all`
   query builders, custom boosts, named-query markers, explain, rewrite,
   all-shards validation, and validate-query execution.
+
+The flush boundary covers:
+
+- OpenSearch `FlushRequest` parent task, nullable index array, default
+  `IndicesOptions.strictExpandOpenAndForbidClosed()`, force flag, and
+  wait-if-ongoing flag at the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/flush` until shard
+  translog flush execution, wait-if-ongoing concurrency semantics, and shard
+  status response rendering are implemented against Rust shard state;
+- explicit rejection for index filters, custom indices options,
+  `force=true && wait_if_ongoing=false` validation failures, forced flush,
+  non-waiting flush, and flush execution.
 
 The field-capabilities boundary covers:
 
@@ -2479,6 +2492,24 @@ default validate-query indices options, minimal `match_all` query builder, and
 default explain/rewrite/all-shards flags before rejecting execution. At roughly
 1.45M ops/s in the latest local release run, the remaining performance-sensitive
 work is query parsing, rewrite, shard selection, per-shard validation, and
+response rendering.
+
+Current flush reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin flush-reject-wire-benchmark
+flush_reject_request_encode iterations=400000 elapsed_ms=221.084 ops_per_second=1809265.40 nanos_per_op=552.71
+flush_reject_request_decode iterations=400000 elapsed_ms=215.194 ops_per_second=1858786.28 nanos_per_op=537.99
+flush_reject_validation iterations=400000 elapsed_ms=250.833 ops_per_second=1594688.23 nanos_per_op=627.08
+flush_reject_wire_bottleneck_ops_per_second=1594688.23
+```
+
+The current flush fail-closed boundary bottleneck is validation. The default
+benchmark writes the broadcast request envelope, empty index array, default
+strict-expand-open-forbid-closed indices options, `force=false`, and
+`wait_if_ongoing=true` before rejecting execution. At roughly 1.59M ops/s in
+the latest local release run, the remaining performance-sensitive work is
+translog flush execution, in-flight flush coordination, and shard status
 response rendering.
 
 Current field-capabilities reject wire microbenchmark:
