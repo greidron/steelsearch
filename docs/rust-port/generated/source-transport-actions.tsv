@@ -60,7 +60,7 @@ planned	ScaleIndexAction.INSTANCE	TransportScaleIndexAction.class	/home/ubuntu/O
 planned	AnalyzeAction.INSTANCE	TransportAnalyzeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	720
 planned	PutIndexTemplateAction.INSTANCE	TransportPutIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	721
 partial	GetIndexTemplatesAction.INSTANCE	TransportGetIndexTemplatesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	722
-planned	DeleteIndexTemplateAction.INSTANCE	TransportDeleteIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	723
+partial	DeleteIndexTemplateAction.INSTANCE	TransportDeleteIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	723
 planned	PutComponentTemplateAction.INSTANCE	TransportPutComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	724
 planned	GetComponentTemplateAction.INSTANCE	TransportGetComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	725
 planned	DeleteComponentTemplateAction.INSTANCE	TransportDeleteComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	726

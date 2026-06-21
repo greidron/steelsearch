@@ -191,6 +191,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (rejected fail-closed)
+- `indices:admin/template/delete` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -382,6 +383,16 @@ The get-index-templates boundary covers:
   OpenSearch-compatible name and wildcard matching semantics;
 - explicit rejection for custom cluster-manager timeouts, local reads, blank
   template names, name filters, and get-index-templates execution.
+
+The delete-index-template boundary covers:
+
+- OpenSearch `DeleteIndexTemplateRequest` parent task, cluster-manager timeout,
+  and template name at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/template/delete`
+  until legacy index-template metadata mutation and acknowledged response
+  rendering are implemented against Rust cluster metadata;
+- explicit rejection for custom cluster-manager timeouts and
+  delete-index-template execution.
 
 The field-capabilities boundary covers:
 
@@ -997,8 +1008,23 @@ The current get-index-templates fail-closed boundary bottleneck is request
 encode. The default benchmark uses an empty names array, matching the OpenSearch
 all-templates request shape, so validation is light and the remaining
 performance risk is future template metadata matching and response rendering.
-At roughly 1.74M ops/s in the latest local release run, the fail-closed wire
+At roughly 1.98M ops/s in the latest local release run, the fail-closed wire
 boundary is not a material bottleneck.
+
+Current delete-index-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-index-template-reject-wire-benchmark
+delete_index_template_reject_request_encode iterations=400000 elapsed_ms=307.438 ops_per_second=1301073.85 nanos_per_op=768.60
+delete_index_template_reject_request_decode iterations=400000 elapsed_ms=265.167 ops_per_second=1508481.56 nanos_per_op=662.92
+delete_index_template_reject_validation iterations=400000 elapsed_ms=255.597 ops_per_second=1564964.69 nanos_per_op=638.99
+delete_index_template_reject_wire_bottleneck_ops_per_second=1301073.85
+```
+
+The current delete-index-template fail-closed boundary bottleneck is request
+encode. This path stays cheap because validation checks only the default
+timeout before failing closed; the future performance-sensitive work is
+template metadata mutation, publication, and acknowledged response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 
