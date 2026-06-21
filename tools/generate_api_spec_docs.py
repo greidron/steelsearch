@@ -88,7 +88,14 @@ def transport_family(row: dict[str, str]) -> str:
         return "search"
     if any(
         token in action
-        for token in ("GetIndex", "GetMappings", "GetFieldMappings", "GetAliases", "GetSettings")
+        for token in (
+            "IndicesExists",
+            "GetIndex",
+            "GetMappings",
+            "GetFieldMappings",
+            "GetAliases",
+            "GetSettings",
+        )
     ):
         return "index-and-metadata"
     if any(token in action for token in ("Index", "Delete", "Update", "Bulk", "Refresh", "Reindex", "DeleteByQuery", "UpdateByQuery")):
@@ -253,7 +260,14 @@ def transport_meaning(action: str) -> str:
         return "Transport action used by search or search-adjacent features."
     if any(
         token in text
-        for token in ("GetIndex", "GetMappings", "GetFieldMappings", "GetAliases", "GetSettings")
+        for token in (
+            "IndicesExists",
+            "GetIndex",
+            "GetMappings",
+            "GetFieldMappings",
+            "GetAliases",
+            "GetSettings",
+        )
     ):
         return "Transport action used by index metadata read features."
     if "Bulk" in text or "Index" in text or "Update" in text or "Delete" in text or "Refresh" in text:

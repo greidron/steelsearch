@@ -48,7 +48,7 @@ planned	DeleteIndexAction.INSTANCE	TransportDeleteIndexAction.class	/home/ubuntu
 partial	GetIndexAction.INSTANCE	TransportGetIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	704
 planned	OpenIndexAction.INSTANCE	TransportOpenIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	705
 planned	CloseIndexAction.INSTANCE	TransportCloseIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	706
-planned	IndicesExistsAction.INSTANCE	TransportIndicesExistsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	707
+partial	IndicesExistsAction.INSTANCE	TransportIndicesExistsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	707
 planned	AddIndexBlockAction.INSTANCE	TransportAddIndexBlockAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	708
 planned	GetMappingsAction.INSTANCE	TransportGetMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	709
 planned	GetFieldMappingsAction.INSTANCE	TransportGetFieldMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	710

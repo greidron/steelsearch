@@ -189,6 +189,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
+- `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -359,6 +360,17 @@ The get-index boundary covers:
   reads, custom indices options, partial feature selection, human-readable
   settings rendering, default setting expansion, unknown feature ids, and
   get-index execution.
+
+The indices-exists boundary covers:
+
+- OpenSearch `IndicesExistsRequest` parent task, cluster-manager timeout,
+  local flag, indices array, and `IndicesOptions.fromOptions(false, false,
+  true, true)` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/exists` until index
+  existence checks can use Rust index resolution semantics and return the
+  OpenSearch boolean response shape;
+- explicit rejection for custom cluster-manager timeouts, empty index targets,
+  local reads, custom indices options, and indices-exists execution.
 
 The field-capabilities boundary covers:
 
@@ -942,6 +954,23 @@ index array, `IndicesOptions.strictExpandOpen()`, default feature byte array,
 and two boolean rendering flags. At roughly 1.77M ops/s in the latest local
 release run, the remaining performance risk is not the wire boundary; it is the
 future aliases/mappings/settings/context metadata response rendering path.
+
+Current indices-exists reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin indices-exists-reject-wire-benchmark
+indices_exists_reject_request_encode iterations=400000 elapsed_ms=270.143 ops_per_second=1480697.75 nanos_per_op=675.36
+indices_exists_reject_request_decode iterations=400000 elapsed_ms=246.835 ops_per_second=1620517.52 nanos_per_op=617.09
+indices_exists_reject_validation iterations=400000 elapsed_ms=245.820 ops_per_second=1627205.86 nanos_per_op=614.55
+indices_exists_reject_wire_bottleneck_ops_per_second=1480697.75
+```
+
+The current indices-exists fail-closed boundary bottleneck is request encode.
+Unlike get-index, the default benchmark request carries a non-empty `logs-*`
+target so it exercises the valid OpenSearch request shape before the execution
+boundary rejects. At roughly 1.48M ops/s in the latest local release run, the
+remaining performance risk is the future index-resolution and boolean response
+rendering path, not the fail-closed wire boundary.
 
 Current field-capabilities reject wire microbenchmark:
 
