@@ -190,6 +190,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
+- `indices:monitor/recovery` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -352,6 +353,16 @@ The cluster-search-shards boundary covers:
 - explicit rejection for custom cluster-manager timeout, local reads, index
   filters, routing, preference, custom indices options, slice payloads, and
   cluster-search-shards execution.
+
+The recovery boundary covers:
+
+- OpenSearch `RecoveryRequest` parent task, indices array,
+  `IndicesOptions.STRICT_EXPAND_OPEN_CLOSED`, `detailed`, and `activeOnly` at
+  the wire decode/build layer;
+- explicit fail-closed classification for `indices:monitor/recovery` until
+  shard recovery metadata response rendering is implemented;
+- explicit rejection for index filters, custom indices options, detailed
+  recovery output, active-only filtering, and recovery execution.
 
 The indices-stats boundary covers:
 
@@ -735,6 +746,23 @@ empty index array, optional routing/preference fields, lenient open-index
 options, and slice-present flag before rejecting at admission. At roughly 1.52M
 ops/s in the latest local release run, it remains in the lightweight admin
 transport range.
+
+Current recovery reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin recovery-reject-wire-benchmark
+recovery_reject_request_encode iterations=400000 elapsed_ms=220.369 ops_per_second=1815138.66 nanos_per_op=550.92
+recovery_reject_request_decode iterations=400000 elapsed_ms=225.133 ops_per_second=1776727.50 nanos_per_op=562.83
+recovery_reject_validation iterations=400000 elapsed_ms=227.547 ops_per_second=1757875.29 nanos_per_op=568.87
+recovery_reject_wire_bottleneck_ops_per_second=1757875.29
+```
+
+The current recovery fail-closed boundary bottleneck is validation. This path
+carries the BroadcastRequest parent task, empty index array, strict open/closed
+index options, detailed flag, and active-only flag before rejecting at
+admission. At roughly 1.76M ops/s in the latest local release run, the boundary
+is lighter than the cluster-search-shards reject path and does not expose a
+material wire-codec bottleneck.
 
 Current indices-stats reject wire microbenchmark:
 

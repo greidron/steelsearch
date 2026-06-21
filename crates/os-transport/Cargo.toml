@@ -82,6 +82,10 @@ name = "cluster-search-shards-reject-wire-benchmark"
 path = "benchmarks/cluster_search_shards_reject_wire.rs"
 
 [[bin]]
+name = "recovery-reject-wire-benchmark"
+path = "benchmarks/recovery_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

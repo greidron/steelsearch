@@ -130,6 +130,15 @@
       "reason": "Cluster-search-shards transport execution requires shard routing metadata response rendering before Steelsearch can serve OpenSearch search-shards semantics."
     },
     {
+      "action_name": "indices:monitor/recovery",
+      "action_type": "RecoveryAction",
+      "transport_action": "TransportRecoveryAction",
+      "request_wire_type": "RecoveryRequest",
+      "response_wire_type": "RecoveryResponse",
+      "disposition": "rejected",
+      "reason": "Recovery transport execution requires shard recovery metadata response rendering before Steelsearch can serve OpenSearch recovery read semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",

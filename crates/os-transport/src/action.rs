@@ -39,6 +39,7 @@ pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappi
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
+pub const OPENSEARCH_RECOVERY_ACTION_NAME: &str = "indices:monitor/recovery";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
@@ -240,6 +241,16 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         adapter_stage: "search-admin",
         next_step:
             "map bounded search-shards requests onto Rust shard routing metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_RECOVERY_ACTION_NAME,
+        action_type: "RecoveryAction",
+        transport_action: "TransportRecoveryAction",
+        request_wire_type: "RecoveryRequest",
+        response_wire_type: "RecoveryResponse",
+        adapter_stage: "recovery-admin",
+        next_step:
+            "map bounded recovery reads onto Rust shard recovery metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
@@ -481,6 +492,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster-search-shards transport execution requires shard routing metadata response rendering",
+        },
+        OPENSEARCH_RECOVERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "recovery transport execution requires shard recovery metadata response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2270,6 +2286,44 @@ pub fn read_opensearch_cluster_search_shards_request_message(
     OpenSearchClusterSearchShardsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_recovery_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchRecoveryRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_RECOVERY_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_recovery_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRecoveryRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_RECOVERY_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_RECOVERY_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchRecoveryRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -2926,6 +2980,88 @@ impl OpenSearchClusterSearchShardsRequestWire {
             shape: "cluster search shards execution",
             reason:
                 "cluster-search-shards transport execution requires shard routing metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRecoveryRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub detailed: bool,
+    pub active_only: bool,
+}
+
+impl Default for OpenSearchRecoveryRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices(),
+            detailed: false,
+            active_only: false,
+        }
+    }
+}
+
+impl OpenSearchRecoveryRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_bool(self.detailed);
+        output.write_bool(self.active_only);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            detailed: input.read_bool()?,
+            active_only: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery index filter",
+                reason: "index-scoped recovery reads require shard recovery metadata rendering",
+            });
+        }
+        if self.indices_options
+            != OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery indices options",
+                reason: "custom recovery indices options require index resolution semantics",
+            });
+        }
+        if self.detailed {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery detailed",
+                reason: "detailed recovery output requires file-level recovery metadata rendering",
+            });
+        }
+        if self.active_only {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery active only",
+                reason: "active-only recovery filtering requires shard recovery stage mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "recovery execution",
+            reason:
+                "recovery transport execution requires shard recovery metadata response rendering",
         })
     }
 }
@@ -7258,6 +7394,15 @@ mod tests {
                     next_step: "map bounded search-shards requests onto Rust shard routing metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:monitor/recovery",
+                    action_type: "RecoveryAction",
+                    transport_action: "TransportRecoveryAction",
+                    request_wire_type: "RecoveryRequest",
+                    response_wire_type: "RecoveryResponse",
+                    adapter_stage: "recovery-admin",
+                    next_step: "map bounded recovery reads onto Rust shard recovery metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -7445,6 +7590,10 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_RECOVERY_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -7473,6 +7622,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -10899,6 +11049,101 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster search shards execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_recovery_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchRecoveryRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchRecoveryRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_recovery_request_rejects_unsupported_shapes() {
+        let index_filter = OpenSearchRecoveryRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchRecoveryRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery index filter",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchRecoveryRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices()
+            },
+            ..OpenSearchRecoveryRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery indices options",
+                ..
+            })
+        ));
+
+        let detailed = OpenSearchRecoveryRequestWire {
+            detailed: true,
+            ..OpenSearchRecoveryRequestWire::default()
+        };
+        assert!(matches!(
+            detailed.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery detailed",
+                ..
+            })
+        ));
+
+        let active_only = OpenSearchRecoveryRequestWire {
+            active_only: true,
+            ..OpenSearchRecoveryRequestWire::default()
+        };
+        assert!(matches!(
+            active_only.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery active only",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_recovery_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchRecoveryRequestWire::default();
+        let mut frame =
+            build_opensearch_recovery_request_message(40, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected recovery request message");
+        };
+        assert_eq!(
+            read_opensearch_recovery_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_recovery_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "recovery execution",
                 ..
             })
         ));
