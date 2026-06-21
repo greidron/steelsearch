@@ -22,6 +22,7 @@ use crate::TransportMessage;
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
+pub const CAT_SHARDS_ACTION_NAME: &str = "cluster:monitor/shards";
 pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
@@ -106,6 +107,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterStatsAction",
         request_wire_type: "ClusterStatsRequest",
         response_wire_type: "ClusterStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CAT_SHARDS_ACTION_NAME,
+        action_type: "CatShardsAction",
+        transport_action: "TransportCatShardsAction",
+        request_wire_type: "CatShardsRequest",
+        response_wire_type: "CatShardsResponse",
     },
     SourceTransportActionSpec {
         action_name: NODES_INFO_ACTION_NAME,
@@ -547,6 +555,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
+        },
+        CAT_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cat-shards transport execution requires shard routing and index stats response rendering",
         },
         NODES_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1398,6 +1411,152 @@ impl ClusterStatsRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchPageParamsWire {
+    pub requested_token: Option<String>,
+    pub sort: Option<String>,
+    pub size: i32,
+}
+
+impl Default for OpenSearchPageParamsWire {
+    fn default() -> Self {
+        Self {
+            requested_token: None,
+            sort: None,
+            size: 0,
+        }
+    }
+}
+
+impl OpenSearchPageParamsWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_optional_string(self.requested_token.as_deref());
+        output.write_optional_string(self.sort.as_deref());
+        output.write_i32(self.size);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            requested_token: input.read_optional_string()?,
+            sort: input.read_optional_string()?,
+            size: input.read_i32()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatShardsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub indices: Vec<String>,
+    pub cancel_after_time_interval: Option<TimeValueWire>,
+    pub page_params: Option<OpenSearchPageParamsWire>,
+    pub request_limit_check_supported: bool,
+}
+
+impl Default for CatShardsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            indices: Vec::new(),
+            cancel_after_time_interval: None,
+            page_params: None,
+            request_limit_check_supported: false,
+        }
+    }
+}
+
+impl CatShardsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.indices);
+        write_optional_time_value(output, self.cancel_after_time_interval.as_ref());
+        output.write_bool(self.page_params.is_some());
+        if let Some(page_params) = &self.page_params {
+            page_params.write(output);
+        }
+        output.write_bool(self.request_limit_check_supported);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let local = input.read_bool()?;
+        let indices = input.read_string_array()?;
+        let cancel_after_time_interval = read_optional_time_value(&mut input)?;
+        let page_params = if input.read_bool()? {
+            Some(OpenSearchPageParamsWire::read(&mut input)?)
+        } else {
+            None
+        };
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            local,
+            indices,
+            cancel_after_time_interval,
+            page_params,
+            request_limit_check_supported: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the cat-shards adapter yet",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards local",
+                reason: "local cat-shards reads require local cluster-state routing semantics",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards index filter",
+                reason: "index-scoped cat-shards reads require index resolution and shard filtering semantics",
+            });
+        }
+        if self.cancel_after_time_interval.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards cancel after",
+                reason: "cat-shards timeout cancellation requires cancellable cluster admin task mapping",
+            });
+        }
+        if self.page_params.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards pagination",
+                reason: "cat-shards pagination requires shard pagination token semantics",
+            });
+        }
+        if self.request_limit_check_supported {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards request limit check",
+                reason: "cat-shards response limit checks require shard response sizing semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cat shards execution",
+            reason:
+                "cat-shards transport execution requires shard routing and index stats response rendering",
+        })
+    }
+}
+
 const OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS: i64 = ((1_i64 << 17) - 1) & !(1_i64 << 14);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2036,6 +2195,44 @@ pub fn read_cluster_stats_request_message(
         });
     }
     ClusterStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cat_shards_request_message(
+    request_id: i64,
+    version: Version,
+    request: &CatShardsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CAT_SHARDS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cat_shards_request_message(
+    message: &TransportMessage,
+) -> Result<CatShardsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CAT_SHARDS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CAT_SHARDS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    CatShardsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_info_request_message(
@@ -9377,6 +9574,13 @@ mod tests {
                     response_wire_type: "ClusterStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/shards",
+                    action_type: "CatShardsAction",
+                    transport_action: "TransportCatShardsAction",
+                    request_wire_type: "CatShardsRequest",
+                    response_wire_type: "CatShardsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/nodes/info",
                     action_type: "NodesInfoAction",
                     transport_action: "TransportNodesInfoAction",
@@ -9732,6 +9936,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CAT_SHARDS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -12016,6 +12224,122 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cat_shards_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = CatShardsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = CatShardsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cat_shards_request_rejects_unsupported_shapes() {
+        let timeout = CatShardsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(1),
+            ..CatShardsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = CatShardsRequestWire {
+            local: true,
+            ..CatShardsRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards local",
+                ..
+            })
+        ));
+
+        let index_filter = CatShardsRequestWire {
+            indices: vec!["logs".to_string()],
+            ..CatShardsRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards index filter",
+                ..
+            })
+        ));
+
+        let cancel_after = CatShardsRequestWire {
+            cancel_after_time_interval: Some(TimeValueWire::seconds(1)),
+            ..CatShardsRequestWire::default()
+        };
+        assert!(matches!(
+            cancel_after.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards cancel after",
+                ..
+            })
+        ));
+
+        let pagination = CatShardsRequestWire {
+            page_params: Some(OpenSearchPageParamsWire {
+                requested_token: Some("token".to_string()),
+                sort: Some("asc".to_string()),
+                size: 25,
+            }),
+            ..CatShardsRequestWire::default()
+        };
+        assert!(matches!(
+            pagination.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards pagination",
+                ..
+            })
+        ));
+
+        let request_limit = CatShardsRequestWire {
+            request_limit_check_supported: true,
+            ..CatShardsRequestWire::default()
+        };
+        assert!(matches!(
+            request_limit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards request limit check",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cat_shards_transport_messages_bind_rejected_action_frame() {
+        let request = CatShardsRequestWire::default();
+        let mut frame =
+            build_cat_shards_request_message(56, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cat-shards request message");
+        };
+        assert_eq!(read_cat_shards_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_cat_shards_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards execution",
                 ..
             })
         ));

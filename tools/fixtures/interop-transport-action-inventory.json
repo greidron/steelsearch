@@ -31,6 +31,15 @@
       "reason": "Cluster-stats transport execution requires runtime stats aggregation mapping before Steelsearch can serve OpenSearch cluster-stats semantics."
     },
     {
+      "action_name": "cluster:monitor/shards",
+      "action_type": "CatShardsAction",
+      "transport_action": "TransportCatShardsAction",
+      "request_wire_type": "CatShardsRequest",
+      "response_wire_type": "CatShardsResponse",
+      "disposition": "rejected",
+      "reason": "Cat-shards transport execution requires shard routing and index stats response rendering before Steelsearch can serve OpenSearch cat shards semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/info",
       "action_type": "NodesInfoAction",
       "transport_action": "TransportNodesInfoAction",

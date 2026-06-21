@@ -179,6 +179,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
+- `cluster:monitor/shards` (rejected fail-closed)
 - `cluster:monitor/nodes/info` (rejected fail-closed)
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
@@ -248,6 +249,17 @@ The cluster-stats boundary covers:
 - explicit rejection for concrete node payloads, node filters, timeout,
   aggregated-node response mode, partial metric selection, metric bitsets, and
   cluster-stats execution.
+
+The cat-shards boundary covers:
+
+- OpenSearch `CatShardsRequest` parent task, cluster-manager timeout, local
+  flag, indices array, optional cancel-after timeout, optional `PageParams`,
+  and request-limit support flag at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/shards` until shard
+  routing plus index stats response rendering is implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, index
+  filters, cancel-after timeout, pagination, request-limit checks, and
+  cat-shards execution.
 
 The nodes-info boundary covers:
 
@@ -738,6 +750,24 @@ The validation path adds only a small unsupported-shape check on top of decode,
 so the rejection boundary itself is not a new performance bottleneck. At roughly
 1.76M ops/s in the latest local release run, this path is in the same range as
 the lightweight admin transport adapters.
+
+Current cat-shards reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cat-shards-reject-wire-benchmark
+cat_shards_reject_request_encode iterations=400000 elapsed_ms=184.729 ops_per_second=2165329.22 nanos_per_op=461.82
+cat_shards_reject_request_decode iterations=400000 elapsed_ms=201.912 ops_per_second=1981056.97 nanos_per_op=504.78
+cat_shards_reject_validation iterations=400000 elapsed_ms=204.856 ops_per_second=1952587.62 nanos_per_op=512.14
+cat_shards_reject_wire_bottleneck_ops_per_second=1952587.62
+```
+
+The current cat-shards fail-closed boundary bottleneck is validation. This path
+carries the ActionRequest parent task, cluster-manager timeout, local flag,
+indices array, optional cancel-after timeout, optional pagination, and
+request-limit marker before rejecting execution. At roughly 1.95M ops/s in the
+latest local release run, the boundary itself is lightweight; the first
+performance point to inspect before accepting execution is shard routing plus
+indices stats response rendering.
 
 Current nodes-info reject wire microbenchmark:
 
