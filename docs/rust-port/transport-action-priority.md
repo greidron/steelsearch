@@ -261,6 +261,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script_language/get` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/get` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/delete` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -900,6 +901,20 @@ The get-pipeline boundary covers:
 - explicit rejection for custom cluster-manager timeouts, local cluster-state
   reads, and get-pipeline execution, plus defensive decode rejection for
   negative response pipeline counts.
+
+The delete-pipeline boundary covers:
+
+- OpenSearch `DeletePipelineRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, and pipeline id at the OpenSearch 3.x wire
+  decode/build layer;
+- OpenSearch `AcknowledgedResponse` decode/build for the delete-pipeline
+  response acknowledgement bit;
+- explicit fail-closed classification for
+  `cluster:admin/ingest/pipeline/delete` until ingest pipeline wildcard
+  deletion, missing-pipeline handling, cluster metadata mutation, throttling,
+  and ack rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing ids, and delete-pipeline execution.
 
 The resize boundary covers:
 
@@ -2562,6 +2577,25 @@ array before rejecting execution. At roughly 1.43M ops/s in the latest local
 release run, current overhead is transport serialization rather than response
 decode. Future performance-sensitive work is serving the Rust ingest pipeline
 metadata catalog without allocation-heavy id/wildcard expansion.
+
+Current delete-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-pipeline-reject-wire-benchmark
+delete_pipeline_reject_request_encode iterations=400000 elapsed_ms=310.542 ops_per_second=1288070.68 nanos_per_op=776.35
+delete_pipeline_reject_request_decode iterations=400000 elapsed_ms=256.572 ops_per_second=1559014.29 nanos_per_op=641.43
+delete_pipeline_reject_validation iterations=400000 elapsed_ms=276.245 ops_per_second=1447989.37 nanos_per_op=690.61
+delete_pipeline_ack_response_decode iterations=400000 elapsed_ms=54.984 ops_per_second=7274875.61 nanos_per_op=137.46
+delete_pipeline_reject_wire_bottleneck_ops_per_second=1288070.68
+```
+
+The current delete-pipeline fail-closed boundary bottleneck is request encode.
+The request path carries the acknowledged cluster-manager envelope and pipeline
+id before rejecting execution. At roughly 1.29M ops/s in the latest local
+release run, current overhead is transport serialization. Future
+performance-sensitive work is wildcard matching against the Rust ingest
+pipeline metadata catalog, missing-pipeline response handling, metadata
+mutation, throttling, and ack rendering.
 
 Current resize reject wire microbenchmark:
 

@@ -472,6 +472,15 @@
       "reason": "Get-pipeline transport execution requires ingest pipeline metadata lookup, id/wildcard resolution, and response rendering before Steelsearch can serve OpenSearch ingest pipeline get semantics."
     },
     {
+      "action_name": "cluster:admin/ingest/pipeline/delete",
+      "action_type": "DeletePipelineAction",
+      "transport_action": "DeletePipelineTransportAction",
+      "request_wire_type": "DeletePipelineRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-pipeline transport execution requires ingest pipeline wildcard deletion, missing-pipeline handling, cluster metadata mutation, throttling, and ack rendering before Steelsearch can serve OpenSearch ingest pipeline delete semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",

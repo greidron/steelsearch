@@ -105,7 +105,7 @@ partial	GetScriptLanguageAction.INSTANCE	TransportGetScriptLanguageAction.class	
 partial	FieldCapabilitiesAction.INSTANCE	TransportFieldCapabilitiesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	775
 partial	PutPipelineAction.INSTANCE	PutPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	781
 partial	GetPipelineAction.INSTANCE	GetPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	782
-planned	DeletePipelineAction.INSTANCE	DeletePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	783
+partial	DeletePipelineAction.INSTANCE	DeletePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	783
 planned	SimulatePipelineAction.INSTANCE	SimulatePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	784
 planned	CreateDataStreamAction.INSTANCE	CreateDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	789
 planned	DeleteDataStreamAction.INSTANCE	DeleteDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	790
