@@ -44,6 +44,7 @@ pub const PUT_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/put";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
 pub const DELETE_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/delete";
 pub const VERIFY_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/verify";
+pub const CLEANUP_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/_cleanup";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -288,6 +289,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportVerifyRepositoryAction",
         request_wire_type: "VerifyRepositoryRequest",
         response_wire_type: "VerifyRepositoryResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLEANUP_REPOSITORY_ACTION_NAME,
+        action_type: "CleanupRepositoryAction",
+        transport_action: "TransportCleanupRepositoryAction",
+        request_wire_type: "CleanupRepositoryRequest",
+        response_wire_type: "CleanupRepositoryResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -938,6 +946,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "verify-repository transport execution requires repository verification and node response rendering",
+        },
+        CLEANUP_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cleanup-repository transport execution requires repository cleanup state coordination and cleanup result rendering",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3735,6 +3748,44 @@ pub fn read_verify_repository_request_message(
     VerifyRepositoryRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_cleanup_repository_request_message(
+    request_id: i64,
+    version: Version,
+    request: &CleanupRepositoryRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLEANUP_REPOSITORY_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cleanup_repository_request_message(
+    message: &TransportMessage,
+) -> Result<CleanupRepositoryRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLEANUP_REPOSITORY_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLEANUP_REPOSITORY_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    CleanupRepositoryRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_mappings_request_message(
     request_id: i64,
     version: Version,
@@ -5495,6 +5546,47 @@ impl VerifyRepositoryRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "verify repository execution",
             reason: "verify-repository transport execution requires repository verification and node response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CleanupRepositoryRequestWire {
+    pub repository: String,
+}
+
+impl Default for CleanupRepositoryRequestWire {
+    fn default() -> Self {
+        Self {
+            repository: "repo".to_string(),
+        }
+    }
+}
+
+impl CleanupRepositoryRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.repository);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let request = Self {
+            repository: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.repository.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository missing name",
+                reason: "OpenSearch cleanup-repository requests require a repository name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cleanup repository execution",
+            reason: "cleanup-repository transport execution requires repository cleanup state coordination and cleanup result rendering",
         })
     }
 }
@@ -13640,6 +13732,13 @@ mod tests {
                     response_wire_type: "VerifyRepositoryResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/repository/_cleanup",
+                    action_type: "CleanupRepositoryAction",
+                    transport_action: "TransportCleanupRepositoryAction",
+                    request_wire_type: "CleanupRepositoryRequest",
+                    response_wire_type: "CleanupRepositoryResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
                     action_type: "PendingClusterTasksAction",
                     transport_action: "TransportPendingClusterTasksAction",
@@ -14170,6 +14269,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(VERIFY_REPOSITORY_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLEANUP_REPOSITORY_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -18695,6 +18798,63 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "verify repository execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cleanup_repository_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = CleanupRepositoryRequestWire {
+            repository: "repo-a".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = CleanupRepositoryRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cleanup_repository_request_rejects_missing_repository_name() {
+        let missing_name = CleanupRepositoryRequestWire {
+            repository: " ".to_string(),
+        };
+        assert!(matches!(
+            missing_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository missing name",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cleanup_repository_transport_messages_bind_rejected_action_frame() {
+        let request = CleanupRepositoryRequestWire::default();
+        let mut frame =
+            build_cleanup_repository_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cleanup repository request message");
+        };
+        assert_eq!(
+            read_cleanup_repository_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_cleanup_repository_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository execution",
                 ..
             })
         ));

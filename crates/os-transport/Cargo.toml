@@ -86,6 +86,10 @@ name = "verify-repository-reject-wire-benchmark"
 path = "benchmarks/verify_repository_reject_wire.rs"
 
 [[bin]]
+name = "cleanup-repository-reject-wire-benchmark"
+path = "benchmarks/cleanup_repository_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 

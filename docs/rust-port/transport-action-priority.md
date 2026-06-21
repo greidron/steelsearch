@@ -200,6 +200,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `cluster:admin/repository/delete` (rejected fail-closed)
 - `cluster:admin/repository/verify` (rejected fail-closed)
+- `cluster:admin/repository/_cleanup` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -494,6 +495,18 @@ The verify-repository boundary covers:
   until repository verification and node response rendering are implemented;
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
   timeout, blank name, and verify-repository execution.
+
+The cleanup-repository boundary covers:
+
+- OpenSearch `CleanupRepositoryRequest` repository name at the wire
+  decode/build layer. The OpenSearch 3.7 request stream constructor and
+  `writeTo` implementation only read and write the repository string, despite
+  the request type extending `AcknowledgedRequest`;
+- explicit fail-closed classification for `cluster:admin/repository/_cleanup`
+  until repository cleanup state coordination and cleanup result rendering are
+  implemented;
+- explicit rejection for blank repository names and cleanup-repository
+  execution.
 
 The get-mappings boundary covers:
 
@@ -1442,6 +1455,24 @@ repository name before admission rejects execution. At roughly 1.70M ops/s in
 the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is repository verification
 across nodes and verify response rendering.
+
+Current cleanup-repository reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cleanup-repository-reject-wire-benchmark
+cleanup_repository_reject_request_encode iterations=400000 elapsed_ms=226.638 ops_per_second=1764926.59 nanos_per_op=566.60
+cleanup_repository_reject_request_decode iterations=400000 elapsed_ms=246.152 ops_per_second=1625012.81 nanos_per_op=615.38
+cleanup_repository_reject_validation iterations=400000 elapsed_ms=225.246 ops_per_second=1775839.75 nanos_per_op=563.11
+cleanup_repository_reject_wire_bottleneck_ops_per_second=1625012.81
+```
+
+The current cleanup-repository fail-closed boundary bottleneck is request
+decode. The payload is only the repository name because the OpenSearch 3.7
+request wire implementation does not serialize the acknowledged request
+envelope for this action. At roughly 1.63M ops/s in the latest local release
+run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is repository cleanup coordination, repository blob
+cleanup, and cleanup result rendering.
 
 Current get-mappings reject wire microbenchmark:
 
