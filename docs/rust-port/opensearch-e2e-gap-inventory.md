@@ -31,6 +31,31 @@ Latest audit report:
 No failed cases remain in the live `search-compat` plus `search-strict`
 comparison profile.
 
+## Exhaustive API Compatibility Audit
+
+Current generated reports:
+
+- `target/rest-api-coverage-head.json`
+- `target/transport-action-coverage-head.json`
+- `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
+
+Current status:
+
+| Area | Current evidence | Exhaustive-compatibility result |
+| --- | --- | --- |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=25` across `226` canonical and `146` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
+| REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed, but this is not the same as positive/negative live comparison for every route. |
+| REST live-required source-route mapping | `130/371` in-scope source routes matched by live-required fixture routes | Live-required coverage is representative, not exhaustive. |
+| REST source statuses | `implemented=2`, `stubbed=6`, `planned=363`, `out-of-scope=18` | Most source-derived rows still need owner-level implementation classification. |
+| Transport source inventory | `160` transport actions, all `planned` | No OpenSearch `ActionModule` transport action is currently classified as implemented. |
+
+Conclusion: the current E2E evidence proves there are no failures in the
+required live comparison profile. It does not prove exhaustive OpenSearch API
+compatibility. To make that claim, every in-scope source-derived REST route and
+transport action still needs an owner-level implementation classification plus
+positive and negative live comparison evidence, or an explicit out-of-scope
+decision.
+
 ## Fixed In This Pass
 
 | Case | Resolution |
