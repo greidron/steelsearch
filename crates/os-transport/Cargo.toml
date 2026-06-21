@@ -274,6 +274,10 @@ name = "simulate-template-reject-wire-benchmark"
 path = "benchmarks/simulate_template_reject_wire.rs"
 
 [[bin]]
+name = "validate-query-reject-wire-benchmark"
+path = "benchmarks/validate_query_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

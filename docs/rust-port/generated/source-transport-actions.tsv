@@ -69,7 +69,7 @@ partial	GetComposableIndexTemplateAction.INSTANCE	TransportGetComposableIndexTem
 partial	DeleteComposableIndexTemplateAction.INSTANCE	TransportDeleteComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	729
 partial	SimulateIndexTemplateAction.INSTANCE	TransportSimulateIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	730
 partial	SimulateTemplateAction.INSTANCE	TransportSimulateTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	731
-planned	ValidateQueryAction.INSTANCE	TransportValidateQueryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	732
+partial	ValidateQueryAction.INSTANCE	TransportValidateQueryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	732
 implemented	RefreshAction.INSTANCE	TransportRefreshAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	733
 planned	FlushAction.INSTANCE	TransportFlushAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	734
 planned	ForceMergeAction.INSTANCE	TransportForceMergeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	735

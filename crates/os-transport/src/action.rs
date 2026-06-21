@@ -106,6 +106,7 @@ pub const OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME: &str =
 pub const OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME: &str =
     "indices:admin/index_template/simulate_index";
 pub const OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME: &str = "indices:admin/index_template/simulate";
+pub const OPENSEARCH_VALIDATE_QUERY_ACTION_NAME: &str = "indices:admin/validate/query";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -764,6 +765,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map named or inline composable template simulation onto Rust template resolution and simulated metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_VALIDATE_QUERY_ACTION_NAME,
+        action_type: "ValidateQueryAction",
+        transport_action: "TransportValidateQueryAction",
+        request_wire_type: "ValidateQueryRequest",
+        response_wire_type: "ValidateQueryResponse",
+        adapter_stage: "query-validation",
+        next_step: "map bounded query validation onto Rust query parser, rewrite, shard selection, and validation response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
         action_type: "GetAliasesAction",
         transport_action: "TransportGetAliasesAction",
@@ -1350,6 +1360,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "simulate-template transport execution requires named or inline composable template resolution and simulated metadata response rendering",
+        },
+        OPENSEARCH_VALIDATE_QUERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "validate-query transport execution requires query parser, rewrite, shard selection, and validation response rendering",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -16655,6 +16670,138 @@ impl From<RefreshResponse> for OpenSearchRefreshResponseWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchValidateQueryRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub query_name: String,
+    pub query_boost_bits: u32,
+    pub query_named_query: Option<String>,
+    pub explain: bool,
+    pub rewrite: bool,
+    pub all_shards: bool,
+}
+
+impl Default for OpenSearchValidateQueryRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::validate_query_default(),
+            query_name: "match_all".to_string(),
+            query_boost_bits: 1.0f32.to_bits(),
+            query_named_query: None,
+            explain: false,
+            rewrite: false,
+            all_shards: false,
+        }
+    }
+}
+
+impl OpenSearchValidateQueryRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_string(&self.query_name);
+        output.write_i32(self.query_boost_bits as i32);
+        output.write_optional_string(self.query_named_query.as_deref());
+        output.write_bool(self.explain);
+        output.write_bool(self.rewrite);
+        output.write_bool(self.all_shards);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let indices = input.read_string_array()?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let query_name = input.read_string()?;
+        if query_name != "match_all" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query named query",
+                reason: "validate-query only decodes match_all query builders at this boundary",
+            });
+        }
+        let query_boost_bits = input.read_i32()? as u32;
+        let query_named_query = input.read_optional_string()?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices,
+            indices_options,
+            query_name,
+            query_boost_bits,
+            query_named_query,
+            explain: input.read_bool()?,
+            rewrite: input.read_bool()?,
+            all_shards: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query indices",
+                reason:
+                    "index-scoped validate-query requires OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::validate_query_default() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query indices options",
+                reason: "custom validate-query options require index resolution semantics",
+            });
+        }
+        if self.query_name != "match_all" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query named query",
+                reason: "non-match_all validate-query requests require query parser mapping",
+            });
+        }
+        if self.query_boost_bits != 1.0f32.to_bits() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query boost",
+                reason: "custom query boosts require query builder validation semantics",
+            });
+        }
+        if self.query_named_query.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query named query marker",
+                reason: "named query markers require query metadata response semantics",
+            });
+        }
+        if self.explain {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query explain",
+                reason: "explain=true requires per-shard query explanation rendering",
+            });
+        }
+        if self.rewrite {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query rewrite",
+                reason: "rewrite=true requires OpenSearch-compatible query rewrite semantics",
+            });
+        }
+        if self.all_shards {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query all shards",
+                reason: "all-shards validation requires broadcast shard fanout semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "validate query execution",
+            reason:
+                "validate-query transport execution requires query parser, rewrite, shard selection, and response rendering",
+        })
+    }
+}
+
 pub fn build_opensearch_refresh_request_message(
     request_id: i64,
     version: Version,
@@ -16691,6 +16838,44 @@ pub fn read_opensearch_refresh_request_message(
         });
     }
     OpenSearchRefreshRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_validate_query_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchValidateQueryRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_VALIDATE_QUERY_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_validate_query_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchValidateQueryRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_VALIDATE_QUERY_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_VALIDATE_QUERY_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchValidateQueryRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_refresh_response_message(
@@ -16770,6 +16955,20 @@ impl OpenSearchIndicesOptionsWire {
             ignore_unavailable: false,
             ignore_aliases: false,
             allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: false,
+            ignore_throttled: false,
+            expand_open: true,
+            expand_closed: false,
+            expand_hidden: false,
+        }
+    }
+
+    pub const fn validate_query_default() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: false,
+            allow_no_indices: false,
             forbid_aliases_to_multiple_indices: false,
             forbid_closed_indices: false,
             ignore_throttled: false,
@@ -18717,6 +18916,15 @@ mod tests {
                     next_step: "map named or inline composable template simulation onto Rust template resolution and simulated metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/validate/query",
+                    action_type: "ValidateQueryAction",
+                    transport_action: "TransportValidateQueryAction",
+                    request_wire_type: "ValidateQueryRequest",
+                    response_wire_type: "ValidateQueryResponse",
+                    adapter_stage: "query-validation",
+                    next_step: "map bounded query validation onto Rust query parser, rewrite, shard selection, and validation response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -19223,6 +19431,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_VALIDATE_QUERY_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -19323,6 +19535,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -28847,6 +29060,164 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "simulate template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_validate_query_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchValidateQueryRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchValidateQueryRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.query_name, "match_all");
+        assert_eq!(decoded.query_boost_bits, 1.0f32.to_bits());
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_validate_query_request_rejects_unsupported_shapes() {
+        let indices = OpenSearchValidateQueryRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query indices",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchValidateQueryRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                allow_no_indices: true,
+                ..OpenSearchIndicesOptionsWire::validate_query_default()
+            },
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query indices options",
+                ..
+            })
+        ));
+
+        let custom_boost = OpenSearchValidateQueryRequestWire {
+            query_boost_bits: 2.0f32.to_bits(),
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            custom_boost.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query boost",
+                ..
+            })
+        ));
+
+        let query_name = OpenSearchValidateQueryRequestWire {
+            query_named_query: Some("named".to_string()),
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            query_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query named query marker",
+                ..
+            })
+        ));
+
+        let explain = OpenSearchValidateQueryRequestWire {
+            explain: true,
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            explain.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query explain",
+                ..
+            })
+        ));
+
+        let rewrite = OpenSearchValidateQueryRequestWire {
+            rewrite: true,
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            rewrite.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query rewrite",
+                ..
+            })
+        ));
+
+        let all_shards = OpenSearchValidateQueryRequestWire {
+            all_shards: true,
+            ..OpenSearchValidateQueryRequestWire::default()
+        };
+        assert!(matches!(
+            all_shards.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query all shards",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_validate_query_request_decode_rejects_non_match_all_query() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        OpenSearchIndicesOptionsWire::validate_query_default().write(&mut output);
+        output.write_string("term");
+        output.write_i32(1.0f32.to_bits() as i32);
+        output.write_optional_string(None);
+        output.write_bool(false);
+        output.write_bool(false);
+        output.write_bool(false);
+
+        assert!(matches!(
+            OpenSearchValidateQueryRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query named query",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_validate_query_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchValidateQueryRequestWire::default();
+        let mut frame = build_opensearch_validate_query_request_message(
+            68,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected validate query request message");
+        };
+        assert_eq!(
+            read_opensearch_validate_query_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_validate_query_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query execution",
                 ..
             })
         ));

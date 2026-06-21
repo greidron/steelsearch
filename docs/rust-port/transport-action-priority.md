@@ -1005,6 +1005,19 @@ The simulate-template boundary covers:
   template name/body targets, empty template names, inline template bodies, and
   simulate-template execution.
 
+The validate-query boundary covers:
+
+- OpenSearch `ValidateQueryRequest` parent task, nullable index array,
+  `IndicesOptions.fromOptions(false, false, true, false)`, minimal
+  `match_all` named query builder wire, explain flag, rewrite flag, and
+  all-shards flag at the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/validate/query` until
+  query parser, rewrite, shard selection, and validation response rendering are
+  implemented against Rust query execution semantics;
+- explicit rejection for index filters, custom indices options, non-`match_all`
+  query builders, custom boosts, named-query markers, explain, rewrite,
+  all-shards validation, and validate-query execution.
+
 The field-capabilities boundary covers:
 
 - OpenSearch `FieldCapabilitiesRequest` parent task, fields array, indices
@@ -2449,6 +2462,24 @@ flag, template name, and absent inline template body before rejecting
 execution. At roughly 1.12M ops/s in the latest local release run, the
 remaining performance-sensitive work is named/inline composable template
 resolution, simulation merge logic, and simulated metadata response rendering.
+
+Current validate-query reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin validate-query-reject-wire-benchmark
+validate_query_reject_request_encode iterations=400000 elapsed_ms=275.308 ops_per_second=1452917.60 nanos_per_op=688.27
+validate_query_reject_request_decode iterations=400000 elapsed_ms=263.622 ops_per_second=1517326.10 nanos_per_op=659.05
+validate_query_reject_validation iterations=400000 elapsed_ms=272.319 ops_per_second=1468866.62 nanos_per_op=680.80
+validate_query_reject_wire_bottleneck_ops_per_second=1452917.60
+```
+
+The current validate-query fail-closed boundary bottleneck is request encode.
+The default benchmark writes the broadcast request envelope, empty index array,
+default validate-query indices options, minimal `match_all` query builder, and
+default explain/rewrite/all-shards flags before rejecting execution. At roughly
+1.45M ops/s in the latest local release run, the remaining performance-sensitive
+work is query parsing, rewrite, shard selection, per-shard validation, and
+response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 
