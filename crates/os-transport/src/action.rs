@@ -37,6 +37,7 @@ pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
+pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
@@ -219,6 +220,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetAliasesResponse",
         adapter_stage: "metadata-read",
         next_step: "map bounded alias metadata reads onto Rust cluster metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_SETTINGS_ACTION_NAME,
+        action_type: "GetSettingsAction",
+        transport_action: "TransportGetSettingsAction",
+        request_wire_type: "GetSettingsRequest",
+        response_wire_type: "GetSettingsResponse",
+        adapter_stage: "metadata-read",
+        next_step: "map bounded index settings reads onto Rust cluster metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
@@ -450,6 +460,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-aliases transport execution requires alias metadata response rendering",
+        },
+        OPENSEARCH_GET_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-settings transport execution requires index settings metadata response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2163,6 +2178,44 @@ pub fn read_opensearch_get_aliases_request_message(
     OpenSearchGetAliasesRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_settings_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetSettingsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_SETTINGS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_settings_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetSettingsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_SETTINGS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_SETTINGS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetSettingsRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -2549,6 +2602,109 @@ impl OpenSearchGetAliasesRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get aliases execution",
             reason: "get-aliases transport execution requires alias metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetSettingsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub names: Vec<String>,
+    pub human_readable: bool,
+    pub include_defaults: bool,
+}
+
+impl Default for OpenSearchGetSettingsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices(),
+            names: Vec::new(),
+            human_readable: false,
+            include_defaults: false,
+        }
+    }
+}
+
+impl OpenSearchGetSettingsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_string_array(&self.names);
+        output.write_bool(self.human_readable);
+        output.write_bool(self.include_defaults);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            names: input.read_string_array()?,
+            human_readable: input.read_bool()?,
+            include_defaults: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the get-settings adapter yet",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings index filter",
+                reason: "index-scoped settings reads require cluster metadata response rendering",
+            });
+        }
+        if self.indices_options
+            != OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings indices options",
+                reason:
+                    "custom get-settings indices options require cluster metadata resolution semantics",
+            });
+        }
+        if !self.names.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings name filter",
+                reason: "settings name filters require settings response filtering semantics",
+            });
+        }
+        if self.human_readable {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings human readable",
+                reason: "human-readable settings formatting is not mapped by this adapter",
+            });
+        }
+        if self.include_defaults {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings include defaults",
+                reason: "default settings expansion is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get settings execution",
+            reason: "get-settings transport execution requires index settings metadata response rendering",
         })
     }
 }
@@ -5897,6 +6053,20 @@ impl OpenSearchIndicesOptionsWire {
         }
     }
 
+    pub const fn expand_open_closed_allow_no_indices() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: false,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: false,
+            ignore_throttled: false,
+            expand_open: true,
+            expand_closed: true,
+            expand_hidden: false,
+        }
+    }
+
     fn write(&self, output: &mut StreamOutput) {
         write_enum_set(output, &self.option_ordinals());
         write_enum_set(output, &self.wildcard_state_ordinals());
@@ -6835,6 +7005,15 @@ mod tests {
                     next_step: "map bounded alias metadata reads onto Rust cluster metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:monitor/settings/get",
+                    action_type: "GetSettingsAction",
+                    transport_action: "TransportGetSettingsAction",
+                    request_wire_type: "GetSettingsRequest",
+                    response_wire_type: "GetSettingsResponse",
+                    adapter_stage: "metadata-read",
+                    next_step: "map bounded index settings reads onto Rust cluster metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -7013,6 +7192,10 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_SETTINGS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -7039,6 +7222,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -10146,6 +10330,125 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get aliases execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchGetSettingsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchGetSettingsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_settings_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchGetSettingsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let index_filter = OpenSearchGetSettingsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings index filter",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchGetSettingsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices()
+            },
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings indices options",
+                ..
+            })
+        ));
+
+        let name_filter = OpenSearchGetSettingsRequestWire {
+            names: vec!["index.number_of_shards".to_string()],
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            name_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings name filter",
+                ..
+            })
+        ));
+
+        let human_readable = OpenSearchGetSettingsRequestWire {
+            human_readable: true,
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            human_readable.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings human readable",
+                ..
+            })
+        ));
+
+        let include_defaults = OpenSearchGetSettingsRequestWire {
+            include_defaults: true,
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            include_defaults.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings include defaults",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_settings_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchGetSettingsRequestWire::default();
+        let mut frame =
+            build_opensearch_get_settings_request_message(38, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get settings request message");
+        };
+        assert_eq!(
+            read_opensearch_get_settings_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_get_settings_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings execution",
                 ..
             })
         ));

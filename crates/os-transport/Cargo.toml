@@ -74,6 +74,10 @@ name = "get-aliases-reject-wire-benchmark"
 path = "benchmarks/get_aliases_reject_wire.rs"
 
 [[bin]]
+name = "get-settings-reject-wire-benchmark"
+path = "benchmarks/get_settings_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

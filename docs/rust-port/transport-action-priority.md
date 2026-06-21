@@ -188,6 +188,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
+- `indices:monitor/settings/get` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -323,6 +324,18 @@ The get-aliases boundary covers:
 - explicit rejection for custom cluster-manager timeout, index filters, alias
   filters, custom indices options, original alias filters, and get-aliases
   execution.
+
+The get-settings boundary covers:
+
+- OpenSearch `GetSettingsRequest` parent task, cluster-manager timeout, indices
+  array, `IndicesOptions.fromOptions(false, true, true, true)`, names array,
+  `humanReadable`, and `includeDefaults` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:monitor/settings/get` until
+  index settings metadata response rendering and settings filtering semantics
+  are implemented;
+- explicit rejection for custom cluster-manager timeout, index filters, custom
+  indices options, name filters, human-readable formatting, include-default
+  expansion, and get-settings execution.
 
 The indices-stats boundary covers:
 
@@ -670,6 +683,22 @@ The current get-aliases fail-closed boundary bottleneck is validation after
 decode. This path checks cluster-manager timeout, index filters, alias filters,
 hidden wildcard indices options, and original-alias post-processing state after
 reading the OpenSearch request body. At roughly 1.65M ops/s in the latest local
+release run, it remains in the lightweight admin transport range.
+
+Current get-settings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-settings-reject-wire-benchmark
+get_settings_reject_request_encode iterations=400000 elapsed_ms=228.129 ops_per_second=1753390.09 nanos_per_op=570.32
+get_settings_reject_request_decode iterations=400000 elapsed_ms=238.338 ops_per_second=1678287.46 nanos_per_op=595.85
+get_settings_reject_validation iterations=400000 elapsed_ms=237.321 ops_per_second=1685483.80 nanos_per_op=593.30
+get_settings_reject_wire_bottleneck_ops_per_second=1678287.46
+```
+
+The current get-settings fail-closed boundary bottleneck is request decode. This
+path reads the cluster-manager timeout, indices array, open/closed wildcard
+indices options, setting-name array, human-readable flag, and default expansion
+flag before rejecting at admission. At roughly 1.68M ops/s in the latest local
 release run, it remains in the lightweight admin transport range.
 
 Current indices-stats reject wire microbenchmark:

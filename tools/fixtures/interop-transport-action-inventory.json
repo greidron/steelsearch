@@ -112,6 +112,15 @@
       "reason": "Get-aliases transport execution requires alias metadata response rendering before Steelsearch can serve OpenSearch alias read semantics."
     },
     {
+      "action_name": "indices:monitor/settings/get",
+      "action_type": "GetSettingsAction",
+      "transport_action": "TransportGetSettingsAction",
+      "request_wire_type": "GetSettingsRequest",
+      "response_wire_type": "GetSettingsResponse",
+      "disposition": "rejected",
+      "reason": "Get-settings transport execution requires index settings metadata response rendering before Steelsearch can serve OpenSearch settings read semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",
