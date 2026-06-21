@@ -112,6 +112,15 @@
       "reason": "Add-voting-config-exclusions transport execution requires coordination metadata mutation and convergence tracking before Steelsearch can serve OpenSearch voting exclusion semantics."
     },
     {
+      "action_name": "cluster:admin/voting_config/clear_exclusions",
+      "action_type": "ClearVotingConfigExclusionsAction",
+      "transport_action": "TransportClearVotingConfigExclusionsAction",
+      "request_wire_type": "ClearVotingConfigExclusionsRequest",
+      "response_wire_type": "ClearVotingConfigExclusionsResponse",
+      "disposition": "rejected",
+      "reason": "Clear-voting-config-exclusions transport execution requires coordination metadata mutation and removal tracking before Steelsearch can serve OpenSearch voting exclusion clearing semantics."
+    },
+    {
       "action_name": "cluster:admin/settings/update",
       "action_type": "ClusterUpdateSettingsAction",
       "transport_action": "TransportClusterUpdateSettingsAction",

@@ -32,6 +32,8 @@ pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
     "cluster:admin/voting_config/add_exclusions";
+pub const CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
+    "cluster:admin/voting_config/clear_exclusions";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const CLUSTER_REROUTE_ACTION_NAME: &str = "cluster:admin/reroute";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
@@ -194,6 +196,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportAddVotingConfigExclusionsAction",
         request_wire_type: "AddVotingConfigExclusionsRequest",
         response_wire_type: "AddVotingConfigExclusionsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME,
+        action_type: "ClearVotingConfigExclusionsAction",
+        transport_action: "TransportClearVotingConfigExclusionsAction",
+        request_wire_type: "ClearVotingConfigExclusionsRequest",
+        response_wire_type: "ClearVotingConfigExclusionsResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -785,6 +794,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "add-voting-config-exclusions transport execution requires coordination metadata mutation semantics",
+        },
+        CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "clear-voting-config-exclusions transport execution requires coordination metadata mutation semantics",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2935,6 +2949,44 @@ pub fn read_add_voting_config_exclusions_request_message(
         });
     }
     AddVotingConfigExclusionsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_clear_voting_config_exclusions_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClearVotingConfigExclusionsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_clear_voting_config_exclusions_request_message(
+    message: &TransportMessage,
+) -> Result<ClearVotingConfigExclusionsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClearVotingConfigExclusionsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_get_repositories_request_message(
@@ -7947,6 +7999,76 @@ impl AddVotingConfigExclusionsRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClearVotingConfigExclusionsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub wait_for_removal: bool,
+    pub timeout: TimeValueWire,
+}
+
+impl Default for ClearVotingConfigExclusionsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            wait_for_removal: true,
+            timeout: TimeValueWire::seconds(30),
+        }
+    }
+}
+
+impl ClearVotingConfigExclusionsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.wait_for_removal);
+        self.timeout.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            wait_for_removal: input.read_bool()?,
+            timeout: TimeValueWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires cluster-manager routing semantics",
+            });
+        }
+        if !self.wait_for_removal {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions no wait",
+                reason:
+                    "no-wait clearing requires explicit coordination metadata mutation semantics",
+            });
+        }
+        if self.timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions wait timeout",
+                reason: "custom wait timeout requires voting-configuration removal tracking",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "clear voting config exclusions execution",
+            reason: "clearing voting config exclusions requires coordination metadata mutation and removal tracking",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcknowledgedResponseWire {
     pub acknowledged: bool,
 }
@@ -12338,6 +12460,13 @@ mod tests {
                     response_wire_type: "AddVotingConfigExclusionsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/voting_config/clear_exclusions",
+                    action_type: "ClearVotingConfigExclusionsAction",
+                    transport_action: "TransportClearVotingConfigExclusionsAction",
+                    request_wire_type: "ClearVotingConfigExclusionsRequest",
+                    response_wire_type: "ClearVotingConfigExclusionsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -12838,6 +12967,11 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME)
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -16222,6 +16356,93 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "add voting config exclusions execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn clear_voting_config_exclusions_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ClearVotingConfigExclusionsRequestWire {
+            parent_task_node: "coord-node".to_string(),
+            parent_task_id: Some(16),
+            ..ClearVotingConfigExclusionsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClearVotingConfigExclusionsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn clear_voting_config_exclusions_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = ClearVotingConfigExclusionsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..ClearVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let no_wait = ClearVotingConfigExclusionsRequestWire {
+            wait_for_removal: false,
+            ..ClearVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            no_wait.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions no wait",
+                ..
+            })
+        ));
+
+        let timeout = ClearVotingConfigExclusionsRequestWire {
+            timeout: TimeValueWire::seconds(10),
+            ..ClearVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions wait timeout",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn clear_voting_config_exclusions_transport_messages_bind_rejected_action_frame() {
+        let request = ClearVotingConfigExclusionsRequestWire::default();
+        let mut frame = build_clear_voting_config_exclusions_request_message(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear voting config exclusions request message");
+        };
+        assert_eq!(
+            read_clear_voting_config_exclusions_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_clear_voting_config_exclusions_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear voting config exclusions execution",
                 ..
             })
         ));

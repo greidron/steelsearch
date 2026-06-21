@@ -70,6 +70,10 @@ name = "add-voting-config-exclusions-reject-wire-benchmark"
 path = "benchmarks/add_voting_config_exclusions_reject_wire.rs"
 
 [[bin]]
+name = "clear-voting-config-exclusions-reject-wire-benchmark"
+path = "benchmarks/clear_voting_config_exclusions_reject_wire.rs"
+
+[[bin]]
 name = "indices-stats-reject-wire-benchmark"
 path = "benchmarks/indices_stats_reject_wire.rs"
 
