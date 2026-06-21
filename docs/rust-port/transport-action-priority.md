@@ -204,6 +204,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/get` (rejected fail-closed)
 - `cluster:admin/snapshot/delete` (rejected fail-closed)
 - `cluster:admin/snapshot/create` (rejected fail-closed)
+- `cluster:admin/snapshot/clone` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -547,6 +548,18 @@ The create-snapshot boundary covers:
   blank repository names, index selectors, custom indices options, custom
   settings, disabled global state, wait-for-completion, partial snapshots,
   user metadata, and create-snapshot execution.
+
+The clone-snapshot boundary covers:
+
+- OpenSearch `CloneSnapshotRequest` parent task, cluster-manager timeout,
+  repository name, source snapshot name, target snapshot name, index selector
+  array, and `IndicesOptions.strictExpandHidden()` wire flags at the wire
+  decode/build layer;
+- explicit fail-closed classification for `cluster:admin/snapshot/clone` until
+  snapshot clone coordination and acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, blank repository
+  names, blank source snapshot names, blank target snapshot names, empty or
+  blank index selectors, custom indices options, and clone-snapshot execution.
 
 The get-mappings boundary covers:
 
@@ -1569,6 +1582,25 @@ run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is snapshot creation coordination, repository write
 planning, shard snapshot execution, cluster-state publication, and
 create-snapshot response rendering.
+
+Current clone-snapshot reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin clone-snapshot-reject-wire-benchmark
+clone_snapshot_reject_request_encode iterations=400000 elapsed_ms=331.051 ops_per_second=1208274.76 nanos_per_op=827.63
+clone_snapshot_reject_request_decode iterations=400000 elapsed_ms=349.118 ops_per_second=1145744.88 nanos_per_op=872.79
+clone_snapshot_reject_validation iterations=400000 elapsed_ms=363.672 ops_per_second=1099891.01 nanos_per_op=909.18
+clone_snapshot_reject_wire_bottleneck_ops_per_second=1099891.01
+```
+
+The current clone-snapshot fail-closed boundary bottleneck is request
+validation. The payload includes the cluster-manager request envelope,
+repository name, source snapshot name, target snapshot name, index selector
+array, and indices options before admission rejects execution. At roughly 1.10M
+ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is snapshot clone
+coordination, source snapshot metadata loading, index selection, repository
+write planning, cluster-state publication, and acknowledgement rendering.
 
 Current get-mappings reject wire microbenchmark:
 
