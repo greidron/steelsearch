@@ -673,6 +673,20 @@ The put-mapping boundary covers:
   empty mapping sources, concrete-index routing, custom origins,
   write-index-only updates, and put-mapping execution.
 
+The auto-put-mapping boundary covers:
+
+- OpenSearch `PutMappingRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, absent unresolved indices, default put-mapping
+  indices options, mapping source string, required concrete `Index`, optional
+  origin, and `writeIndexOnly` at the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/mapping/auto_put`
+  until concrete-index mapping validation, metadata mutation, and acknowledged
+  response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing concrete indices, unresolved indices,
+  custom indices options, empty mapping sources, custom origins,
+  write-index-only updates, and auto-put-mapping execution.
+
 The create-index boundary covers:
 
 - OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
@@ -1866,6 +1880,24 @@ and `writeIndexOnly` flag before rejecting execution. At roughly 0.89M ops/s in
 the latest local release run, the current overhead is still request wire
 boundary work; future performance-sensitive work is mapping validation,
 metadata mutation, and acknowledged response rendering.
+
+Current auto-put-mapping reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin auto-put-mapping-reject-wire-benchmark
+auto_put_mapping_reject_request_encode iterations=400000 elapsed_ms=412.890 ops_per_second=968781.14 nanos_per_op=1032.22
+auto_put_mapping_reject_request_decode iterations=400000 elapsed_ms=413.480 ops_per_second=967399.79 nanos_per_op=1033.70
+auto_put_mapping_reject_validation iterations=400000 elapsed_ms=436.055 ops_per_second=917314.78 nanos_per_op=1090.14
+auto_put_mapping_reject_wire_bottleneck_ops_per_second=917314.78
+```
+
+The current auto-put-mapping fail-closed boundary bottleneck is validation. The
+path reuses the put-mapping request body but requires a concrete index and
+rejects unresolved index targets before execution. At roughly 0.92M ops/s in
+the latest local release run, the current overhead is still lightweight
+transport shape validation; future performance-sensitive work is
+concrete-index mapping validation, metadata mutation, and acknowledged response
+rendering.
 
 Current create-index reject wire microbenchmark:
 

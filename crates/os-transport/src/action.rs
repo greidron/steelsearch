@@ -74,6 +74,7 @@ pub const OPENSEARCH_GET_ALL_PITS_ACTION_NAME: &str = "indices:data/read/point_i
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/put";
+pub const OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/auto_put";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
@@ -524,6 +525,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map mapping updates onto Rust mapping validation, metadata mutation, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME,
+        action_type: "AutoPutMappingAction",
+        transport_action: "TransportAutoPutMappingAction",
+        request_wire_type: "PutMappingRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map automatic concrete-index mapping updates onto Rust mapping validation, metadata mutation, and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_CREATE_INDEX_ACTION_NAME,
@@ -1116,6 +1126,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "put-mapping transport execution requires mapping validation, metadata mutation, and ack rendering",
+        },
+        OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering",
         },
         OPENSEARCH_CREATE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4407,6 +4422,44 @@ pub fn read_opensearch_put_mapping_request_message(
     OpenSearchPutMappingRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_auto_put_mapping_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchPutMappingRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_auto_put_mapping_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchPutMappingRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchPutMappingRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_index_request_message(
     request_id: i64,
     version: Version,
@@ -7470,6 +7523,17 @@ impl Default for OpenSearchPutMappingRequestWire {
 }
 
 impl OpenSearchPutMappingRequestWire {
+    pub fn auto_put_default() -> Self {
+        Self {
+            indices: Vec::new(),
+            concrete_index: Some(OpenSearchIndexIdentityWire {
+                name: "logs-000001".to_string(),
+                uuid: "uuid-1".to_string(),
+            }),
+            ..Self::default()
+        }
+    }
+
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
@@ -7557,6 +7621,66 @@ impl OpenSearchPutMappingRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put mapping execution",
             reason: "put-mapping transport execution requires mapping validation, metadata mutation, and ack rendering",
+        })
+    }
+
+    pub fn reject_unsupported_auto_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the auto-put-mapping adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping ack timeout",
+                reason: "custom ack timeout is not mapped by the auto-put-mapping adapter yet",
+            });
+        }
+        if self.concrete_index.is_none() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping missing concrete index",
+                reason: "OpenSearch auto-put-mapping requests require a concrete index",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping indices",
+                reason: "auto-put-mapping routes by concrete index rather than unresolved indices",
+            });
+        }
+        if self.indices_options
+            != OpenSearchIndicesOptionsWire::strict_expand_open_closed_no_allow()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping indices options",
+                reason:
+                    "custom auto-put-mapping indices options require index resolution semantics",
+            });
+        }
+        if self.source.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping source",
+                reason: "OpenSearch auto-put-mapping requests require a non-empty mapping source",
+            });
+        }
+        if self.origin.as_deref() != Some("") {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping origin",
+                reason:
+                    "custom auto-put-mapping origins require system-origin authorization semantics",
+            });
+        }
+        if self.write_index_only {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping write index only",
+                reason: "write-index-only auto-put-mapping updates require alias and data-stream write-index resolution",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "auto put mapping execution",
+            reason: "auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering",
         })
     }
 }
@@ -16302,6 +16426,15 @@ mod tests {
                     next_step: "map mapping updates onto Rust mapping validation, metadata mutation, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/mapping/auto_put",
+                    action_type: "AutoPutMappingAction",
+                    transport_action: "TransportAutoPutMappingAction",
+                    request_wire_type: "PutMappingRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map automatic concrete-index mapping updates onto Rust mapping validation, metadata mutation, and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/create",
                     action_type: "CreateIndexAction",
                     transport_action: "TransportCreateIndexAction",
@@ -16822,6 +16955,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -16968,6 +17106,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
+                || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
@@ -22950,6 +23089,135 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put mapping execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_auto_put_mapping_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchPutMappingRequestWire::auto_put_default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchPutMappingRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded
+                .concrete_index
+                .as_ref()
+                .map(|index| index.name.as_str()),
+            Some("logs-000001")
+        );
+        assert!(matches!(
+            decoded.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_auto_put_mapping_request_rejects_unsupported_shapes() {
+        let missing_concrete_index = OpenSearchPutMappingRequestWire {
+            concrete_index: None,
+            ..OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        assert!(matches!(
+            missing_concrete_index.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping missing concrete index",
+                ..
+            })
+        ));
+
+        let indices = OpenSearchPutMappingRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        assert!(matches!(
+            indices.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping indices",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchPutMappingRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_closed_no_allow()
+            },
+            ..OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping indices options",
+                ..
+            })
+        ));
+
+        let empty_source = OpenSearchPutMappingRequestWire {
+            source: " ".to_string(),
+            ..OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        assert!(matches!(
+            empty_source.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping source",
+                ..
+            })
+        ));
+
+        let origin = OpenSearchPutMappingRequestWire {
+            origin: Some("system".to_string()),
+            ..OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        assert!(matches!(
+            origin.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping origin",
+                ..
+            })
+        ));
+
+        let write_index_only = OpenSearchPutMappingRequestWire {
+            write_index_only: true,
+            ..OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        assert!(matches!(
+            write_index_only.reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping write index only",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_auto_put_mapping_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchPutMappingRequestWire::auto_put_default();
+        let mut frame = build_opensearch_auto_put_mapping_request_message(
+            38,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected auto put mapping request message");
+        };
+        assert_eq!(
+            read_opensearch_auto_put_mapping_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_auto_put_mapping_request_message(&message)
+                .unwrap()
+                .reject_unsupported_auto_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto put mapping execution",
                 ..
             })
         ));
