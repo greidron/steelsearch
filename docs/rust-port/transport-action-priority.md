@@ -206,6 +206,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/create` (rejected fail-closed)
 - `cluster:admin/snapshot/clone` (rejected fail-closed)
 - `cluster:admin/snapshot/restore` (rejected fail-closed)
+- `cluster:admin/snapshot/status` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -579,6 +580,18 @@ The restore-snapshot boundary covers:
   restore, alias exclusion, index setting overrides, ignored index settings,
   snapshot UUID pinning, remote snapshot storage, source remote repositories,
   alias write-index policy changes, and restore-snapshot execution.
+
+The snapshots-status boundary covers:
+
+- OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
+  timeout, repository name, snapshot selector array, `ignoreUnavailable`, and
+  optional index selector array at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/snapshot/status`
+  until current snapshot status, repository snapshot status, node shard status,
+  and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, blank repository
+  names, blank snapshot selectors, snapshot selectors, `ignoreUnavailable`,
+  blank index selectors, index selectors, and snapshots-status execution.
 
 The get-mappings boundary covers:
 
@@ -1641,6 +1654,25 @@ release run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is snapshot restore coordination, repository
 snapshot metadata loading, index metadata rewrite, shard restore planning,
 cluster-state publication, restore completion tracking, and response rendering.
+
+Current snapshots-status reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin snapshots-status-reject-wire-benchmark
+snapshots_status_reject_request_encode iterations=400000 elapsed_ms=239.090 ops_per_second=1673009.84 nanos_per_op=597.73
+snapshots_status_reject_request_decode iterations=400000 elapsed_ms=233.764 ops_per_second=1711128.08 nanos_per_op=584.41
+snapshots_status_reject_validation iterations=400000 elapsed_ms=240.149 ops_per_second=1665629.71 nanos_per_op=600.37
+snapshots_status_reject_wire_bottleneck_ops_per_second=1665629.71
+```
+
+The current snapshots-status fail-closed boundary bottleneck is request
+validation. The payload includes the cluster-manager request envelope,
+repository name, snapshot selector array, `ignoreUnavailable`, and optional
+index selector array before admission rejects execution. At roughly 1.67M
+ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is current snapshot
+resolution, repository snapshot status loading, node shard status collection,
+index filtering, and response rendering.
 
 Current get-mappings reject wire microbenchmark:
 

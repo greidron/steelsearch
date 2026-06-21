@@ -50,6 +50,7 @@ pub const DELETE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/delete";
 pub const CREATE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/create";
 pub const CLONE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/clone";
 pub const RESTORE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/restore";
+pub const SNAPSHOTS_STATUS_ACTION_NAME: &str = "cluster:admin/snapshot/status";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -336,6 +337,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportRestoreSnapshotAction",
         request_wire_type: "RestoreSnapshotRequest",
         response_wire_type: "RestoreSnapshotResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: SNAPSHOTS_STATUS_ACTION_NAME,
+        action_type: "SnapshotsStatusAction",
+        transport_action: "TransportSnapshotsStatusAction",
+        request_wire_type: "SnapshotsStatusRequest",
+        response_wire_type: "SnapshotsStatusResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -1016,6 +1024,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
+        },
+        SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "snapshots-status transport execution requires current snapshot and repository snapshot status rendering",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4041,6 +4054,44 @@ pub fn read_restore_snapshot_request_message(
     RestoreSnapshotRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_snapshots_status_request_message(
+    request_id: i64,
+    version: Version,
+    request: &SnapshotsStatusRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(SNAPSHOTS_STATUS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_snapshots_status_request_message(
+    message: &TransportMessage,
+) -> Result<SnapshotsStatusRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != SNAPSHOTS_STATUS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: SNAPSHOTS_STATUS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    SnapshotsStatusRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_mappings_request_message(
     request_id: i64,
     version: Version,
@@ -6521,6 +6572,112 @@ impl RestoreSnapshotRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "restore snapshot execution",
             reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotsStatusRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub repository: String,
+    pub snapshots: Vec<String>,
+    pub ignore_unavailable: bool,
+    pub indices: Vec<String>,
+}
+
+impl Default for SnapshotsStatusRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            repository: "_all".to_string(),
+            snapshots: Vec::new(),
+            ignore_unavailable: false,
+            indices: Vec::new(),
+        }
+    }
+}
+
+impl SnapshotsStatusRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.repository);
+        output.write_string_array(&self.snapshots);
+        output.write_bool(self.ignore_unavailable);
+        write_optional_string_array(output, Some(&self.indices));
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            repository: input.read_string()?,
+            snapshots: input.read_string_array()?,
+            ignore_unavailable: input.read_bool()?,
+            indices: read_optional_string_array(&mut input)?.unwrap_or_default(),
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout requires snapshot status coordination semantics",
+            });
+        }
+        if self.repository.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status missing repository",
+                reason: "OpenSearch snapshots-status requests require a repository name",
+            });
+        }
+        if self
+            .snapshots
+            .iter()
+            .any(|snapshot| snapshot.trim().is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status blank snapshot selector",
+                reason: "OpenSearch snapshots-status snapshot selectors must not be blank",
+            });
+        }
+        if !self.snapshots.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status snapshot selector",
+                reason: "snapshot status selectors require current snapshot and repository snapshot status resolution",
+            });
+        }
+        if self.ignore_unavailable {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status ignore unavailable",
+                reason: "ignore-unavailable handling requires missing snapshot and index status semantics",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status blank index selector",
+                reason: "OpenSearch snapshots-status index selectors must not be blank",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status index selector",
+                reason: "snapshot status index filters require single snapshot status and shard status filtering semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "snapshots status execution",
+            reason: "snapshots-status transport execution requires current snapshot and repository snapshot status rendering",
         })
     }
 }
@@ -14856,6 +15013,13 @@ mod tests {
                     response_wire_type: "RestoreSnapshotResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/snapshot/status",
+                    action_type: "SnapshotsStatusAction",
+                    transport_action: "TransportSnapshotsStatusAction",
+                    request_wire_type: "SnapshotsStatusRequest",
+                    response_wire_type: "SnapshotsStatusResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
                     action_type: "PendingClusterTasksAction",
                     transport_action: "TransportPendingClusterTasksAction",
@@ -20770,6 +20934,139 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore snapshot execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn snapshots_status_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = SnapshotsStatusRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(36),
+            repository: "repo-a".to_string(),
+            ..SnapshotsStatusRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = SnapshotsStatusRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn snapshots_status_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = SnapshotsStatusRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_repository = SnapshotsStatusRequestWire {
+            repository: " ".to_string(),
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            missing_repository.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status missing repository",
+                ..
+            })
+        ));
+
+        let blank_snapshot = SnapshotsStatusRequestWire {
+            snapshots: vec!["snap-a".to_string(), " ".to_string()],
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            blank_snapshot.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status blank snapshot selector",
+                ..
+            })
+        ));
+
+        let snapshot_selector = SnapshotsStatusRequestWire {
+            snapshots: vec!["snap-a".to_string()],
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            snapshot_selector.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status snapshot selector",
+                ..
+            })
+        ));
+
+        let ignore_unavailable = SnapshotsStatusRequestWire {
+            ignore_unavailable: true,
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            ignore_unavailable.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status ignore unavailable",
+                ..
+            })
+        ));
+
+        let blank_index = SnapshotsStatusRequestWire {
+            indices: vec!["index".to_string(), " ".to_string()],
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status blank index selector",
+                ..
+            })
+        ));
+
+        let index_selector = SnapshotsStatusRequestWire {
+            indices: vec!["index".to_string()],
+            ..SnapshotsStatusRequestWire::default()
+        };
+        assert!(matches!(
+            index_selector.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status index selector",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn snapshots_status_transport_messages_bind_rejected_action_frame() {
+        let request = SnapshotsStatusRequestWire::default();
+        let mut frame =
+            build_snapshots_status_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected snapshots status request message");
+        };
+        assert_eq!(
+            read_snapshots_status_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_snapshots_status_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "snapshots status execution",
                 ..
             })
         ));

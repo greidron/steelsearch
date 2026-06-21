@@ -202,6 +202,15 @@
       "reason": "Restore-snapshot transport execution requires snapshot restore coordination and restore response rendering before Steelsearch can serve OpenSearch snapshot restore semantics."
     },
     {
+      "action_name": "cluster:admin/snapshot/status",
+      "action_type": "SnapshotsStatusAction",
+      "transport_action": "TransportSnapshotsStatusAction",
+      "request_wire_type": "SnapshotsStatusRequest",
+      "response_wire_type": "SnapshotsStatusResponse",
+      "disposition": "rejected",
+      "reason": "Snapshots-status transport execution requires current snapshot and repository snapshot status rendering before Steelsearch can serve OpenSearch snapshot status semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "action_type": "NodesUsageAction",
       "transport_action": "TransportNodesUsageAction",

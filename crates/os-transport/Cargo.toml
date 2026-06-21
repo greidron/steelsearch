@@ -110,6 +110,10 @@ name = "restore-snapshot-reject-wire-benchmark"
 path = "benchmarks/restore_snapshot_reject_wire.rs"
 
 [[bin]]
+name = "snapshots-status-reject-wire-benchmark"
+path = "benchmarks/snapshots_status_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 
