@@ -33,6 +33,7 @@ pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
 pub const GET_TASK_ACTION_NAME: &str = "cluster:monitor/task/get";
 pub const CANCEL_TASKS_ACTION_NAME: &str = "cluster:admin/tasks/cancel";
 pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
+pub const OPENSEARCH_STREAM_SEARCH_ACTION_NAME: &str = "indices:data/read/search/stream";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
@@ -191,6 +192,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "SearchResponse",
         adapter_stage: "search-read",
         next_step: "register request/response codec and route to the Rust search executor",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_STREAM_SEARCH_ACTION_NAME,
+        action_type: "StreamSearchAction",
+        transport_action: "StreamTransportSearchAction",
+        request_wire_type: "SearchRequest",
+        response_wire_type: "SearchResponse",
+        adapter_stage: "search-read",
+        next_step: "map stream transport search onto the Rust search executor with streaming response semantics",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_MULTI_SEARCH_ACTION_NAME,
@@ -580,6 +590,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "search transport execution requires search source and response rendering mapping",
+        },
+        OPENSEARCH_STREAM_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "stream search transport execution requires streaming search response mapping",
         },
         OPENSEARCH_MULTI_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2634,6 +2649,44 @@ pub fn read_opensearch_search_request_message(
     if header.action != OPENSEARCH_SEARCH_ACTION_NAME {
         return Err(TransportActionWireError::UnexpectedAction {
             expected: OPENSEARCH_SEARCH_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchSearchRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_stream_search_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_STREAM_SEARCH_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_stream_search_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_STREAM_SEARCH_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_STREAM_SEARCH_ACTION_NAME,
             actual: header.action,
         });
     }
@@ -8431,6 +8484,15 @@ mod tests {
                     next_step: "register request/response codec and route to the Rust search executor",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search/stream",
+                    action_type: "StreamSearchAction",
+                    transport_action: "StreamTransportSearchAction",
+                    request_wire_type: "SearchRequest",
+                    response_wire_type: "SearchResponse",
+                    adapter_stage: "search-read",
+                    next_step: "map stream transport search onto the Rust search executor with streaming response semantics",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/msearch",
                     action_type: "MultiSearchAction",
                     transport_action: "TransportMultiSearchAction",
@@ -8673,6 +8735,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_STREAM_SEARCH_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_MULTI_SEARCH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -8793,6 +8859,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
             {
                 assert_eq!(
@@ -12851,6 +12918,33 @@ mod tests {
         );
         assert!(matches!(
             read_opensearch_search_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_stream_search_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchSearchRequestWire::default();
+        let mut frame = build_opensearch_stream_search_request_message(
+            48,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected stream search request message");
+        };
+        assert_eq!(
+            read_opensearch_stream_search_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_stream_search_request_message(&message)
                 .unwrap()
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {

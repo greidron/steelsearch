@@ -110,6 +110,10 @@ name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 
 [[bin]]
+name = "stream-search-reject-wire-benchmark"
+path = "benchmarks/stream_search_reject_wire.rs"
+
+[[bin]]
 name = "multi-search-reject-wire-benchmark"
 path = "benchmarks/multi_search_reject_wire.rs"
 

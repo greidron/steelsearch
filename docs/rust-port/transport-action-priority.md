@@ -197,6 +197,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `indices:admin/resolve/index` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
+- `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
@@ -434,6 +435,14 @@ The search boundary covers:
 - explicit rejection for source/scroll payloads, non-default index/routing/
   preference/fanout/cache/partial-results/cross-cluster/pipeline/timing shapes,
   and search execution.
+
+The stream-search boundary covers:
+
+- OpenSearch `StreamSearchAction` action binding with the same bounded
+  `SearchRequest` wire decode/build layer used by normal search;
+- explicit fail-closed classification for `indices:data/read/search/stream`
+  until streaming response semantics are mapped;
+- explicit rejection through the bounded `SearchRequest` execution boundary.
 
 The multi-search boundary covers:
 
@@ -948,6 +957,23 @@ before rejecting execution. At roughly 1.30M ops/s in the latest local release
 run, the boundary stays in the lightweight transport range; the first
 performance point to inspect before accepting search execution is still search
 source decode/rendering, which is intentionally not admitted here.
+
+Current stream-search reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin stream-search-reject-wire-benchmark
+stream_search_reject_request_encode iterations=400000 elapsed_ms=304.482 ops_per_second=1313707.26 nanos_per_op=761.20
+stream_search_reject_request_decode iterations=400000 elapsed_ms=258.298 ops_per_second=1548596.74 nanos_per_op=645.75
+stream_search_reject_validation iterations=400000 elapsed_ms=269.541 ops_per_second=1484005.46 nanos_per_op=673.85
+stream_search_reject_wire_bottleneck_ops_per_second=1313707.26
+```
+
+The current stream-search fail-closed boundary bottleneck is request encode.
+This path uses the same bounded `SearchRequest` control envelope as normal
+search, but binds it to the `indices:data/read/search/stream` action name. At
+roughly 1.31M ops/s in the latest local release run, it tracks the normal search
+reject path closely; the first performance point to inspect before accepting
+stream-search execution is streaming response rendering and backpressure.
 
 Current multi-search reject wire microbenchmark:
 
