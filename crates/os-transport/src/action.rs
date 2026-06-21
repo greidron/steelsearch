@@ -30,6 +30,8 @@ pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
+pub const ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
+    "cluster:admin/voting_config/add_exclusions";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const CLUSTER_REROUTE_ACTION_NAME: &str = "cluster:admin/reroute";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
@@ -185,6 +187,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportNodesHotThreadsAction",
         request_wire_type: "NodesHotThreadsRequest",
         response_wire_type: "NodesHotThreadsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME,
+        action_type: "AddVotingConfigExclusionsAction",
+        transport_action: "TransportAddVotingConfigExclusionsAction",
+        request_wire_type: "AddVotingConfigExclusionsRequest",
+        response_wire_type: "AddVotingConfigExclusionsResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -771,6 +780,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "nodes-hot-threads transport execution requires runtime stack sampling mapping",
+        },
+        ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "add-voting-config-exclusions transport execution requires coordination metadata mutation semantics",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2883,6 +2897,44 @@ pub fn read_cluster_reroute_request_message(
         });
     }
     ClusterRerouteRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_add_voting_config_exclusions_request_message(
+    request_id: i64,
+    version: Version,
+    request: &AddVotingConfigExclusionsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_add_voting_config_exclusions_request_message(
+    message: &TransportMessage,
+) -> Result<AddVotingConfigExclusionsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    AddVotingConfigExclusionsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_get_repositories_request_message(
@@ -7796,6 +7848,105 @@ impl ClusterRerouteRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddVotingConfigExclusionsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub node_descriptions: Vec<String>,
+    pub node_ids: Vec<String>,
+    pub node_names: Vec<String>,
+    pub timeout: TimeValueWire,
+}
+
+impl Default for AddVotingConfigExclusionsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            node_descriptions: Vec::new(),
+            node_ids: Vec::new(),
+            node_names: vec!["node-a".to_string()],
+            timeout: TimeValueWire::seconds(30),
+        }
+    }
+}
+
+impl AddVotingConfigExclusionsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string_array(&self.node_descriptions);
+        output.write_string_array(&self.node_ids);
+        output.write_string_array(&self.node_names);
+        self.timeout.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            node_descriptions: input.read_string_array()?,
+            node_ids: input.read_string_array()?,
+            node_names: input.read_string_array()?,
+            timeout: TimeValueWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires cluster-manager routing semantics",
+            });
+        }
+        if self.timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions wait timeout",
+                reason: "custom wait timeout requires voting-configuration convergence tracking",
+            });
+        }
+        let selector_count = usize::from(!self.node_descriptions.is_empty())
+            + usize::from(!self.node_ids.is_empty())
+            + usize::from(!self.node_names.is_empty());
+        if selector_count == 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions missing selector",
+                reason: "OpenSearch requires exactly one voting-config exclusion selector family",
+            });
+        }
+        if selector_count > 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions multiple selectors",
+                reason: "OpenSearch requires exactly one voting-config exclusion selector family",
+            });
+        }
+        if !self.node_descriptions.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions node descriptions",
+                reason:
+                    "deprecated node-description selectors require discovery-node resolution semantics",
+            });
+        }
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions node ids",
+                reason: "node-id selectors require voting-config exclusion resolution semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "add voting config exclusions execution",
+            reason: "adding voting config exclusions requires coordination metadata mutation and convergence tracking",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcknowledgedResponseWire {
     pub acknowledged: bool,
 }
@@ -12180,6 +12331,13 @@ mod tests {
                     response_wire_type: "NodesHotThreadsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/voting_config/add_exclusions",
+                    action_type: "AddVotingConfigExclusionsAction",
+                    transport_action: "TransportAddVotingConfigExclusionsAction",
+                    request_wire_type: "AddVotingConfigExclusionsRequest",
+                    response_wire_type: "AddVotingConfigExclusionsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -12677,6 +12835,11 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(CANCEL_TASKS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).disposition,
@@ -15933,6 +16096,132 @@ mod tests {
             persistent_settings.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings persistent settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn add_voting_config_exclusions_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = AddVotingConfigExclusionsRequestWire {
+            parent_task_node: "coord-node".to_string(),
+            parent_task_id: Some(15),
+            node_names: vec!["cluster-manager-a".to_string()],
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = AddVotingConfigExclusionsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn add_voting_config_exclusions_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = AddVotingConfigExclusionsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let timeout = AddVotingConfigExclusionsRequestWire {
+            timeout: TimeValueWire::seconds(10),
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions wait timeout",
+                ..
+            })
+        ));
+
+        let missing_selector = AddVotingConfigExclusionsRequestWire {
+            node_names: Vec::new(),
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            missing_selector.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions missing selector",
+                ..
+            })
+        ));
+
+        let multiple_selectors = AddVotingConfigExclusionsRequestWire {
+            node_ids: vec!["node-id-a".to_string()],
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            multiple_selectors.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions multiple selectors",
+                ..
+            })
+        ));
+
+        let node_descriptions = AddVotingConfigExclusionsRequestWire {
+            node_descriptions: vec!["cluster-manager-*".to_string()],
+            node_names: Vec::new(),
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            node_descriptions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions node descriptions",
+                ..
+            })
+        ));
+
+        let node_ids = AddVotingConfigExclusionsRequestWire {
+            node_ids: vec!["node-id-a".to_string()],
+            node_names: Vec::new(),
+            ..AddVotingConfigExclusionsRequestWire::default()
+        };
+        assert!(matches!(
+            node_ids.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions node ids",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn add_voting_config_exclusions_transport_messages_bind_rejected_action_frame() {
+        let request = AddVotingConfigExclusionsRequestWire::default();
+        let mut frame = build_add_voting_config_exclusions_request_message(
+            42,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected add voting config exclusions request message");
+        };
+        assert_eq!(
+            read_add_voting_config_exclusions_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_add_voting_config_exclusions_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add voting config exclusions execution",
                 ..
             })
         ));

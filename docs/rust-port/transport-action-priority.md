@@ -187,6 +187,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
+- `cluster:admin/voting_config/add_exclusions` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
@@ -339,6 +340,19 @@ The nodes-hot-threads boundary covers:
 - explicit rejection for concrete node payloads, node filters, timeout, custom
   thread count, idle-thread inclusion, non-CPU sampling type, custom interval,
   custom snapshot count, and nodes-hot-threads execution.
+
+The add-voting-config-exclusions boundary covers:
+
+- OpenSearch `AddVotingConfigExclusionsRequest` parent task,
+  cluster-manager timeout, node-description selector array, node-id selector
+  array, node-name selector array, and wait timeout at the wire decode/build
+  layer;
+- explicit fail-closed classification for
+  `cluster:admin/voting_config/add_exclusions` until coordination metadata
+  mutation and voting-configuration convergence tracking are implemented;
+- explicit rejection for custom cluster-manager timeout, custom wait timeout,
+  missing selector, multiple selectors, deprecated node-description selectors,
+  node-id selectors, and add-voting-config-exclusions execution.
 
 The cluster-update-settings boundary covers:
 
@@ -1101,6 +1115,23 @@ The payload adds fixed diagnostic sampling controls on top of the BaseNodesReque
 envelope, so it is heavier than nodes-usage but still in the lightweight admin
 transport range. At roughly 1.52M ops/s in the latest local release run, this
 boundary does not introduce a source-materialization bottleneck.
+
+Current add-voting-config-exclusions reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin add-voting-config-exclusions-reject-wire-benchmark
+add_voting_config_exclusions_reject_request_encode iterations=400000 elapsed_ms=257.095 ops_per_second=1555844.38 nanos_per_op=642.74
+add_voting_config_exclusions_reject_request_decode iterations=400000 elapsed_ms=286.742 ops_per_second=1394980.48 nanos_per_op=716.86
+add_voting_config_exclusions_reject_validation iterations=400000 elapsed_ms=300.496 ops_per_second=1331131.58 nanos_per_op=751.24
+add_voting_config_exclusions_reject_wire_bottleneck_ops_per_second=1331131.58
+```
+
+The current add-voting-config-exclusions fail-closed boundary bottleneck is
+validation over the decoded request. The payload carries three selector arrays
+plus two timeout values, and validation counts selector families before failing
+closed. At roughly 1.33M ops/s in the latest local release run, this boundary is
+not a material transport bottleneck; the first performance-sensitive work is
+coordination metadata mutation and voting-configuration convergence tracking.
 
 Current cluster-update-settings reject wire microbenchmark:
 
