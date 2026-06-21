@@ -47,6 +47,7 @@ pub const VERIFY_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/verify
 pub const CLEANUP_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/_cleanup";
 pub const GET_SNAPSHOTS_ACTION_NAME: &str = "cluster:admin/snapshot/get";
 pub const DELETE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/delete";
+pub const CREATE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/create";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -312,6 +313,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportDeleteSnapshotAction",
         request_wire_type: "DeleteSnapshotRequest",
         response_wire_type: "AcknowledgedResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CREATE_SNAPSHOT_ACTION_NAME,
+        action_type: "CreateSnapshotAction",
+        transport_action: "TransportCreateSnapshotAction",
+        request_wire_type: "CreateSnapshotRequest",
+        response_wire_type: "CreateSnapshotResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -977,6 +985,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-snapshot transport execution requires snapshot deletion coordination and acknowledgement rendering",
+        },
+        CREATE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "create-snapshot transport execution requires snapshot creation coordination and create-snapshot response rendering",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3888,6 +3901,44 @@ pub fn read_delete_snapshot_request_message(
     DeleteSnapshotRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_create_snapshot_request_message(
+    request_id: i64,
+    version: Version,
+    request: &CreateSnapshotRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CREATE_SNAPSHOT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_create_snapshot_request_message(
+    message: &TransportMessage,
+) -> Result<CreateSnapshotRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CREATE_SNAPSHOT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CREATE_SNAPSHOT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    CreateSnapshotRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_mappings_request_message(
     request_id: i64,
     version: Version,
@@ -5853,6 +5904,146 @@ impl DeleteSnapshotRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete snapshot execution",
             reason: "delete-snapshot transport execution requires snapshot deletion coordination and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreateSnapshotRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub snapshot: String,
+    pub repository: String,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub settings: BTreeMap<String, String>,
+    pub include_global_state: bool,
+    pub wait_for_completion: bool,
+    pub partial: bool,
+    pub has_user_metadata: bool,
+}
+
+impl Default for CreateSnapshotRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            snapshot: "snap".to_string(),
+            repository: "repo".to_string(),
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            settings: BTreeMap::new(),
+            include_global_state: true,
+            wait_for_completion: false,
+            partial: false,
+            has_user_metadata: false,
+        }
+    }
+}
+
+impl CreateSnapshotRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.snapshot);
+        output.write_string(&self.repository);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_string_map(&self.settings);
+        output.write_bool(self.include_global_state);
+        output.write_bool(self.wait_for_completion);
+        output.write_bool(self.partial);
+        write_generic_map_presence(output, self.has_user_metadata);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            snapshot: input.read_string()?,
+            repository: input.read_string()?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            settings: input.read_string_map()?,
+            include_global_state: input.read_bool()?,
+            wait_for_completion: input.read_bool()?,
+            partial: input.read_bool()?,
+            has_user_metadata: read_generic_map_has_entries(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires snapshot creation coordination semantics",
+            });
+        }
+        if self.snapshot.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot missing snapshot",
+                reason: "OpenSearch create-snapshot requests require a snapshot name",
+            });
+        }
+        if self.repository.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot missing repository",
+                reason: "OpenSearch create-snapshot requests require a repository name",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot index selector",
+                reason: "snapshot index selectors require runtime index resolution and snapshot routing semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot indices options",
+                reason:
+                    "custom snapshot indices options require OpenSearch index selection semantics",
+            });
+        }
+        if !self.settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot settings",
+                reason: "snapshot settings require repository snapshot creation option handling",
+            });
+        }
+        if !self.include_global_state {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot global state",
+                reason: "excluding global state requires snapshot metadata filtering semantics",
+            });
+        }
+        if self.wait_for_completion {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot wait for completion",
+                reason: "wait-for-completion requires snapshot completion listener and response rendering",
+            });
+        }
+        if self.partial {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot partial",
+                reason: "partial snapshot creation requires shard-level snapshot failure semantics",
+            });
+        }
+        if self.has_user_metadata {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot user metadata",
+                reason: "snapshot user metadata requires generic value preservation and snapshot metadata rendering",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "create snapshot execution",
+            reason: "create-snapshot transport execution requires snapshot creation coordination and create-snapshot response rendering",
         })
     }
 }
@@ -13668,6 +13859,154 @@ fn read_optional_string_array(
     }
 }
 
+fn write_generic_map_presence(output: &mut StreamOutput, has_entries: bool) {
+    if has_entries {
+        output.write_byte(10);
+        output.write_vint(1);
+        output.write_string("metadata");
+        output.write_byte(0);
+        output.write_string("present");
+    } else {
+        output.write_byte(255);
+    }
+}
+
+fn read_generic_map_has_entries(input: &mut StreamInput) -> Result<bool, TransportActionWireError> {
+    match input.read_byte()? {
+        255 => Ok(false),
+        9 | 10 => {
+            let len = input.read_vint()?;
+            if len < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic map length",
+                    reason: "OpenSearch generic map length must be non-negative",
+                });
+            }
+            for _ in 0..len {
+                let _key = input.read_string()?;
+                skip_generic_value(input)?;
+            }
+            Ok(len > 0)
+        }
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "generic map type",
+            reason:
+                "OpenSearch create-snapshot user metadata must be encoded as a generic map or null",
+        }),
+    }
+}
+
+fn skip_generic_value(input: &mut StreamInput) -> Result<(), TransportActionWireError> {
+    match input.read_byte()? {
+        255 => Ok(()),
+        0 => {
+            let _ = input.read_string()?;
+            Ok(())
+        }
+        1 | 3 => {
+            let _ = input.read_i32()?;
+            Ok(())
+        }
+        2 | 4 | 12 => {
+            let _ = input.read_i64()?;
+            Ok(())
+        }
+        5 => {
+            let _ = input.read_bool()?;
+            Ok(())
+        }
+        6 => {
+            let len = input.read_vint()?;
+            if len < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic byte array length",
+                    reason: "OpenSearch generic byte array length must be non-negative",
+                });
+            }
+            let _ = input.read_bytes(len as usize)?;
+            Ok(())
+        }
+        7 | 8 | 24 | 25 => {
+            let len = input.read_vint()?;
+            if len < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic collection length",
+                    reason: "OpenSearch generic collection length must be non-negative",
+                });
+            }
+            for _ in 0..len {
+                skip_generic_value(input)?;
+            }
+            Ok(())
+        }
+        9 | 10 => {
+            let len = input.read_vint()?;
+            if len < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic nested map length",
+                    reason: "OpenSearch generic map length must be non-negative",
+                });
+            }
+            for _ in 0..len {
+                let _key = input.read_string()?;
+                skip_generic_value(input)?;
+            }
+            Ok(())
+        }
+        11 => {
+            let _ = input.read_byte()?;
+            Ok(())
+        }
+        16 => {
+            let _ = input.read_bytes(2)?;
+            Ok(())
+        }
+        17 | 19 => {
+            let len = input.read_vint()?;
+            if len < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic int array length",
+                    reason: "OpenSearch generic int array length must be non-negative",
+                });
+            }
+            for _ in 0..len {
+                let _ = input.read_i32()?;
+            }
+            Ok(())
+        }
+        18 | 20 => {
+            let len = input.read_vint()?;
+            if len < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic long array length",
+                    reason: "OpenSearch generic long array length must be non-negative",
+                });
+            }
+            for _ in 0..len {
+                let _ = input.read_i64()?;
+            }
+            Ok(())
+        }
+        13 | 23 => {
+            let _time_zone_id = input.read_string()?;
+            let _millis = input.read_i64()?;
+            Ok(())
+        }
+        14 => {
+            let _ = input.read_bytes_reference()?;
+            Ok(())
+        }
+        15 => {
+            let _ = input.read_string()?;
+            Ok(())
+        }
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "generic value type",
+            reason: "OpenSearch generic value type is not supported by the create-snapshot metadata boundary",
+        }),
+    }
+}
+
 fn write_optional_named_writeable_marker(output: &mut StreamOutput, name: Option<&str>) {
     if let Some(name) = name {
         output.write_bool(true);
@@ -14017,6 +14356,13 @@ mod tests {
                     transport_action: "TransportDeleteSnapshotAction",
                     request_wire_type: "DeleteSnapshotRequest",
                     response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
+                    action_name: "cluster:admin/snapshot/create",
+                    action_type: "CreateSnapshotAction",
+                    transport_action: "TransportCreateSnapshotAction",
+                    request_wire_type: "CreateSnapshotRequest",
+                    response_wire_type: "CreateSnapshotResponse",
                 },
                 SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
@@ -19347,6 +19693,198 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete snapshot execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn create_snapshot_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = CreateSnapshotRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(36),
+            snapshot: "snap-a".to_string(),
+            repository: "repo-a".to_string(),
+            ..CreateSnapshotRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = CreateSnapshotRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn create_snapshot_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = CreateSnapshotRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_snapshot = CreateSnapshotRequestWire {
+            snapshot: " ".to_string(),
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            missing_snapshot.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot missing snapshot",
+                ..
+            })
+        ));
+
+        let missing_repository = CreateSnapshotRequestWire {
+            repository: " ".to_string(),
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            missing_repository.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot missing repository",
+                ..
+            })
+        ));
+
+        let index_selector = CreateSnapshotRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            index_selector.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot index selector",
+                ..
+            })
+        ));
+
+        let indices_options = CreateSnapshotRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot indices options",
+                ..
+            })
+        ));
+
+        let mut settings = BTreeMap::new();
+        settings.insert("indices".to_string(), "false".to_string());
+        let custom_settings = CreateSnapshotRequestWire {
+            settings,
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            custom_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot settings",
+                ..
+            })
+        ));
+
+        let no_global_state = CreateSnapshotRequestWire {
+            include_global_state: false,
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            no_global_state.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot global state",
+                ..
+            })
+        ));
+
+        let wait_for_completion = CreateSnapshotRequestWire {
+            wait_for_completion: true,
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            wait_for_completion.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot wait for completion",
+                ..
+            })
+        ));
+
+        let partial = CreateSnapshotRequestWire {
+            partial: true,
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            partial.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot partial",
+                ..
+            })
+        ));
+
+        let user_metadata = CreateSnapshotRequestWire {
+            has_user_metadata: true,
+            ..CreateSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            user_metadata.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot user metadata",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn create_snapshot_request_detects_generic_user_metadata_on_read() {
+        let request = CreateSnapshotRequestWire {
+            has_user_metadata: true,
+            ..CreateSnapshotRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = CreateSnapshotRequestWire::read(output.freeze()).unwrap();
+        assert!(decoded.has_user_metadata);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot user metadata",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn create_snapshot_transport_messages_bind_rejected_action_frame() {
+        let request = CreateSnapshotRequestWire::default();
+        let mut frame =
+            build_create_snapshot_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected create snapshot request message");
+        };
+        assert_eq!(
+            read_create_snapshot_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_create_snapshot_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create snapshot execution",
                 ..
             })
         ));

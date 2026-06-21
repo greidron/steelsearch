@@ -98,6 +98,10 @@ name = "delete-snapshot-reject-wire-benchmark"
 path = "benchmarks/delete_snapshot_reject_wire.rs"
 
 [[bin]]
+name = "create-snapshot-reject-wire-benchmark"
+path = "benchmarks/create_snapshot_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 
