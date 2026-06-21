@@ -121,6 +121,15 @@
       "reason": "Prune-file-cache transport execution requires warm-node file cache pruning and node response aggregation before Steelsearch can serve OpenSearch file cache prune semantics."
     },
     {
+      "action_name": "cluster:admin/repository/put",
+      "action_type": "PutRepositoryAction",
+      "transport_action": "TransportPutRepositoryAction",
+      "request_wire_type": "PutRepositoryRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Put-repository transport execution requires repository metadata mutation, verification, and acknowledgement rendering before Steelsearch can serve OpenSearch repository registration semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "action_type": "NodesUsageAction",
       "transport_action": "TransportNodesUsageAction",

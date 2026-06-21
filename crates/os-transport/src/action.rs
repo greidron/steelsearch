@@ -40,6 +40,7 @@ pub const CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
 pub const CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME: &str = "cluster:monitor/allocation/explain";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const CLUSTER_REROUTE_ACTION_NAME: &str = "cluster:admin/reroute";
+pub const PUT_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/put";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
@@ -257,6 +258,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportPruneFileCacheAction",
         request_wire_type: "PruneFileCacheRequest",
         response_wire_type: "PruneFileCacheResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: PUT_REPOSITORY_ACTION_NAME,
+        action_type: "PutRepositoryAction",
+        transport_action: "TransportPutRepositoryAction",
+        request_wire_type: "PutRepositoryRequest",
+        response_wire_type: "AcknowledgedResponse",
     },
     SourceTransportActionSpec {
         action_name: GET_REPOSITORIES_ACTION_NAME,
@@ -869,6 +877,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "prune-file-cache transport execution requires warm-node file cache pruning and response rendering",
+        },
+        PUT_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "put-repository transport execution requires repository metadata mutation and verification semantics",
         },
         LIST_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3544,6 +3557,44 @@ pub fn read_cluster_allocation_explain_request_message(
     ClusterAllocationExplainRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_put_repository_request_message(
+    request_id: i64,
+    version: Version,
+    request: &PutRepositoryRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(PUT_REPOSITORY_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_put_repository_request_message(
+    message: &TransportMessage,
+) -> Result<PutRepositoryRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != PUT_REPOSITORY_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: PUT_REPOSITORY_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    PutRepositoryRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_get_repositories_request_message(
     request_id: i64,
     version: Version,
@@ -4990,6 +5041,149 @@ impl ClusterUpdateSettingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cluster update settings execution",
             reason: "cluster settings mutation is not admitted through transport",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct PutRepositoryCryptoSettingsWire {
+    pub key_provider_name: String,
+    pub key_provider_type: String,
+    pub settings: BTreeMap<String, String>,
+}
+
+impl PutRepositoryCryptoSettingsWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.key_provider_name);
+        output.write_string(&self.key_provider_type);
+        write_opensearch_settings_string_map(output, &self.settings);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            key_provider_name: input.read_string()?,
+            key_provider_type: input.read_string()?,
+            settings: read_opensearch_settings_string_map(input)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PutRepositoryRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub name: String,
+    pub repository_type: String,
+    pub settings: BTreeMap<String, String>,
+    pub verify: bool,
+    pub crypto_settings: Option<PutRepositoryCryptoSettingsWire>,
+}
+
+impl Default for PutRepositoryRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            name: "repo".to_string(),
+            repository_type: "fs".to_string(),
+            settings: BTreeMap::new(),
+            verify: true,
+            crypto_settings: None,
+        }
+    }
+}
+
+impl PutRepositoryRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.name);
+        output.write_string(&self.repository_type);
+        write_opensearch_settings_string_map(output, &self.settings);
+        output.write_bool(self.verify);
+        match &self.crypto_settings {
+            Some(crypto_settings) => {
+                output.write_bool(true);
+                crypto_settings.write(output);
+            }
+            None => output.write_bool(false),
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let mut request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            name: input.read_string()?,
+            repository_type: input.read_string()?,
+            settings: read_opensearch_settings_string_map(&mut input)?,
+            verify: input.read_bool()?,
+            crypto_settings: None,
+        };
+        let crypto_settings_present = input.read_bool()?;
+        if crypto_settings_present {
+            request.crypto_settings = Some(PutRepositoryCryptoSettingsWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires repository metadata publication semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository ack timeout",
+                reason: "custom acknowledgement timeout requires repository metadata publication semantics",
+            });
+        }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository missing name",
+                reason: "OpenSearch put-repository requests require a repository name",
+            });
+        }
+        if self.repository_type.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository missing type",
+                reason: "OpenSearch put-repository requests require a repository type",
+            });
+        }
+        if !self.settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository settings",
+                reason: "repository settings require repository metadata mapping and validation semantics",
+            });
+        }
+        if !self.verify {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository verification flag",
+                reason:
+                    "repository verification selection requires repository registration semantics",
+            });
+        }
+        if self.crypto_settings.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository crypto settings",
+                reason: "repository crypto settings require repository encryption metadata mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "put repository execution",
+            reason: "put-repository transport execution requires repository metadata mutation and acknowledgement rendering",
         })
     }
 }
@@ -13178,6 +13372,13 @@ mod tests {
                     response_wire_type: "PruneFileCacheResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/repository/put",
+                    action_type: "PutRepositoryAction",
+                    transport_action: "TransportPutRepositoryAction",
+                    request_wire_type: "PutRepositoryRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/repository/get",
                     action_type: "GetRepositoriesAction",
                     transport_action: "TransportGetRepositoriesAction",
@@ -13652,6 +13853,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(PRUNE_FILE_CACHE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(PUT_REPOSITORY_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -17851,6 +18056,135 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn put_repository_request_wire_round_trips_and_rejects_execution_boundary() {
+        let mut settings = BTreeMap::new();
+        settings.insert("location".to_string(), "/tmp/repo".to_string());
+        let request = PutRepositoryRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(35),
+            settings,
+            ..PutRepositoryRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = PutRepositoryRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn put_repository_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = PutRepositoryRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..PutRepositoryRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = PutRepositoryRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..PutRepositoryRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository ack timeout",
+                ..
+            })
+        ));
+
+        let missing_name = PutRepositoryRequestWire {
+            name: " ".to_string(),
+            ..PutRepositoryRequestWire::default()
+        };
+        assert!(matches!(
+            missing_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository missing name",
+                ..
+            })
+        ));
+
+        let missing_type = PutRepositoryRequestWire {
+            repository_type: " ".to_string(),
+            ..PutRepositoryRequestWire::default()
+        };
+        assert!(matches!(
+            missing_type.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository missing type",
+                ..
+            })
+        ));
+
+        let verify_false = PutRepositoryRequestWire {
+            verify: false,
+            ..PutRepositoryRequestWire::default()
+        };
+        assert!(matches!(
+            verify_false.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository verification flag",
+                ..
+            })
+        ));
+
+        let crypto_settings = PutRepositoryRequestWire {
+            crypto_settings: Some(PutRepositoryCryptoSettingsWire {
+                key_provider_name: "provider".to_string(),
+                key_provider_type: "kms".to_string(),
+                settings: BTreeMap::new(),
+            }),
+            ..PutRepositoryRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        crypto_settings.write(&mut output);
+        let decoded_crypto = PutRepositoryRequestWire::read(output.freeze()).unwrap();
+        assert!(matches!(
+            decoded_crypto.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository crypto settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn put_repository_transport_messages_bind_rejected_action_frame() {
+        let request = PutRepositoryRequestWire::default();
+        let mut frame =
+            build_put_repository_request_message(35, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put repository request message");
+        };
+        assert_eq!(
+            read_put_repository_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_put_repository_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put repository execution",
                 ..
             })
         ));

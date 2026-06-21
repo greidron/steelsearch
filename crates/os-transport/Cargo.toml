@@ -74,6 +74,10 @@ name = "prune-file-cache-reject-wire-benchmark"
 path = "benchmarks/prune_file_cache_reject_wire.rs"
 
 [[bin]]
+name = "put-repository-reject-wire-benchmark"
+path = "benchmarks/put_repository_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 

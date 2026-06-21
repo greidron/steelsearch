@@ -196,6 +196,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/filecache/prune` (rejected fail-closed)
+- `cluster:admin/repository/put` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
@@ -449,6 +450,19 @@ The prune-file-cache boundary covers:
   response rendering are implemented;
 - explicit rejection for concrete node payloads, node filters, timeout, and
   prune-file-cache execution.
+
+The put-repository boundary covers:
+
+- OpenSearch `PutRepositoryRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, repository name, repository type, repository
+  settings map, verify flag, and optional crypto settings at the wire
+  decode/build layer;
+- explicit fail-closed classification for `cluster:admin/repository/put` until
+  repository metadata mutation, repository verification, and acknowledgement
+  response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, custom acknowledgement
+  timeout, blank name, blank type, settings payloads, disabled verification,
+  crypto settings, and put-repository execution.
 
 The get-repositories boundary covers:
 
@@ -1223,6 +1237,25 @@ execution. At roughly 1.89M ops/s in the latest local release run, this
 boundary is not a material transport bottleneck; the first
 performance-sensitive work is warm-node resolution, file cache pruning, and
 node response aggregation.
+
+Current put-repository reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-repository-reject-wire-benchmark
+put_repository_reject_request_encode iterations=400000 elapsed_ms=216.799 ops_per_second=1845030.30 nanos_per_op=542.00
+put_repository_reject_request_decode iterations=400000 elapsed_ms=286.576 ops_per_second=1395788.60 nanos_per_op=716.44
+put_repository_reject_validation iterations=400000 elapsed_ms=272.723 ops_per_second=1466689.77 nanos_per_op=681.81
+put_repository_reject_wire_bottleneck_ops_per_second=1395788.60
+```
+
+The current put-repository fail-closed boundary bottleneck is request decode.
+The payload includes the acknowledged cluster-manager request envelope,
+repository name/type, OpenSearch settings map, verify flag, and crypto-settings
+optional marker before admission rejects execution. At roughly 1.40M ops/s in
+the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is repository metadata
+validation, cluster-state publication, repository verification, and
+acknowledgement rendering.
 
 Current nodes-usage reject wire microbenchmark:
 
