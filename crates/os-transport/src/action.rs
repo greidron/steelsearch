@@ -30,6 +30,7 @@ pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const WLM_STATS_ACTION_NAME: &str = "cluster:monitor/wlm/stats";
 pub const REMOTE_STORE_STATS_ACTION_NAME: &str = "cluster:monitor/_remotestore/stats";
+pub const REMOTE_STORE_METADATA_ACTION_NAME: &str = "cluster:admin/remote_store/metadata";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
@@ -192,6 +193,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportRemoteStoreStatsAction",
         request_wire_type: "RemoteStoreStatsRequest",
         response_wire_type: "RemoteStoreStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: REMOTE_STORE_METADATA_ACTION_NAME,
+        action_type: "RemoteStoreMetadataAction",
+        transport_action: "TransportRemoteStoreMetadataAction",
+        request_wire_type: "RemoteStoreMetadataRequest",
+        response_wire_type: "RemoteStoreMetadataResponse",
     },
     SourceTransportActionSpec {
         action_name: NODES_USAGE_ACTION_NAME,
@@ -813,6 +821,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "remote-store-stats transport execution requires remote store shard stats rendering",
+        },
+        REMOTE_STORE_METADATA_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "remote-store-metadata transport execution requires remote store shard metadata rendering",
         },
         NODES_USAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2329,6 +2342,76 @@ impl RemoteStoreStatsRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoteStoreMetadataRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub shards: Vec<String>,
+}
+
+impl Default for RemoteStoreMetadataRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            shards: Vec::new(),
+        }
+    }
+}
+
+impl RemoteStoreMetadataRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_string_array(&self.shards);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            shards: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata index filter",
+                reason: "remote-store-metadata index filtering requires runtime index and shard routing resolution",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata indices options",
+                reason: "remote-store-metadata non-default indices options require index resolution semantics",
+            });
+        }
+        if !self.shards.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata shard filter",
+                reason: "remote-store-metadata shard filtering requires shard routing resolution",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "remote store metadata execution",
+            reason: "remote-store-metadata transport execution requires remote store shard metadata rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct NodesUsageRequestWire {
     pub parent_task_node: String,
@@ -3007,6 +3090,44 @@ pub fn read_remote_store_stats_request_message(
         });
     }
     RemoteStoreStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_remote_store_metadata_request_message(
+    request_id: i64,
+    version: Version,
+    request: &RemoteStoreMetadataRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(REMOTE_STORE_METADATA_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_remote_store_metadata_request_message(
+    message: &TransportMessage,
+) -> Result<RemoteStoreMetadataRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != REMOTE_STORE_METADATA_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: REMOTE_STORE_METADATA_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    RemoteStoreMetadataRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_usage_request_message(
@@ -12884,6 +13005,13 @@ mod tests {
                     response_wire_type: "RemoteStoreStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/remote_store/metadata",
+                    action_type: "RemoteStoreMetadataAction",
+                    transport_action: "TransportRemoteStoreMetadataAction",
+                    request_wire_type: "RemoteStoreMetadataRequest",
+                    response_wire_type: "RemoteStoreMetadataResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/nodes/usage",
                     action_type: "NodesUsageAction",
                     transport_action: "TransportNodesUsageAction",
@@ -13399,6 +13527,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_STORE_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(REMOTE_STORE_METADATA_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -16482,6 +16614,93 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "remote store stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_metadata_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = RemoteStoreMetadataRequestWire {
+            parent_task_node: "remote-store-node".to_string(),
+            parent_task_id: Some(29),
+            ..RemoteStoreMetadataRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = RemoteStoreMetadataRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_metadata_request_rejects_unsupported_shapes() {
+        let index_filter = RemoteStoreMetadataRequestWire {
+            indices: vec!["logs".to_string()],
+            ..RemoteStoreMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata index filter",
+                ..
+            })
+        ));
+
+        let indices_options = RemoteStoreMetadataRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..RemoteStoreMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata indices options",
+                ..
+            })
+        ));
+
+        let shard_filter = RemoteStoreMetadataRequestWire {
+            shards: vec!["0".to_string()],
+            ..RemoteStoreMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            shard_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata shard filter",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_metadata_transport_messages_bind_rejected_action_frame() {
+        let request = RemoteStoreMetadataRequestWire::default();
+        let mut frame =
+            build_remote_store_metadata_request_message(29, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remote store metadata request message");
+        };
+        assert_eq!(
+            read_remote_store_metadata_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_remote_store_metadata_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store metadata execution",
                 ..
             })
         ));

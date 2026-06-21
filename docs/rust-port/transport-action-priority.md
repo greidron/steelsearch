@@ -187,6 +187,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/wlm/stats` (rejected fail-closed)
 - `cluster:monitor/_remotestore/stats` (rejected fail-closed)
+- `cluster:admin/remote_store/metadata` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/voting_config/add_exclusions` (rejected fail-closed)
@@ -353,6 +354,16 @@ The remote-store-stats boundary covers:
   until remote store shard stats rendering is implemented;
 - explicit rejection for index filters, non-default indices options, shard
   filters, local-only execution, and remote-store-stats execution.
+
+The remote-store-metadata boundary covers:
+
+- OpenSearch `RemoteStoreMetadataRequest` parent task, broadcast indices array,
+  indices options, and shard id array at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/remote_store/metadata` until remote store shard metadata
+  rendering is implemented;
+- explicit rejection for index filters, non-default indices options, shard
+  filters, and remote-store-metadata execution.
 
 The nodes-hot-threads boundary covers:
 
@@ -1165,6 +1176,23 @@ shard filter array, and local flag before admission rejects execution. At
 roughly 1.58M ops/s in the latest local release run, this boundary is not a
 material transport bottleneck; the first performance-sensitive work is remote
 store shard stats collection and response rendering.
+
+Current remote-store-metadata reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin remote-store-metadata-reject-wire-benchmark
+remote_store_metadata_reject_request_encode iterations=400000 elapsed_ms=261.324 ops_per_second=1530664.17 nanos_per_op=653.31
+remote_store_metadata_reject_request_decode iterations=400000 elapsed_ms=247.605 ops_per_second=1615476.14 nanos_per_op=619.01
+remote_store_metadata_reject_validation iterations=400000 elapsed_ms=249.019 ops_per_second=1606302.41 nanos_per_op=622.55
+remote_store_metadata_reject_wire_bottleneck_ops_per_second=1530664.17
+```
+
+The current remote-store-metadata fail-closed boundary bottleneck is request
+encode. The payload includes the broadcast request envelope, indices options,
+and shard filter array before admission rejects execution. At roughly 1.53M
+ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is remote store
+shard metadata collection and response rendering.
 
 Current nodes-usage reject wire microbenchmark:
 
