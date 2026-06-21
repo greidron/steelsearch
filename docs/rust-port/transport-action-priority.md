@@ -239,6 +239,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/views/delete` (rejected fail-closed)
 - `views:data/read/get` (rejected fail-closed)
 - `cluster:admin/views/update` (rejected fail-closed)
+- `views:data/read/list` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1487,6 +1488,17 @@ The update-view boundary covers:
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
   names, oversized descriptions, missing or excessive targets, blank target
   patterns, oversized target patterns, and update-view execution.
+
+The list-view-names boundary covers:
+
+- OpenSearch `ListViewNamesAction.Request` as an empty request body at the wire
+  decode/build layer, with trailing bytes rejected;
+- OpenSearch `ListViewNamesAction.Response` decode/build for the `views`
+  string list payload, with deterministic sorted output;
+- explicit fail-closed classification for `views:data/read/list` until
+  view-name listing and list response rendering are implemented;
+- explicit rejection for list-view-names execution and unsupported response
+  shapes such as blank names, oversized names, or excessive name counts.
 
 The search boundary covers:
 
@@ -3468,6 +3480,23 @@ the OpenSearch update action name before rejecting at admission. At roughly
 1.06M ops/s in the latest local release run, it is slightly slower than the
 latest create-view run on this machine; future performance-sensitive work is
 view validation, target resolution, metadata mutation, and response rendering.
+
+Current list-view-names reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin list-view-names-reject-wire-benchmark
+list_view_names_reject_request_encode iterations=400000 elapsed_ms=160.598 ops_per_second=2490685.92 nanos_per_op=401.50
+list_view_names_reject_request_decode iterations=400000 elapsed_ms=147.617 ops_per_second=2709716.35 nanos_per_op=369.04
+list_view_names_reject_validation iterations=400000 elapsed_ms=146.676 ops_per_second=2727105.92 nanos_per_op=366.69
+list_view_names_response_decode iterations=400000 elapsed_ms=153.268 ops_per_second=2609799.81 nanos_per_op=383.17
+list_view_names_reject_wire_bottleneck_ops_per_second=2490685.92
+```
+
+The current list-view-names fail-closed boundary bottleneck is request encode.
+This path carries an empty request body before rejecting at admission and
+decodes the `views` string list response. At roughly 2.49M ops/s in the latest
+local release run, it is the lightest current view-admin boundary; future
+performance-sensitive work is view-name listing and response rendering.
 
 Current search reject wire microbenchmark:
 

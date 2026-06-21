@@ -144,6 +144,7 @@ pub const OPENSEARCH_CREATE_VIEW_ACTION_NAME: &str = "cluster:admin/views/create
 pub const OPENSEARCH_DELETE_VIEW_ACTION_NAME: &str = "cluster:admin/views/delete";
 pub const OPENSEARCH_GET_VIEW_ACTION_NAME: &str = "views:data/read/get";
 pub const OPENSEARCH_UPDATE_VIEW_ACTION_NAME: &str = "cluster:admin/views/update";
+pub const OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME: &str = "views:data/read/list";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1117,6 +1118,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map view validation, target resolution, metadata mutation, and view response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME,
+        action_type: "ListViewNamesAction",
+        transport_action: "ListViewNamesAction.TransportAction",
+        request_wire_type: "ListViewNamesAction.Request",
+        response_wire_type: "ListViewNamesAction.Response",
+        adapter_stage: "view-admin",
+        next_step: "map view-name listing and list response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1803,6 +1813,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering",
+        },
+        OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "list-view-names transport execution requires view-name listing and response rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7489,6 +7504,73 @@ pub fn read_opensearch_update_view_response_message(
         });
     }
     OpenSearchGetViewResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_list_view_names_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchListViewNamesRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_list_view_names_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchListViewNamesRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchListViewNamesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_list_view_names_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchListViewNamesResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_list_view_names_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchListViewNamesResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchListViewNamesResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_search_request_message(
@@ -15473,6 +15555,79 @@ impl OpenSearchGetViewRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get view execution",
             reason: "get-view transport execution requires view lookup and view response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OpenSearchListViewNamesRequestWire;
+
+impl OpenSearchListViewNamesRequestWire {
+    pub fn write(&self, _output: &mut StreamOutput) {}
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let input = StreamInput::new(bytes);
+        require_no_trailing_bytes(&input)?;
+        Ok(Self)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "list view names execution",
+            reason: "list-view-names transport execution requires view-name listing and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchListViewNamesResponseWire {
+    pub views: Vec<String>,
+}
+
+impl Default for OpenSearchListViewNamesResponseWire {
+    fn default() -> Self {
+        Self {
+            views: vec!["logs-view".to_string()],
+        }
+    }
+}
+
+impl OpenSearchListViewNamesResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        let mut views = self.views.clone();
+        views.sort();
+        write_string_collection(output, &views);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let views = read_string_collection(&mut input, "list view names negative view count")?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { views })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.views.len() > 10_000 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names response count",
+                reason: "OpenSearch list-view-names responses are bounded to 10000 names by the Rust boundary",
+            });
+        }
+        if self.views.iter().any(|view| view.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names blank response name",
+                reason: "OpenSearch list-view-names responses cannot contain blank view names",
+            });
+        }
+        if self.views.iter().any(|view| view.len() > 64) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names response name length",
+                reason: "OpenSearch list-view-names response names must be at most 64 characters",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "list view names response rendering",
+            reason: "list-view-names transport execution requires view-name listing and response rendering",
         })
     }
 }
@@ -23871,6 +24026,15 @@ mod tests {
                     next_step: "map view validation, target resolution, metadata mutation, and view response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "views:data/read/list",
+                    action_type: "ListViewNamesAction",
+                    transport_action: "ListViewNamesAction.TransportAction",
+                    request_wire_type: "ListViewNamesAction.Request",
+                    response_wire_type: "ListViewNamesAction.Response",
+                    adapter_stage: "view-admin",
+                    next_step: "map view-name listing and list response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -24467,6 +24631,11 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_UPDATE_VIEW_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -24555,6 +24724,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -38825,6 +38995,128 @@ mod tests {
         );
         assert_eq!(decoded.view.name, response.view.name);
         assert_eq!(decoded.view.description, response.view.description);
+    }
+
+    #[test]
+    fn opensearch_list_view_names_request_wire_is_empty_and_rejects_execution_boundary() {
+        let request = OpenSearchListViewNamesRequestWire;
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+        assert!(output.freeze().is_empty());
+
+        let decoded = OpenSearchListViewNamesRequestWire::read(Bytes::new()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_list_view_names_request_rejects_trailing_bytes() {
+        let trailing = Bytes::from_static(&[1]);
+        assert!(matches!(
+            OpenSearchListViewNamesRequestWire::read(trailing),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn opensearch_list_view_names_response_wire_sorts_names_and_rejects_unsupported_shapes() {
+        let response = OpenSearchListViewNamesResponseWire {
+            views: vec!["metrics-view".to_string(), "logs-view".to_string()],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = OpenSearchListViewNamesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(
+            decoded.views,
+            vec!["logs-view".to_string(), "metrics-view".to_string()]
+        );
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names response rendering",
+                ..
+            })
+        ));
+
+        let blank_name = OpenSearchListViewNamesResponseWire {
+            views: vec![" ".to_string()],
+        };
+        assert!(matches!(
+            blank_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names blank response name",
+                ..
+            })
+        ));
+
+        let long_name = OpenSearchListViewNamesResponseWire {
+            views: vec!["v".repeat(65)],
+        };
+        assert!(matches!(
+            long_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names response name length",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_list_view_names_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = OpenSearchListViewNamesRequestWire;
+        let mut frame = build_opensearch_list_view_names_request_message(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list view names request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_list_view_names_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_list_view_names_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list view names execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchListViewNamesResponseWire {
+            views: vec!["metrics-view".to_string(), "logs-view".to_string()],
+        };
+        let mut frame = build_opensearch_list_view_names_response_message(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list view names response message");
+        };
+        let decoded = read_opensearch_list_view_names_response_message(&message).unwrap();
+        assert_eq!(
+            decoded.views,
+            vec!["logs-view".to_string(), "metrics-view".to_string()]
+        );
     }
 
     #[test]
