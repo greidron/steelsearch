@@ -252,6 +252,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/delete`
 - `indices:admin/refresh`
 - `indices:admin/flush` (rejected fail-closed)
+- `indices:admin/forcemerge` (rejected fail-closed)
 - `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
@@ -1030,6 +1031,19 @@ The flush boundary covers:
 - explicit rejection for index filters, custom indices options,
   `force=true && wait_if_ongoing=false` validation failures, forced flush,
   non-waiting flush, and flush execution.
+
+The force-merge boundary covers:
+
+- OpenSearch `ForceMergeRequest` parent task, nullable index array, default
+  `IndicesOptions.strictExpandOpenAndForbidClosed()`, max segment count,
+  only-expunge-deletes flag, post-merge flush flag, primary-only flag, and
+  OpenSearch 3.x non-optional force-merge UUID at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/forcemerge` until
+  shard segment merge execution, primary-only routing, post-merge flush, and
+  shard status response rendering are implemented against Rust shard state;
+- explicit rejection for index filters, custom indices options, bounded segment
+  counts, delete-expunge-only merges, `flush=false`, primary-only routing,
+  empty force-merge UUIDs, and force-merge execution.
 
 The field-capabilities boundary covers:
 
@@ -2511,6 +2525,24 @@ strict-expand-open-forbid-closed indices options, `force=false`, and
 the latest local release run, the remaining performance-sensitive work is
 translog flush execution, in-flight flush coordination, and shard status
 response rendering.
+
+Current force-merge reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin force-merge-reject-wire-benchmark
+force_merge_reject_request_encode iterations=400000 elapsed_ms=341.589 ops_per_second=1170996.19 nanos_per_op=853.97
+force_merge_reject_request_decode iterations=400000 elapsed_ms=300.006 ops_per_second=1333305.16 nanos_per_op=750.02
+force_merge_reject_validation iterations=400000 elapsed_ms=306.932 ops_per_second=1303221.08 nanos_per_op=767.33
+force_merge_reject_wire_bottleneck_ops_per_second=1170996.19
+```
+
+The current force-merge fail-closed boundary bottleneck is request encode. The
+default benchmark writes the broadcast request envelope, empty index array,
+default strict-expand-open-forbid-closed indices options, max segment count,
+expunge/flush/primary flags, and the force-merge UUID before rejecting
+execution. At roughly 1.17M ops/s in the latest local release run, the
+remaining performance-sensitive work is segment merge scheduling, primary-only
+routing, post-merge flush coordination, and shard status response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 
