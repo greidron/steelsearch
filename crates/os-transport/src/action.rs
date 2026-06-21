@@ -76,6 +76,7 @@ pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappi
 pub const OPENSEARCH_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/put";
 pub const OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/auto_put";
 pub const OPENSEARCH_INDICES_ALIASES_ACTION_NAME: &str = "indices:admin/aliases";
+pub const OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME: &str = "indices:admin/settings/update";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
@@ -544,6 +545,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map alias add/remove/remove-index updates onto Rust cluster metadata mutation and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME,
+        action_type: "UpdateSettingsAction",
+        transport_action: "TransportUpdateSettingsAction",
+        request_wire_type: "UpdateSettingsRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map index setting updates onto Rust index metadata validation, mutation, and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_CREATE_INDEX_ACTION_NAME,
@@ -1146,6 +1156,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering",
+        },
+        OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering",
         },
         OPENSEARCH_CREATE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4511,6 +4526,44 @@ pub fn read_opensearch_indices_aliases_request_message(
         });
     }
     OpenSearchIndicesAliasesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_settings_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchUpdateSettingsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_settings_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpdateSettingsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchUpdateSettingsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_index_request_message(
@@ -7980,6 +8033,118 @@ impl OpenSearchIndicesAliasesRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "indices aliases execution",
             reason: "indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpdateSettingsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub settings: BTreeMap<String, String>,
+    pub preserve_existing: bool,
+}
+
+impl Default for OpenSearchUpdateSettingsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_closed_no_allow(),
+            settings: BTreeMap::from([("index.refresh_interval".to_string(), "1s".to_string())]),
+            preserve_existing: false,
+        }
+    }
+}
+
+impl OpenSearchUpdateSettingsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        write_settings_string_map(output, &self.settings);
+        output.write_bool(self.preserve_existing);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            settings: read_settings_string_map(&mut input)?,
+            preserve_existing: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the index update-settings adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings ack timeout",
+                reason: "custom ack timeout is not mapped by the index update-settings adapter yet",
+            });
+        }
+        if self.indices.is_empty() || self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings missing index",
+                reason: "OpenSearch index update-settings requests require at least one target index in this boundary",
+            });
+        }
+        if self.indices_options
+            != OpenSearchIndicesOptionsWire::strict_expand_open_closed_no_allow()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings indices options",
+                reason: "custom index update-settings indices options require index resolution semantics",
+            });
+        }
+        if self.settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings empty settings",
+                reason: "OpenSearch index update-settings requests require non-empty settings",
+            });
+        }
+        if self
+            .settings
+            .keys()
+            .any(|key| key.trim().is_empty() || !key.starts_with("index."))
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings setting key",
+                reason: "index update-settings mutation requires validated index setting keys",
+            });
+        }
+        if self.preserve_existing {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings preserve existing",
+                reason: "preserve-existing index setting updates require merge-with-existing metadata semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "index update settings execution",
+            reason: "index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering",
         })
     }
 }
@@ -15998,6 +16163,49 @@ fn read_generic_map_has_entries(input: &mut StreamInput) -> Result<bool, Transpo
     }
 }
 
+fn write_settings_string_map(output: &mut StreamOutput, values: &BTreeMap<String, String>) {
+    output.write_vint(values.len() as i32);
+    for (key, value) in values {
+        output.write_string(key);
+        output.write_byte(0);
+        output.write_string(value);
+    }
+}
+
+fn read_settings_string_map(
+    input: &mut StreamInput,
+) -> Result<BTreeMap<String, String>, TransportActionWireError> {
+    let len = input.read_vint()?;
+    if len < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "settings map length",
+            reason: "OpenSearch settings map length must be non-negative",
+        });
+    }
+    let mut values = BTreeMap::new();
+    for _ in 0..len {
+        let key = input.read_string()?;
+        match input.read_byte()? {
+            0 => {
+                values.insert(key, input.read_string()?);
+            }
+            255 => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "settings map null value",
+                    reason: "null setting values require OpenSearch Settings null-value semantics",
+                });
+            }
+            _ => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "settings map generic value",
+                    reason: "non-string setting values require OpenSearch Settings generic-value semantics",
+                });
+            }
+        }
+    }
+    Ok(values)
+}
+
 fn write_generic_string_double_map(output: &mut StreamOutput, values: &BTreeMap<String, f64>) {
     output.write_byte(10);
     output.write_vint(values.len() as i32);
@@ -16743,6 +16951,15 @@ mod tests {
                     next_step: "map alias add/remove/remove-index updates onto Rust cluster metadata mutation and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/settings/update",
+                    action_type: "UpdateSettingsAction",
+                    transport_action: "TransportUpdateSettingsAction",
+                    request_wire_type: "UpdateSettingsRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map index setting updates onto Rust index metadata validation, mutation, and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/create",
                     action_type: "CreateIndexAction",
                     transport_action: "TransportCreateIndexAction",
@@ -17273,6 +17490,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -17421,6 +17643,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
@@ -23774,6 +23997,170 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices aliases execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_update_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchUpdateSettingsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchUpdateSettingsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.indices, vec!["logs-000001"]);
+        assert_eq!(
+            decoded.settings.get("index.refresh_interval"),
+            Some(&"1s".to_string())
+        );
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_update_settings_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchUpdateSettingsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchUpdateSettingsRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings ack timeout",
+                ..
+            })
+        ));
+
+        let missing_index = OpenSearchUpdateSettingsRequestWire {
+            indices: Vec::new(),
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            missing_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings missing index",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchUpdateSettingsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_closed_no_allow()
+            },
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings indices options",
+                ..
+            })
+        ));
+
+        let empty_settings = OpenSearchUpdateSettingsRequestWire {
+            settings: BTreeMap::new(),
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            empty_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings empty settings",
+                ..
+            })
+        ));
+
+        let setting_key = OpenSearchUpdateSettingsRequestWire {
+            settings: BTreeMap::from([(
+                "cluster.routing.allocation.enable".to_string(),
+                "all".to_string(),
+            )]),
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            setting_key.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings setting key",
+                ..
+            })
+        ));
+
+        let preserve_existing = OpenSearchUpdateSettingsRequestWire {
+            preserve_existing: true,
+            ..OpenSearchUpdateSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            preserve_existing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings preserve existing",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_update_settings_request_decode_rejects_non_string_settings() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        TimeValueWire::seconds(30).write(&mut output);
+        TimeValueWire::seconds(30).write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_closed_no_allow().write(&mut output);
+        output.write_vint(1);
+        output.write_string("index.number_of_replicas");
+        output.write_byte(1);
+        output.write_i32(2);
+
+        assert!(matches!(
+            OpenSearchUpdateSettingsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "settings map generic value",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_update_settings_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchUpdateSettingsRequestWire::default();
+        let mut frame = build_opensearch_update_settings_request_message(
+            40,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update settings request message");
+        };
+        assert_eq!(
+            read_opensearch_update_settings_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_update_settings_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "index update settings execution",
                 ..
             })
         ));

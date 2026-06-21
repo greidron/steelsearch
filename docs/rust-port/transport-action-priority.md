@@ -704,6 +704,21 @@ The indices-aliases boundary covers:
   alias payloads, filtered aliases, alias routing, write-index updates, hidden
   alias updates, must-exist removals, and indices-aliases execution.
 
+The index update-settings boundary covers:
+
+- OpenSearch `UpdateSettingsRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, nullable indices array encoded as an OpenSearch
+  string array, `IndicesOptions.fromOptions(false, false, true, true)`,
+  string-valued Settings generic map, and `preserveExisting` at the OpenSearch
+  3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/settings/update`
+  until index resolution, settings validation, metadata mutation, and
+  acknowledged response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing index targets, custom indices options,
+  empty settings maps, non-index setting keys, non-string generic setting
+  values, preserve-existing updates, and index update-settings execution.
+
 The create-index boundary covers:
 
 - OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
@@ -1933,6 +1948,24 @@ rejecting execution. At roughly 0.99M ops/s in the latest local release run,
 the current overhead remains lightweight transport shape validation; future
 performance-sensitive work is alias metadata mutation, remove-index sub-action
 handling, and acknowledged response rendering.
+
+Current index update-settings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin update-settings-reject-wire-benchmark
+update_settings_reject_request_encode iterations=400000 elapsed_ms=423.666 ops_per_second=944140.46 nanos_per_op=1059.16
+update_settings_reject_request_decode iterations=400000 elapsed_ms=389.513 ops_per_second=1026923.13 nanos_per_op=973.78
+update_settings_reject_validation iterations=400000 elapsed_ms=404.031 ops_per_second=990022.58 nanos_per_op=1010.08
+update_settings_reject_wire_bottleneck_ops_per_second=944140.46
+```
+
+The current index update-settings fail-closed boundary bottleneck is request
+encode. The path writes the acknowledged-request envelope, target index array,
+indices options, and a string-valued OpenSearch Settings generic map before
+rejecting execution. At roughly 0.94M ops/s in the latest local release run,
+the current overhead remains transport wire work; future performance-sensitive
+work is index resolution, setting validation, metadata mutation, and
+acknowledged response rendering.
 
 Current create-index reject wire microbenchmark:
 
