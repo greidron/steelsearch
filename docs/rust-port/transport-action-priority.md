@@ -196,6 +196,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/data_stream/get` (rejected fail-closed)
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `indices:admin/resolve/index` (rejected fail-closed)
+- `indices:data/read/search` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -419,6 +420,19 @@ The resolve-index boundary covers:
   index abstraction metadata response rendering is implemented;
 - explicit rejection for empty name arrays, custom indices options, and
   resolve-index execution.
+
+The search boundary covers:
+
+- OpenSearch `SearchRequest` parent task, search type, indices array, routing,
+  preference, absent scroll, absent search source, search indices options,
+  request-cache flag, reduce/fanout controls, partial-results flag,
+  cross-cluster reduction flags, cancellation interval, search pipeline, and
+  phase timing flag at the wire decode/build layer;
+- explicit fail-closed classification for `indices:data/read/search` until
+  search source decoding and response rendering are mapped;
+- explicit rejection for source/scroll payloads, non-default index/routing/
+  preference/fanout/cache/partial-results/cross-cluster/pipeline/timing shapes,
+  and search execution.
 
 The indices-stats boundary covers:
 
@@ -903,6 +917,26 @@ index options before rejecting at admission. At roughly 1.57M ops/s in the
 latest local release run, it stays in the lightweight metadata transport range;
 the extra wildcard string and indices-options comparison make it slightly
 heavier than the smallest BroadcastRequest reject paths.
+
+Current search reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin search-reject-wire-benchmark
+search_reject_request_encode iterations=400000 elapsed_ms=308.102 ops_per_second=1298272.69 nanos_per_op=770.25
+search_reject_request_decode iterations=400000 elapsed_ms=269.287 ops_per_second=1485402.32 nanos_per_op=673.22
+search_reject_validation iterations=400000 elapsed_ms=251.641 ops_per_second=1589565.42 nanos_per_op=629.10
+search_reject_wire_bottleneck_ops_per_second=1298272.69
+```
+
+The current search fail-closed boundary bottleneck is request encode. This path
+is heavier than the metadata reject boundaries because it writes the full
+top-level `SearchRequest` control envelope, including search type,
+request-cache option, reduce/fanout controls, cross-cluster flags, pipeline,
+phase timing, and strict open forbid-closed ignore-throttled index options,
+before rejecting execution. At roughly 1.30M ops/s in the latest local release
+run, the boundary stays in the lightweight transport range; the first
+performance point to inspect before accepting search execution is still search
+source decode/rendering, which is intentionally not admitted here.
 
 Current indices-stats reject wire microbenchmark:
 

@@ -106,6 +106,10 @@ name = "resolve-index-reject-wire-benchmark"
 path = "benchmarks/resolve_index_reject_wire.rs"
 
 [[bin]]
+name = "search-reject-wire-benchmark"
+path = "benchmarks/search_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

@@ -576,6 +576,11 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "resolve-index transport execution requires index abstraction metadata response rendering",
         },
+        OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "search transport execution requires search source and response rendering mapping",
+        },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
@@ -2592,6 +2597,44 @@ pub fn read_opensearch_resolve_index_request_message(
     OpenSearchResolveIndexRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_search_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_SEARCH_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_search_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_SEARCH_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_SEARCH_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchSearchRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -3722,6 +3765,238 @@ impl OpenSearchResolveIndexRequestWire {
             shape: "resolve index execution",
             reason:
                 "resolve-index transport execution requires index abstraction metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSearchRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub search_type: u8,
+    pub indices: Vec<String>,
+    pub routing: Option<String>,
+    pub preference: Option<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub request_cache: Option<bool>,
+    pub batched_reduce_size: i32,
+    pub max_concurrent_shard_requests: i32,
+    pub pre_filter_shard_size: Option<i32>,
+    pub allow_partial_search_results: Option<bool>,
+    pub local_cluster_alias: Option<String>,
+    pub ccs_minimize_roundtrips: bool,
+    pub cancel_after_time_interval: Option<TimeValueWire>,
+    pub pipeline: Option<String>,
+    pub phase_took: Option<bool>,
+}
+
+impl Default for OpenSearchSearchRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            search_type: 1,
+            indices: Vec::new(),
+            routing: None,
+            preference: None,
+            indices_options:
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            request_cache: None,
+            batched_reduce_size: 512,
+            max_concurrent_shard_requests: 0,
+            pre_filter_shard_size: None,
+            allow_partial_search_results: None,
+            local_cluster_alias: None,
+            ccs_minimize_roundtrips: true,
+            cancel_after_time_interval: None,
+            pipeline: None,
+            phase_took: None,
+        }
+    }
+}
+
+impl OpenSearchSearchRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_byte(self.search_type);
+        output.write_string_array(&self.indices);
+        output.write_optional_string(self.routing.as_deref());
+        output.write_optional_string(self.preference.as_deref());
+        output.write_bool(false);
+        output.write_bool(false);
+        self.indices_options.write(output);
+        write_optional_bool(output, self.request_cache);
+        output.write_vint(self.batched_reduce_size);
+        output.write_vint(self.max_concurrent_shard_requests);
+        write_optional_vint(output, self.pre_filter_shard_size);
+        write_optional_bool(output, self.allow_partial_search_results);
+        output.write_optional_string(self.local_cluster_alias.as_deref());
+        if self.local_cluster_alias.is_some() {
+            output.write_vlong(-1);
+            output.write_bool(true);
+        }
+        output.write_bool(self.ccs_minimize_roundtrips);
+        write_optional_time_value(output, self.cancel_after_time_interval.as_ref());
+        output.write_optional_string(self.pipeline.as_deref());
+        write_optional_bool(output, self.phase_took);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let search_type = input.read_byte()?;
+        if search_type != 0 && search_type != 1 && search_type != 3 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request search type",
+                reason: "search type must be dfs_query_then_fetch or query_then_fetch",
+            });
+        }
+        let indices = input.read_string_array()?;
+        let routing = input.read_optional_string()?;
+        let preference = input.read_optional_string()?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll",
+                reason: "scroll search requests require scroll context mapping before admission",
+            });
+        }
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source",
+                reason: "search source builder decoding is not mapped by the search adapter yet",
+            });
+        }
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let request_cache = read_optional_bool(&mut input)?;
+        let batched_reduce_size = input.read_vint()?;
+        let max_concurrent_shard_requests = input.read_vint()?;
+        let pre_filter_shard_size = read_optional_vint(&mut input)?;
+        let allow_partial_search_results = read_optional_bool(&mut input)?;
+        let local_cluster_alias = input.read_optional_string()?;
+        if local_cluster_alias.is_some() {
+            let _absolute_start_millis = input.read_vlong()?;
+            let _final_reduce = input.read_bool()?;
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            search_type,
+            indices,
+            routing,
+            preference,
+            indices_options,
+            request_cache,
+            batched_reduce_size,
+            max_concurrent_shard_requests,
+            pre_filter_shard_size,
+            allow_partial_search_results,
+            local_cluster_alias,
+            ccs_minimize_roundtrips: input.read_bool()?,
+            cancel_after_time_interval: read_optional_time_value(&mut input)?,
+            pipeline: input.read_optional_string()?,
+            phase_took: read_optional_bool(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.search_type != 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request search type",
+                reason: "dfs_query_then_fetch search requires distributed term-stat mapping",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request index filter",
+                reason: "index-scoped search requires OpenSearch index resolution semantics",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request routing",
+                reason: "routing-aware search requires operation routing semantics",
+            });
+        }
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request preference",
+                reason: "preference-aware search requires shard iterator ordering semantics",
+            });
+        }
+        if self.indices_options
+            != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request indices options",
+                reason: "custom search indices options require index resolution semantics",
+            });
+        }
+        if self.request_cache.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request cache",
+                reason: "request-cache selection is not mapped by the search adapter yet",
+            });
+        }
+        if self.batched_reduce_size != 512 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request batched reduce size",
+                reason: "custom reduce batching requires OpenSearch reduce-phase semantics",
+            });
+        }
+        if self.max_concurrent_shard_requests != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request max concurrent shard requests",
+                reason: "custom shard fanout concurrency is not mapped by this adapter",
+            });
+        }
+        if self.pre_filter_shard_size.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request pre filter shard size",
+                reason: "pre-filter shard selection requires can-match phase semantics",
+            });
+        }
+        if self.allow_partial_search_results.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request allow partial search results",
+                reason: "partial-result handling requires search failure aggregation semantics",
+            });
+        }
+        if self.local_cluster_alias.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request local cluster alias",
+                reason: "cluster-alias search requires cross-cluster reduction semantics",
+            });
+        }
+        if !self.ccs_minimize_roundtrips {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request ccs minimize roundtrips",
+                reason: "cross-cluster search roundtrip control is not mapped by this adapter",
+            });
+        }
+        if self.cancel_after_time_interval.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request cancel after time interval",
+                reason: "search timeout cancellation requires task lifecycle mapping",
+            });
+        }
+        if self.pipeline.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request pipeline",
+                reason: "search pipeline execution is not mapped by this adapter",
+            });
+        }
+        if self.phase_took.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request phase took",
+                reason: "phase timing output requires search phase instrumentation mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request execution",
+            reason:
+                "search transport execution requires search source and response rendering mapping",
         })
     }
 }
@@ -7042,6 +7317,20 @@ impl OpenSearchIndicesOptionsWire {
         }
     }
 
+    pub const fn strict_expand_open_forbid_closed_ignore_throttled() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: false,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: true,
+            ignore_throttled: true,
+            expand_open: true,
+            expand_closed: false,
+            expand_hidden: false,
+        }
+    }
+
     pub const fn strict_expand_open() -> Self {
         Self {
             ignore_unavailable: false,
@@ -7722,6 +8011,23 @@ fn read_optional_i64(input: &mut StreamInput) -> Result<Option<i64>, TransportAc
     }
 }
 
+fn write_optional_vint(output: &mut StreamOutput, value: Option<i32>) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        output.write_vint(value);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_vint(input: &mut StreamInput) -> Result<Option<i32>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_vint()?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_optional_bool(output: &mut StreamOutput, value: Option<bool>) {
     match value {
         Some(false) => output.write_byte(0),
@@ -8239,7 +8545,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SEARCH_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Missing
+            OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
@@ -8357,6 +8663,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -12335,6 +12642,110 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn opensearch_search_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchSearchRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_request_rejects_unsupported_shapes() {
+        let index_filter = OpenSearchSearchRequestWire {
+            indices: vec!["logs".to_string()],
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request index filter",
+                ..
+            })
+        ));
+
+        let routing = OpenSearchSearchRequestWire {
+            routing: Some("tenant-a".to_string()),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            routing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request routing",
+                ..
+            })
+        ));
+
+        let source_present = search_request_body_with_optional_writeable_shape(false, true);
+        assert!(matches!(
+            OpenSearchSearchRequestWire::read(source_present.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source",
+                ..
+            })
+        ));
+
+        let scroll_present = search_request_body_with_optional_writeable_shape(true, false);
+        assert!(matches!(
+            OpenSearchSearchRequestWire::read(scroll_present.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchSearchRequestWire::default();
+        let mut frame =
+            build_opensearch_search_request_message(46, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search request message");
+        };
+        assert_eq!(
+            read_opensearch_search_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_search_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
+                ..
+            })
+        ));
+    }
+
+    fn search_request_body_with_optional_writeable_shape(
+        scroll_present: bool,
+        source_present: bool,
+    ) -> BytesMut {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_byte(1);
+        output.write_string_array(&[]);
+        output.write_optional_string(None);
+        output.write_optional_string(None);
+        output.write_bool(scroll_present);
+        if scroll_present {
+            return BytesMut::from(&output.freeze()[..]);
+        }
+        output.write_bool(source_present);
+        BytesMut::from(&output.freeze()[..])
     }
 
     #[test]

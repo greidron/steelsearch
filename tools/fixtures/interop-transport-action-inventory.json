@@ -184,6 +184,15 @@
       "reason": "Resolve-index transport execution requires index abstraction metadata response rendering before Steelsearch can serve OpenSearch resolve-index semantics."
     },
     {
+      "action_name": "indices:data/read/search",
+      "action_type": "SearchAction",
+      "transport_action": "TransportSearchAction",
+      "request_wire_type": "SearchRequest",
+      "response_wire_type": "SearchResponse",
+      "disposition": "rejected",
+      "reason": "Search transport execution requires search source and response rendering mapping before Steelsearch can serve OpenSearch search semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",
