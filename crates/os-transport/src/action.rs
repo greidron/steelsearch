@@ -47,6 +47,7 @@ pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappi
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
+pub const OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME: &str = "indices:data/read/field_caps";
 pub const OPENSEARCH_RECOVERY_ACTION_NAME: &str = "indices:monitor/recovery";
 pub const OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME: &str = "indices:monitor/segments";
 pub const OPENSEARCH_PIT_SEGMENTS_ACTION_NAME: &str = "indices:monitor/point_in_time/segments";
@@ -325,6 +326,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         adapter_stage: "search-admin",
         next_step:
             "map bounded search-shards requests onto Rust shard routing metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME,
+        action_type: "FieldCapabilitiesAction",
+        transport_action: "TransportFieldCapabilitiesAction",
+        request_wire_type: "FieldCapabilitiesRequest",
+        response_wire_type: "FieldCapabilitiesResponse",
+        adapter_stage: "metadata-read",
+        next_step: "map field capabilities reads onto Rust mapping/type metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_RECOVERY_ACTION_NAME,
@@ -635,6 +645,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster-search-shards transport execution requires shard routing metadata response rendering",
+        },
+        OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "field-capabilities transport execution requires mapping metadata response rendering",
         },
         OPENSEARCH_RECOVERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2577,6 +2592,44 @@ pub fn read_opensearch_get_field_mappings_request_message(
     OpenSearchGetFieldMappingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_field_capabilities_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchFieldCapabilitiesRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_field_capabilities_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFieldCapabilitiesRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchFieldCapabilitiesRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_aliases_request_message(
     request_id: i64,
     version: Version,
@@ -3615,6 +3668,119 @@ impl OpenSearchGetFieldMappingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get field mappings execution",
             reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFieldCapabilitiesRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub fields: Vec<String>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub merge_results: bool,
+    pub include_unmapped: bool,
+    pub index_filter_name: Option<String>,
+    pub now_in_millis: Option<i64>,
+}
+
+impl Default for OpenSearchFieldCapabilitiesRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            fields: vec!["*".to_string()],
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            merge_results: true,
+            include_unmapped: false,
+            index_filter_name: None,
+            now_in_millis: None,
+        }
+    }
+}
+
+impl OpenSearchFieldCapabilitiesRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.fields);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_bool(self.merge_results);
+        output.write_bool(self.include_unmapped);
+        write_optional_named_writeable_marker(output, self.index_filter_name.as_deref());
+        write_optional_i64(output, self.now_in_millis);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            fields: input.read_string_array()?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            merge_results: input.read_bool()?,
+            include_unmapped: input.read_bool()?,
+            index_filter_name: read_optional_named_writeable_marker(&mut input)?,
+            now_in_millis: read_optional_i64(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.fields.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities empty fields",
+                reason: "OpenSearch field-capabilities requests require at least one field",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities index filter",
+                reason: "index-scoped field-capabilities reads require index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities indices options",
+                reason:
+                    "custom field-capabilities indices options require index resolution semantics",
+            });
+        }
+        if !self.merge_results {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities unmerged results",
+                reason:
+                    "unmerged field-capabilities responses require per-index response rendering",
+            });
+        }
+        if self.include_unmapped {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities include unmapped",
+                reason:
+                    "include-unmapped field-capabilities responses require unmapped field expansion",
+            });
+        }
+        if self.index_filter_name.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities index filter query",
+                reason: "field-capabilities index filters require query builder rewrite semantics",
+            });
+        }
+        if self.now_in_millis.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities now in millis",
+                reason: "field-capabilities timestamp injection is only valid with query rewrite semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "field capabilities execution",
+            reason:
+                "field-capabilities transport execution requires mapping metadata response rendering",
         })
     }
 }
@@ -9786,6 +9952,15 @@ mod tests {
                     next_step: "map bounded search-shards requests onto Rust shard routing metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/field_caps",
+                    action_type: "FieldCapabilitiesAction",
+                    transport_action: "TransportFieldCapabilitiesAction",
+                    request_wire_type: "FieldCapabilitiesRequest",
+                    response_wire_type: "FieldCapabilitiesResponse",
+                    adapter_stage: "metadata-read",
+                    next_step: "map field capabilities reads onto Rust mapping/type metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:monitor/recovery",
                     action_type: "RecoveryAction",
                     transport_action: "TransportRecoveryAction",
@@ -10073,6 +10248,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RECOVERY_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -10132,6 +10312,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
@@ -13288,6 +13469,140 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get field mappings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_field_capabilities_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchFieldCapabilitiesRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchFieldCapabilitiesRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_field_capabilities_request_rejects_unsupported_shapes() {
+        let empty_fields = OpenSearchFieldCapabilitiesRequestWire {
+            fields: Vec::new(),
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            empty_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities empty fields",
+                ..
+            })
+        ));
+
+        let index_filter = OpenSearchFieldCapabilitiesRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities index filter",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchFieldCapabilitiesRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open()
+            },
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities indices options",
+                ..
+            })
+        ));
+
+        let unmerged = OpenSearchFieldCapabilitiesRequestWire {
+            merge_results: false,
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            unmerged.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities unmerged results",
+                ..
+            })
+        ));
+
+        let include_unmapped = OpenSearchFieldCapabilitiesRequestWire {
+            include_unmapped: true,
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            include_unmapped.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities include unmapped",
+                ..
+            })
+        ));
+
+        let query_filter = OpenSearchFieldCapabilitiesRequestWire {
+            index_filter_name: Some("term".to_string()),
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            query_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities index filter query",
+                ..
+            })
+        ));
+
+        let now = OpenSearchFieldCapabilitiesRequestWire {
+            now_in_millis: Some(42),
+            ..OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        assert!(matches!(
+            now.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities now in millis",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_field_capabilities_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchFieldCapabilitiesRequestWire::default();
+        let mut frame = build_opensearch_field_capabilities_request_message(
+            57,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected field capabilities request message");
+        };
+        assert_eq!(
+            read_opensearch_field_capabilities_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_field_capabilities_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities execution",
                 ..
             })
         ));

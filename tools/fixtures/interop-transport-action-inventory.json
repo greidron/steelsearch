@@ -139,6 +139,15 @@
       "reason": "Cluster-search-shards transport execution requires shard routing metadata response rendering before Steelsearch can serve OpenSearch search-shards semantics."
     },
     {
+      "action_name": "indices:data/read/field_caps",
+      "action_type": "FieldCapabilitiesAction",
+      "transport_action": "TransportFieldCapabilitiesAction",
+      "request_wire_type": "FieldCapabilitiesRequest",
+      "response_wire_type": "FieldCapabilitiesResponse",
+      "disposition": "rejected",
+      "reason": "Field-capabilities transport execution requires mapping metadata response rendering before Steelsearch can serve OpenSearch field capabilities semantics."
+    },
+    {
       "action_name": "indices:monitor/recovery",
       "action_type": "RecoveryAction",
       "transport_action": "TransportRecoveryAction",

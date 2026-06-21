@@ -191,6 +191,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
+- `indices:data/read/field_caps` (rejected fail-closed)
 - `indices:monitor/recovery` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
 - `indices:monitor/point_in_time/segments` (rejected fail-closed)
@@ -343,6 +344,18 @@ The get-field-mappings boundary covers:
   until field mapping metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and get-field-mappings execution.
+
+The field-capabilities boundary covers:
+
+- OpenSearch `FieldCapabilitiesRequest` parent task, fields array, indices
+  array, `IndicesOptions.strictExpandOpen()`, `mergeResults`, `includeUnmapped`,
+  optional index-filter query marker, and optional `nowInMillis` at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:data/read/field_caps` until
+  mapping/type metadata response rendering is implemented;
+- explicit rejection for empty fields, index filters, custom indices options,
+  unmerged responses, include-unmapped expansion, index-filter query rewrite,
+  timestamp injection, and field-capabilities execution.
 
 The get-aliases boundary covers:
 
@@ -897,6 +910,24 @@ encode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
+
+Current field-capabilities reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin field-capabilities-reject-wire-benchmark
+field_capabilities_reject_request_encode iterations=400000 elapsed_ms=245.330 ops_per_second=1630460.22 nanos_per_op=613.32
+field_capabilities_reject_request_decode iterations=400000 elapsed_ms=267.059 ops_per_second=1497794.63 nanos_per_op=667.65
+field_capabilities_reject_validation iterations=400000 elapsed_ms=272.583 ops_per_second=1467442.71 nanos_per_op=681.46
+field_capabilities_reject_wire_bottleneck_ops_per_second=1467442.71
+```
+
+The current field-capabilities fail-closed boundary bottleneck is validation.
+This path carries the ActionRequest parent task, field and index arrays,
+`IndicesOptions.strictExpandOpen()`, merge/include-unmapped flags, optional
+query marker, and optional timestamp before rejecting execution. At roughly
+1.47M ops/s in the latest local release run, the boundary itself is
+lightweight; the first performance point to inspect before accepting execution
+is mapping/type metadata aggregation and field-capabilities response rendering.
 
 Current get-aliases reject wire microbenchmark:
 
