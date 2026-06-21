@@ -4,6 +4,15 @@
   "scope": "accepted-interop-transport-actions",
   "actions": [
     {
+      "action_name": "cluster:monitor/main",
+      "action_type": "MainAction",
+      "transport_action": "TransportMainAction",
+      "request_wire_type": "MainRequest",
+      "response_wire_type": "MainResponse",
+      "disposition": "rejected",
+      "reason": "Main transport execution requires node, cluster, version, and build response rendering before Steelsearch can serve OpenSearch root info semantics."
+    },
+    {
       "action_name": "cluster:monitor/state",
       "action_type": "ClusterStateAction",
       "transport_action": "TransportClusterStateAction",

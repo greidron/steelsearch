@@ -21,6 +21,7 @@ use crate::TransportMessage;
 
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
+pub const MAIN_ACTION_NAME: &str = "cluster:monitor/main";
 pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
 pub const CAT_SHARDS_ACTION_NAME: &str = "cluster:monitor/shards";
 pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
@@ -105,6 +106,13 @@ pub struct SourceTransportActionSpec {
 }
 
 pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
+    SourceTransportActionSpec {
+        action_name: MAIN_ACTION_NAME,
+        action_type: "MainAction",
+        transport_action: "TransportMainAction",
+        request_wire_type: "MainRequest",
+        response_wire_type: "MainResponse",
+    },
     SourceTransportActionSpec {
         action_name: CLUSTER_STATE_ACTION_NAME,
         action_type: "ClusterStateAction",
@@ -685,6 +693,11 @@ pub fn classify_opensearch_transport_action(
         "priority transport adapter target; request/response codec and semantic adapter are not registered yet";
 
     match action_name {
+        MAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "main transport execution requires node, cluster, version, and build response rendering",
+        },
         CLUSTER_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
@@ -2413,6 +2426,44 @@ pub fn read_cluster_stats_request_message(
         });
     }
     ClusterStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_main_request_message(
+    request_id: i64,
+    version: Version,
+    request: &MainRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(MAIN_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_main_request_message(
+    message: &TransportMessage,
+) -> Result<MainRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != MAIN_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: MAIN_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    MainRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_cat_shards_request_message(
@@ -7338,6 +7389,45 @@ impl OpenSearchGetAllPitsRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MainRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+}
+
+impl Default for MainRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+        }
+    }
+}
+
+impl MainRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "main execution",
+            reason: "main transport execution requires node, cluster, version, and build response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcknowledgedResponseWire {
     pub acknowledged: bool,
 }
@@ -11645,6 +11735,13 @@ mod tests {
             SOURCE_DERIVED_CLUSTER_ACTIONS,
             &[
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/main",
+                    action_type: "MainAction",
+                    transport_action: "TransportMainAction",
+                    request_wire_type: "MainRequest",
+                    response_wire_type: "MainResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/state",
                     action_type: "ClusterStateAction",
                     transport_action: "TransportClusterStateAction",
@@ -12198,6 +12295,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_REPOSITORIES_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(MAIN_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -14407,6 +14508,46 @@ mod tests {
             read_cluster_health_response_message(&message).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn main_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = MainRequestWire {
+            parent_task_node: "node-1".to_string(),
+            parent_task_id: Some(42),
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = MainRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "main execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn main_transport_messages_bind_rejected_action_frame() {
+        let request = MainRequestWire::default();
+        let mut frame =
+            build_main_request_message(71, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected main request message");
+        };
+        assert_eq!(read_main_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_main_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "main execution",
+                ..
+            })
+        ));
     }
 
     #[test]

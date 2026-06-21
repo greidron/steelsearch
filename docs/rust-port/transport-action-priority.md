@@ -176,6 +176,7 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
 As of the bulk transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
+- `cluster:monitor/main` (rejected fail-closed)
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
@@ -247,6 +248,15 @@ The health adapter covers:
   levels, weighted-routing waits, transport-level level application, embedded
   index health details, and awareness health response payloads until those
   semantics are mapped.
+
+The main boundary covers:
+
+- OpenSearch `MainRequest` parent task at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/main` until node
+  name, cluster name, cluster UUID, version, and build metadata response
+  rendering are implemented;
+- explicit rejection at execution so Steelsearch does not emit incomplete root
+  info semantics through transport.
 
 The cluster-stats boundary covers:
 
@@ -912,6 +922,22 @@ JSON source materialization and only validates the bounded enum-set/default
 request shape, so it is materially lighter than index/update/bulk request
 decode. At roughly 1.64M ops/s in the latest local release run, this adapter
 does not introduce a transport-wire bottleneck.
+
+Current main reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin main-reject-wire-benchmark
+main_reject_request_encode iterations=400000 elapsed_ms=180.233 ops_per_second=2219352.17 nanos_per_op=450.58
+main_reject_request_decode iterations=400000 elapsed_ms=174.344 ops_per_second=2294317.85 nanos_per_op=435.86
+main_reject_validation iterations=400000 elapsed_ms=177.000 ops_per_second=2259888.73 nanos_per_op=442.50
+main_reject_wire_bottleneck_ops_per_second=2219352.17
+```
+
+The current main fail-closed boundary bottleneck is request encode over the
+parent-task-only request frame. At roughly 2.22M ops/s in the latest local
+release run, this boundary is not a material performance bottleneck; the first
+performance-sensitive work is main response rendering from node, cluster,
+version, and build metadata.
 
 Current cluster-stats reject wire microbenchmark:
 
