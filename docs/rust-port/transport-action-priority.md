@@ -201,6 +201,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/delete` (rejected fail-closed)
 - `cluster:admin/repository/verify` (rejected fail-closed)
 - `cluster:admin/repository/_cleanup` (rejected fail-closed)
+- `cluster:admin/snapshot/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -507,6 +508,18 @@ The cleanup-repository boundary covers:
   implemented;
 - explicit rejection for blank repository names and cleanup-repository
   execution.
+
+The get-snapshots boundary covers:
+
+- OpenSearch `GetSnapshotsRequest` parent task, cluster-manager timeout,
+  repository name, snapshot selector array, `ignoreUnavailable`, and `verbose`
+  flags at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/snapshot/get` until
+  repository snapshot metadata resolution, current snapshot resolution, and
+  snapshot response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, blank repository names,
+  snapshot selectors, `ignoreUnavailable`, non-verbose response mode, and
+  get-snapshots execution.
 
 The get-mappings boundary covers:
 
@@ -1473,6 +1486,24 @@ envelope for this action. At roughly 1.63M ops/s in the latest local release
 run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is repository cleanup coordination, repository blob
 cleanup, and cleanup result rendering.
+
+Current get-snapshots reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-snapshots-reject-wire-benchmark
+get_snapshots_reject_request_encode iterations=400000 elapsed_ms=227.563 ops_per_second=1757758.57 nanos_per_op=568.91
+get_snapshots_reject_request_decode iterations=400000 elapsed_ms=222.596 ops_per_second=1796978.69 nanos_per_op=556.49
+get_snapshots_reject_validation iterations=400000 elapsed_ms=237.968 ops_per_second=1680897.17 nanos_per_op=594.92
+get_snapshots_reject_wire_bottleneck_ops_per_second=1680897.17
+```
+
+The current get-snapshots fail-closed boundary bottleneck is request
+validation. The payload includes the cluster-manager request envelope,
+repository name, empty snapshot selector array, `ignoreUnavailable`, and
+`verbose` before admission rejects execution. At roughly 1.68M ops/s in the
+latest local release run, this boundary is not a material transport bottleneck;
+the first performance-sensitive work is repository data loading, current
+snapshot resolution, snapshot info loading, and response rendering.
 
 Current get-mappings reject wire microbenchmark:
 

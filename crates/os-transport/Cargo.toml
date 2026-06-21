@@ -90,6 +90,10 @@ name = "cleanup-repository-reject-wire-benchmark"
 path = "benchmarks/cleanup_repository_reject_wire.rs"
 
 [[bin]]
+name = "get-snapshots-reject-wire-benchmark"
+path = "benchmarks/get_snapshots_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 
