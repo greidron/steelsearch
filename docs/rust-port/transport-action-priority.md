@@ -208,6 +208,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/restore` (rejected fail-closed)
 - `cluster:admin/snapshot/status` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
+- `cluster:admin/routing/awareness/weights/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -609,6 +610,19 @@ The add-weighted-routing boundary covers:
   attribute names, missing weights, missing versions, non-finite weights,
   too many zero weights, non-double generic weight values, and
   add-weighted-routing execution.
+
+The get-weighted-routing boundary covers:
+
+- OpenSearch 3.7 `ClusterGetWeightedRoutingRequest` parent task,
+  cluster-manager timeout, `local` read flag, and awareness attribute name at
+  the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/routing/awareness/weights/get` until weighted routing
+  metadata lookup, awareness attribute verification, discovered
+  cluster-manager flag handling, version rendering, and response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, missing
+  awareness attribute names, and get-weighted-routing execution.
 
 The get-mappings boundary covers:
 
@@ -1709,6 +1723,24 @@ roughly 917K ops/s in the latest local release run, this boundary is not the
 primary expected performance risk; the first performance-sensitive work is
 awareness attribute verification, version-conflict checks, weighted routing
 metadata mutation, cluster-state publication, and acknowledgement rendering.
+
+Current get-weighted-routing reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-weighted-routing-reject-wire-benchmark
+get_weighted_routing_reject_request_encode iterations=400000 elapsed_ms=307.201 ops_per_second=1302080.10 nanos_per_op=768.00
+get_weighted_routing_reject_request_decode iterations=400000 elapsed_ms=305.909 ops_per_second=1307577.24 nanos_per_op=764.77
+get_weighted_routing_reject_validation iterations=400000 elapsed_ms=328.614 ops_per_second=1217232.82 nanos_per_op=821.54
+get_weighted_routing_reject_wire_bottleneck_ops_per_second=1217232.82
+```
+
+The current get-weighted-routing fail-closed boundary bottleneck is request
+validation. The payload includes the cluster-manager read request envelope,
+local flag, and awareness attribute name before admission rejects execution. At
+roughly 1.22M ops/s in the latest local release run, this boundary is not the
+primary expected performance risk; the first performance-sensitive work is
+awareness attribute verification, weighted routing metadata lookup, version
+rendering, discovered cluster-manager flag handling, and response rendering.
 
 Current get-mappings reject wire microbenchmark:
 

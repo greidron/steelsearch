@@ -53,6 +53,8 @@ pub const RESTORE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/restore";
 pub const SNAPSHOTS_STATUS_ACTION_NAME: &str = "cluster:admin/snapshot/status";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
+pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
+    "cluster:admin/routing/awareness/weights/get";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -353,6 +355,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportAddWeightedRoutingAction",
         request_wire_type: "ClusterPutWeightedRoutingRequest",
         response_wire_type: "ClusterPutWeightedRoutingResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME,
+        action_type: "ClusterGetWeightedRoutingAction",
+        transport_action: "TransportGetWeightedRoutingAction",
+        request_wire_type: "ClusterGetWeightedRoutingRequest",
+        response_wire_type: "ClusterGetWeightedRoutingResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -1043,6 +1052,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "add-weighted-routing transport execution requires weighted routing metadata mutation and acknowledgement rendering",
+        },
+        CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-weighted-routing transport execution requires weighted routing metadata lookup and response rendering",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4144,6 +4158,44 @@ pub fn read_cluster_put_weighted_routing_request_message(
     ClusterPutWeightedRoutingRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_cluster_get_weighted_routing_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterGetWeightedRoutingRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_get_weighted_routing_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterGetWeightedRoutingRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterGetWeightedRoutingRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_mappings_request_message(
     request_id: i64,
     version: Version,
@@ -6828,6 +6880,77 @@ impl ClusterPutWeightedRoutingRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put weighted routing execution",
             reason: "put-weighted-routing transport execution requires weighted routing metadata mutation and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterGetWeightedRoutingRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub awareness_attribute: String,
+}
+
+impl Default for ClusterGetWeightedRoutingRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            awareness_attribute: String::new(),
+        }
+    }
+}
+
+impl ClusterGetWeightedRoutingRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string(&self.awareness_attribute);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            awareness_attribute: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout requires weighted routing metadata lookup coordination",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing local read",
+                reason: "local weighted-routing reads require local cluster-state metadata lookup semantics",
+            });
+        }
+        if self.awareness_attribute.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing missing attribute",
+                reason:
+                    "OpenSearch get-weighted-routing requests require an awareness attribute name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get weighted routing execution",
+            reason: "get-weighted-routing transport execution requires weighted routing metadata lookup and response rendering",
         })
     }
 }
@@ -14999,6 +15122,15 @@ mod tests {
         }
     }
 
+    fn valid_cluster_get_weighted_routing_request() -> ClusterGetWeightedRoutingRequestWire {
+        ClusterGetWeightedRoutingRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(38),
+            awareness_attribute: "zone".to_string(),
+            ..ClusterGetWeightedRoutingRequestWire::default()
+        }
+    }
+
     #[test]
     fn source_derived_cluster_actions_have_opensearch_names_and_wire_types() {
         assert_eq!(
@@ -15227,6 +15359,13 @@ mod tests {
                     transport_action: "TransportAddWeightedRoutingAction",
                     request_wire_type: "ClusterPutWeightedRoutingRequest",
                     response_wire_type: "ClusterPutWeightedRoutingResponse",
+                },
+                SourceTransportActionSpec {
+                    action_name: "cluster:admin/routing/awareness/weights/get",
+                    action_type: "ClusterGetWeightedRoutingAction",
+                    transport_action: "TransportGetWeightedRoutingAction",
+                    request_wire_type: "ClusterGetWeightedRoutingRequest",
+                    response_wire_type: "ClusterGetWeightedRoutingResponse",
                 },
                 SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
@@ -21426,6 +21565,89 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put weighted routing execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_get_weighted_routing_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = valid_cluster_get_weighted_routing_request();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClusterGetWeightedRoutingRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_get_weighted_routing_request_rejects_unsupported_shapes() {
+        let timeout = ClusterGetWeightedRoutingRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..valid_cluster_get_weighted_routing_request()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = ClusterGetWeightedRoutingRequestWire {
+            local: true,
+            ..valid_cluster_get_weighted_routing_request()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing local read",
+                ..
+            })
+        ));
+
+        let missing_attribute = ClusterGetWeightedRoutingRequestWire {
+            awareness_attribute: " ".to_string(),
+            ..valid_cluster_get_weighted_routing_request()
+        };
+        assert!(matches!(
+            missing_attribute.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing missing attribute",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_get_weighted_routing_transport_messages_bind_rejected_action_frame() {
+        let request = valid_cluster_get_weighted_routing_request();
+        let mut frame = build_cluster_get_weighted_routing_request_message(
+            38,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get weighted routing request message");
+        };
+        assert_eq!(
+            read_cluster_get_weighted_routing_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_cluster_get_weighted_routing_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get weighted routing execution",
                 ..
             })
         ));
