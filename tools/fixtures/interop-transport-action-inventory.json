@@ -220,6 +220,15 @@
       "reason": "Search-scroll transport execution requires scroll context lifecycle mapping before Steelsearch can serve OpenSearch scroll semantics."
     },
     {
+      "action_name": "indices:data/read/scroll/clear",
+      "action_type": "ClearScrollAction",
+      "transport_action": "TransportClearScrollAction",
+      "request_wire_type": "ClearScrollRequest",
+      "response_wire_type": "ClearScrollResponse",
+      "disposition": "rejected",
+      "reason": "Clear-scroll transport execution requires scroll context lifecycle mapping before Steelsearch can serve OpenSearch clear-scroll semantics."
+    },
+    {
       "action_name": "indices:data/read/explain",
       "action_type": "ExplainAction",
       "transport_action": "TransportExplainAction",

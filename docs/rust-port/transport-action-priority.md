@@ -200,6 +200,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
 - `indices:data/read/scroll` (rejected fail-closed)
+- `indices:data/read/scroll/clear` (rejected fail-closed)
 - `indices:data/read/explain` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
@@ -464,6 +465,16 @@ The search-scroll boundary covers:
   scroll context lifecycle and response rendering are mapped;
 - explicit rejection for empty scroll ids, missing keep-alive values, and
   search-scroll execution.
+
+The clear-scroll boundary covers:
+
+- OpenSearch `ClearScrollRequest` parent task and scroll id array at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:data/read/scroll/clear`
+  until scroll context invalidation and clear-scroll response rendering are
+  mapped;
+- explicit rejection for empty scroll id arrays, empty scroll id entries, and
+  clear-scroll execution.
 
 The explain boundary covers:
 
@@ -1034,6 +1045,23 @@ keep-alive time value before rejecting execution. At roughly 1.50M ops/s in the
 latest local release run, it remains a lightweight scroll control boundary; the
 first performance point to inspect before accepting execution is scroll context
 lookup/update and search response rendering.
+
+Current clear-scroll reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin clear-scroll-reject-wire-benchmark
+clear_scroll_reject_request_encode iterations=400000 elapsed_ms=275.865 ops_per_second=1449983.00 nanos_per_op=689.66
+clear_scroll_reject_request_decode iterations=400000 elapsed_ms=258.081 ops_per_second=1549900.89 nanos_per_op=645.20
+clear_scroll_reject_validation iterations=400000 elapsed_ms=260.069 ops_per_second=1538050.78 nanos_per_op=650.17
+clear_scroll_reject_wire_bottleneck_ops_per_second=1449983.00
+```
+
+The current clear-scroll fail-closed boundary bottleneck is request encode. The
+path carries only the ActionRequest parent task and scroll id array before
+rejecting execution. At roughly 1.45M ops/s in the latest local release run,
+the boundary itself is lightweight; the first performance point to inspect
+before accepting execution is scroll context invalidation and clear-scroll
+response rendering.
 
 Current explain reject wire microbenchmark:
 

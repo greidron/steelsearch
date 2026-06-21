@@ -36,6 +36,7 @@ pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
 pub const OPENSEARCH_STREAM_SEARCH_ACTION_NAME: &str = "indices:data/read/search/stream";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_SEARCH_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll";
+pub const OPENSEARCH_CLEAR_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll/clear";
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
@@ -221,6 +222,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "SearchResponse",
         adapter_stage: "search-scroll",
         next_step: "map scroll context ids and keep-alive updates onto Rust search context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_CLEAR_SCROLL_ACTION_NAME,
+        action_type: "ClearScrollAction",
+        transport_action: "TransportClearScrollAction",
+        request_wire_type: "ClearScrollRequest",
+        response_wire_type: "ClearScrollResponse",
+        adapter_stage: "search-scroll",
+        next_step: "map scroll id invalidation onto Rust search context lifecycle",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_EXPLAIN_ACTION_NAME,
@@ -625,6 +635,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "search-scroll transport execution requires scroll context lifecycle mapping",
+        },
+        OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "clear-scroll transport execution requires scroll context lifecycle mapping",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2799,6 +2814,44 @@ pub fn read_opensearch_search_scroll_request_message(
     OpenSearchSearchScrollRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_clear_scroll_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchClearScrollRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_CLEAR_SCROLL_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_clear_scroll_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchClearScrollRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_CLEAR_SCROLL_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_CLEAR_SCROLL_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchClearScrollRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_explain_request_message(
     request_id: i64,
     version: Version,
@@ -4340,6 +4393,61 @@ impl OpenSearchSearchScrollRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search scroll execution",
             reason: "search-scroll transport execution requires scroll context lifecycle mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchClearScrollRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub scroll_ids: Vec<String>,
+}
+
+impl Default for OpenSearchClearScrollRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            scroll_ids: vec!["scroll-context".to_string()],
+        }
+    }
+}
+
+impl OpenSearchClearScrollRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.scroll_ids);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            scroll_ids: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.scroll_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll empty ids",
+                reason: "OpenSearch clear-scroll requests require at least one scroll id",
+            });
+        }
+        if self.scroll_ids.iter().any(String::is_empty) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll empty id",
+                reason: "OpenSearch clear-scroll requests require non-empty scroll ids",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "clear scroll execution",
+            reason: "clear-scroll transport execution requires scroll context lifecycle mapping",
         })
     }
 }
@@ -8829,6 +8937,15 @@ mod tests {
                     next_step: "map scroll context ids and keep-alive updates onto Rust search context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/scroll/clear",
+                    action_type: "ClearScrollAction",
+                    transport_action: "TransportClearScrollAction",
+                    request_wire_type: "ClearScrollRequest",
+                    response_wire_type: "ClearScrollResponse",
+                    adapter_stage: "search-scroll",
+                    next_step: "map scroll id invalidation onto Rust search context lifecycle",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/explain",
                     action_type: "ExplainAction",
                     transport_action: "TransportExplainAction",
@@ -9083,6 +9200,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CLEAR_SCROLL_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -9206,6 +9327,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
             {
                 assert_eq!(
@@ -13449,6 +13571,74 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search scroll execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_clear_scroll_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchClearScrollRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchClearScrollRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_clear_scroll_request_rejects_unsupported_shapes() {
+        let empty_ids = OpenSearchClearScrollRequestWire {
+            scroll_ids: Vec::new(),
+            ..OpenSearchClearScrollRequestWire::default()
+        };
+        assert!(matches!(
+            empty_ids.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll empty ids",
+                ..
+            })
+        ));
+
+        let empty_id = OpenSearchClearScrollRequestWire {
+            scroll_ids: vec![String::new()],
+            ..OpenSearchClearScrollRequestWire::default()
+        };
+        assert!(matches!(
+            empty_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll empty id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_clear_scroll_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchClearScrollRequestWire::default();
+        let mut frame =
+            build_opensearch_clear_scroll_request_message(51, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear-scroll request message");
+        };
+        assert_eq!(
+            read_opensearch_clear_scroll_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_clear_scroll_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll execution",
                 ..
             })
         ));

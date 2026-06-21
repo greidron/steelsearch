@@ -122,6 +122,10 @@ name = "search-scroll-reject-wire-benchmark"
 path = "benchmarks/search_scroll_reject_wire.rs"
 
 [[bin]]
+name = "clear-scroll-reject-wire-benchmark"
+path = "benchmarks/clear_scroll_reject_wire.rs"
+
+[[bin]]
 name = "explain-reject-wire-benchmark"
 path = "benchmarks/explain_reject_wire.rs"
 
