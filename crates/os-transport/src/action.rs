@@ -110,6 +110,7 @@ pub const OPENSEARCH_VALIDATE_QUERY_ACTION_NAME: &str = "indices:admin/validate/
 pub const OPENSEARCH_FLUSH_ACTION_NAME: &str = "indices:admin/flush";
 pub const OPENSEARCH_FORCE_MERGE_ACTION_NAME: &str = "indices:admin/forcemerge";
 pub const OPENSEARCH_UPGRADE_ACTION_NAME: &str = "indices:admin/upgrade";
+pub const OPENSEARCH_UPGRADE_STATUS_ACTION_NAME: &str = "indices:monitor/upgrade";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -804,6 +805,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map upgrade requests onto Rust shard segment upgrade execution, primary availability checks, settings update, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPGRADE_STATUS_ACTION_NAME,
+        action_type: "UpgradeStatusAction",
+        transport_action: "TransportUpgradeStatusAction",
+        request_wire_type: "UpgradeStatusRequest",
+        response_wire_type: "UpgradeStatusResponse",
+        adapter_stage: "index-upgrade-admin",
+        next_step: "map upgrade-status requests onto Rust shard segment-version stats, routing metadata, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
         action_type: "GetAliasesAction",
         transport_action: "TransportGetAliasesAction",
@@ -1410,6 +1420,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "upgrade transport execution requires shard segment upgrade execution, primary availability checks, settings update, and response rendering",
+        },
+        OPENSEARCH_UPGRADE_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "upgrade-status transport execution requires shard segment-version stats, routing metadata, and response rendering",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -16984,6 +16999,67 @@ impl OpenSearchUpgradeRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpgradeStatusRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl Default for OpenSearchUpgradeStatusRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+        }
+    }
+}
+
+impl OpenSearchUpgradeStatusRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade status indices",
+                reason:
+                    "index-scoped upgrade-status requires OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade status indices options",
+                reason: "custom upgrade-status indices options require index resolution semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "upgrade status execution",
+            reason: "upgrade-status transport execution requires shard segment-version stats and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchValidateQueryRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -17303,6 +17379,44 @@ pub fn read_opensearch_upgrade_request_message(
         });
     }
     OpenSearchUpgradeRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_upgrade_status_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchUpgradeStatusRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPGRADE_STATUS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_upgrade_status_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpgradeStatusRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPGRADE_STATUS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPGRADE_STATUS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchUpgradeStatusRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_refresh_response_message(
@@ -19379,6 +19493,15 @@ mod tests {
                     next_step: "map upgrade requests onto Rust shard segment upgrade execution, primary availability checks, settings update, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:monitor/upgrade",
+                    action_type: "UpgradeStatusAction",
+                    transport_action: "TransportUpgradeStatusAction",
+                    request_wire_type: "UpgradeStatusRequest",
+                    response_wire_type: "UpgradeStatusResponse",
+                    adapter_stage: "index-upgrade-admin",
+                    next_step: "map upgrade-status requests onto Rust shard segment-version stats, routing metadata, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -19901,6 +20024,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPGRADE_STATUS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -20005,6 +20132,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -30048,6 +30176,90 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_status_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchUpgradeStatusRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchUpgradeStatusRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchUpgradeStatusRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade status execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_status_request_rejects_unsupported_shapes() {
+        let indices = OpenSearchUpgradeStatusRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchUpgradeStatusRequestWire::default()
+        };
+        assert!(matches!(
+            indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade status indices",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchUpgradeStatusRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..OpenSearchUpgradeStatusRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade status indices options",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_status_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchUpgradeStatusRequestWire::default();
+        let mut frame = build_opensearch_upgrade_status_request_message(
+            72,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected upgrade status request message");
+        };
+        assert_eq!(
+            read_opensearch_upgrade_status_request_message(&message).unwrap(),
+            request
+        );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert!(matches!(
+            read_opensearch_upgrade_status_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade status execution",
                 ..
             })
         ));

@@ -598,6 +598,15 @@
       "reason": "Upgrade transport execution requires shard segment upgrade execution, primary availability checks, settings update, and response rendering before Steelsearch can serve OpenSearch upgrade semantics."
     },
     {
+      "action_name": "indices:monitor/upgrade",
+      "action_type": "UpgradeStatusAction",
+      "transport_action": "TransportUpgradeStatusAction",
+      "request_wire_type": "UpgradeStatusRequest",
+      "response_wire_type": "UpgradeStatusResponse",
+      "disposition": "rejected",
+      "reason": "Upgrade-status transport execution requires shard segment-version stats, routing metadata, and response rendering before Steelsearch can serve OpenSearch upgrade-status semantics."
+    },
+    {
       "action_name": "indices:admin/aliases/get",
       "action_type": "GetAliasesAction",
       "transport_action": "TransportGetAliasesAction",

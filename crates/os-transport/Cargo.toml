@@ -290,6 +290,10 @@ name = "upgrade-reject-wire-benchmark"
 path = "benchmarks/upgrade_reject_wire.rs"
 
 [[bin]]
+name = "upgrade-status-reject-wire-benchmark"
+path = "benchmarks/upgrade_status_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

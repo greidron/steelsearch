@@ -254,6 +254,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/flush` (rejected fail-closed)
 - `indices:admin/forcemerge` (rejected fail-closed)
 - `indices:admin/upgrade` (rejected fail-closed)
+- `indices:monitor/upgrade` (rejected fail-closed)
 - `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
@@ -1056,6 +1057,17 @@ The upgrade boundary covers:
   response rendering are implemented against Rust shard state;
 - explicit rejection for index filters, custom indices options,
   ancient-segment-only upgrades, and upgrade execution.
+
+The upgrade-status boundary covers:
+
+- OpenSearch `UpgradeStatusRequest` parent task, nullable index array, and
+  default `IndicesOptions.strictExpandOpenAndForbidClosed()` at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:monitor/upgrade` until shard
+  segment-version stats, routing metadata, and response rendering are
+  implemented against Rust shard state;
+- explicit rejection for index filters, custom indices options, and
+  upgrade-status execution.
 
 The field-capabilities boundary covers:
 
@@ -2573,6 +2585,23 @@ strict-expand-open-forbid-closed indices options, and
 1.54M ops/s in the latest local release run, the remaining performance-sensitive
 work is segment upgrade scheduling, primary availability validation, settings
 update coordination, and response rendering.
+
+Current upgrade-status reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin upgrade-status-reject-wire-benchmark
+upgrade_status_reject_request_encode iterations=400000 elapsed_ms=211.533 ops_per_second=1890957.49 nanos_per_op=528.83
+upgrade_status_reject_request_decode iterations=400000 elapsed_ms=222.684 ops_per_second=1796266.13 nanos_per_op=556.71
+upgrade_status_reject_validation iterations=400000 elapsed_ms=224.393 ops_per_second=1782590.54 nanos_per_op=560.98
+upgrade_status_reject_wire_bottleneck_ops_per_second=1782590.54
+```
+
+The current upgrade-status fail-closed boundary bottleneck is validation. The
+default benchmark writes the broadcast request envelope, empty index array, and
+default strict-expand-open-forbid-closed indices options before rejecting
+execution. At roughly 1.78M ops/s in the latest local release run, the remaining
+performance-sensitive work is shard segment-version scanning, routing metadata
+collection, byte-counter aggregation, and response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 
