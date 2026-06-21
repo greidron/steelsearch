@@ -255,6 +255,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/forcemerge` (rejected fail-closed)
 - `indices:admin/upgrade` (rejected fail-closed)
 - `indices:monitor/upgrade` (rejected fail-closed)
+- `internal:indices/admin/upgrade` (rejected fail-closed)
 - `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
@@ -1068,6 +1069,20 @@ The upgrade-status boundary covers:
   implemented against Rust shard state;
 - explicit rejection for index filters, custom indices options, and
   upgrade-status execution.
+
+The upgrade-settings boundary covers:
+
+- OpenSearch `UpgradeSettingsRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, and versions map from index name to OpenSearch
+  version id plus oldest Lucene segment version string at the wire decode/build
+  layer;
+- explicit fail-closed classification for `internal:indices/admin/upgrade`
+  until index setting metadata mutation, cluster-manager publication, and
+  acknowledgement rendering are implemented against Rust cluster metadata;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, empty versions maps, blank index names, invalid
+  version ids, blank oldest Lucene segment versions, and upgrade-settings
+  execution.
 
 The field-capabilities boundary covers:
 
@@ -2602,6 +2617,24 @@ default strict-expand-open-forbid-closed indices options before rejecting
 execution. At roughly 1.78M ops/s in the latest local release run, the remaining
 performance-sensitive work is shard segment-version scanning, routing metadata
 collection, byte-counter aggregation, and response rendering.
+
+Current upgrade-settings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin upgrade-settings-reject-wire-benchmark
+upgrade_settings_reject_request_encode iterations=400000 elapsed_ms=343.694 ops_per_second=1163826.18 nanos_per_op=859.23
+upgrade_settings_reject_request_decode iterations=400000 elapsed_ms=292.415 ops_per_second=1367916.77 nanos_per_op=731.04
+upgrade_settings_reject_validation iterations=400000 elapsed_ms=306.408 ops_per_second=1305446.97 nanos_per_op=766.02
+upgrade_settings_reject_wire_bottleneck_ops_per_second=1163826.18
+```
+
+The current upgrade-settings fail-closed boundary bottleneck is request encode.
+The default benchmark writes the parent task, default cluster-manager and
+acknowledgement timeouts, one versions-map entry, an OpenSearch version id, and
+the oldest Lucene segment version string before rejecting execution. At roughly
+1.16M ops/s in the latest local release run, the remaining performance-sensitive
+work is metadata mutation planning, cluster-state publication, acknowledgement
+tracking, and acknowledged response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 

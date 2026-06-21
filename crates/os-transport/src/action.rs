@@ -111,6 +111,7 @@ pub const OPENSEARCH_FLUSH_ACTION_NAME: &str = "indices:admin/flush";
 pub const OPENSEARCH_FORCE_MERGE_ACTION_NAME: &str = "indices:admin/forcemerge";
 pub const OPENSEARCH_UPGRADE_ACTION_NAME: &str = "indices:admin/upgrade";
 pub const OPENSEARCH_UPGRADE_STATUS_ACTION_NAME: &str = "indices:monitor/upgrade";
+pub const OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME: &str = "internal:indices/admin/upgrade";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -814,6 +815,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map upgrade-status requests onto Rust shard segment-version stats, routing metadata, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME,
+        action_type: "UpgradeSettingsAction",
+        transport_action: "TransportUpgradeSettingsAction",
+        request_wire_type: "UpgradeSettingsRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "index-upgrade-admin",
+        next_step: "map upgrade-settings requests onto Rust index setting metadata mutation, cluster-manager publication, and acknowledgement rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
         action_type: "GetAliasesAction",
         transport_action: "TransportGetAliasesAction",
@@ -1425,6 +1435,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "upgrade-status transport execution requires shard segment-version stats, routing metadata, and response rendering",
+        },
+        OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "upgrade-settings transport execution requires index setting metadata mutation, cluster-manager publication, and acknowledgement rendering",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -17060,6 +17075,134 @@ impl OpenSearchUpgradeStatusRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpgradeSettingsVersionWire {
+    pub version_id: i32,
+    pub oldest_lucene_segment_version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpgradeSettingsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub versions: BTreeMap<String, OpenSearchUpgradeSettingsVersionWire>,
+}
+
+impl Default for OpenSearchUpgradeSettingsRequestWire {
+    fn default() -> Self {
+        let mut versions = BTreeMap::new();
+        versions.insert(
+            "logs-000001".to_string(),
+            OpenSearchUpgradeSettingsVersionWire {
+                version_id: 3_070_099,
+                oldest_lucene_segment_version: "10.4.0".to_string(),
+            },
+        );
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            versions,
+        }
+    }
+}
+
+impl OpenSearchUpgradeSettingsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_vint(self.versions.len() as i32);
+        for (index, version) in &self.versions {
+            output.write_string(index);
+            output.write_vint(version.version_id);
+            output.write_string(&version.oldest_lucene_segment_version);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let version_count = input.read_vint()?;
+        if version_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings versions",
+                reason: "OpenSearch upgrade-settings versions map cannot have a negative length",
+            });
+        }
+        let mut versions = BTreeMap::new();
+        for _ in 0..version_count {
+            let index = input.read_string()?;
+            let version = OpenSearchUpgradeSettingsVersionWire {
+                version_id: input.read_vint()?,
+                oldest_lucene_segment_version: input.read_string()?,
+            };
+            versions.insert(index, version);
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            versions,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings cluster-manager timeout",
+                reason: "custom upgrade-settings cluster-manager timeouts require cluster-manager request scheduling semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings ack timeout",
+                reason: "custom upgrade-settings acknowledgement timeouts require cluster-state publication acknowledgement tracking",
+            });
+        }
+        if self.versions.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings versions",
+                reason:
+                    "OpenSearch upgrade-settings requests require at least one index version entry",
+            });
+        }
+        for (index, version) in &self.versions {
+            if index.trim().is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "upgrade settings index name",
+                    reason:
+                        "OpenSearch upgrade-settings version entries require a non-empty index name",
+                });
+            }
+            if version.version_id <= 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "upgrade settings version",
+                    reason: "OpenSearch upgrade-settings version entries require a positive OpenSearch version id",
+                });
+            }
+            if version.oldest_lucene_segment_version.trim().is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "upgrade settings lucene version",
+                    reason: "OpenSearch upgrade-settings version entries require an oldest Lucene segment version",
+                });
+            }
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "upgrade settings execution",
+            reason: "upgrade-settings transport execution requires index setting metadata mutation and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchValidateQueryRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -17417,6 +17560,44 @@ pub fn read_opensearch_upgrade_status_request_message(
         });
     }
     OpenSearchUpgradeStatusRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_upgrade_settings_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchUpgradeSettingsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_upgrade_settings_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpgradeSettingsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchUpgradeSettingsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_refresh_response_message(
@@ -19502,6 +19683,15 @@ mod tests {
                     next_step: "map upgrade-status requests onto Rust shard segment-version stats, routing metadata, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "internal:indices/admin/upgrade",
+                    action_type: "UpgradeSettingsAction",
+                    transport_action: "TransportUpgradeSettingsAction",
+                    request_wire_type: "UpgradeSettingsRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "index-upgrade-admin",
+                    next_step: "map upgrade-settings requests onto Rust index setting metadata mutation, cluster-manager publication, and acknowledgement rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -20028,6 +20218,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -20133,6 +20328,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -30260,6 +30456,159 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade status execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchUpgradeSettingsRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchUpgradeSettingsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_settings_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchUpgradeSettingsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(5),
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchUpgradeSettingsRequestWire {
+            ack_timeout: TimeValueWire::seconds(5),
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings ack timeout",
+                ..
+            })
+        ));
+
+        let empty_versions = OpenSearchUpgradeSettingsRequestWire {
+            versions: BTreeMap::new(),
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            empty_versions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings versions",
+                ..
+            })
+        ));
+
+        let mut blank_index_versions = BTreeMap::new();
+        blank_index_versions.insert(
+            " ".to_string(),
+            OpenSearchUpgradeSettingsVersionWire {
+                version_id: 3_070_099,
+                oldest_lucene_segment_version: "10.4.0".to_string(),
+            },
+        );
+        let blank_index = OpenSearchUpgradeSettingsRequestWire {
+            versions: blank_index_versions,
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings index name",
+                ..
+            })
+        ));
+
+        let mut bad_version_versions = BTreeMap::new();
+        bad_version_versions.insert(
+            "logs-000001".to_string(),
+            OpenSearchUpgradeSettingsVersionWire {
+                version_id: 0,
+                oldest_lucene_segment_version: "10.4.0".to_string(),
+            },
+        );
+        let bad_version = OpenSearchUpgradeSettingsRequestWire {
+            versions: bad_version_versions,
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            bad_version.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings version",
+                ..
+            })
+        ));
+
+        let mut blank_lucene_versions = BTreeMap::new();
+        blank_lucene_versions.insert(
+            "logs-000001".to_string(),
+            OpenSearchUpgradeSettingsVersionWire {
+                version_id: 3_070_099,
+                oldest_lucene_segment_version: String::new(),
+            },
+        );
+        let blank_lucene = OpenSearchUpgradeSettingsRequestWire {
+            versions: blank_lucene_versions,
+            ..OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            blank_lucene.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings lucene version",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_settings_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchUpgradeSettingsRequestWire::default();
+        let mut frame = build_opensearch_upgrade_settings_request_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected upgrade settings request message");
+        };
+        assert_eq!(
+            read_opensearch_upgrade_settings_request_message(&message).unwrap(),
+            request
+        );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert!(matches!(
+            read_opensearch_upgrade_settings_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade settings execution",
                 ..
             })
         ));
