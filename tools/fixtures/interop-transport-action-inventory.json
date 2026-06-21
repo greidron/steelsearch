@@ -22,6 +22,15 @@
       "reason": "Standalone cluster-level health request/response transport codec maps onto the Rust health semantic adapter."
     },
     {
+      "action_name": "cluster:monitor/stats",
+      "action_type": "ClusterStatsAction",
+      "transport_action": "TransportClusterStatsAction",
+      "request_wire_type": "ClusterStatsRequest",
+      "response_wire_type": "ClusterStatsResponse",
+      "disposition": "rejected",
+      "reason": "Cluster-stats transport execution requires runtime stats aggregation mapping before Steelsearch can serve OpenSearch cluster-stats semantics."
+    },
+    {
       "action_name": "cluster:admin/settings/update",
       "action_type": "ClusterUpdateSettingsAction",
       "transport_action": "TransportClusterUpdateSettingsAction",

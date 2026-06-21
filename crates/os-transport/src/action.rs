@@ -21,6 +21,7 @@ use crate::TransportMessage;
 
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
+pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -72,6 +73,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterHealthAction",
         request_wire_type: "ClusterHealthRequest",
         response_wire_type: "ClusterHealthResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLUSTER_STATS_ACTION_NAME,
+        action_type: "ClusterStatsAction",
+        transport_action: "TransportClusterStatsAction",
+        request_wire_type: "ClusterStatsRequest",
+        response_wire_type: "ClusterStatsResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -291,6 +299,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "cluster-health transport adapter is available for the standalone cluster-level subset",
+        },
+        CLUSTER_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -892,6 +905,111 @@ impl ClusterHealthResponseWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterStatsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub use_aggregated_node_level_responses: Option<bool>,
+    pub compute_all_metrics: Option<bool>,
+    pub metric_flags: i64,
+    pub index_metric_flags: i64,
+}
+
+impl Default for ClusterStatsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: Vec::new(),
+            timeout: None,
+            use_aggregated_node_level_responses: Some(false),
+            compute_all_metrics: Some(true),
+            metric_flags: 0,
+            index_metric_flags: 0,
+        }
+    }
+}
+
+impl ClusterStatsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        write_optional_bool(output, self.use_aggregated_node_level_responses);
+        write_optional_bool(output, self.compute_all_metrics);
+        output.write_i64(self.metric_flags);
+        output.write_i64(self.index_metric_flags);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats concrete nodes",
+                reason:
+                    "cluster-stats concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            use_aggregated_node_level_responses: read_optional_bool(&mut input)?,
+            compute_all_metrics: read_optional_bool(&mut input)?,
+            metric_flags: input.read_i64()?,
+            index_metric_flags: input.read_i64()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats node filter",
+                reason: "cluster-stats node-scoped routing requires runtime node stats aggregation mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats timeout",
+                reason: "cluster-stats timeout semantics require runtime stats aggregation mapping",
+            });
+        }
+        if self.use_aggregated_node_level_responses != Some(false) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats aggregated node responses",
+                reason:
+                    "aggregated node-level cluster-stats responses are not mapped by this adapter",
+            });
+        }
+        if self.compute_all_metrics != Some(true) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats metric selection",
+                reason: "partial cluster-stats metric selection requires field-level runtime aggregation mapping",
+            });
+        }
+        if self.metric_flags != 0 || self.index_metric_flags != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats metric flags",
+                reason:
+                    "cluster-stats metric bitsets require field-level runtime aggregation mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster stats execution",
+            reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
+        })
+    }
+}
+
 pub fn build_cluster_health_request_message(
     request_id: i64,
     version: Version,
@@ -958,6 +1076,44 @@ pub fn read_cluster_health_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     ClusterHealthResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_stats_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterStatsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_STATS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_stats_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterStatsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_STATS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_STATS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterStatsRequestWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4948,6 +5104,26 @@ fn read_optional_i64(input: &mut StreamInput) -> Result<Option<i64>, TransportAc
     }
 }
 
+fn write_optional_bool(output: &mut StreamOutput, value: Option<bool>) {
+    match value {
+        Some(false) => output.write_byte(0),
+        Some(true) => output.write_byte(1),
+        None => output.write_byte(2),
+    }
+}
+
+fn read_optional_bool(input: &mut StreamInput) -> Result<Option<bool>, TransportActionWireError> {
+    match input.read_byte()? {
+        0 => Ok(Some(false)),
+        1 => Ok(Some(true)),
+        2 => Ok(None),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "optional boolean",
+            reason: "optional boolean must use the OpenSearch 0/1/2 wire encoding",
+        }),
+    }
+}
+
 fn write_optional_time_value(output: &mut StreamOutput, value: Option<&TimeValueWire>) {
     if let Some(value) = value {
         output.write_bool(true);
@@ -5111,6 +5287,13 @@ mod tests {
                     response_wire_type: "ClusterHealthResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/stats",
+                    action_type: "ClusterStatsAction",
+                    transport_action: "TransportClusterStatsAction",
+                    request_wire_type: "ClusterStatsRequest",
+                    response_wire_type: "ClusterStatsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -5248,6 +5431,10 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_HEALTH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLUSTER_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
             classify_opensearch_transport_action(PENDING_CLUSTER_TASKS_ACTION_NAME).disposition,
@@ -7273,6 +7460,126 @@ mod tests {
             read_cluster_health_response_message(&message).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn cluster_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ClusterStatsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClusterStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_stats_request_rejects_unsupported_shapes() {
+        let node_filter = ClusterStatsRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..ClusterStatsRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats node filter",
+                ..
+            })
+        ));
+
+        let timeout = ClusterStatsRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..ClusterStatsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats timeout",
+                ..
+            })
+        ));
+
+        let aggregate = ClusterStatsRequestWire {
+            use_aggregated_node_level_responses: Some(true),
+            ..ClusterStatsRequestWire::default()
+        };
+        assert!(matches!(
+            aggregate.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats aggregated node responses",
+                ..
+            })
+        ));
+
+        let metric_selection = ClusterStatsRequestWire {
+            compute_all_metrics: Some(false),
+            ..ClusterStatsRequestWire::default()
+        };
+        assert!(matches!(
+            metric_selection.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats metric selection",
+                ..
+            })
+        ));
+
+        let metric_flags = ClusterStatsRequestWire {
+            metric_flags: 1,
+            index_metric_flags: 2,
+            ..ClusterStatsRequestWire::default()
+        };
+        assert!(matches!(
+            metric_flags.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats metric flags",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_stats_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            ClusterStatsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_stats_transport_messages_bind_rejected_action_frame() {
+        let request = ClusterStatsRequestWire::default();
+        let mut frame =
+            build_cluster_stats_request_message(13, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster stats request message");
+        };
+        assert_eq!(
+            read_cluster_stats_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_cluster_stats_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats execution",
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -178,6 +178,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 
 - `cluster:monitor/state`
 - `cluster:monitor/health`
+- `cluster:monitor/stats` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -208,6 +209,17 @@ The health adapter covers:
   levels, weighted-routing waits, transport-level level application, embedded
   index health details, and awareness health response payloads until those
   semantics are mapped.
+
+The cluster-stats boundary covers:
+
+- OpenSearch `ClusterStatsRequest` parent task, node ids, optional timeout,
+  aggregated-node-level response flag, compute-all-metrics flag, metric bitset,
+  and index metric bitset at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/stats` until runtime
+  stats aggregation and field-level metric mapping are implemented;
+- explicit rejection for concrete node payloads, node filters, timeout,
+  aggregated-node response mode, partial metric selection, metric bitsets, and
+  cluster-stats execution.
 
 The list-tasks adapter covers:
 
@@ -386,6 +398,22 @@ JSON source materialization and only validates the bounded enum-set/default
 request shape, so it is materially lighter than index/update/bulk request
 decode. At roughly 1.64M ops/s in the latest local release run, this adapter
 does not introduce a transport-wire bottleneck.
+
+Current cluster-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cluster-stats-reject-wire-benchmark
+cluster_stats_reject_request_encode ops_per_second=1758185.25 nanos_per_op=568.77
+cluster_stats_reject_request_decode ops_per_second=1903296.67 nanos_per_op=525.40
+cluster_stats_reject_validation ops_per_second=1843125.57 nanos_per_op=542.56
+cluster_stats_reject_wire_bottleneck_ops_per_second=1758185.25
+```
+
+The current cluster-stats fail-closed boundary bottleneck is request encode.
+The validation path adds only a small unsupported-shape check on top of decode,
+so the rejection boundary itself is not a new performance bottleneck. At roughly
+1.76M ops/s in the latest local release run, this path is in the same range as
+the lightweight admin transport adapters.
 
 Current list-tasks wire microbenchmark:
 

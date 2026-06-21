@@ -30,6 +30,10 @@ name = "cluster-health-wire-benchmark"
 path = "benchmarks/cluster_health_wire.rs"
 
 [[bin]]
+name = "cluster-stats-reject-wire-benchmark"
+path = "benchmarks/cluster_stats_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 
