@@ -46,6 +46,7 @@ pub const DELETE_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/delete
 pub const VERIFY_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/verify";
 pub const CLEANUP_REPOSITORY_ACTION_NAME: &str = "cluster:admin/repository/_cleanup";
 pub const GET_SNAPSHOTS_ACTION_NAME: &str = "cluster:admin/snapshot/get";
+pub const DELETE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/delete";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -304,6 +305,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportGetSnapshotsAction",
         request_wire_type: "GetSnapshotsRequest",
         response_wire_type: "GetSnapshotsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: DELETE_SNAPSHOT_ACTION_NAME,
+        action_type: "DeleteSnapshotAction",
+        transport_action: "TransportDeleteSnapshotAction",
+        request_wire_type: "DeleteSnapshotRequest",
+        response_wire_type: "AcknowledgedResponse",
     },
     SourceTransportActionSpec {
         action_name: PENDING_CLUSTER_TASKS_ACTION_NAME,
@@ -964,6 +972,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-snapshots transport execution requires repository snapshot metadata resolution and snapshot response rendering",
+        },
+        DELETE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "delete-snapshot transport execution requires snapshot deletion coordination and acknowledgement rendering",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3837,6 +3850,44 @@ pub fn read_get_snapshots_request_message(
     GetSnapshotsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_delete_snapshot_request_message(
+    request_id: i64,
+    version: Version,
+    request: &DeleteSnapshotRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(DELETE_SNAPSHOT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_delete_snapshot_request_message(
+    message: &TransportMessage,
+) -> Result<DeleteSnapshotRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != DELETE_SNAPSHOT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: DELETE_SNAPSHOT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    DeleteSnapshotRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_mappings_request_message(
     request_id: i64,
     version: Version,
@@ -5728,6 +5779,80 @@ impl GetSnapshotsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get snapshots execution",
             reason: "get-snapshots transport execution requires repository snapshot metadata resolution and snapshot response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeleteSnapshotRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub repository: String,
+    pub snapshots: Vec<String>,
+}
+
+impl Default for DeleteSnapshotRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            repository: "repo".to_string(),
+            snapshots: vec!["snap".to_string()],
+        }
+    }
+}
+
+impl DeleteSnapshotRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.repository);
+        output.write_string_array(&self.snapshots);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            repository: input.read_string()?,
+            snapshots: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires snapshot deletion coordination semantics",
+            });
+        }
+        if self.repository.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot missing repository",
+                reason: "OpenSearch delete-snapshot requests require a repository name",
+            });
+        }
+        if self.snapshots.is_empty()
+            || self
+                .snapshots
+                .iter()
+                .any(|snapshot| snapshot.trim().is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot missing snapshots",
+                reason: "OpenSearch delete-snapshot requests require at least one snapshot name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete snapshot execution",
+            reason: "delete-snapshot transport execution requires snapshot deletion coordination and acknowledgement rendering",
         })
     }
 }
@@ -13887,6 +14012,13 @@ mod tests {
                     response_wire_type: "GetSnapshotsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/snapshot/delete",
+                    action_type: "DeleteSnapshotAction",
+                    transport_action: "TransportDeleteSnapshotAction",
+                    request_wire_type: "DeleteSnapshotRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/task",
                     action_type: "PendingClusterTasksAction",
                     transport_action: "TransportPendingClusterTasksAction",
@@ -14425,6 +14557,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_SNAPSHOTS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(DELETE_SNAPSHOT_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -19114,6 +19250,103 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_snapshot_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = DeleteSnapshotRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(36),
+            snapshots: vec!["snap-a".to_string(), "snap-b".to_string()],
+            ..DeleteSnapshotRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = DeleteSnapshotRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_snapshot_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = DeleteSnapshotRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..DeleteSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_repository = DeleteSnapshotRequestWire {
+            repository: " ".to_string(),
+            ..DeleteSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            missing_repository.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot missing repository",
+                ..
+            })
+        ));
+
+        let empty_snapshots = DeleteSnapshotRequestWire {
+            snapshots: Vec::new(),
+            ..DeleteSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            empty_snapshots.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot missing snapshots",
+                ..
+            })
+        ));
+
+        let blank_snapshot = DeleteSnapshotRequestWire {
+            snapshots: vec!["snap-a".to_string(), " ".to_string()],
+            ..DeleteSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            blank_snapshot.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot missing snapshots",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_snapshot_transport_messages_bind_rejected_action_frame() {
+        let request = DeleteSnapshotRequestWire::default();
+        let mut frame =
+            build_delete_snapshot_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete snapshot request message");
+        };
+        assert_eq!(
+            read_delete_snapshot_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_delete_snapshot_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete snapshot execution",
                 ..
             })
         ));

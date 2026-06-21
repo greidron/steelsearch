@@ -166,6 +166,15 @@
       "reason": "Get-snapshots transport execution requires repository snapshot metadata resolution and snapshot response rendering before Steelsearch can serve OpenSearch snapshot listing semantics."
     },
     {
+      "action_name": "cluster:admin/snapshot/delete",
+      "action_type": "DeleteSnapshotAction",
+      "transport_action": "TransportDeleteSnapshotAction",
+      "request_wire_type": "DeleteSnapshotRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-snapshot transport execution requires snapshot deletion coordination and acknowledgement rendering before Steelsearch can serve OpenSearch snapshot deletion semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "action_type": "NodesUsageAction",
       "transport_action": "TransportNodesUsageAction",
