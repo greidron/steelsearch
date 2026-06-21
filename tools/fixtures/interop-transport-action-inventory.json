@@ -364,6 +364,15 @@
       "reason": "Index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch index setting update semantics."
     },
     {
+      "action_name": "indices:admin/scale/search_only",
+      "action_type": "ScaleIndexAction",
+      "transport_action": "TransportScaleIndexAction",
+      "request_wire_type": "ScaleIndexRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch search-only scale semantics."
+    },
+    {
       "action_name": "indices:admin/create",
       "action_type": "CreateIndexAction",
       "transport_action": "TransportCreateIndexAction",

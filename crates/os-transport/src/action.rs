@@ -77,6 +77,7 @@ pub const OPENSEARCH_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/put"
 pub const OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/auto_put";
 pub const OPENSEARCH_INDICES_ALIASES_ACTION_NAME: &str = "indices:admin/aliases";
 pub const OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME: &str = "indices:admin/settings/update";
+pub const OPENSEARCH_SCALE_INDEX_ACTION_NAME: &str = "indices:admin/scale/search_only";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
@@ -554,6 +555,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map index setting updates onto Rust index metadata validation, mutation, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_SCALE_INDEX_ACTION_NAME,
+        action_type: "ScaleIndexAction",
+        transport_action: "TransportScaleIndexAction",
+        request_wire_type: "ScaleIndexRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map search-only scale transitions onto Rust index metadata validation, shard sync coordination, and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_CREATE_INDEX_ACTION_NAME,
@@ -1161,6 +1171,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering",
+        },
+        OPENSEARCH_SCALE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering",
         },
         OPENSEARCH_CREATE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4564,6 +4579,44 @@ pub fn read_opensearch_update_settings_request_message(
         });
     }
     OpenSearchUpdateSettingsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_scale_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchScaleIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_SCALE_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_scale_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchScaleIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_SCALE_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_SCALE_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchScaleIndexRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_index_request_message(
@@ -8145,6 +8198,96 @@ impl OpenSearchUpdateSettingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "index update settings execution",
             reason: "index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchScaleIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub index: String,
+    pub scale_down: bool,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl Default for OpenSearchScaleIndexRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            index: "logs-000001".to_string(),
+            scale_down: true,
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+        }
+    }
+}
+
+impl OpenSearchScaleIndexRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.index);
+        output.write_bool(self.scale_down);
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            index: input.read_string()?,
+            scale_down: input.read_bool()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the scale-index adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index ack timeout",
+                reason: "custom ack timeout is not mapped by the scale-index adapter yet",
+            });
+        }
+        if self.index.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index missing index",
+                reason: "OpenSearch scale-index requests require a target index",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index indices options",
+                reason: "custom scale-index indices options require index resolution semantics",
+            });
+        }
+        if !self.scale_down {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index scale up",
+                reason: "scale-up transitions require search-only state validation and metadata mutation semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "scale index execution",
+            reason: "scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering",
         })
     }
 }
@@ -16960,6 +17103,15 @@ mod tests {
                     next_step: "map index setting updates onto Rust index metadata validation, mutation, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/scale/search_only",
+                    action_type: "ScaleIndexAction",
+                    transport_action: "TransportScaleIndexAction",
+                    request_wire_type: "ScaleIndexRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map search-only scale transitions onto Rust index metadata validation, shard sync coordination, and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/create",
                     action_type: "CreateIndexAction",
                     transport_action: "TransportCreateIndexAction",
@@ -17495,6 +17647,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_SCALE_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -17644,6 +17800,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SCALE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
@@ -24161,6 +24318,115 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "index update settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_scale_index_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchScaleIndexRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchScaleIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.index, "logs-000001");
+        assert!(decoded.scale_down);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_scale_index_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchScaleIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchScaleIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchScaleIndexRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchScaleIndexRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index ack timeout",
+                ..
+            })
+        ));
+
+        let missing_index = OpenSearchScaleIndexRequestWire {
+            index: " ".to_string(),
+            ..OpenSearchScaleIndexRequestWire::default()
+        };
+        assert!(matches!(
+            missing_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index missing index",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchScaleIndexRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open()
+            },
+            ..OpenSearchScaleIndexRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index indices options",
+                ..
+            })
+        ));
+
+        let scale_up = OpenSearchScaleIndexRequestWire {
+            scale_down: false,
+            ..OpenSearchScaleIndexRequestWire::default()
+        };
+        assert!(matches!(
+            scale_up.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index scale up",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_scale_index_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchScaleIndexRequestWire::default();
+        let mut frame =
+            build_opensearch_scale_index_request_message(41, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected scale index request message");
+        };
+        assert_eq!(
+            read_opensearch_scale_index_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_scale_index_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scale index execution",
                 ..
             })
         ));

@@ -719,6 +719,19 @@ The index update-settings boundary covers:
   empty settings maps, non-index setting keys, non-string generic setting
   values, preserve-existing updates, and index update-settings execution.
 
+The scale-index boundary covers:
+
+- OpenSearch `ScaleIndexRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, target index, `scaleDown`, and
+  `IndicesOptions.strictExpandOpen()` at the OpenSearch 3.x wire decode/build
+  layer;
+- explicit fail-closed classification for `indices:admin/scale/search_only`
+  until search-only state validation, shard sync coordination, metadata
+  mutation, and acknowledged response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing index targets, custom indices options,
+  scale-up transitions, and scale-index execution.
+
 The create-index boundary covers:
 
 - OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
@@ -1966,6 +1979,24 @@ rejecting execution. At roughly 0.94M ops/s in the latest local release run,
 the current overhead remains transport wire work; future performance-sensitive
 work is index resolution, setting validation, metadata mutation, and
 acknowledged response rendering.
+
+Current scale-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin scale-index-reject-wire-benchmark
+scale_index_reject_request_encode iterations=400000 elapsed_ms=309.055 ops_per_second=1294268.61 nanos_per_op=772.64
+scale_index_reject_request_decode iterations=400000 elapsed_ms=278.302 ops_per_second=1437285.67 nanos_per_op=695.76
+scale_index_reject_validation iterations=400000 elapsed_ms=282.344 ops_per_second=1416711.11 nanos_per_op=705.86
+scale_index_reject_wire_bottleneck_ops_per_second=1294268.61
+```
+
+The current scale-index fail-closed boundary bottleneck is request encode. The
+path writes the acknowledged-request envelope, target index, scale direction,
+and indices options before rejecting execution. At roughly 1.29M ops/s in the
+latest local release run, the current overhead remains lightweight transport
+wire work; future performance-sensitive work is search-only state validation,
+shard sync coordination, metadata mutation, and acknowledged response
+rendering.
 
 Current create-index reject wire microbenchmark:
 

@@ -186,6 +186,10 @@ name = "update-settings-reject-wire-benchmark"
 path = "benchmarks/update_settings_reject_wire.rs"
 
 [[bin]]
+name = "scale-index-reject-wire-benchmark"
+path = "benchmarks/scale_index_reject_wire.rs"
+
+[[bin]]
 name = "get-index-reject-wire-benchmark"
 path = "benchmarks/get_index_reject_wire.rs"
 
