@@ -236,6 +236,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `indices:admin/resolve/index` (rejected fail-closed)
 - `cluster:admin/views/create` (rejected fail-closed)
+- `cluster:admin/views/delete` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1445,6 +1446,18 @@ The create-view boundary covers:
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
   names, oversized descriptions, missing or excessive targets, blank target
   patterns, oversized target patterns, and create-view execution.
+
+The delete-view boundary covers:
+
+- OpenSearch `DeleteViewAction.Request` parent task, cluster-manager timeout,
+  and view name at the wire decode/build layer;
+- OpenSearch `AcknowledgedResponse` decode/build for the delete-view response
+  acknowledgement bit;
+- explicit fail-closed classification for `cluster:admin/views/delete` until
+  view lookup, cluster metadata deletion, and acknowledgement rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, missing names, and
+  delete-view execution.
 
 The search boundary covers:
 
@@ -3373,6 +3386,23 @@ in the latest local release run, the extra string length and target-list checks
 make it heavier than the adjacent data-stream and resolve-index reject paths.
 Future performance-sensitive work is target resolution, view metadata mutation,
 and response rendering.
+
+Current delete-view reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-view-reject-wire-benchmark
+delete_view_reject_request_encode iterations=400000 elapsed_ms=244.549 ops_per_second=1635665.72 nanos_per_op=611.37
+delete_view_reject_request_decode iterations=400000 elapsed_ms=233.180 ops_per_second=1715410.05 nanos_per_op=582.95
+delete_view_reject_validation iterations=400000 elapsed_ms=240.750 ops_per_second=1661473.52 nanos_per_op=601.88
+delete_view_ack_response_decode iterations=400000 elapsed_ms=83.777 ops_per_second=4774580.71 nanos_per_op=209.44
+delete_view_reject_wire_bottleneck_ops_per_second=1635665.72
+```
+
+The current delete-view fail-closed boundary bottleneck is request encode. This
+path carries the ClusterManagerNode envelope and view name before rejecting at
+admission. At roughly 1.64M ops/s in the latest local release run, it is back
+in the lightweight metadata transport range; future performance-sensitive work
+is view lookup, metadata deletion, and acknowledgement rendering.
 
 Current search reject wire microbenchmark:
 

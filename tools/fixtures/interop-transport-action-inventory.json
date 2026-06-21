@@ -859,6 +859,15 @@
       "reason": "Create-view transport execution requires view validation, target resolution, cluster metadata mutation, and view response rendering before Steelsearch can serve OpenSearch view creation semantics."
     },
     {
+      "action_name": "cluster:admin/views/delete",
+      "action_type": "DeleteViewAction",
+      "transport_action": "DeleteViewAction.TransportAction",
+      "request_wire_type": "DeleteViewAction.Request",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-view transport execution requires view lookup, cluster metadata deletion, and acknowledgement rendering before Steelsearch can serve OpenSearch view deletion semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

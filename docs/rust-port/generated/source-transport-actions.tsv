@@ -113,7 +113,7 @@ partial	GetDataStreamAction.INSTANCE	GetDataStreamAction.TransportAction.class	/
 partial	ResolveIndexAction.INSTANCE	ResolveIndexAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	792
 partial	DataStreamsStatsAction.INSTANCE	DataStreamsStatsAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	793
 partial	CreateViewAction.INSTANCE	CreateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	796
-planned	DeleteViewAction.INSTANCE	DeleteViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	797
+partial	DeleteViewAction.INSTANCE	DeleteViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	797
 planned	GetViewAction.INSTANCE	GetViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	798
 planned	UpdateViewAction.INSTANCE	UpdateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	799
 planned	ListViewNamesAction.INSTANCE	ListViewNamesAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	800
