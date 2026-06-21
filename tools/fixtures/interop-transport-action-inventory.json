@@ -895,6 +895,15 @@
       "reason": "List-view-names transport execution requires view-name listing and response rendering before Steelsearch can serve OpenSearch view listing semantics."
     },
     {
+      "action_name": "views:data/read/search",
+      "action_type": "SearchViewAction",
+      "transport_action": "SearchViewAction.TransportAction",
+      "request_wire_type": "SearchViewAction.Request",
+      "response_wire_type": "SearchResponse",
+      "disposition": "rejected",
+      "reason": "Search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering before Steelsearch can serve OpenSearch view search semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

@@ -117,7 +117,7 @@ partial	DeleteViewAction.INSTANCE	DeleteViewAction.TransportAction.class	/home/u
 partial	GetViewAction.INSTANCE	GetViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	798
 partial	UpdateViewAction.INSTANCE	UpdateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	799
 partial	ListViewNamesAction.INSTANCE	ListViewNamesAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	800
-planned	SearchViewAction.INSTANCE	SearchViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	801
+partial	SearchViewAction.INSTANCE	SearchViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	801
 planned	StartPersistentTaskAction.INSTANCE	StartPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	804
 planned	UpdatePersistentTaskStatusAction.INSTANCE	UpdatePersistentTaskStatusAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	805
 planned	CompletionPersistentTaskAction.INSTANCE	CompletionPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	806

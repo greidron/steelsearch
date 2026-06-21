@@ -240,6 +240,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `views:data/read/get` (rejected fail-closed)
 - `cluster:admin/views/update` (rejected fail-closed)
 - `views:data/read/list` (rejected fail-closed)
+- `views:data/read/search` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1499,6 +1500,20 @@ The list-view-names boundary covers:
   view-name listing and list response rendering are implemented;
 - explicit rejection for list-view-names execution and unsupported response
   shapes such as blank names, oversized names, or excessive name counts.
+
+The search-view boundary covers:
+
+- OpenSearch `SearchViewAction.Request` decode/build as a full
+  `SearchRequest` payload followed by the view name string written by
+  `SearchViewAction.Request.writeTo`;
+- reuse of the existing search-request fail-closed shape checks for scroll,
+  source payload, index/routing/preference/fanout/cache/partial-results/
+  cross-cluster/pipeline/timing shapes;
+- explicit fail-closed classification for `views:data/read/search` until view
+  lookup, target index resolution, search execution, and `SearchResponse`
+  rendering are implemented;
+- explicit rejection for missing or oversized view names and search-view
+  execution.
 
 The search boundary covers:
 
@@ -3497,6 +3512,23 @@ This path carries an empty request body before rejecting at admission and
 decodes the `views` string list response. At roughly 2.49M ops/s in the latest
 local release run, it is the lightest current view-admin boundary; future
 performance-sensitive work is view-name listing and response rendering.
+
+Current search-view reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin search-view-reject-wire-benchmark
+search_view_reject_request_encode iterations=400000 elapsed_ms=311.868 ops_per_second=1282592.92 nanos_per_op=779.67
+search_view_reject_request_decode iterations=400000 elapsed_ms=278.718 ops_per_second=1435144.35 nanos_per_op=696.79
+search_view_reject_validation iterations=400000 elapsed_ms=291.262 ops_per_second=1373333.56 nanos_per_op=728.16
+search_view_reject_wire_bottleneck_ops_per_second=1282592.92
+```
+
+The current search-view fail-closed boundary bottleneck is request encode. This
+path carries the existing `SearchRequest` wire payload plus the OpenSearch view
+name string before rejecting at admission. At roughly 1.28M ops/s in the latest
+local release run, it stays close to the existing search reject path; future
+performance-sensitive work is view lookup, target index resolution, search
+execution, and `SearchResponse` rendering.
 
 Current search reject wire microbenchmark:
 
