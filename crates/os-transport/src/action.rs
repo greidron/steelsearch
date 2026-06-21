@@ -82,6 +82,7 @@ pub const OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME: &str = "indices:admin/settings
 pub const OPENSEARCH_SCALE_INDEX_ACTION_NAME: &str = "indices:admin/scale/search_only";
 pub const OPENSEARCH_ANALYZE_ACTION_NAME: &str = "indices:admin/analyze";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
+pub const OPENSEARCH_AUTO_CREATE_ACTION_NAME: &str = "indices:admin/auto_create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
@@ -611,6 +612,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "CreateIndexResponse",
         adapter_stage: "metadata-write",
         next_step: "map index creation onto Rust cluster metadata mutation, shard allocation, and create-index response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_AUTO_CREATE_ACTION_NAME,
+        action_type: "AutoCreateAction",
+        transport_action: "AutoCreateAction.TransportAction",
+        request_wire_type: "CreateIndexRequest",
+        response_wire_type: "CreateIndexResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map auto-create requests onto Rust auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and create-index response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_RESIZE_ACTION_NAME,
@@ -1364,6 +1374,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "create-index transport execution requires index metadata mutation, shard allocation, and response rendering",
+        },
+        OPENSEARCH_AUTO_CREATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and response rendering",
         },
         OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5228,6 +5243,44 @@ pub fn read_opensearch_create_index_request_message(
     if header.action != OPENSEARCH_CREATE_INDEX_ACTION_NAME {
         return Err(TransportActionWireError::UnexpectedAction {
             expected: OPENSEARCH_CREATE_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchCreateIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_auto_create_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchCreateIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_AUTO_CREATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_auto_create_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCreateIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_AUTO_CREATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_AUTO_CREATE_ACTION_NAME,
             actual: header.action,
         });
     }
@@ -9747,6 +9800,68 @@ impl OpenSearchCreateIndexRequestWire {
             shape: "create index execution",
             reason:
                 "create-index transport execution requires index metadata mutation, shard allocation, and response rendering",
+        })
+    }
+
+    pub fn reject_unsupported_auto_create_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the auto-create adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create ack timeout",
+                reason: "custom ack timeout is not mapped by the auto-create adapter yet",
+            });
+        }
+        if self.index.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create missing index",
+                reason: "OpenSearch auto-create requests require a target index name",
+            });
+        }
+        if !self.cause.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create cause",
+                reason: "custom auto-create causes require metadata publication audit semantics",
+            });
+        }
+        if !self.settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create settings",
+                reason: "auto-create settings require auto-create template and metadata validation semantics",
+            });
+        }
+        if self.mappings != "{}" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create mappings",
+                reason: "auto-create mappings require mapping validation and metadata publication semantics",
+            });
+        }
+        if self.aliases_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create aliases",
+                reason: "auto-create aliases require alias metadata mutation semantics",
+            });
+        }
+        if self.wait_for_active_shards != -2 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create wait-for-active-shards",
+                reason: "custom wait-for-active-shards requires active-shards observer semantics",
+            });
+        }
+        if self.has_context {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create context",
+                reason: "auto-create context requires context metadata mutation semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "auto create execution",
+            reason: "auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and create-index response rendering",
         })
     }
 }
@@ -20409,6 +20524,15 @@ mod tests {
                     next_step: "map index creation onto Rust cluster metadata mutation, shard allocation, and create-index response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/auto_create",
+                    action_type: "AutoCreateAction",
+                    transport_action: "AutoCreateAction.TransportAction",
+                    request_wire_type: "CreateIndexRequest",
+                    response_wire_type: "CreateIndexResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map auto-create requests onto Rust auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and create-index response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/resize",
                     action_type: "ResizeAction",
                     transport_action: "TransportResizeAction",
@@ -21096,6 +21220,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_AUTO_CREATE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -21308,6 +21436,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SCALE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
@@ -29237,6 +29366,171 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_auto_create_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchCreateIndexRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchCreateIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.index, "logs-000001");
+        assert_eq!(decoded.mappings, "{}");
+        assert!(matches!(
+            decoded.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_auto_create_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchCreateIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchCreateIndexRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create ack timeout",
+                ..
+            })
+        ));
+
+        let missing_index = OpenSearchCreateIndexRequestWire {
+            index: " ".to_string(),
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            missing_index.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create missing index",
+                ..
+            })
+        ));
+
+        let cause = OpenSearchCreateIndexRequestWire {
+            cause: "api".to_string(),
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cause.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create cause",
+                ..
+            })
+        ));
+
+        let mut settings = BTreeMap::new();
+        settings.insert("index.number_of_shards".to_string(), "1".to_string());
+        let settings = OpenSearchCreateIndexRequestWire {
+            settings,
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        settings.write(&mut output);
+        let decoded_settings = OpenSearchCreateIndexRequestWire::read(output.freeze()).unwrap();
+        assert!(matches!(
+            decoded_settings.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create settings",
+                ..
+            })
+        ));
+
+        let mappings = OpenSearchCreateIndexRequestWire {
+            mappings: "{\"properties\":{\"message\":{\"type\":\"text\"}}}".to_string(),
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            mappings.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create mappings",
+                ..
+            })
+        ));
+
+        let aliases = OpenSearchCreateIndexRequestWire {
+            aliases_count: 1,
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            aliases.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create aliases",
+                ..
+            })
+        ));
+
+        let wait_for_active_shards = OpenSearchCreateIndexRequestWire {
+            wait_for_active_shards: 1,
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            wait_for_active_shards.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create wait-for-active-shards",
+                ..
+            })
+        ));
+
+        let context = OpenSearchCreateIndexRequestWire {
+            has_context: true,
+            ..OpenSearchCreateIndexRequestWire::default()
+        };
+        assert!(matches!(
+            context.reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create context",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_auto_create_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchCreateIndexRequestWire::default();
+        let mut frame =
+            build_opensearch_auto_create_request_message(68, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected auto-create request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_auto_create_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_auto_create_request_message(&message)
+                .unwrap()
+                .reject_unsupported_auto_create_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "auto create execution",
                 ..
             })
         ));

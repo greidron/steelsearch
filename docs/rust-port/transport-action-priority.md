@@ -252,6 +252,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/index`
 - `indices:data/write/update`
 - `indices:data/write/delete`
+- `indices:admin/create` (rejected fail-closed)
+- `indices:admin/auto_create` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -781,6 +783,20 @@ The create-index boundary covers:
   acknowledgement timeouts, missing index names, custom cause strings,
   settings, mappings, aliases, custom wait-for-active-shards, context payloads,
   and create-index execution.
+
+The auto-create boundary covers:
+
+- OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, cause, target index, string-valued settings map,
+  mappings string, alias count, `ActiveShardCount`, and absent context marker at
+  the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/auto_create` until
+  auto-create index/data-stream resolution, cluster-manager metadata mutation,
+  active-shards wait, and create-index response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing index names, custom cause strings,
+  settings, mappings, aliases, custom wait-for-active-shards, context payloads,
+  and auto-create execution.
 
 The resize boundary covers:
 
@@ -2295,6 +2311,24 @@ context before the execution boundary rejects. At roughly 1.46M ops/s in the
 latest local release run, the future performance-sensitive work is index
 metadata mutation, shard allocation, and create-index response rendering rather
 than the fail-closed wire boundary.
+
+Current auto-create reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin auto-create-reject-wire-benchmark
+auto_create_reject_request_encode iterations=400000 elapsed_ms=282.254 ops_per_second=1417161.53 nanos_per_op=705.64
+auto_create_reject_request_decode iterations=400000 elapsed_ms=279.195 ops_per_second=1432689.41 nanos_per_op=697.99
+auto_create_reject_validation iterations=400000 elapsed_ms=273.745 ops_per_second=1461213.57 nanos_per_op=684.36
+auto_create_reject_wire_bottleneck_ops_per_second=1417161.53
+```
+
+The current auto-create fail-closed boundary bottleneck is request encode. It
+uses the same `CreateIndexRequest` wire shape as create-index with the
+`indices:admin/auto_create` action frame, so the current overhead remains
+transport frame/request serialization. At roughly 1.42M ops/s in the latest
+local release run, the future performance-sensitive work is auto-create
+index/data-stream resolution, cluster-manager metadata mutation, active-shards
+wait, and response rendering.
 
 Current resize reject wire microbenchmark:
 

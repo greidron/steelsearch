@@ -400,6 +400,15 @@
       "reason": "Create-index transport execution requires index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index creation semantics."
     },
     {
+      "action_name": "indices:admin/auto_create",
+      "action_type": "AutoCreateAction",
+      "transport_action": "AutoCreateAction.TransportAction",
+      "request_wire_type": "CreateIndexRequest",
+      "response_wire_type": "CreateIndexResponse",
+      "disposition": "rejected",
+      "reason": "Auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and response rendering before Steelsearch can serve OpenSearch auto-create semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",
