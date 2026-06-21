@@ -256,6 +256,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/upgrade` (rejected fail-closed)
 - `indices:monitor/upgrade` (rejected fail-closed)
 - `internal:indices/admin/upgrade` (rejected fail-closed)
+- `indices:admin/cache/clear` (rejected fail-closed)
 - `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
@@ -1083,6 +1084,20 @@ The upgrade-settings boundary covers:
   acknowledgement timeouts, empty versions maps, blank index names, invalid
   version ids, blank oldest Lucene segment versions, and upgrade-settings
   execution.
+
+The clear-indices-cache boundary covers:
+
+- OpenSearch `ClearIndicesCacheRequest` parent task, nullable index array,
+  default `IndicesOptions.strictExpandOpenAndForbidClosed()`, query-cache flag,
+  field-data-cache flag, nullable fields array normalized to empty fields,
+  request-cache flag, and OpenSearch 2.8+ file-cache flag at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:admin/cache/clear` until
+  shard query, field-data, request, file, and node-wide cache clearing plus
+  shard status response rendering are implemented against Rust shard state;
+- explicit rejection for index filters, custom indices options, blank field
+  names, query-cache clearing, field-data cache clearing, field selectors,
+  request-cache clearing, file-cache clearing, and clear-cache execution.
 
 The field-capabilities boundary covers:
 
@@ -2635,6 +2650,24 @@ the oldest Lucene segment version string before rejecting execution. At roughly
 1.16M ops/s in the latest local release run, the remaining performance-sensitive
 work is metadata mutation planning, cluster-state publication, acknowledgement
 tracking, and acknowledged response rendering.
+
+Current clear-indices-cache reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin clear-indices-cache-reject-wire-benchmark
+clear_indices_cache_reject_request_encode iterations=400000 elapsed_ms=279.162 ops_per_second=1432859.73 nanos_per_op=697.91
+clear_indices_cache_reject_request_decode iterations=400000 elapsed_ms=229.986 ops_per_second=1739235.77 nanos_per_op=574.97
+clear_indices_cache_reject_validation iterations=400000 elapsed_ms=259.291 ops_per_second=1542669.56 nanos_per_op=648.23
+clear_indices_cache_reject_wire_bottleneck_ops_per_second=1432859.73
+```
+
+The current clear-indices-cache fail-closed boundary bottleneck is request
+encode. The default benchmark writes the broadcast request envelope, empty
+index and field arrays, default strict-expand-open-forbid-closed indices
+options, and cache selector booleans before rejecting execution. At roughly
+1.43M ops/s in the latest local release run, the remaining
+performance-sensitive work is shard cache invalidation, file-cache pruning,
+node-wide cache cleanup, shard failure aggregation, and response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 

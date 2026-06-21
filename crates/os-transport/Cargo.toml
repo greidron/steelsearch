@@ -298,6 +298,10 @@ name = "upgrade-settings-reject-wire-benchmark"
 path = "benchmarks/upgrade_settings_reject_wire.rs"
 
 [[bin]]
+name = "clear-indices-cache-reject-wire-benchmark"
+path = "benchmarks/clear_indices_cache_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

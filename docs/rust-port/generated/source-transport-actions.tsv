@@ -76,7 +76,7 @@ partial	ForceMergeAction.INSTANCE	TransportForceMergeAction.class	/home/ubuntu/O
 partial	UpgradeAction.INSTANCE	TransportUpgradeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	736
 partial	UpgradeStatusAction.INSTANCE	TransportUpgradeStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	737
 partial	UpgradeSettingsAction.INSTANCE	TransportUpgradeSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	738
-planned	ClearIndicesCacheAction.INSTANCE	TransportClearIndicesCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	739
+partial	ClearIndicesCacheAction.INSTANCE	TransportClearIndicesCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	739
 partial	GetAliasesAction.INSTANCE	TransportGetAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	740
 partial	GetSettingsAction.INSTANCE	TransportGetSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	741
 implemented	IndexAction.INSTANCE	TransportIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	743
