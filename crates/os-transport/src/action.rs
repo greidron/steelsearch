@@ -22,6 +22,7 @@ use crate::TransportMessage;
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
+pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -80,6 +81,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterStatsAction",
         request_wire_type: "ClusterStatsRequest",
         response_wire_type: "ClusterStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: NODES_STATS_ACTION_NAME,
+        action_type: "NodesStatsAction",
+        transport_action: "TransportNodesStatsAction",
+        request_wire_type: "NodesStatsRequest",
+        response_wire_type: "NodesStatsResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -304,6 +312,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
+        },
+        NODES_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "nodes-stats transport execution requires runtime node telemetry mapping",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1010,6 +1023,166 @@ impl ClusterStatsRequestWire {
     }
 }
 
+const OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS: i64 = ((1_i64 << 17) - 1) & !(1_i64 << 14);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommonStatsFlagsWire {
+    pub flags: i64,
+    pub groups: Vec<String>,
+    pub field_data_fields: Vec<String>,
+    pub completion_data_fields: Vec<String>,
+    pub include_segment_file_sizes: bool,
+    pub include_unloaded_segments: bool,
+    pub include_all_shard_indexing_pressure_trackers: bool,
+    pub include_only_top_indexing_pressure_metrics: bool,
+    pub include_caches: Vec<u8>,
+    pub levels: Vec<String>,
+    pub include_indices_stats_by_level: bool,
+}
+
+impl Default for CommonStatsFlagsWire {
+    fn default() -> Self {
+        Self {
+            flags: OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS,
+            groups: Vec::new(),
+            field_data_fields: Vec::new(),
+            completion_data_fields: Vec::new(),
+            include_segment_file_sizes: false,
+            include_unloaded_segments: false,
+            include_all_shard_indexing_pressure_trackers: false,
+            include_only_top_indexing_pressure_metrics: false,
+            include_caches: Vec::new(),
+            levels: Vec::new(),
+            include_indices_stats_by_level: false,
+        }
+    }
+}
+
+impl CommonStatsFlagsWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_i64(self.flags);
+        output.write_string_array(&self.groups);
+        output.write_string_array(&self.field_data_fields);
+        output.write_string_array(&self.completion_data_fields);
+        output.write_bool(self.include_segment_file_sizes);
+        output.write_bool(self.include_unloaded_segments);
+        output.write_bool(self.include_all_shard_indexing_pressure_trackers);
+        output.write_bool(self.include_only_top_indexing_pressure_metrics);
+        write_enum_set(output, &self.include_caches);
+        output.write_string_array(&self.levels);
+        output.write_bool(self.include_indices_stats_by_level);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            flags: input.read_i64()?,
+            groups: input.read_string_array()?,
+            field_data_fields: input.read_string_array()?,
+            completion_data_fields: input.read_string_array()?,
+            include_segment_file_sizes: input.read_bool()?,
+            include_unloaded_segments: input.read_bool()?,
+            include_all_shard_indexing_pressure_trackers: input.read_bool()?,
+            include_only_top_indexing_pressure_metrics: input.read_bool()?,
+            include_caches: read_enum_set(input, 1, "common stats cache types")?,
+            levels: input.read_string_array()?,
+            include_indices_stats_by_level: input.read_bool()?,
+        })
+    }
+
+    fn is_default_all_stats_shape(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodesStatsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub indices: CommonStatsFlagsWire,
+    pub requested_metrics: Vec<String>,
+}
+
+impl Default for NodesStatsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: Vec::new(),
+            timeout: None,
+            indices: CommonStatsFlagsWire::default(),
+            requested_metrics: Vec::new(),
+        }
+    }
+}
+
+impl NodesStatsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        self.indices.write(output);
+        output.write_string_array(&self.requested_metrics);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats concrete nodes",
+                reason:
+                    "nodes-stats concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            indices: CommonStatsFlagsWire::read(&mut input)?,
+            requested_metrics: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats node filter",
+                reason: "nodes-stats node-scoped routing requires runtime node telemetry mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats timeout",
+                reason: "nodes-stats timeout semantics require runtime node telemetry mapping",
+            });
+        }
+        if !self.indices.is_default_all_stats_shape() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats indices flags",
+                reason: "nodes-stats index flag subsets require field-level telemetry mapping",
+            });
+        }
+        if !self.requested_metrics.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats requested metrics",
+                reason: "nodes-stats metric selection requires field-level telemetry mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "nodes stats execution",
+            reason: "nodes-stats transport execution requires runtime node telemetry mapping",
+        })
+    }
+}
+
 pub fn build_cluster_health_request_message(
     request_id: i64,
     version: Version,
@@ -1114,6 +1287,44 @@ pub fn read_cluster_stats_request_message(
         });
     }
     ClusterStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_stats_request_message(
+    request_id: i64,
+    version: Version,
+    request: &NodesStatsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(NODES_STATS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_stats_request_message(
+    message: &TransportMessage,
+) -> Result<NodesStatsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != NODES_STATS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: NODES_STATS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    NodesStatsRequestWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5294,6 +5505,13 @@ mod tests {
                     response_wire_type: "ClusterStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/nodes/stats",
+                    action_type: "NodesStatsAction",
+                    transport_action: "TransportNodesStatsAction",
+                    request_wire_type: "NodesStatsRequest",
+                    response_wire_type: "NodesStatsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -5434,6 +5652,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(NODES_STATS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -7577,6 +7799,114 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = NodesStatsRequestWire::default();
+        assert_eq!(request.indices.flags, OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS);
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = NodesStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_stats_request_rejects_unsupported_shapes() {
+        let node_filter = NodesStatsRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..NodesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats node filter",
+                ..
+            })
+        ));
+
+        let timeout = NodesStatsRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..NodesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats timeout",
+                ..
+            })
+        ));
+
+        let indices_subset = NodesStatsRequestWire {
+            indices: CommonStatsFlagsWire {
+                flags: 1 << 9,
+                ..CommonStatsFlagsWire::default()
+            },
+            ..NodesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            indices_subset.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats indices flags",
+                ..
+            })
+        ));
+
+        let requested_metrics = NodesStatsRequestWire {
+            requested_metrics: vec!["os".to_string(), "jvm".to_string()],
+            ..NodesStatsRequestWire::default()
+        };
+        assert!(matches!(
+            requested_metrics.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats requested metrics",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_stats_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            NodesStatsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_stats_transport_messages_bind_rejected_action_frame() {
+        let request = NodesStatsRequestWire::default();
+        let mut frame =
+            build_nodes_stats_request_message(19, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected nodes stats request message");
+        };
+        assert_eq!(read_nodes_stats_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_nodes_stats_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes stats execution",
                 ..
             })
         ));

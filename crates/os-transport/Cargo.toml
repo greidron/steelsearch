@@ -34,6 +34,10 @@ name = "cluster-stats-reject-wire-benchmark"
 path = "benchmarks/cluster_stats_reject_wire.rs"
 
 [[bin]]
+name = "nodes-stats-reject-wire-benchmark"
+path = "benchmarks/nodes_stats_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

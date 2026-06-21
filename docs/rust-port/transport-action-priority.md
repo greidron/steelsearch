@@ -179,6 +179,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
+- `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -220,6 +221,17 @@ The cluster-stats boundary covers:
 - explicit rejection for concrete node payloads, node filters, timeout,
   aggregated-node response mode, partial metric selection, metric bitsets, and
   cluster-stats execution.
+
+The nodes-stats boundary covers:
+
+- OpenSearch `NodesStatsRequest` parent task, node ids, optional timeout,
+  `CommonStatsFlags`, and requested metric names at the wire decode/build
+  layer;
+- explicit fail-closed classification for `cluster:monitor/nodes/stats` until
+  runtime node telemetry and field-level metric mapping are implemented;
+- explicit rejection for concrete node payloads, node filters, timeout,
+  non-default index stats flags, requested metric selection, and nodes-stats
+  execution.
 
 The list-tasks adapter covers:
 
@@ -414,6 +426,22 @@ The validation path adds only a small unsupported-shape check on top of decode,
 so the rejection boundary itself is not a new performance bottleneck. At roughly
 1.76M ops/s in the latest local release run, this path is in the same range as
 the lightweight admin transport adapters.
+
+Current nodes-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin nodes-stats-reject-wire-benchmark
+nodes_stats_reject_request_encode ops_per_second=1660735.39 nanos_per_op=602.14
+nodes_stats_reject_request_decode ops_per_second=1676765.46 nanos_per_op=596.39
+nodes_stats_reject_validation ops_per_second=1617055.31 nanos_per_op=618.41
+nodes_stats_reject_wire_bottleneck_ops_per_second=1617055.31
+```
+
+The current nodes-stats fail-closed boundary bottleneck is validation. This path
+adds a full `CommonStatsFlags` default-shape comparison after decode, so it is
+slightly heavier than the cluster-stats rejection boundary. At roughly 1.62M
+ops/s in the latest local release run, it remains in the lightweight admin
+transport range and does not introduce a new source-materialization bottleneck.
 
 Current list-tasks wire microbenchmark:
 
