@@ -187,6 +187,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
+- `indices:admin/aliases/get` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -310,6 +311,18 @@ The get-field-mappings boundary covers:
   until field mapping metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and get-field-mappings execution.
+
+The get-aliases boundary covers:
+
+- OpenSearch `GetAliasesRequest` parent task, cluster-manager timeout, indices
+  array, aliases array, `IndicesOptions.strictExpandHidden()`, and original
+  aliases array at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/aliases/get` until
+  alias metadata response rendering and alias post-processing semantics are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, index filters, alias
+  filters, custom indices options, original alias filters, and get-aliases
+  execution.
 
 The indices-stats boundary covers:
 
@@ -642,6 +655,22 @@ after decode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.67M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
+
+Current get-aliases reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-aliases-reject-wire-benchmark
+get_aliases_reject_request_encode iterations=400000 elapsed_ms=225.468 ops_per_second=1774091.20 nanos_per_op=563.67
+get_aliases_reject_request_decode iterations=400000 elapsed_ms=238.774 ops_per_second=1675220.93 nanos_per_op=596.94
+get_aliases_reject_validation iterations=400000 elapsed_ms=242.614 ops_per_second=1648706.81 nanos_per_op=606.54
+get_aliases_reject_wire_bottleneck_ops_per_second=1648706.81
+```
+
+The current get-aliases fail-closed boundary bottleneck is validation after
+decode. This path checks cluster-manager timeout, index filters, alias filters,
+hidden wildcard indices options, and original-alias post-processing state after
+reading the OpenSearch request body. At roughly 1.65M ops/s in the latest local
+release run, it remains in the lightweight admin transport range.
 
 Current indices-stats reject wire microbenchmark:
 

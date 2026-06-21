@@ -70,6 +70,10 @@ name = "get-field-mappings-reject-wire-benchmark"
 path = "benchmarks/get_field_mappings_reject_wire.rs"
 
 [[bin]]
+name = "get-aliases-reject-wire-benchmark"
+path = "benchmarks/get_aliases_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 
