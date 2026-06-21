@@ -898,6 +898,22 @@ The delete-index-template boundary covers:
 - explicit rejection for custom cluster-manager timeouts and
   delete-index-template execution.
 
+The put-component-template boundary covers:
+
+- OpenSearch `PutComponentTemplateAction.Request` parent task, cluster-manager
+  timeout, component-template name, optional cause, create flag, empty
+  `Template` settings/mappings/aliases markers, optional component-template
+  version, and absent metadata marker at the OpenSearch 3.x wire decode/build
+  layer;
+- explicit fail-closed classification for
+  `cluster:admin/component_template/put` until component-template validation,
+  metadata mutation, and acknowledged response rendering are implemented
+  against Rust cluster metadata;
+- explicit rejection for custom cluster-manager timeouts, missing template
+  names, custom causes, create-only writes, component-template settings,
+  mappings, aliases, versions, metadata payloads, and put-component-template
+  execution.
+
 The get-component-template boundary covers:
 
 - OpenSearch `GetComponentTemplateAction.Request` parent task,
@@ -2254,6 +2270,24 @@ The current delete-index-template fail-closed boundary bottleneck is request
 encode. This path stays cheap because validation checks only the default
 timeout before failing closed; the future performance-sensitive work is
 template metadata mutation, publication, and acknowledged response rendering.
+
+Current put-component-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-component-template-reject-wire-benchmark
+put_component_template_reject_request_encode iterations=400000 elapsed_ms=382.867 ops_per_second=1044748.52 nanos_per_op=957.17
+put_component_template_reject_request_decode iterations=400000 elapsed_ms=315.838 ops_per_second=1266471.64 nanos_per_op=789.60
+put_component_template_reject_validation iterations=400000 elapsed_ms=312.474 ops_per_second=1280105.88 nanos_per_op=781.19
+put_component_template_reject_wire_bottleneck_ops_per_second=1044748.52
+```
+
+The current put-component-template fail-closed boundary bottleneck is request
+encode. The default benchmark writes the cluster-manager request envelope,
+component-template name, absent cause, create flag, empty nested template
+markers, absent version, and absent metadata marker before rejecting execution.
+At roughly 1.04M ops/s in the latest local release run, the remaining
+performance-sensitive work is component-template validation, metadata
+publication, and acknowledged response rendering.
 
 Current get-component-template reject wire microbenchmark:
 

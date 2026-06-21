@@ -91,6 +91,8 @@ pub const OPENSEARCH_INDICES_EXISTS_ACTION_NAME: &str = "indices:admin/exists";
 pub const OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME: &str = "indices:admin/template/get";
 pub const OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME: &str = "indices:admin/template/put";
 pub const OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME: &str = "indices:admin/template/delete";
+pub const OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME: &str =
+    "cluster:admin/component_template/put";
 pub const OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME: &str =
     "cluster:admin/component_template/get";
 pub const OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME: &str =
@@ -685,6 +687,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map legacy index-template deletion onto Rust template metadata mutation and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME,
+        action_type: "PutComponentTemplateAction",
+        transport_action: "TransportPutComponentTemplateAction",
+        request_wire_type: "PutComponentTemplateAction.Request",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map component-template creation and updates onto Rust template metadata mutation and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME,
         action_type: "GetComponentTemplateAction",
         transport_action: "TransportGetComponentTemplateAction",
@@ -1261,6 +1272,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-index-template transport execution requires template metadata mutation and ack rendering",
+        },
+        OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "put-component-template transport execution requires component template validation, metadata mutation, and ack rendering",
         },
         OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5141,6 +5157,44 @@ pub fn read_opensearch_delete_index_template_request_message(
         });
     }
     OpenSearchDeleteIndexTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_put_component_template_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchPutComponentTemplateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_put_component_template_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchPutComponentTemplateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchPutComponentTemplateRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_component_template_request_message(
@@ -9932,6 +9986,217 @@ impl OpenSearchDeleteIndexTemplateRequestWire {
             shape: "delete index template execution",
             reason:
                 "delete-index-template transport execution requires template metadata mutation and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct OpenSearchTemplateWire {
+    pub settings: BTreeMap<String, String>,
+    pub mappings: Option<String>,
+    pub aliases_count: i32,
+}
+
+impl OpenSearchTemplateWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        assert!(
+            self.mappings.is_none(),
+            "component-template mappings require compressed XContent wire parsing"
+        );
+        assert_eq!(
+            self.aliases_count, 0,
+            "component-template aliases require AliasMetadata wire parsing"
+        );
+        output.write_bool(!self.settings.is_empty());
+        if !self.settings.is_empty() {
+            write_settings_string_map(output, &self.settings);
+        }
+        output.write_bool(false);
+        output.write_bool(false);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let settings = if input.read_bool()? {
+            read_settings_string_map(input)?
+        } else {
+            BTreeMap::new()
+        };
+        let mappings = if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template mappings",
+                reason: "component-template mappings require compressed XContent wire parsing",
+            });
+        } else {
+            None
+        };
+        let aliases_count = if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template aliases",
+                reason: "component-template aliases require AliasMetadata wire parsing",
+            });
+        } else {
+            0
+        };
+        Ok(Self {
+            settings,
+            mappings,
+            aliases_count,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct OpenSearchComponentTemplateWire {
+    pub template: OpenSearchTemplateWire,
+    pub version: Option<i64>,
+    pub metadata_count: i32,
+}
+
+impl OpenSearchComponentTemplateWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        assert_eq!(
+            self.metadata_count, 0,
+            "component-template metadata requires generic map wire parsing"
+        );
+        self.template.write(output);
+        write_optional_vlong(output, self.version);
+        output.write_bool(false);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let template = OpenSearchTemplateWire::read(input)?;
+        let version = read_optional_vlong(input)?;
+        let metadata_count = if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template metadata",
+                reason: "component-template metadata requires generic map wire parsing",
+            });
+        } else {
+            0
+        };
+        Ok(Self {
+            template,
+            version,
+            metadata_count,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchPutComponentTemplateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub name: String,
+    pub cause: Option<String>,
+    pub create: bool,
+    pub component_template: OpenSearchComponentTemplateWire,
+}
+
+impl Default for OpenSearchPutComponentTemplateRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            name: "logs-component-template".to_string(),
+            cause: None,
+            create: false,
+            component_template: OpenSearchComponentTemplateWire::default(),
+        }
+    }
+}
+
+impl OpenSearchPutComponentTemplateRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.name);
+        output.write_optional_string(self.cause.as_deref());
+        output.write_bool(self.create);
+        self.component_template.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            name: input.read_string()?,
+            cause: input.read_optional_string()?,
+            create: input.read_bool()?,
+            component_template: OpenSearchComponentTemplateWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the put-component-template adapter yet",
+            });
+        }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template missing name",
+                reason: "OpenSearch put-component-template requests require a template name",
+            });
+        }
+        if self.cause.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template custom cause",
+                reason:
+                    "custom put-component-template causes require template metadata audit semantics",
+            });
+        }
+        if self.create {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template create flag",
+                reason: "create-only component-template writes require existing-template conflict semantics",
+            });
+        }
+        if !self.component_template.template.settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template settings",
+                reason:
+                    "component-template settings require settings validation and metadata rendering",
+            });
+        }
+        if self.component_template.template.mappings.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template mappings",
+                reason:
+                    "component-template mappings require mapping validation and metadata rendering",
+            });
+        }
+        if self.component_template.template.aliases_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template aliases",
+                reason:
+                    "component-template aliases require alias validation and metadata rendering",
+            });
+        }
+        if self.component_template.version.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template version",
+                reason: "component-template versions require template metadata rendering",
+            });
+        }
+        if self.component_template.metadata_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template metadata",
+                reason: "component-template metadata requires metadata validation and rendering",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "put component template execution",
+            reason:
+                "put-component-template transport execution requires component template metadata mutation and ack rendering",
         })
     }
 }
@@ -16604,6 +16869,23 @@ fn read_optional_vint(input: &mut StreamInput) -> Result<Option<i32>, TransportA
     }
 }
 
+fn write_optional_vlong(output: &mut StreamOutput, value: Option<i64>) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        output.write_vlong(value);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_vlong(input: &mut StreamInput) -> Result<Option<i64>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_vlong()?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_optional_bool(output: &mut StreamOutput, value: Option<bool>) {
     match value {
         Some(false) => output.write_byte(0),
@@ -17728,6 +18010,15 @@ mod tests {
                     next_step: "map legacy index-template deletion onto Rust template metadata mutation and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/component_template/put",
+                    action_type: "PutComponentTemplateAction",
+                    transport_action: "TransportPutComponentTemplateAction",
+                    request_wire_type: "PutComponentTemplateAction.Request",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map component-template creation and updates onto Rust template metadata mutation and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "cluster:admin/component_template/get",
                     action_type: "GetComponentTemplateAction",
                     transport_action: "TransportGetComponentTemplateAction",
@@ -18224,6 +18515,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME)
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
@@ -18340,6 +18636,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
@@ -26729,6 +27026,226 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete index template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_put_component_template_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchPutComponentTemplateRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchPutComponentTemplateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.name, "logs-component-template");
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_put_component_template_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchPutComponentTemplateRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_name = OpenSearchPutComponentTemplateRequestWire {
+            name: " ".to_string(),
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template missing name",
+                ..
+            })
+        ));
+
+        let custom_cause = OpenSearchPutComponentTemplateRequestWire {
+            cause: Some("api".to_string()),
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            custom_cause.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template custom cause",
+                ..
+            })
+        ));
+
+        let create_flag = OpenSearchPutComponentTemplateRequestWire {
+            create: true,
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            create_flag.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template create flag",
+                ..
+            })
+        ));
+
+        let mut settings = BTreeMap::new();
+        settings.insert("index.number_of_shards".to_string(), "1".to_string());
+        let custom_settings = OpenSearchPutComponentTemplateRequestWire {
+            component_template: OpenSearchComponentTemplateWire {
+                template: OpenSearchTemplateWire {
+                    settings,
+                    ..OpenSearchTemplateWire::default()
+                },
+                ..OpenSearchComponentTemplateWire::default()
+            },
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            custom_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template settings",
+                ..
+            })
+        ));
+
+        let mappings = OpenSearchPutComponentTemplateRequestWire {
+            component_template: OpenSearchComponentTemplateWire {
+                template: OpenSearchTemplateWire {
+                    mappings: Some("{\"properties\":{}}".to_string()),
+                    ..OpenSearchTemplateWire::default()
+                },
+                ..OpenSearchComponentTemplateWire::default()
+            },
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            mappings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template mappings",
+                ..
+            })
+        ));
+
+        let aliases = OpenSearchPutComponentTemplateRequestWire {
+            component_template: OpenSearchComponentTemplateWire {
+                template: OpenSearchTemplateWire {
+                    aliases_count: 1,
+                    ..OpenSearchTemplateWire::default()
+                },
+                ..OpenSearchComponentTemplateWire::default()
+            },
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            aliases.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template aliases",
+                ..
+            })
+        ));
+
+        let version = OpenSearchPutComponentTemplateRequestWire {
+            component_template: OpenSearchComponentTemplateWire {
+                version: Some(7),
+                ..OpenSearchComponentTemplateWire::default()
+            },
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            version.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template version",
+                ..
+            })
+        ));
+
+        let metadata = OpenSearchPutComponentTemplateRequestWire {
+            component_template: OpenSearchComponentTemplateWire {
+                metadata_count: 1,
+                ..OpenSearchComponentTemplateWire::default()
+            },
+            ..OpenSearchPutComponentTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            metadata.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template metadata",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_put_component_template_request_decode_rejects_nested_payloads() {
+        let mut mappings = StreamOutput::new();
+        write_parent_task_id(&mut mappings, "", None);
+        TimeValueWire::seconds(30).write(&mut mappings);
+        mappings.write_string("logs-component-template");
+        mappings.write_optional_string(None);
+        mappings.write_bool(false);
+        mappings.write_bool(false);
+        mappings.write_bool(true);
+        assert!(matches!(
+            OpenSearchPutComponentTemplateRequestWire::read(mappings.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template mappings",
+                ..
+            })
+        ));
+
+        let mut metadata = StreamOutput::new();
+        write_parent_task_id(&mut metadata, "", None);
+        TimeValueWire::seconds(30).write(&mut metadata);
+        metadata.write_string("logs-component-template");
+        metadata.write_optional_string(None);
+        metadata.write_bool(false);
+        metadata.write_bool(false);
+        metadata.write_bool(false);
+        metadata.write_bool(false);
+        write_optional_vlong(&mut metadata, None);
+        metadata.write_bool(true);
+        assert!(matches!(
+            OpenSearchPutComponentTemplateRequestWire::read(metadata.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "component template metadata",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_put_component_template_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchPutComponentTemplateRequestWire::default();
+        let mut frame = build_opensearch_put_component_template_request_message(
+            64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put component template request message");
+        };
+        assert_eq!(
+            read_opensearch_put_component_template_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_put_component_template_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put component template execution",
                 ..
             })
         ));
