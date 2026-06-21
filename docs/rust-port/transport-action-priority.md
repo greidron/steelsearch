@@ -198,6 +198,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/filecache/prune` (rejected fail-closed)
 - `cluster:admin/repository/put` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
+- `cluster:admin/repository/delete` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -473,6 +474,16 @@ The get-repositories boundary covers:
   repository metadata mapping and response rendering are implemented;
 - explicit rejection for custom cluster-manager timeout, repository name/pattern
   selection, local reads, and get-repositories execution.
+
+The delete-repository boundary covers:
+
+- OpenSearch `DeleteRepositoryRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, and repository name at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/repository/delete`
+  until repository metadata mutation and acknowledgement response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, custom acknowledgement
+  timeout, blank name, and delete-repository execution.
 
 The get-mappings boundary covers:
 
@@ -1387,6 +1398,23 @@ the decoded default request. The payload is only the ClusterManagerNodeRead
 envelope, local flag, and an empty repository-name array, so this remains one of the
 lightest read/admin rejection paths. At roughly 2.02M ops/s in the latest local
 release run, it does not introduce a transport-wire bottleneck.
+
+Current delete-repository reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-repository-reject-wire-benchmark
+delete_repository_reject_request_encode iterations=400000 elapsed_ms=233.755 ops_per_second=1711192.22 nanos_per_op=584.39
+delete_repository_reject_request_decode iterations=400000 elapsed_ms=225.736 ops_per_second=1771978.29 nanos_per_op=564.34
+delete_repository_reject_validation iterations=400000 elapsed_ms=230.712 ops_per_second=1733765.37 nanos_per_op=576.78
+delete_repository_reject_wire_bottleneck_ops_per_second=1711192.22
+```
+
+The current delete-repository fail-closed boundary bottleneck is request encode.
+The payload includes the acknowledged cluster-manager request envelope and
+repository name before admission rejects execution. At roughly 1.71M ops/s in
+the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is repository metadata
+mutation, cluster-state publication, and acknowledgement rendering.
 
 Current get-mappings reject wire microbenchmark:
 

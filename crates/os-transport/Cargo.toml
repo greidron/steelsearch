@@ -78,6 +78,10 @@ name = "put-repository-reject-wire-benchmark"
 path = "benchmarks/put_repository_reject_wire.rs"
 
 [[bin]]
+name = "delete-repository-reject-wire-benchmark"
+path = "benchmarks/delete_repository_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 

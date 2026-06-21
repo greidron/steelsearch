@@ -25,7 +25,7 @@ implemented	PendingClusterTasksAction.INSTANCE	TransportPendingClusterTasksActio
 partial	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	680
 partial	PutRepositoryAction.INSTANCE	TransportPutRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	681
 partial	GetRepositoriesAction.INSTANCE	TransportGetRepositoriesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	682
-planned	DeleteRepositoryAction.INSTANCE	TransportDeleteRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	683
+partial	DeleteRepositoryAction.INSTANCE	TransportDeleteRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	683
 planned	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	684
 planned	CleanupRepositoryAction.INSTANCE	TransportCleanupRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	685
 planned	GetSnapshotsAction.INSTANCE	TransportGetSnapshotsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	686
