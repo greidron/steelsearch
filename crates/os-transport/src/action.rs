@@ -78,6 +78,7 @@ pub const OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping
 pub const OPENSEARCH_INDICES_ALIASES_ACTION_NAME: &str = "indices:admin/aliases";
 pub const OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME: &str = "indices:admin/settings/update";
 pub const OPENSEARCH_SCALE_INDEX_ACTION_NAME: &str = "indices:admin/scale/search_only";
+pub const OPENSEARCH_ANALYZE_ACTION_NAME: &str = "indices:admin/analyze";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
@@ -564,6 +565,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map search-only scale transitions onto Rust index metadata validation, shard sync coordination, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_ANALYZE_ACTION_NAME,
+        action_type: "AnalyzeAction",
+        transport_action: "TransportAnalyzeAction",
+        request_wire_type: "AnalyzeAction.Request",
+        response_wire_type: "AnalyzeAction.Response",
+        adapter_stage: "analysis-admin",
+        next_step: "map bounded analyze requests onto Rust/OpenSearch-compatible analyzer selection, token generation, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_CREATE_INDEX_ACTION_NAME,
@@ -1176,6 +1186,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering",
+        },
+        OPENSEARCH_ANALYZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "analyze transport execution requires analyzer resolution, token generation, and response rendering",
         },
         OPENSEARCH_CREATE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4617,6 +4632,44 @@ pub fn read_opensearch_scale_index_request_message(
         });
     }
     OpenSearchScaleIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_analyze_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchAnalyzeRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_ANALYZE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_analyze_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchAnalyzeRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_ANALYZE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_ANALYZE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchAnalyzeRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_index_request_message(
@@ -8288,6 +8341,187 @@ impl OpenSearchScaleIndexRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "scale index execution",
             reason: "scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct OpenSearchNameOrDefinitionWire {
+    pub name: Option<String>,
+    pub definition: BTreeMap<String, String>,
+}
+
+impl OpenSearchNameOrDefinitionWire {
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: Some(name.into()),
+            definition: BTreeMap::new(),
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_optional_string(self.name.as_deref());
+        output.write_bool(!self.definition.is_empty());
+        if !self.definition.is_empty() {
+            write_settings_string_map(output, &self.definition);
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let name = input.read_optional_string()?;
+        let has_definition = input.read_bool()?;
+        let definition = if has_definition {
+            read_settings_string_map(input)?
+        } else {
+            BTreeMap::new()
+        };
+        Ok(Self { name, definition })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAnalyzeRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub index: Option<String>,
+    pub text: Vec<String>,
+    pub analyzer: Option<String>,
+    pub tokenizer: Option<OpenSearchNameOrDefinitionWire>,
+    pub token_filters: Vec<OpenSearchNameOrDefinitionWire>,
+    pub char_filters: Vec<OpenSearchNameOrDefinitionWire>,
+    pub field: Option<String>,
+    pub explain: bool,
+    pub attributes: Vec<String>,
+    pub normalizer: Option<String>,
+}
+
+impl Default for OpenSearchAnalyzeRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            index: None,
+            text: vec!["hello world".to_string()],
+            analyzer: Some("standard".to_string()),
+            tokenizer: None,
+            token_filters: Vec::new(),
+            char_filters: Vec::new(),
+            field: None,
+            explain: false,
+            attributes: Vec::new(),
+            normalizer: None,
+        }
+    }
+}
+
+impl OpenSearchAnalyzeRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_bool(false);
+        output.write_optional_string(self.index.as_deref());
+        output.write_string_array(&self.text);
+        output.write_optional_string(self.analyzer.as_deref());
+        write_optional_name_or_definition(output, self.tokenizer.as_ref());
+        write_name_or_definition_list(output, &self.token_filters);
+        write_name_or_definition_list(output, &self.char_filters);
+        output.write_optional_string(self.field.as_deref());
+        output.write_bool(self.explain);
+        output.write_string_array(&self.attributes);
+        output.write_optional_string(self.normalizer.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze internal shard id",
+                reason: "single-shard analyze requests with concrete ShardId payloads require shard routing semantics",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            index: input.read_optional_string()?,
+            text: input.read_string_array()?,
+            analyzer: input.read_optional_string()?,
+            tokenizer: read_optional_name_or_definition(&mut input)?,
+            token_filters: read_name_or_definition_list(&mut input)?,
+            char_filters: read_name_or_definition_list(&mut input)?,
+            field: input.read_optional_string()?,
+            explain: input.read_bool()?,
+            attributes: input.read_string_array()?,
+            normalizer: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.text.is_empty() || self.text.iter().any(|text| text.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze missing text",
+                reason: "OpenSearch analyze requests require at least one text value",
+            });
+        }
+        if self.normalizer.is_some() && self.index.as_deref().unwrap_or("").is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze normalizer missing index",
+                reason: "OpenSearch analyze normalizer requests require an index",
+            });
+        }
+        if self.normalizer.is_some() && (self.tokenizer.is_some() || self.analyzer.is_some()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze normalizer components",
+                reason: "OpenSearch analyze normalizer requests cannot combine tokenizer or analyzer components",
+            });
+        }
+        if self.analyzer.is_some()
+            && (self.tokenizer.is_some()
+                || !self.token_filters.is_empty()
+                || !self.char_filters.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze analyzer components",
+                reason: "named analyzer requests cannot combine custom analyzer components",
+            });
+        }
+        if self.field.is_some()
+            && (self.tokenizer.is_some()
+                || !self.token_filters.is_empty()
+                || !self.char_filters.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze field components",
+                reason:
+                    "field-specific analyzer requests cannot combine custom analyzer components",
+            });
+        }
+        if self.tokenizer.is_some()
+            || !self.token_filters.is_empty()
+            || !self.char_filters.is_empty()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze custom components",
+                reason:
+                    "custom analyzer components require OpenSearch analyzer construction semantics",
+            });
+        }
+        if self.explain {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze explain",
+                reason: "detailed analyze responses require token stream stage rendering",
+            });
+        }
+        if !self.attributes.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze attributes",
+                reason: "attribute-filtered analyze responses require token attribute rendering",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "analyze execution",
+            reason: "analyze transport execution requires analyzer resolution, token generation, and response rendering",
         })
     }
 }
@@ -16520,6 +16754,49 @@ fn read_optional_named_writeable_marker(
     }
 }
 
+fn write_optional_name_or_definition(
+    output: &mut StreamOutput,
+    value: Option<&OpenSearchNameOrDefinitionWire>,
+) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        value.write(output);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_name_or_definition(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchNameOrDefinitionWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(OpenSearchNameOrDefinitionWire::read(input)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn write_name_or_definition_list(
+    output: &mut StreamOutput,
+    values: &[OpenSearchNameOrDefinitionWire],
+) {
+    output.write_vint(values.len() as i32);
+    for value in values {
+        value.write(output);
+    }
+}
+
+fn read_name_or_definition_list(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchNameOrDefinitionWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(OpenSearchNameOrDefinitionWire::read(input)?);
+    }
+    Ok(values)
+}
+
 fn write_enum_set(output: &mut StreamOutput, ordinals: &[u8]) {
     output.write_vint(ordinals.len() as i32);
     for ordinal in ordinals {
@@ -17112,6 +17389,15 @@ mod tests {
                     next_step: "map search-only scale transitions onto Rust index metadata validation, shard sync coordination, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/analyze",
+                    action_type: "AnalyzeAction",
+                    transport_action: "TransportAnalyzeAction",
+                    request_wire_type: "AnalyzeAction.Request",
+                    response_wire_type: "AnalyzeAction.Response",
+                    adapter_stage: "analysis-admin",
+                    next_step: "map bounded analyze requests onto Rust/OpenSearch-compatible analyzer selection, token generation, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/create",
                     action_type: "CreateIndexAction",
                     transport_action: "TransportCreateIndexAction",
@@ -17651,6 +17937,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_ANALYZE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -17801,6 +18091,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SCALE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
@@ -24427,6 +24718,169 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "scale index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_analyze_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchAnalyzeRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchAnalyzeRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.text, ["hello world"]);
+        assert_eq!(decoded.analyzer.as_deref(), Some("standard"));
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_analyze_request_rejects_unsupported_shapes() {
+        let missing_text = OpenSearchAnalyzeRequestWire {
+            text: Vec::new(),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            missing_text.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze missing text",
+                ..
+            })
+        ));
+
+        let normalizer_missing_index = OpenSearchAnalyzeRequestWire {
+            analyzer: None,
+            normalizer: Some("lowercase".to_string()),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            normalizer_missing_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze normalizer missing index",
+                ..
+            })
+        ));
+
+        let normalizer_components = OpenSearchAnalyzeRequestWire {
+            index: Some("logs-000001".to_string()),
+            normalizer: Some("lowercase".to_string()),
+            analyzer: Some("standard".to_string()),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            normalizer_components.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze normalizer components",
+                ..
+            })
+        ));
+
+        let analyzer_components = OpenSearchAnalyzeRequestWire {
+            tokenizer: Some(OpenSearchNameOrDefinitionWire::named("standard")),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            analyzer_components.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze analyzer components",
+                ..
+            })
+        ));
+
+        let field_components = OpenSearchAnalyzeRequestWire {
+            analyzer: None,
+            field: Some("message".to_string()),
+            tokenizer: Some(OpenSearchNameOrDefinitionWire::named("standard")),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            field_components.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze field components",
+                ..
+            })
+        ));
+
+        let custom_components = OpenSearchAnalyzeRequestWire {
+            analyzer: None,
+            tokenizer: Some(OpenSearchNameOrDefinitionWire::named("standard")),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            custom_components.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze custom components",
+                ..
+            })
+        ));
+
+        let explain = OpenSearchAnalyzeRequestWire {
+            explain: true,
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            explain.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze explain",
+                ..
+            })
+        ));
+
+        let attributes = OpenSearchAnalyzeRequestWire {
+            attributes: vec!["positionLength".to_string()],
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            attributes.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze attributes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_analyze_request_decode_rejects_internal_shard_id() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_bool(true);
+
+        assert!(matches!(
+            OpenSearchAnalyzeRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze internal shard id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_analyze_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchAnalyzeRequestWire::default();
+        let mut frame =
+            build_opensearch_analyze_request_message(42, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected analyze request message");
+        };
+        assert_eq!(
+            read_opensearch_analyze_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_analyze_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze execution",
                 ..
             })
         ));

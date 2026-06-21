@@ -732,6 +732,20 @@ The scale-index boundary covers:
   acknowledgement timeouts, missing index targets, custom indices options,
   scale-up transitions, and scale-index execution.
 
+The analyze boundary covers:
+
+- OpenSearch `AnalyzeAction.Request` parent task, absent internal shard id,
+  optional index, text array, optional analyzer, optional tokenizer
+  `NameOrDefinition`, token filter list, char filter list, optional field,
+  `explain`, attributes array, and optional normalizer at the OpenSearch 3.x
+  wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/analyze` until analyzer
+  resolution, token generation, and response rendering are implemented;
+- explicit rejection for internal shard-id payloads, missing text, normalizers
+  without indices, invalid normalizer/analyzer/field component combinations,
+  custom analyzer components, explain responses, attribute-filtered responses,
+  and analyze execution.
+
 The create-index boundary covers:
 
 - OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
@@ -1997,6 +2011,24 @@ latest local release run, the current overhead remains lightweight transport
 wire work; future performance-sensitive work is search-only state validation,
 shard sync coordination, metadata mutation, and acknowledged response
 rendering.
+
+Current analyze reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin analyze-reject-wire-benchmark
+analyze_reject_request_encode iterations=400000 elapsed_ms=328.042 ops_per_second=1219354.63 nanos_per_op=820.11
+analyze_reject_request_decode iterations=400000 elapsed_ms=311.325 ops_per_second=1284830.36 nanos_per_op=778.31
+analyze_reject_validation iterations=400000 elapsed_ms=317.401 ops_per_second=1260236.41 nanos_per_op=793.50
+analyze_reject_wire_bottleneck_ops_per_second=1219354.63
+```
+
+The current analyze fail-closed boundary bottleneck is request encode. The path
+writes the single-shard request envelope, optional index, text array, analyzer
+selection, custom component lists, explain flag, attributes, and normalizer
+before rejecting execution. At roughly 1.22M ops/s in the latest local release
+run, the current overhead remains transport wire work; future
+performance-sensitive work is analyzer resolution, token generation, and
+response rendering.
 
 Current create-index reject wire microbenchmark:
 
