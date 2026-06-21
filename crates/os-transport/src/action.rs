@@ -126,6 +126,7 @@ pub const OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME: &str = "indices:monitor/dat
 pub const OPENSEARCH_RESOLVE_INDEX_ACTION_NAME: &str = "indices:admin/resolve/index";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
+pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
 pub const OPENSEARCH_INDEX_ACTION_NAME: &str = "indices:data/write/index";
@@ -954,6 +955,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map term-vectors requests onto Rust shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME,
+        action_type: "MultiTermVectorsAction",
+        transport_action: "TransportMultiTermVectorsAction",
+        request_wire_type: "MultiTermVectorsRequest",
+        response_wire_type: "MultiTermVectorsResponse",
+        adapter_stage: "document-read",
+        next_step: "map multi term-vectors requests onto Rust per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and item response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_MULTI_GET_ACTION_NAME,
         action_type: "MultiGetAction",
         transport_action: "TransportMultiGetAction",
@@ -1578,6 +1588,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
+        },
+        OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "multi term-vectors transport execution requires per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
         },
         OPENSEARCH_MULTI_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14550,7 +14565,13 @@ impl OpenSearchTermVectorsRequestWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
         let internal_shard_id_present = input.read_bool()?;
         if internal_shard_id_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -14585,14 +14606,14 @@ impl OpenSearchTermVectorsRequestWire {
             selected_fields.push(input.read_string()?);
         }
         let per_field_analyzer = if input.read_bool()? {
-            read_generic_string_map(&mut input)?
+            read_generic_string_map(input)?
         } else {
             BTreeMap::new()
         };
         let filter_settings_present = input.read_bool()?;
         if filter_settings_present {
             for _ in 0..7 {
-                let _ = read_optional_vint(&mut input)?;
+                let _ = read_optional_vint(input)?;
             }
         }
         let request = Self {
@@ -14613,7 +14634,6 @@ impl OpenSearchTermVectorsRequestWire {
             version_type: input.read_byte()?,
             version: input.read_i64()?,
         };
-        require_no_trailing_bytes(&input)?;
         Ok(request)
     }
 
@@ -14705,6 +14725,90 @@ impl OpenSearchTermVectorsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "term vectors execution",
             reason: "term-vectors transport execution requires shard term-vector generation and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchMultiTermVectorsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub preference: Option<String>,
+    pub requests: Vec<OpenSearchTermVectorsRequestWire>,
+}
+
+impl OpenSearchMultiTermVectorsRequestWire {
+    pub fn new(requests: Vec<OpenSearchTermVectorsRequestWire>) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            preference: None,
+            requests,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_optional_string(self.preference.as_deref());
+        output.write_vint(self.requests.len() as i32);
+        for request in &self.requests {
+            request.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let preference = input.read_optional_string()?;
+        let request_count = input.read_vint()?;
+        if request_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors request count",
+                reason: "multi term-vectors request count cannot be negative",
+            });
+        }
+        let mut requests = Vec::with_capacity(request_count as usize);
+        for _ in 0..request_count {
+            requests.push(OpenSearchTermVectorsRequestWire::read_from_input(
+                &mut input,
+            )?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            preference,
+            requests,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.requests.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors requests",
+                reason: "OpenSearch multi term-vectors requests require at least one document",
+            });
+        }
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors preference",
+                reason: "preference requires OpenSearch shard preference routing semantics",
+            });
+        }
+        for request in &self.requests {
+            match request.reject_unsupported_execution() {
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "term vectors execution",
+                    ..
+                }) => {}
+                Err(err) => return Err(err),
+                Ok(()) => {}
+            }
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "multi term vectors execution",
+            reason: "multi term-vectors transport execution requires per-item shard routing, term-vector generation, and item response rendering",
         })
     }
 }
@@ -14944,6 +15048,44 @@ pub fn read_opensearch_term_vectors_request_message(
         });
     }
     OpenSearchTermVectorsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_multi_term_vectors_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchMultiTermVectorsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_multi_term_vectors_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchMultiTermVectorsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchMultiTermVectorsRequestWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20332,6 +20474,15 @@ mod tests {
                     next_step: "map term-vectors requests onto Rust shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/mtv",
+                    action_type: "MultiTermVectorsAction",
+                    transport_action: "TransportMultiTermVectorsAction",
+                    request_wire_type: "MultiTermVectorsRequest",
+                    response_wire_type: "MultiTermVectorsResponse",
+                    adapter_stage: "document-read",
+                    next_step: "map multi term-vectors requests onto Rust per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and item response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/mget",
                     action_type: "MultiGetAction",
                     transport_action: "TransportMultiGetAction",
@@ -20569,6 +20720,11 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_TERM_VECTORS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME)
+                .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -20837,6 +20993,7 @@ mod tests {
             }
             if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
@@ -21246,6 +21403,114 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "term vectors execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_term_vectors_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchMultiTermVectorsRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            requests: vec![
+                OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into()),
+                OpenSearchTermVectorsRequestWire::new("metrics-000001".into(), "doc-2".into()),
+            ],
+            ..OpenSearchMultiTermVectorsRequestWire::new(Vec::new())
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchMultiTermVectorsRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_term_vectors_request_rejects_unsupported_shapes() {
+        let empty = OpenSearchMultiTermVectorsRequestWire::new(Vec::new());
+        assert!(matches!(
+            empty.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors requests",
+                ..
+            })
+        ));
+
+        let preference = OpenSearchMultiTermVectorsRequestWire {
+            preference: Some("_primary".into()),
+            requests: vec![OpenSearchTermVectorsRequestWire::new(
+                "logs-000001".into(),
+                "doc-1".into(),
+            )],
+            ..OpenSearchMultiTermVectorsRequestWire::new(Vec::new())
+        };
+        assert!(matches!(
+            preference.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors preference",
+                ..
+            })
+        ));
+
+        let item_with_routing = OpenSearchMultiTermVectorsRequestWire {
+            requests: vec![OpenSearchTermVectorsRequestWire {
+                routing: Some("tenant-a".into()),
+                ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+            }],
+            ..OpenSearchMultiTermVectorsRequestWire::new(Vec::new())
+        };
+        assert!(matches!(
+            item_with_routing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors routing",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_term_vectors_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchMultiTermVectorsRequestWire::new(vec![
+            OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into()),
+            OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-2".into()),
+        ]);
+        let mut frame = build_opensearch_multi_term_vectors_request_message(
+            23,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected multi term vectors request message");
+        };
+
+        assert_eq!(message.request_id, 23);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_multi_term_vectors_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_multi_term_vectors_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi term vectors execution",
                 ..
             })
         ));

@@ -252,6 +252,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/delete`
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
+- `indices:data/read/mtv` (rejected fail-closed)
 - `indices:admin/flush` (rejected fail-closed)
 - `indices:admin/forcemerge` (rejected fail-closed)
 - `indices:admin/upgrade` (rejected fail-closed)
@@ -1463,6 +1464,21 @@ The term-vectors boundary covers:
   artificial documents, routing, preference, custom flags, selected fields,
   per-field analyzers, filter settings, non-realtime reads, versioned reads,
   and term-vectors execution.
+
+The multi term-vectors boundary covers:
+
+- OpenSearch `MultiTermVectorsRequest` parent task, optional preference, and
+  collection of nested `TermVectorsRequest` payloads at the wire decode/build
+  layer;
+- nested term-vectors item decoding with the same request envelope, id/doc,
+  routing/preference, flags, selected fields, analyzer map, filter settings,
+  realtime, and versioning markers as the single term-vectors boundary;
+- explicit fail-closed classification for `indices:data/read/mtv` until
+  per-item shard routing, realtime/non-realtime visibility, analyzer
+  selection, term statistics generation, item failure handling, and aggregate
+  response rendering are implemented against Rust shard state;
+- explicit rejection for empty request batches, top-level preference, any
+  unsupported nested term-vectors item shape, and multi term-vectors execution.
 
 The get adapter covers:
 
@@ -3137,6 +3153,24 @@ versioning before rejecting execution. At roughly 1.34M ops/s in the latest
 local release run, the remaining performance-sensitive work is shard routing,
 postings/term-vector generation, analyzer lookup, term statistics collection,
 and response rendering.
+
+Current multi term-vectors reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin multi-term-vectors-reject-wire-benchmark
+multi_term_vectors_reject_request_encode iterations=300000 elapsed_ms=373.203 ops_per_second=803853.09 nanos_per_op=1244.01
+multi_term_vectors_reject_request_decode iterations=300000 elapsed_ms=308.525 ops_per_second=972368.93 nanos_per_op=1028.42
+multi_term_vectors_reject_validation iterations=300000 elapsed_ms=350.007 ops_per_second=857124.58 nanos_per_op=1166.69
+multi_term_vectors_reject_wire_bottleneck_ops_per_second=803853.09
+```
+
+The current multi term-vectors fail-closed boundary bottleneck is request
+encode for a two-item batch. The benchmark writes the parent request envelope,
+top-level preference marker, collection length, and two nested term-vectors
+request envelopes before rejecting aggregate execution. At roughly 0.80M ops/s
+in the latest local release run, the remaining performance-sensitive work is
+per-item shard grouping, item-level term-vector generation, item failure
+handling, and aggregate response rendering.
 
 Current multi-get wire microbenchmark:
 

@@ -877,6 +877,15 @@
       "reason": "Term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering before Steelsearch can serve OpenSearch term-vectors semantics."
     },
     {
+      "action_name": "indices:data/read/mtv",
+      "action_type": "MultiTermVectorsAction",
+      "transport_action": "TransportMultiTermVectorsAction",
+      "request_wire_type": "MultiTermVectorsRequest",
+      "response_wire_type": "MultiTermVectorsResponse",
+      "disposition": "rejected",
+      "reason": "Multi term-vectors transport execution requires per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering before Steelsearch can serve OpenSearch multi term-vectors semantics."
+    },
+    {
       "action_name": "indices:data/read/mget",
       "action_type": "MultiGetAction",
       "transport_action": "TransportMultiGetAction",

@@ -402,6 +402,10 @@ name = "term-vectors-reject-wire-benchmark"
 path = "benchmarks/term_vectors_reject_wire.rs"
 
 [[bin]]
+name = "multi-term-vectors-reject-wire-benchmark"
+path = "benchmarks/multi_term_vectors_reject_wire.rs"
+
+[[bin]]
 name = "multi-get-wire-benchmark"
 path = "benchmarks/multi_get_wire.rs"
 
