@@ -121,6 +121,15 @@
       "reason": "Clear-voting-config-exclusions transport execution requires coordination metadata mutation and removal tracking before Steelsearch can serve OpenSearch voting exclusion clearing semantics."
     },
     {
+      "action_name": "cluster:monitor/allocation/explain",
+      "action_type": "ClusterAllocationExplainAction",
+      "transport_action": "TransportClusterAllocationExplainAction",
+      "request_wire_type": "ClusterAllocationExplainRequest",
+      "response_wire_type": "ClusterAllocationExplainResponse",
+      "disposition": "rejected",
+      "reason": "Cluster-allocation-explain transport execution requires shard routing allocation decision rendering before Steelsearch can serve OpenSearch allocation explanation semantics."
+    },
+    {
       "action_name": "cluster:admin/settings/update",
       "action_type": "ClusterUpdateSettingsAction",
       "transport_action": "TransportClusterUpdateSettingsAction",

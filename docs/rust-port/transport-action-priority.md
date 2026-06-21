@@ -189,6 +189,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/voting_config/add_exclusions` (rejected fail-closed)
 - `cluster:admin/voting_config/clear_exclusions` (rejected fail-closed)
+- `cluster:monitor/allocation/explain` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
@@ -365,6 +366,19 @@ The clear-voting-config-exclusions boundary covers:
   mutation and removal tracking are implemented;
 - explicit rejection for custom cluster-manager timeout, no-wait clearing,
   custom wait timeout, and clear-voting-config-exclusions execution.
+
+The cluster-allocation-explain boundary covers:
+
+- OpenSearch `ClusterAllocationExplainRequest` parent task,
+  cluster-manager timeout, optional index, optional shard id, optional primary
+  flag, optional current node, include-yes-decisions flag, and include-disk-info
+  flag at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:monitor/allocation/explain` until shard routing allocation decision
+  rendering is implemented;
+- explicit rejection for custom cluster-manager timeout, partial shard selector,
+  include-yes-decisions, include-disk-info, and cluster-allocation-explain
+  execution.
 
 The cluster-update-settings boundary covers:
 
@@ -1161,6 +1175,23 @@ request encode. The payload writes parent task, cluster-manager timeout,
 roughly 1.52M ops/s in the latest local release run, this boundary is not a
 material transport bottleneck; the first performance-sensitive work is
 coordination metadata mutation and removal tracking.
+
+Current cluster-allocation-explain reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cluster-allocation-explain-reject-wire-benchmark
+cluster_allocation_explain_reject_request_encode iterations=400000 elapsed_ms=242.396 ops_per_second=1650194.88 nanos_per_op=605.99
+cluster_allocation_explain_reject_request_decode iterations=400000 elapsed_ms=221.324 ops_per_second=1807305.99 nanos_per_op=553.31
+cluster_allocation_explain_reject_validation iterations=400000 elapsed_ms=223.206 ops_per_second=1792069.81 nanos_per_op=558.01
+cluster_allocation_explain_reject_wire_bottleneck_ops_per_second=1650194.88
+```
+
+The current cluster-allocation-explain fail-closed boundary bottleneck is
+request encode. The payload writes parent task, cluster-manager timeout, four
+optional selector fields, and two option flags before admission rejects
+execution. At roughly 1.65M ops/s in the latest local release run, this boundary
+is not a material transport bottleneck; the first performance-sensitive work is
+shard routing allocation decision rendering.
 
 Current cluster-update-settings reject wire microbenchmark:
 

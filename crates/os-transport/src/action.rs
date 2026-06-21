@@ -34,6 +34,7 @@ pub const ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
     "cluster:admin/voting_config/add_exclusions";
 pub const CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
     "cluster:admin/voting_config/clear_exclusions";
+pub const CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME: &str = "cluster:monitor/allocation/explain";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const CLUSTER_REROUTE_ACTION_NAME: &str = "cluster:admin/reroute";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
@@ -203,6 +204,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClearVotingConfigExclusionsAction",
         request_wire_type: "ClearVotingConfigExclusionsRequest",
         response_wire_type: "ClearVotingConfigExclusionsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME,
+        action_type: "ClusterAllocationExplainAction",
+        transport_action: "TransportClusterAllocationExplainAction",
+        request_wire_type: "ClusterAllocationExplainRequest",
+        response_wire_type: "ClusterAllocationExplainResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -799,6 +807,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "clear-voting-config-exclusions transport execution requires coordination metadata mutation semantics",
+        },
+        CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cluster-allocation-explain transport execution requires shard routing allocation decision rendering",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2987,6 +3000,44 @@ pub fn read_clear_voting_config_exclusions_request_message(
         });
     }
     ClearVotingConfigExclusionsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_allocation_explain_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterAllocationExplainRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_allocation_explain_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterAllocationExplainRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterAllocationExplainRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_get_repositories_request_message(
@@ -8069,6 +8120,113 @@ impl ClearVotingConfigExclusionsRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterAllocationExplainRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub index: Option<String>,
+    pub shard: Option<i32>,
+    pub primary: Option<bool>,
+    pub current_node: Option<String>,
+    pub include_yes_decisions: bool,
+    pub include_disk_info: bool,
+}
+
+impl Default for ClusterAllocationExplainRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            index: None,
+            shard: None,
+            primary: None,
+            current_node: None,
+            include_yes_decisions: false,
+            include_disk_info: false,
+        }
+    }
+}
+
+impl ClusterAllocationExplainRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_optional_string(self.index.as_deref());
+        write_optional_vint(output, self.shard);
+        write_optional_bool(output, self.primary);
+        output.write_optional_string(self.current_node.as_deref());
+        output.write_bool(self.include_yes_decisions);
+        output.write_bool(self.include_disk_info);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            index: input.read_optional_string()?,
+            shard: read_optional_vint(&mut input)?,
+            primary: read_optional_bool(&mut input)?,
+            current_node: input.read_optional_string()?,
+            include_yes_decisions: input.read_bool()?,
+            include_disk_info: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires cluster-manager routing semantics",
+            });
+        }
+        if let Some(shard) = self.shard {
+            if shard < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "cluster allocation explain shard",
+                    reason: "OpenSearch allocation explain shard id must be non-negative",
+                });
+            }
+        }
+        let uses_any_unassigned_shard = self.index.is_none()
+            && self.shard.is_none()
+            && self.primary.is_none()
+            && self.current_node.is_none();
+        let has_complete_shard_selector =
+            self.index.is_some() && self.shard.is_some() && self.primary.is_some();
+        if !uses_any_unassigned_shard && !has_complete_shard_selector {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain partial shard selector",
+                reason:
+                    "OpenSearch requires index, shard, and primary when not explaining any unassigned shard",
+            });
+        }
+        if self.include_yes_decisions {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain yes decisions",
+                reason: "including yes decisions requires complete allocation decider rendering",
+            });
+        }
+        if self.include_disk_info {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain disk info",
+                reason:
+                    "including disk info requires node disk usage allocation metadata rendering",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster allocation explain execution",
+            reason: "cluster allocation explain transport execution requires shard routing allocation decision rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcknowledgedResponseWire {
     pub acknowledged: bool,
 }
@@ -12467,6 +12625,13 @@ mod tests {
                     response_wire_type: "ClearVotingConfigExclusionsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/allocation/explain",
+                    action_type: "ClusterAllocationExplainAction",
+                    transport_action: "TransportClusterAllocationExplainAction",
+                    request_wire_type: "ClusterAllocationExplainRequest",
+                    response_wire_type: "ClusterAllocationExplainResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -12972,6 +13137,11 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME)
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -16443,6 +16613,140 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clear voting config exclusions execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_allocation_explain_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ClusterAllocationExplainRequestWire {
+            parent_task_node: "coord-node".to_string(),
+            parent_task_id: Some(17),
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClusterAllocationExplainRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_allocation_explain_request_accepts_full_selector_then_rejects_execution() {
+        let request = ClusterAllocationExplainRequestWire {
+            index: Some("logs".to_string()),
+            shard: Some(0),
+            primary: Some(true),
+            current_node: Some("node-a".to_string()),
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClusterAllocationExplainRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_allocation_explain_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = ClusterAllocationExplainRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let partial_selector = ClusterAllocationExplainRequestWire {
+            index: Some("logs".to_string()),
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        assert!(matches!(
+            partial_selector.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain partial shard selector",
+                ..
+            })
+        ));
+
+        let current_node_without_selector = ClusterAllocationExplainRequestWire {
+            current_node: Some("node-a".to_string()),
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        assert!(matches!(
+            current_node_without_selector.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain partial shard selector",
+                ..
+            })
+        ));
+
+        let include_yes_decisions = ClusterAllocationExplainRequestWire {
+            include_yes_decisions: true,
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        assert!(matches!(
+            include_yes_decisions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain yes decisions",
+                ..
+            })
+        ));
+
+        let include_disk_info = ClusterAllocationExplainRequestWire {
+            include_disk_info: true,
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        assert!(matches!(
+            include_disk_info.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain disk info",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_allocation_explain_transport_messages_bind_rejected_action_frame() {
+        let request = ClusterAllocationExplainRequestWire::default();
+        let mut frame = build_cluster_allocation_explain_request_message(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster allocation explain request message");
+        };
+        assert_eq!(
+            read_cluster_allocation_explain_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_cluster_allocation_explain_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain execution",
                 ..
             })
         ));
