@@ -178,6 +178,10 @@ name = "auto-put-mapping-reject-wire-benchmark"
 path = "benchmarks/auto_put_mapping_reject_wire.rs"
 
 [[bin]]
+name = "indices-aliases-reject-wire-benchmark"
+path = "benchmarks/indices_aliases_reject_wire.rs"
+
+[[bin]]
 name = "get-index-reject-wire-benchmark"
 path = "benchmarks/get_index_reject_wire.rs"
 

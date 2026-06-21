@@ -687,6 +687,23 @@ The auto-put-mapping boundary covers:
   custom indices options, empty mapping sources, custom origins,
   write-index-only updates, and auto-put-mapping execution.
 
+The indices-aliases boundary covers:
+
+- OpenSearch `IndicesAliasesRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, alias action list, optional origin, and
+  `AliasActions` add/remove/remove-index ordinals, indices array, aliases
+  array, optional filter, routing fields, optional write-index flag, optional
+  hidden flag, original aliases array, and optional must-exist flag at the
+  OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/aliases` until alias
+  metadata mutation, remove-index sub-actions, and acknowledged response
+  rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, empty action lists, custom origins, unknown alias
+  action ordinals, missing index targets, missing alias targets, remove-index
+  alias payloads, filtered aliases, alias routing, write-index updates, hidden
+  alias updates, must-exist removals, and indices-aliases execution.
+
 The create-index boundary covers:
 
 - OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
@@ -1898,6 +1915,24 @@ the latest local release run, the current overhead is still lightweight
 transport shape validation; future performance-sensitive work is
 concrete-index mapping validation, metadata mutation, and acknowledged response
 rendering.
+
+Current indices-aliases reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin indices-aliases-reject-wire-benchmark
+indices_aliases_reject_request_encode iterations=400000 elapsed_ms=380.930 ops_per_second=1050062.61 nanos_per_op=952.32
+indices_aliases_reject_request_decode iterations=400000 elapsed_ms=394.077 ops_per_second=1015029.67 nanos_per_op=985.19
+indices_aliases_reject_validation iterations=400000 elapsed_ms=405.229 ops_per_second=987095.27 nanos_per_op=1013.07
+indices_aliases_reject_wire_bottleneck_ops_per_second=987095.27
+```
+
+The current indices-aliases fail-closed boundary bottleneck is validation. The
+path decodes one alias add action, checks default timeouts, origin, action
+presence, required index and alias fields, and unsupported alias options before
+rejecting execution. At roughly 0.99M ops/s in the latest local release run,
+the current overhead remains lightweight transport shape validation; future
+performance-sensitive work is alias metadata mutation, remove-index sub-action
+handling, and acknowledged response rendering.
 
 Current create-index reject wire microbenchmark:
 

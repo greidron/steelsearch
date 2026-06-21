@@ -75,6 +75,7 @@ pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/ge
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/put";
 pub const OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/auto_put";
+pub const OPENSEARCH_INDICES_ALIASES_ACTION_NAME: &str = "indices:admin/aliases";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
@@ -534,6 +535,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
         next_step: "map automatic concrete-index mapping updates onto Rust mapping validation, metadata mutation, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_INDICES_ALIASES_ACTION_NAME,
+        action_type: "IndicesAliasesAction",
+        transport_action: "TransportIndicesAliasesAction",
+        request_wire_type: "IndicesAliasesRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map alias add/remove/remove-index updates onto Rust cluster metadata mutation and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_CREATE_INDEX_ACTION_NAME,
@@ -1131,6 +1141,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering",
+        },
+        OPENSEARCH_INDICES_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering",
         },
         OPENSEARCH_CREATE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4460,6 +4475,44 @@ pub fn read_opensearch_auto_put_mapping_request_message(
     OpenSearchPutMappingRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_indices_aliases_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchIndicesAliasesRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_INDICES_ALIASES_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_indices_aliases_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndicesAliasesRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_INDICES_ALIASES_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_INDICES_ALIASES_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchIndicesAliasesRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_get_index_request_message(
     request_id: i64,
     version: Version,
@@ -7681,6 +7734,252 @@ impl OpenSearchPutMappingRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "auto put mapping execution",
             reason: "auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering",
+        })
+    }
+}
+
+const OPENSEARCH_ALIAS_ACTION_ADD: u8 = 0;
+const OPENSEARCH_ALIAS_ACTION_REMOVE: u8 = 1;
+const OPENSEARCH_ALIAS_ACTION_REMOVE_INDEX: u8 = 2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchAliasActionTypeWire {
+    Add,
+    Remove,
+    RemoveIndex,
+}
+
+impl OpenSearchAliasActionTypeWire {
+    fn write(self, output: &mut StreamOutput) {
+        output.write_byte(match self {
+            Self::Add => OPENSEARCH_ALIAS_ACTION_ADD,
+            Self::Remove => OPENSEARCH_ALIAS_ACTION_REMOVE,
+            Self::RemoveIndex => OPENSEARCH_ALIAS_ACTION_REMOVE_INDEX,
+        });
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_byte()? {
+            OPENSEARCH_ALIAS_ACTION_ADD => Ok(Self::Add),
+            OPENSEARCH_ALIAS_ACTION_REMOVE => Ok(Self::Remove),
+            OPENSEARCH_ALIAS_ACTION_REMOVE_INDEX => Ok(Self::RemoveIndex),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases action type",
+                reason: "alias action type must match OpenSearch AliasActions.Type",
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAliasActionWire {
+    pub action_type: OpenSearchAliasActionTypeWire,
+    pub indices: Vec<String>,
+    pub aliases: Vec<String>,
+    pub filter: Option<String>,
+    pub routing: Option<String>,
+    pub search_routing: Option<String>,
+    pub index_routing: Option<String>,
+    pub write_index: Option<bool>,
+    pub is_hidden: Option<bool>,
+    pub original_aliases: Vec<String>,
+    pub must_exist: Option<bool>,
+}
+
+impl OpenSearchAliasActionWire {
+    pub fn add_default() -> Self {
+        Self {
+            action_type: OpenSearchAliasActionTypeWire::Add,
+            indices: vec!["logs-000001".to_string()],
+            aliases: vec!["logs-current".to_string()],
+            filter: None,
+            routing: None,
+            search_routing: None,
+            index_routing: None,
+            write_index: None,
+            is_hidden: None,
+            original_aliases: vec!["logs-current".to_string()],
+            must_exist: None,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        self.action_type.write(output);
+        output.write_string_array(&self.indices);
+        output.write_string_array(&self.aliases);
+        output.write_optional_string(self.filter.as_deref());
+        output.write_optional_string(self.routing.as_deref());
+        output.write_optional_string(self.search_routing.as_deref());
+        output.write_optional_string(self.index_routing.as_deref());
+        write_optional_bool(output, self.write_index);
+        write_optional_bool(output, self.is_hidden);
+        output.write_string_array(&self.original_aliases);
+        write_optional_bool(output, self.must_exist);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            action_type: OpenSearchAliasActionTypeWire::read(input)?,
+            indices: input.read_string_array()?,
+            aliases: input.read_string_array()?,
+            filter: input.read_optional_string()?,
+            routing: input.read_optional_string()?,
+            search_routing: input.read_optional_string()?,
+            index_routing: input.read_optional_string()?,
+            write_index: read_optional_bool(input)?,
+            is_hidden: read_optional_bool(input)?,
+            original_aliases: input.read_string_array()?,
+            must_exist: read_optional_bool(input)?,
+        })
+    }
+
+    fn reject_unsupported_shape(&self) -> Result<(), TransportActionWireError> {
+        if self.indices.is_empty() || self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases missing index",
+                reason: "OpenSearch alias actions require at least one target index",
+            });
+        }
+        if self.action_type != OpenSearchAliasActionTypeWire::RemoveIndex
+            && (self.aliases.is_empty() || self.aliases.iter().any(|alias| alias.trim().is_empty()))
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases missing alias",
+                reason: "OpenSearch add/remove alias actions require at least one alias",
+            });
+        }
+        if self.action_type == OpenSearchAliasActionTypeWire::RemoveIndex
+            && !self.aliases.is_empty()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases remove-index aliases",
+                reason: "remove-index alias actions do not carry alias names",
+            });
+        }
+        if self.filter.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases filter",
+                reason: "filtered aliases require query builder validation and metadata mutation semantics",
+            });
+        }
+        if self.routing.is_some() || self.search_routing.is_some() || self.index_routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases routing",
+                reason: "alias routing requires index/search routing metadata mutation semantics",
+            });
+        }
+        if self.write_index.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases write index",
+                reason: "write-index alias updates require alias conflict and data-stream validation semantics",
+            });
+        }
+        if self.is_hidden.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases hidden",
+                reason: "hidden alias updates require hidden index and alias metadata validation semantics",
+            });
+        }
+        if self.must_exist.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases must exist",
+                reason: "must-exist alias removals require alias existence validation semantics",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchIndicesAliasesRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub actions: Vec<OpenSearchAliasActionWire>,
+    pub origin: Option<String>,
+}
+
+impl Default for OpenSearchIndicesAliasesRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            actions: vec![OpenSearchAliasActionWire::add_default()],
+            origin: Some(String::new()),
+        }
+    }
+}
+
+impl OpenSearchIndicesAliasesRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_vint(self.actions.len() as i32);
+        for action in &self.actions {
+            action.write(output);
+        }
+        output.write_optional_string(self.origin.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let action_count = read_len(&mut input)?;
+        let mut actions = Vec::with_capacity(action_count);
+        for _ in 0..action_count {
+            actions.push(OpenSearchAliasActionWire::read(&mut input)?);
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            actions,
+            origin: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the indices-aliases adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases ack timeout",
+                reason: "custom ack timeout is not mapped by the indices-aliases adapter yet",
+            });
+        }
+        if self.actions.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases actions",
+                reason: "OpenSearch indices-aliases requests require at least one alias action",
+            });
+        }
+        if self.origin.as_deref() != Some("") {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases origin",
+                reason:
+                    "custom indices-aliases origins require system-origin authorization semantics",
+            });
+        }
+        for action in &self.actions {
+            action.reject_unsupported_shape()?;
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "indices aliases execution",
+            reason: "indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering",
         })
     }
 }
@@ -16435,6 +16734,15 @@ mod tests {
                     next_step: "map automatic concrete-index mapping updates onto Rust mapping validation, metadata mutation, and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/aliases",
+                    action_type: "IndicesAliasesAction",
+                    transport_action: "TransportIndicesAliasesAction",
+                    request_wire_type: "IndicesAliasesRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map alias add/remove/remove-index updates onto Rust cluster metadata mutation and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/create",
                     action_type: "CreateIndexAction",
                     transport_action: "TransportCreateIndexAction",
@@ -16960,6 +17268,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_INDICES_ALIASES_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -17107,6 +17420,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
+                || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
@@ -23218,6 +23532,248 @@ mod tests {
                 .reject_unsupported_auto_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "auto put mapping execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_aliases_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchIndicesAliasesRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchIndicesAliasesRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.actions.len(), 1);
+        assert_eq!(
+            decoded.actions[0].action_type,
+            OpenSearchAliasActionTypeWire::Add
+        );
+        assert_eq!(decoded.actions[0].indices, vec!["logs-000001"]);
+        assert_eq!(decoded.actions[0].aliases, vec!["logs-current"]);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_aliases_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchIndicesAliasesRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchIndicesAliasesRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases ack timeout",
+                ..
+            })
+        ));
+
+        let empty_actions = OpenSearchIndicesAliasesRequestWire {
+            actions: Vec::new(),
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            empty_actions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases actions",
+                ..
+            })
+        ));
+
+        let origin = OpenSearchIndicesAliasesRequestWire {
+            origin: Some("system".to_string()),
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            origin.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases origin",
+                ..
+            })
+        ));
+
+        let missing_index = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                indices: Vec::new(),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            missing_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases missing index",
+                ..
+            })
+        ));
+
+        let missing_alias = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                aliases: Vec::new(),
+                original_aliases: Vec::new(),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            missing_alias.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases missing alias",
+                ..
+            })
+        ));
+
+        let remove_index_aliases = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                action_type: OpenSearchAliasActionTypeWire::RemoveIndex,
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            remove_index_aliases.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases remove-index aliases",
+                ..
+            })
+        ));
+
+        let filter = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                filter: Some("{\"term\":{\"service\":\"api\"}}".to_string()),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases filter",
+                ..
+            })
+        ));
+
+        let routing = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                routing: Some("tenant-1".to_string()),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            routing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases routing",
+                ..
+            })
+        ));
+
+        let write_index = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                write_index: Some(true),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            write_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases write index",
+                ..
+            })
+        ));
+
+        let hidden = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                is_hidden: Some(true),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            hidden.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases hidden",
+                ..
+            })
+        ));
+
+        let must_exist = OpenSearchIndicesAliasesRequestWire {
+            actions: vec![OpenSearchAliasActionWire {
+                action_type: OpenSearchAliasActionTypeWire::Remove,
+                must_exist: Some(true),
+                ..OpenSearchAliasActionWire::add_default()
+            }],
+            ..OpenSearchIndicesAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            must_exist.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases must exist",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_aliases_request_decode_rejects_unknown_action_type() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        TimeValueWire::seconds(30).write(&mut output);
+        TimeValueWire::seconds(30).write(&mut output);
+        output.write_vint(1);
+        output.write_byte(9);
+
+        assert!(matches!(
+            OpenSearchIndicesAliasesRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases action type",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_indices_aliases_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchIndicesAliasesRequestWire::default();
+        let mut frame = build_opensearch_indices_aliases_request_message(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected indices aliases request message");
+        };
+        assert_eq!(
+            read_opensearch_indices_aliases_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_indices_aliases_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases execution",
                 ..
             })
         ));

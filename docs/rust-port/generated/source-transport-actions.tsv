@@ -54,7 +54,7 @@ partial	GetMappingsAction.INSTANCE	TransportGetMappingsAction.class	/home/ubuntu
 partial	GetFieldMappingsAction.INSTANCE	TransportGetFieldMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	710
 partial	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	715
 partial	AutoPutMappingAction.INSTANCE	TransportAutoPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	716
-planned	IndicesAliasesAction.INSTANCE	TransportIndicesAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	717
+partial	IndicesAliasesAction.INSTANCE	TransportIndicesAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	717
 planned	UpdateSettingsAction.INSTANCE	TransportUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	718
 planned	ScaleIndexAction.INSTANCE	TransportScaleIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	719
 planned	AnalyzeAction.INSTANCE	TransportAnalyzeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	720
