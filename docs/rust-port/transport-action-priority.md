@@ -230,6 +230,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/segments` (rejected fail-closed)
 - `indices:monitor/point_in_time/segments` (rejected fail-closed)
 - `indices:monitor/shard_stores` (rejected fail-closed)
+- `indices:admin/data_stream/create` (rejected fail-closed)
 - `indices:admin/data_stream/get` (rejected fail-closed)
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `indices:admin/resolve/index` (rejected fail-closed)
@@ -1370,6 +1371,20 @@ The indices-shard-stores boundary covers:
 - explicit rejection for custom cluster-manager timeout, local reads, index
   filters, custom shard health status filters, custom indices options, and
   indices-shard-stores execution.
+
+The create-data-stream boundary covers:
+
+- OpenSearch `CreateDataStreamAction.Request` parent task, cluster-manager
+  timeout, acknowledgement timeout, and data-stream name at the wire
+  decode/build layer;
+- OpenSearch `AcknowledgedResponse` decode/build for the create-data-stream
+  response acknowledgement bit;
+- explicit fail-closed classification for
+  `indices:admin/data_stream/create` until data-stream template resolution,
+  backing index creation, timestamp mapping validation, cluster metadata
+  mutation, and ack rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing names, and create-data-stream execution.
 
 The get-data-stream boundary covers:
 
@@ -3224,6 +3239,24 @@ index options before rejecting at admission. At roughly 1.59M ops/s in the
 latest local release run, decode is slightly heavier than the recovery and
 indices-segments reject boundaries because it must parse timeout/local and the
 status byte set.
+
+Current create-data-stream reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin create-data-stream-reject-wire-benchmark
+create_data_stream_reject_request_encode iterations=400000 elapsed_ms=245.702 ops_per_second=1627991.54 nanos_per_op=614.25
+create_data_stream_reject_request_decode iterations=400000 elapsed_ms=241.485 ops_per_second=1656419.48 nanos_per_op=603.71
+create_data_stream_reject_validation iterations=400000 elapsed_ms=246.132 ops_per_second=1625143.93 nanos_per_op=615.33
+create_data_stream_ack_response_decode iterations=400000 elapsed_ms=53.899 ops_per_second=7421349.92 nanos_per_op=134.75
+create_data_stream_reject_wire_bottleneck_ops_per_second=1625143.93
+```
+
+The current create-data-stream fail-closed boundary bottleneck is validation.
+The request path carries the acknowledged cluster-manager envelope and
+data-stream name before rejecting execution. At roughly 1.63M ops/s in the
+latest local release run, current overhead is transport decode plus validation.
+Future performance-sensitive work is template resolution, backing index
+creation, timestamp mapping validation, metadata mutation, and ack rendering.
 
 Current get-data-stream reject wire microbenchmark:
 

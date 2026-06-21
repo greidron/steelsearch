@@ -135,6 +135,7 @@ pub const OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME: &str =
 pub const OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME: &str = "indices:monitor/segments";
 pub const OPENSEARCH_PIT_SEGMENTS_ACTION_NAME: &str = "indices:monitor/point_in_time/segments";
 pub const OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME: &str = "indices:monitor/shard_stores";
+pub const OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME: &str = "indices:admin/data_stream/create";
 pub const OPENSEARCH_GET_DATA_STREAM_ACTION_NAME: &str = "indices:admin/data_stream/get";
 pub const OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME: &str = "indices:monitor/data_stream/stats";
 pub const OPENSEARCH_RESOLVE_INDEX_ACTION_NAME: &str = "indices:admin/resolve/index";
@@ -1030,6 +1031,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map bounded shard-store reads onto Rust shard allocation/store metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME,
+        action_type: "CreateDataStreamAction",
+        transport_action: "CreateDataStreamAction.TransportAction",
+        request_wire_type: "CreateDataStreamAction.Request",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "data-stream-admin",
+        next_step: "map data-stream template resolution, backing index creation, timestamp mapping validation, metadata mutation, and ack rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_DATA_STREAM_ACTION_NAME,
         action_type: "GetDataStreamAction",
         transport_action: "GetDataStreamAction.TransportAction",
@@ -1696,6 +1706,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "indices-shard-stores transport execution requires shard allocation/store metadata response rendering",
+        },
+        OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "create-data-stream transport execution requires template resolution, backing index creation, timestamp mapping validation, metadata mutation, and ack rendering",
         },
         OPENSEARCH_GET_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6921,6 +6936,73 @@ pub fn read_opensearch_get_data_stream_request_message(
         });
     }
     OpenSearchGetDataStreamRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_create_data_stream_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchCreateDataStreamRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_create_data_stream_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCreateDataStreamRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchCreateDataStreamRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_create_data_stream_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_create_data_stream_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_data_streams_stats_request_message(
@@ -14221,6 +14303,77 @@ impl OpenSearchIndicesShardStoresRequestWire {
             shape: "indices shard stores execution",
             reason:
                 "indices-shard-stores transport execution requires shard allocation/store metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCreateDataStreamRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub name: String,
+}
+
+impl Default for OpenSearchCreateDataStreamRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            name: "logs-app".to_string(),
+        }
+    }
+}
+
+impl OpenSearchCreateDataStreamRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.name);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let name = input.read_string()?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            name,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the create-data-stream adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream ack timeout",
+                reason: "custom ack timeout is not mapped by the create-data-stream adapter yet",
+            });
+        }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream missing name",
+                reason: "OpenSearch create-data-stream requests require a data-stream name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "create data stream execution",
+            reason: "create-data-stream transport execution requires template resolution, backing index creation, timestamp mapping validation, metadata mutation, and ack rendering",
         })
     }
 }
@@ -22741,6 +22894,15 @@ mod tests {
                     next_step: "map bounded shard-store reads onto Rust shard allocation/store metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/data_stream/create",
+                    action_type: "CreateDataStreamAction",
+                    transport_action: "CreateDataStreamAction.TransportAction",
+                    request_wire_type: "CreateDataStreamAction.Request",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "data-stream-admin",
+                    next_step: "map data-stream template resolution, backing index creation, timestamp mapping validation, metadata mutation, and ack rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/data_stream/get",
                     action_type: "GetDataStreamAction",
                     transport_action: "GetDataStreamAction.TransportAction",
@@ -23325,6 +23487,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_DATA_STREAM_ACTION_NAME)
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
@@ -23417,6 +23584,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
@@ -36665,6 +36833,112 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn opensearch_create_data_stream_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchCreateDataStreamRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchCreateDataStreamRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.name, "logs-app");
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_create_data_stream_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchCreateDataStreamRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCreateDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchCreateDataStreamRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCreateDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream ack timeout",
+                ..
+            })
+        ));
+
+        let missing_name = OpenSearchCreateDataStreamRequestWire {
+            name: " ".to_string(),
+            ..OpenSearchCreateDataStreamRequestWire::default()
+        };
+        assert!(matches!(
+            missing_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream missing name",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_create_data_stream_transport_messages_bind_rejected_action_frame_and_ack_response(
+    ) {
+        let request = OpenSearchCreateDataStreamRequestWire::default();
+        let mut frame = build_opensearch_create_data_stream_request_message(
+            78,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected create data stream request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_create_data_stream_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_create_data_stream_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create data stream execution",
+                ..
+            })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_create_data_stream_response_message(
+            78,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected create data stream response message");
+        };
+        assert_eq!(
+            read_opensearch_create_data_stream_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
