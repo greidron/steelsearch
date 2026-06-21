@@ -193,6 +193,15 @@
       "reason": "Search transport execution requires search source and response rendering mapping before Steelsearch can serve OpenSearch search semantics."
     },
     {
+      "action_name": "indices:data/read/msearch",
+      "action_type": "MultiSearchAction",
+      "transport_action": "TransportMultiSearchAction",
+      "request_wire_type": "MultiSearchRequest",
+      "response_wire_type": "MultiSearchResponse",
+      "disposition": "rejected",
+      "reason": "Multi-search transport execution requires batched search source and response rendering mapping before Steelsearch can serve OpenSearch multi-search semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",

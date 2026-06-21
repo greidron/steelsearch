@@ -581,6 +581,11 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "search transport execution requires search source and response rendering mapping",
         },
+        OPENSEARCH_MULTI_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "multi-search transport execution requires batched search source and response rendering mapping",
+        },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
@@ -2635,6 +2640,44 @@ pub fn read_opensearch_search_request_message(
     OpenSearchSearchRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_multi_search_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchMultiSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_MULTI_SEARCH_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_multi_search_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchMultiSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_MULTI_SEARCH_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_MULTI_SEARCH_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchMultiSearchRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -3843,7 +3886,13 @@ impl OpenSearchSearchRequestWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self::read_from(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    fn read_from(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
         let search_type = input.read_byte()?;
         if search_type != 0 && search_type != 1 && search_type != 3 {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -3866,12 +3915,12 @@ impl OpenSearchSearchRequestWire {
                 reason: "search source builder decoding is not mapped by the search adapter yet",
             });
         }
-        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
-        let request_cache = read_optional_bool(&mut input)?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(input)?;
+        let request_cache = read_optional_bool(input)?;
         let batched_reduce_size = input.read_vint()?;
         let max_concurrent_shard_requests = input.read_vint()?;
-        let pre_filter_shard_size = read_optional_vint(&mut input)?;
-        let allow_partial_search_results = read_optional_bool(&mut input)?;
+        let pre_filter_shard_size = read_optional_vint(input)?;
+        let allow_partial_search_results = read_optional_bool(input)?;
         let local_cluster_alias = input.read_optional_string()?;
         if local_cluster_alias.is_some() {
             let _absolute_start_millis = input.read_vlong()?;
@@ -3892,15 +3941,23 @@ impl OpenSearchSearchRequestWire {
             allow_partial_search_results,
             local_cluster_alias,
             ccs_minimize_roundtrips: input.read_bool()?,
-            cancel_after_time_interval: read_optional_time_value(&mut input)?,
+            cancel_after_time_interval: read_optional_time_value(input)?,
             pipeline: input.read_optional_string()?,
-            phase_took: read_optional_bool(&mut input)?,
+            phase_took: read_optional_bool(input)?,
         };
-        require_no_trailing_bytes(&input)?;
         Ok(request)
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_shape()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request execution",
+            reason:
+                "search transport execution requires search source and response rendering mapping",
+        })
+    }
+
+    fn validate_supported_shape(&self) -> Result<(), TransportActionWireError> {
         if self.search_type != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request search type",
@@ -3993,10 +4050,78 @@ impl OpenSearchSearchRequestWire {
                 reason: "phase timing output requires search phase instrumentation mapping",
             });
         }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchMultiSearchRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub max_concurrent_search_requests: i32,
+    pub requests: Vec<OpenSearchSearchRequestWire>,
+}
+
+impl Default for OpenSearchMultiSearchRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            max_concurrent_search_requests: 0,
+            requests: vec![OpenSearchSearchRequestWire::default()],
+        }
+    }
+}
+
+impl OpenSearchMultiSearchRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_vint(self.max_concurrent_search_requests);
+        output.write_vint(self.requests.len() as i32);
+        for request in &self.requests {
+            request.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let max_concurrent_search_requests = input.read_vint()?;
+        let request_count = read_len(&mut input)?;
+        let mut requests = Vec::with_capacity(request_count);
+        for _ in 0..request_count {
+            requests.push(OpenSearchSearchRequestWire::read_from(&mut input)?);
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            max_concurrent_search_requests,
+            requests,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.max_concurrent_search_requests != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search max concurrent search requests",
+                reason: "custom multi-search concurrency requires batched search fanout scheduling",
+            });
+        }
+        if self.requests.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search empty requests",
+                reason: "OpenSearch multi-search validates at least one sub-search request",
+            });
+        }
+        for request in &self.requests {
+            request.validate_supported_shape()?;
+        }
         Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request execution",
+            shape: "multi-search execution",
             reason:
-                "search transport execution requires search source and response rendering mapping",
+                "multi-search transport execution requires batched search source and response rendering mapping",
         })
     }
 }
@@ -8548,6 +8673,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_MULTI_SEARCH_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -8664,6 +8793,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -12725,6 +12855,89 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_search_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchMultiSearchRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchMultiSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_search_request_rejects_unsupported_shapes() {
+        let custom_concurrency = OpenSearchMultiSearchRequestWire {
+            max_concurrent_search_requests: 2,
+            ..OpenSearchMultiSearchRequestWire::default()
+        };
+        assert!(matches!(
+            custom_concurrency.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search max concurrent search requests",
+                ..
+            })
+        ));
+
+        let empty_requests = OpenSearchMultiSearchRequestWire {
+            requests: Vec::new(),
+            ..OpenSearchMultiSearchRequestWire::default()
+        };
+        assert!(matches!(
+            empty_requests.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search empty requests",
+                ..
+            })
+        ));
+
+        let routed_sub_request = OpenSearchMultiSearchRequestWire {
+            requests: vec![OpenSearchSearchRequestWire {
+                routing: Some("tenant-a".to_string()),
+                ..OpenSearchSearchRequestWire::default()
+            }],
+            ..OpenSearchMultiSearchRequestWire::default()
+        };
+        assert!(matches!(
+            routed_sub_request.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request routing",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_search_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchMultiSearchRequestWire::default();
+        let mut frame =
+            build_opensearch_multi_search_request_message(47, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected multi-search request message");
+        };
+        assert_eq!(
+            read_opensearch_multi_search_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_multi_search_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search execution",
                 ..
             })
         ));

@@ -197,6 +197,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `indices:admin/resolve/index` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
+- `indices:data/read/msearch` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -433,6 +434,16 @@ The search boundary covers:
 - explicit rejection for source/scroll payloads, non-default index/routing/
   preference/fanout/cache/partial-results/cross-cluster/pipeline/timing shapes,
   and search execution.
+
+The multi-search boundary covers:
+
+- OpenSearch `MultiSearchRequest` parent task, max concurrent search request
+  count, sub-search count, and nested `SearchRequest` wire shapes at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:data/read/msearch` until
+  batched search source decoding and response rendering are mapped;
+- explicit rejection for custom multi-search concurrency, empty request batches,
+  unsupported nested search request shapes, and multi-search execution.
 
 The indices-stats boundary covers:
 
@@ -937,6 +948,26 @@ before rejecting execution. At roughly 1.30M ops/s in the latest local release
 run, the boundary stays in the lightweight transport range; the first
 performance point to inspect before accepting search execution is still search
 source decode/rendering, which is intentionally not admitted here.
+
+Current multi-search reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin multi-search-reject-wire-benchmark
+multi_search_reject_request_encode iterations=250000 elapsed_ms=214.912 ops_per_second=1163264.27 nanos_per_op=859.65
+multi_search_reject_request_decode iterations=250000 elapsed_ms=215.766 ops_per_second=1158664.99 nanos_per_op=863.06
+multi_search_reject_validation iterations=250000 elapsed_ms=219.333 ops_per_second=1139820.43 nanos_per_op=877.33
+multi_search_reject_wire_bottleneck_ops_per_second=1139820.43
+multi_search_reject_wire_bottleneck_items_per_second=2279640.86
+```
+
+The current multi-search fail-closed boundary bottleneck is validation. This
+benchmark uses a two-request batch, so the boundary validates the outer
+`MultiSearchRequest` envelope and two nested default `SearchRequest` control
+envelopes before rejecting execution. At roughly 1.14M batches/s and 2.28M
+sub-searches/s in the latest local release run, the nested control-envelope
+path is still lightweight; the first performance point to inspect before
+accepting multi-search execution is batched search source decode and response
+aggregation.
 
 Current indices-stats reject wire microbenchmark:
 
