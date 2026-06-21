@@ -38,6 +38,7 @@ pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/ge
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
+pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
@@ -229,6 +230,16 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetSettingsResponse",
         adapter_stage: "metadata-read",
         next_step: "map bounded index settings reads onto Rust cluster metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME,
+        action_type: "ClusterSearchShardsAction",
+        transport_action: "TransportClusterSearchShardsAction",
+        request_wire_type: "ClusterSearchShardsRequest",
+        response_wire_type: "ClusterSearchShardsResponse",
+        adapter_stage: "search-admin",
+        next_step:
+            "map bounded search-shards requests onto Rust shard routing metadata response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
@@ -465,6 +476,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-settings transport execution requires index settings metadata response rendering",
+        },
+        OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cluster-search-shards transport execution requires shard routing metadata response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2216,6 +2232,44 @@ pub fn read_opensearch_get_settings_request_message(
     OpenSearchGetSettingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_cluster_search_shards_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchClusterSearchShardsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_cluster_search_shards_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchClusterSearchShardsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchClusterSearchShardsRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -2300,6 +2354,7 @@ pub struct GetRepositoriesRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
     pub repositories: Vec<String>,
 }
 
@@ -2309,6 +2364,7 @@ impl Default for GetRepositoriesRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
             repositories: Vec::new(),
         }
     }
@@ -2318,6 +2374,7 @@ impl GetRepositoriesRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
         output.write_string_array(&self.repositories);
     }
 
@@ -2328,6 +2385,7 @@ impl GetRepositoriesRequestWire {
             parent_task_node,
             parent_task_id,
             cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
             repositories: input.read_string_array()?,
         };
         require_no_trailing_bytes(&input)?;
@@ -2348,6 +2406,13 @@ impl GetRepositoriesRequestWire {
                     "repository name and pattern selection requires repository metadata mapping",
             });
         }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories local",
+                reason:
+                    "local repository metadata reads require local cluster-state response semantics",
+            });
+        }
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get repositories execution",
             reason: "get-repositories transport execution requires repository metadata mapping",
@@ -2360,6 +2425,7 @@ pub struct OpenSearchGetMappingsRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
     pub indices: Vec<String>,
     pub indices_options: OpenSearchIndicesOptionsWire,
 }
@@ -2370,6 +2436,7 @@ impl Default for OpenSearchGetMappingsRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
             indices: Vec::new(),
             indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
         }
@@ -2380,6 +2447,7 @@ impl OpenSearchGetMappingsRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
         output.write_string_array(&self.indices);
         self.indices_options.write(output);
     }
@@ -2391,6 +2459,7 @@ impl OpenSearchGetMappingsRequestWire {
             parent_task_node,
             parent_task_id,
             cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
             indices: input.read_string_array()?,
             indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
         };
@@ -2410,6 +2479,12 @@ impl OpenSearchGetMappingsRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get mappings index filter",
                 reason: "index-scoped mapping reads require cluster metadata response rendering",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get mappings local",
+                reason: "local mapping reads require local cluster-state response semantics",
             });
         }
         if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
@@ -2520,6 +2595,7 @@ pub struct OpenSearchGetAliasesRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
     pub indices: Vec<String>,
     pub aliases: Vec<String>,
     pub indices_options: OpenSearchIndicesOptionsWire,
@@ -2532,6 +2608,7 @@ impl Default for OpenSearchGetAliasesRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
             indices: Vec::new(),
             aliases: Vec::new(),
             indices_options: OpenSearchIndicesOptionsWire::strict_expand_hidden(),
@@ -2544,6 +2621,7 @@ impl OpenSearchGetAliasesRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
         output.write_string_array(&self.indices);
         output.write_string_array(&self.aliases);
         self.indices_options.write(output);
@@ -2557,6 +2635,7 @@ impl OpenSearchGetAliasesRequestWire {
             parent_task_node,
             parent_task_id,
             cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
             indices: input.read_string_array()?,
             aliases: input.read_string_array()?,
             indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
@@ -2578,6 +2657,12 @@ impl OpenSearchGetAliasesRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get aliases index filter",
                 reason: "index-scoped alias reads require cluster metadata response rendering",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get aliases local",
+                reason: "local alias metadata reads require local cluster-state response semantics",
             });
         }
         if !self.aliases.is_empty() {
@@ -2611,6 +2696,7 @@ pub struct OpenSearchGetSettingsRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
     pub indices: Vec<String>,
     pub indices_options: OpenSearchIndicesOptionsWire,
     pub names: Vec<String>,
@@ -2624,6 +2710,7 @@ impl Default for OpenSearchGetSettingsRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
             indices: Vec::new(),
             indices_options: OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices(),
             names: Vec::new(),
@@ -2637,6 +2724,7 @@ impl OpenSearchGetSettingsRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
         output.write_string_array(&self.indices);
         self.indices_options.write(output);
         output.write_string_array(&self.names);
@@ -2651,6 +2739,7 @@ impl OpenSearchGetSettingsRequestWire {
             parent_task_node,
             parent_task_id,
             cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
             indices: input.read_string_array()?,
             indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
             names: input.read_string_array()?,
@@ -2673,6 +2762,12 @@ impl OpenSearchGetSettingsRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get settings index filter",
                 reason: "index-scoped settings reads require cluster metadata response rendering",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings local",
+                reason: "local settings reads require local cluster-state response semantics",
             });
         }
         if self.indices_options
@@ -2705,6 +2800,132 @@ impl OpenSearchGetSettingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get settings execution",
             reason: "get-settings transport execution requires index settings metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchClusterSearchShardsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub indices: Vec<String>,
+    pub routing: Option<String>,
+    pub preference: Option<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub has_slice: bool,
+}
+
+impl Default for OpenSearchClusterSearchShardsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            indices: Vec::new(),
+            routing: None,
+            preference: None,
+            indices_options: OpenSearchIndicesOptionsWire::lenient_expand_open(),
+            has_slice: false,
+        }
+    }
+}
+
+impl OpenSearchClusterSearchShardsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.indices);
+        output.write_optional_string(self.routing.as_deref());
+        output.write_optional_string(self.preference.as_deref());
+        self.indices_options.write(output);
+        output.write_bool(self.has_slice);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let local = input.read_bool()?;
+        let indices = input.read_string_array()?;
+        let routing = input.read_optional_string()?;
+        let preference = input.read_optional_string()?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let has_slice = input.read_bool()?;
+        if has_slice {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards slice payload",
+                reason: "cluster-search-shards slice builders are not decoded by this adapter yet",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            local,
+            indices,
+            routing,
+            preference,
+            indices_options,
+            has_slice,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the cluster-search-shards adapter yet",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards local",
+                reason: "local search-shards reads require local cluster-state response semantics",
+            });
+        }
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards index filter",
+                reason: "index-scoped search-shards reads require shard routing metadata rendering",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards routing",
+                reason: "routing-aware search-shards reads require operation routing semantics",
+            });
+        }
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards preference",
+                reason:
+                    "preference-aware search-shards reads require shard iterator ordering semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::lenient_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards indices options",
+                reason:
+                    "custom cluster-search-shards indices options require cluster metadata resolution semantics",
+            });
+        }
+        if self.has_slice {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards slice",
+                reason: "sliced search-shards routing is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster search shards execution",
+            reason:
+                "cluster-search-shards transport execution requires shard routing metadata response rendering",
         })
     }
 }
@@ -6029,7 +6250,7 @@ impl OpenSearchIndicesOptionsWire {
         Self {
             ignore_unavailable: false,
             ignore_aliases: false,
-            allow_no_indices: false,
+            allow_no_indices: true,
             forbid_aliases_to_multiple_indices: false,
             forbid_closed_indices: false,
             ignore_throttled: false,
@@ -6043,7 +6264,7 @@ impl OpenSearchIndicesOptionsWire {
         Self {
             ignore_unavailable: false,
             ignore_aliases: false,
-            allow_no_indices: false,
+            allow_no_indices: true,
             forbid_aliases_to_multiple_indices: false,
             forbid_closed_indices: false,
             ignore_throttled: false,
@@ -6063,6 +6284,20 @@ impl OpenSearchIndicesOptionsWire {
             ignore_throttled: false,
             expand_open: true,
             expand_closed: true,
+            expand_hidden: false,
+        }
+    }
+
+    pub const fn lenient_expand_open() -> Self {
+        Self {
+            ignore_unavailable: true,
+            ignore_aliases: false,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: false,
+            ignore_throttled: false,
+            expand_open: true,
+            expand_closed: false,
             expand_hidden: false,
         }
     }
@@ -7014,6 +7249,15 @@ mod tests {
                     next_step: "map bounded index settings reads onto Rust cluster metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/shards/search_shards",
+                    action_type: "ClusterSearchShardsAction",
+                    transport_action: "TransportClusterSearchShardsAction",
+                    request_wire_type: "ClusterSearchShardsRequest",
+                    response_wire_type: "ClusterSearchShardsResponse",
+                    adapter_stage: "search-admin",
+                    next_step: "map bounded search-shards requests onto Rust shard routing metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -7196,6 +7440,11 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_GET_SETTINGS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -7223,6 +7472,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -10009,6 +10259,18 @@ mod tests {
                 ..
             })
         ));
+
+        let local = GetRepositoriesRequestWire {
+            local: true,
+            ..GetRepositoriesRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories local",
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -10080,7 +10342,7 @@ mod tests {
 
         let custom_options = OpenSearchGetMappingsRequestWire {
             indices_options: OpenSearchIndicesOptionsWire {
-                allow_no_indices: true,
+                ignore_unavailable: true,
                 ..OpenSearchIndicesOptionsWire::strict_expand_open()
             },
             ..OpenSearchGetMappingsRequestWire::default()
@@ -10089,6 +10351,18 @@ mod tests {
             custom_options.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get mappings indices options",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetMappingsRequestWire {
+            local: true,
+            ..OpenSearchGetMappingsRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get mappings local",
                 ..
             })
         ));
@@ -10151,7 +10425,7 @@ mod tests {
 
         let custom_options = OpenSearchGetFieldMappingsRequestWire {
             indices_options: OpenSearchIndicesOptionsWire {
-                allow_no_indices: true,
+                ignore_unavailable: true,
                 ..OpenSearchIndicesOptionsWire::strict_expand_open()
             },
             ..OpenSearchGetFieldMappingsRequestWire::default()
@@ -10285,7 +10559,7 @@ mod tests {
 
         let custom_options = OpenSearchGetAliasesRequestWire {
             indices_options: OpenSearchIndicesOptionsWire {
-                allow_no_indices: true,
+                ignore_unavailable: true,
                 ..OpenSearchIndicesOptionsWire::strict_expand_hidden()
             },
             ..OpenSearchGetAliasesRequestWire::default()
@@ -10294,6 +10568,18 @@ mod tests {
             custom_options.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get aliases indices options",
+                ..
+            })
+        ));
+
+        let local = OpenSearchGetAliasesRequestWire {
+            local: true,
+            ..OpenSearchGetAliasesRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get aliases local",
                 ..
             })
         ));
@@ -10378,6 +10664,18 @@ mod tests {
             })
         ));
 
+        let local = OpenSearchGetSettingsRequestWire {
+            local: true,
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get settings local",
+                ..
+            })
+        ));
+
         let custom_options = OpenSearchGetSettingsRequestWire {
             indices_options: OpenSearchIndicesOptionsWire {
                 allow_no_indices: false,
@@ -10449,6 +10747,158 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_cluster_search_shards_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchClusterSearchShardsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchClusterSearchShardsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_cluster_search_shards_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchClusterSearchShardsRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = OpenSearchClusterSearchShardsRequestWire {
+            local: true,
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards local",
+                ..
+            })
+        ));
+
+        let index_filter = OpenSearchClusterSearchShardsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards index filter",
+                ..
+            })
+        ));
+
+        let routing = OpenSearchClusterSearchShardsRequestWire {
+            routing: Some("user-1".to_string()),
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            routing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards routing",
+                ..
+            })
+        ));
+
+        let preference = OpenSearchClusterSearchShardsRequestWire {
+            preference: Some("_primary".to_string()),
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            preference.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards preference",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchClusterSearchShardsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: false,
+                ..OpenSearchIndicesOptionsWire::lenient_expand_open()
+            },
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards indices options",
+                ..
+            })
+        ));
+
+        let has_slice = OpenSearchClusterSearchShardsRequestWire {
+            has_slice: true,
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        assert!(matches!(
+            has_slice.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards slice",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_cluster_search_shards_request_rejects_slice_payload_during_decode() {
+        let request = OpenSearchClusterSearchShardsRequestWire {
+            has_slice: true,
+            ..OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        assert!(matches!(
+            OpenSearchClusterSearchShardsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards slice payload",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_cluster_search_shards_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchClusterSearchShardsRequestWire::default();
+        let mut frame = build_opensearch_cluster_search_shards_request_message(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster search shards request message");
+        };
+        assert_eq!(
+            read_opensearch_cluster_search_shards_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_cluster_search_shards_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards execution",
                 ..
             })
         ));

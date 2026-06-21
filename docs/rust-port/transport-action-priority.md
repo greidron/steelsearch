@@ -189,6 +189,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
+- `indices:admin/shards/search_shards` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -288,20 +289,22 @@ The cluster-update-settings boundary covers:
 The get-repositories boundary covers:
 
 - OpenSearch `GetRepositoriesRequest` parent task, cluster-manager timeout, and
-  repository name/pattern array at the wire decode/build layer;
+  `local` flag, and repository name/pattern array at the wire decode/build
+  layer;
 - explicit fail-closed classification for `cluster:admin/repository/get` until
   repository metadata mapping and response rendering are implemented;
 - explicit rejection for custom cluster-manager timeout, repository name/pattern
-  selection, and get-repositories execution.
+  selection, local reads, and get-repositories execution.
 
 The get-mappings boundary covers:
 
 - OpenSearch `GetMappingsRequest` parent task, cluster-manager timeout, indices
-  array, and `IndicesOptions.strictExpandOpen()` at the wire decode/build layer;
+  array, `local` flag, and `IndicesOptions.strictExpandOpen()` at the wire
+  decode/build layer;
 - explicit fail-closed classification for `indices:admin/mappings/get` until
   mapping metadata response rendering is implemented;
-- explicit rejection for custom cluster-manager timeout, index filters, custom
-  indices options, and get-mappings execution.
+- explicit rejection for custom cluster-manager timeout, index filters, local
+  reads, custom indices options, and get-mappings execution.
 
 The get-field-mappings boundary covers:
 
@@ -316,26 +319,39 @@ The get-field-mappings boundary covers:
 The get-aliases boundary covers:
 
 - OpenSearch `GetAliasesRequest` parent task, cluster-manager timeout, indices
-  array, aliases array, `IndicesOptions.strictExpandHidden()`, and original
-  aliases array at the wire decode/build layer;
+  array, `local` flag, aliases array, `IndicesOptions.strictExpandHidden()`,
+  and original aliases array at the wire decode/build layer;
 - explicit fail-closed classification for `indices:admin/aliases/get` until
   alias metadata response rendering and alias post-processing semantics are
   implemented;
-- explicit rejection for custom cluster-manager timeout, index filters, alias
-  filters, custom indices options, original alias filters, and get-aliases
-  execution.
+- explicit rejection for custom cluster-manager timeout, index filters, local
+  reads, alias filters, custom indices options, original alias filters, and
+  get-aliases execution.
 
 The get-settings boundary covers:
 
 - OpenSearch `GetSettingsRequest` parent task, cluster-manager timeout, indices
-  array, `IndicesOptions.fromOptions(false, true, true, true)`, names array,
-  `humanReadable`, and `includeDefaults` at the wire decode/build layer;
+  array, `local` flag, `IndicesOptions.fromOptions(false, true, true, true)`,
+  names array, `humanReadable`, and `includeDefaults` at the wire decode/build
+  layer;
 - explicit fail-closed classification for `indices:monitor/settings/get` until
   index settings metadata response rendering and settings filtering semantics
   are implemented;
-- explicit rejection for custom cluster-manager timeout, index filters, custom
-  indices options, name filters, human-readable formatting, include-default
-  expansion, and get-settings execution.
+- explicit rejection for custom cluster-manager timeout, index filters, local
+  reads, custom indices options, name filters, human-readable formatting,
+  include-default expansion, and get-settings execution.
+
+The cluster-search-shards boundary covers:
+
+- OpenSearch `ClusterSearchShardsRequest` parent task, cluster-manager timeout,
+  `local` flag, indices array, optional routing, optional preference,
+  `IndicesOptions.lenientExpandOpen()`, and OpenSearch 2.19+ slice-present flag
+  at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/shards/search_shards`
+  until shard routing metadata response rendering is implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, index
+  filters, routing, preference, custom indices options, slice payloads, and
+  cluster-search-shards execution.
 
 The indices-stats boundary covers:
 
@@ -625,15 +641,15 @@ Current get-repositories reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-repositories-reject-wire-benchmark
-get_repositories_reject_request_encode iterations=400000 elapsed_ms=189.251 ops_per_second=2113597.43 nanos_per_op=473.13
-get_repositories_reject_request_decode iterations=400000 elapsed_ms=197.870 ops_per_second=2021528.91 nanos_per_op=494.68
-get_repositories_reject_validation iterations=400000 elapsed_ms=198.101 ops_per_second=2019170.41 nanos_per_op=495.25
-get_repositories_reject_wire_bottleneck_ops_per_second=2019170.41
+get_repositories_reject_request_encode iterations=400000 elapsed_ms=197.691 ops_per_second=2023360.94 nanos_per_op=494.23
+get_repositories_reject_request_decode iterations=400000 elapsed_ms=197.141 ops_per_second=2029007.16 nanos_per_op=492.85
+get_repositories_reject_validation iterations=400000 elapsed_ms=198.312 ops_per_second=2017023.64 nanos_per_op=495.78
+get_repositories_reject_wire_bottleneck_ops_per_second=2017023.64
 ```
 
 The current get-repositories fail-closed boundary bottleneck is validation over
 the decoded default request. The payload is only the ClusterManagerNodeRead
-envelope plus an empty repository-name array, so this remains one of the
+envelope, local flag, and an empty repository-name array, so this remains one of the
 lightest read/admin rejection paths. At roughly 2.02M ops/s in the latest local
 release run, it does not introduce a transport-wire bottleneck.
 
@@ -641,65 +657,84 @@ Current get-mappings reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-mappings-reject-wire-benchmark
-get_mappings_reject_request_encode iterations=400000 elapsed_ms=213.124 ops_per_second=1876843.85 nanos_per_op=532.81
-get_mappings_reject_request_decode iterations=400000 elapsed_ms=213.498 ops_per_second=1873550.75 nanos_per_op=533.75
-get_mappings_reject_validation iterations=400000 elapsed_ms=215.836 ops_per_second=1853255.04 nanos_per_op=539.59
-get_mappings_reject_wire_bottleneck_ops_per_second=1853255.04
+get_mappings_reject_request_encode iterations=400000 elapsed_ms=234.612 ops_per_second=1704941.84 nanos_per_op=586.53
+get_mappings_reject_request_decode iterations=400000 elapsed_ms=226.785 ops_per_second=1763782.95 nanos_per_op=566.96
+get_mappings_reject_validation iterations=400000 elapsed_ms=230.615 ops_per_second=1734492.03 nanos_per_op=576.54
+get_mappings_reject_wire_bottleneck_ops_per_second=1704941.84
 ```
 
-The current get-mappings fail-closed boundary bottleneck is validation after
-decode. The payload adds `IndicesOptions.strictExpandOpen()` to the
+The current get-mappings fail-closed boundary bottleneck is request encode. The
+payload adds the local flag and `IndicesOptions.strictExpandOpen()` to the
 ClusterManagerNodeRead envelope and empty index array, so it is slightly heavier
-than get-repositories but still well inside the lightweight admin transport
-range at roughly 1.85M ops/s in the latest local release run.
+than get-repositories but still inside the lightweight admin transport range at
+roughly 1.70M ops/s in the latest local release run.
 
 Current get-field-mappings reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-field-mappings-reject-wire-benchmark
-get_field_mappings_reject_request_encode iterations=400000 elapsed_ms=231.846 ops_per_second=1725283.69 nanos_per_op=579.61
-get_field_mappings_reject_request_decode iterations=400000 elapsed_ms=231.593 ops_per_second=1727171.45 nanos_per_op=578.98
-get_field_mappings_reject_validation iterations=400000 elapsed_ms=239.155 ops_per_second=1672556.32 nanos_per_op=597.89
-get_field_mappings_reject_wire_bottleneck_ops_per_second=1672556.32
+get_field_mappings_reject_request_encode iterations=400000 elapsed_ms=258.224 ops_per_second=1549043.10 nanos_per_op=645.56
+get_field_mappings_reject_request_decode iterations=400000 elapsed_ms=241.097 ops_per_second=1659086.51 nanos_per_op=602.74
+get_field_mappings_reject_validation iterations=400000 elapsed_ms=244.342 ops_per_second=1637049.71 nanos_per_op=610.86
+get_field_mappings_reject_wire_bottleneck_ops_per_second=1549043.10
 ```
 
-The current get-field-mappings fail-closed boundary bottleneck is validation
-after decode. This path checks indices options, local execution, field filters,
+The current get-field-mappings fail-closed boundary bottleneck is request
+encode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
-it is slightly heavier than get-mappings. At roughly 1.67M ops/s in the latest
+it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
 
 Current get-aliases reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-aliases-reject-wire-benchmark
-get_aliases_reject_request_encode iterations=400000 elapsed_ms=225.468 ops_per_second=1774091.20 nanos_per_op=563.67
-get_aliases_reject_request_decode iterations=400000 elapsed_ms=238.774 ops_per_second=1675220.93 nanos_per_op=596.94
-get_aliases_reject_validation iterations=400000 elapsed_ms=242.614 ops_per_second=1648706.81 nanos_per_op=606.54
-get_aliases_reject_wire_bottleneck_ops_per_second=1648706.81
+get_aliases_reject_request_encode iterations=400000 elapsed_ms=232.046 ops_per_second=1723796.12 nanos_per_op=580.12
+get_aliases_reject_request_decode iterations=400000 elapsed_ms=245.551 ops_per_second=1628988.89 nanos_per_op=613.88
+get_aliases_reject_validation iterations=400000 elapsed_ms=251.572 ops_per_second=1590004.67 nanos_per_op=628.93
+get_aliases_reject_wire_bottleneck_ops_per_second=1590004.67
 ```
 
 The current get-aliases fail-closed boundary bottleneck is validation after
-decode. This path checks cluster-manager timeout, index filters, alias filters,
-hidden wildcard indices options, and original-alias post-processing state after
-reading the OpenSearch request body. At roughly 1.65M ops/s in the latest local
-release run, it remains in the lightweight admin transport range.
+decode. This path checks cluster-manager timeout, local execution, index
+filters, alias filters, hidden wildcard indices options, and original-alias
+post-processing state after reading the OpenSearch request body. At roughly
+1.59M ops/s in the latest local release run, it remains in the lightweight
+admin transport range.
 
 Current get-settings reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-settings-reject-wire-benchmark
-get_settings_reject_request_encode iterations=400000 elapsed_ms=228.129 ops_per_second=1753390.09 nanos_per_op=570.32
-get_settings_reject_request_decode iterations=400000 elapsed_ms=238.338 ops_per_second=1678287.46 nanos_per_op=595.85
-get_settings_reject_validation iterations=400000 elapsed_ms=237.321 ops_per_second=1685483.80 nanos_per_op=593.30
-get_settings_reject_wire_bottleneck_ops_per_second=1678287.46
+get_settings_reject_request_encode iterations=400000 elapsed_ms=238.223 ops_per_second=1679097.16 nanos_per_op=595.56
+get_settings_reject_request_decode iterations=400000 elapsed_ms=240.210 ops_per_second=1665211.28 nanos_per_op=600.52
+get_settings_reject_validation iterations=400000 elapsed_ms=244.439 ops_per_second=1636403.30 nanos_per_op=611.10
+get_settings_reject_wire_bottleneck_ops_per_second=1636403.30
 ```
 
-The current get-settings fail-closed boundary bottleneck is request decode. This
-path reads the cluster-manager timeout, indices array, open/closed wildcard
-indices options, setting-name array, human-readable flag, and default expansion
-flag before rejecting at admission. At roughly 1.68M ops/s in the latest local
-release run, it remains in the lightweight admin transport range.
+The current get-settings fail-closed boundary bottleneck is validation after
+decode. This path checks cluster-manager timeout, local execution, index
+filters, open/closed wildcard indices options, setting-name array,
+human-readable flag, and default expansion flag before rejecting at admission.
+At roughly 1.64M ops/s in the latest local release run, it remains in the
+lightweight admin transport range.
+
+Current cluster-search-shards reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cluster-search-shards-reject-wire-benchmark
+cluster_search_shards_reject_request_encode iterations=400000 elapsed_ms=263.696 ops_per_second=1516898.13 nanos_per_op=659.24
+cluster_search_shards_reject_request_decode iterations=400000 elapsed_ms=248.926 ops_per_second=1606902.99 nanos_per_op=622.32
+cluster_search_shards_reject_validation iterations=400000 elapsed_ms=254.565 ops_per_second=1571309.55 nanos_per_op=636.41
+cluster_search_shards_reject_wire_bottleneck_ops_per_second=1516898.13
+```
+
+The current cluster-search-shards fail-closed boundary bottleneck is request
+encode. This path carries the ClusterManagerNodeRead envelope, local flag,
+empty index array, optional routing/preference fields, lenient open-index
+options, and slice-present flag before rejecting at admission. At roughly 1.52M
+ops/s in the latest local release run, it remains in the lightweight admin
+transport range.
 
 Current indices-stats reject wire microbenchmark:
 

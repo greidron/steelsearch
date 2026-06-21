@@ -78,6 +78,10 @@ name = "get-settings-reject-wire-benchmark"
 path = "benchmarks/get_settings_reject_wire.rs"
 
 [[bin]]
+name = "cluster-search-shards-reject-wire-benchmark"
+path = "benchmarks/cluster_search_shards_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 
