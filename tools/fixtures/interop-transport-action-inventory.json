@@ -148,6 +148,15 @@
       "reason": "Indices-segments transport execution requires shard segment metadata response rendering before Steelsearch can serve OpenSearch segment read semantics."
     },
     {
+      "action_name": "indices:monitor/point_in_time/segments",
+      "action_type": "PitSegmentsAction",
+      "transport_action": "TransportPitSegmentsAction",
+      "request_wire_type": "PitSegmentsRequest",
+      "response_wire_type": "IndicesSegmentResponse",
+      "disposition": "rejected",
+      "reason": "PIT-segments transport execution requires PIT segment metadata response rendering before Steelsearch can serve OpenSearch PIT segment read semantics."
+    },
+    {
       "action_name": "indices:monitor/shard_stores",
       "action_type": "IndicesShardStoresAction",
       "transport_action": "TransportIndicesShardStoresAction",

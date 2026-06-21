@@ -192,6 +192,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/shards/search_shards` (rejected fail-closed)
 - `indices:monitor/recovery` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
+- `indices:monitor/point_in_time/segments` (rejected fail-closed)
 - `indices:monitor/shard_stores` (rejected fail-closed)
 - `indices:admin/data_stream/get` (rejected fail-closed)
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
@@ -386,6 +387,18 @@ The indices-segments boundary covers:
   shard segment metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, verbose segment
   output, and indices-segments execution.
+
+The PIT-segments boundary covers:
+
+- OpenSearch `PitSegmentsRequest` parent task, broadcast indices array,
+  `IndicesOptions.strictExpandOpenAndForbidClosed()`, nullable PIT id array,
+  and `verbose` at the wire decode/build layer;
+- explicit fail-closed classification for
+  `indices:monitor/point_in_time/segments` until PIT segment metadata response
+  rendering is implemented;
+- explicit rejection for index filters, custom indices options, null PIT id
+  arrays, empty PIT id arrays, empty PIT id entries, verbose output, and
+  PIT-segments execution.
 
 The indices-shard-stores boundary covers:
 
@@ -1137,6 +1150,23 @@ and optional partial-creation flag before rejecting execution. At roughly 1.43M
 ops/s in the latest local release run, the boundary itself is lightweight; the
 first performance point to inspect before accepting execution is PIT context
 allocation, shard fanout, and create-PIT response rendering.
+
+Current PIT-segments reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin pit-segments-reject-wire-benchmark
+pit_segments_reject_request_encode iterations=400000 elapsed_ms=327.741 ops_per_second=1220477.70 nanos_per_op=819.35
+pit_segments_reject_request_decode iterations=400000 elapsed_ms=307.983 ops_per_second=1298772.24 nanos_per_op=769.96
+pit_segments_reject_validation iterations=400000 elapsed_ms=312.072 ops_per_second=1281756.75 nanos_per_op=780.18
+pit_segments_reject_wire_bottleneck_ops_per_second=1220477.70
+```
+
+The current PIT-segments fail-closed boundary bottleneck is request encode.
+This path carries the ActionRequest parent task, broadcast index controls,
+nullable PIT id array, and verbose flag before rejecting execution. At roughly
+1.22M ops/s in the latest local release run, the boundary itself is
+lightweight; the first performance point to inspect before accepting execution
+is PIT context lookup plus shard segment metadata response rendering.
 
 Current indices-stats reject wire microbenchmark:
 
