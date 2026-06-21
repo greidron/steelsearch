@@ -850,6 +850,15 @@
       "reason": "Resolve-index transport execution requires index abstraction metadata response rendering before Steelsearch can serve OpenSearch resolve-index semantics."
     },
     {
+      "action_name": "cluster:admin/views/create",
+      "action_type": "CreateViewAction",
+      "transport_action": "CreateViewAction.TransportAction",
+      "request_wire_type": "CreateViewAction.Request",
+      "response_wire_type": "GetViewAction.Response",
+      "disposition": "rejected",
+      "reason": "Create-view transport execution requires view validation, target resolution, cluster metadata mutation, and view response rendering before Steelsearch can serve OpenSearch view creation semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

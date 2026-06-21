@@ -402,6 +402,10 @@ name = "resolve-index-reject-wire-benchmark"
 path = "benchmarks/resolve_index_reject_wire.rs"
 
 [[bin]]
+name = "create-view-reject-wire-benchmark"
+path = "benchmarks/create_view_reject_wire.rs"
+
+[[bin]]
 name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 

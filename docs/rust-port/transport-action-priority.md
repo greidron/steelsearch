@@ -235,6 +235,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/data_stream/get` (rejected fail-closed)
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `indices:admin/resolve/index` (rejected fail-closed)
+- `cluster:admin/views/create` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1429,6 +1430,21 @@ The resolve-index boundary covers:
   index abstraction metadata response rendering is implemented;
 - explicit rejection for empty name arrays, custom indices options, and
   resolve-index execution.
+
+The create-view boundary covers:
+
+- OpenSearch `CreateViewAction.Request` parent task, cluster-manager timeout,
+  view name, description, and target index-pattern list at the wire
+  decode/build layer;
+- OpenSearch `GetViewAction.Response` decode/build for the returned `View`
+  payload, including name, optional description, created/modified timestamps,
+  and sorted target index patterns;
+- explicit fail-closed classification for `cluster:admin/views/create` until
+  view validation, target resolution, cluster metadata mutation, and view
+  response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, missing or oversized
+  names, oversized descriptions, missing or excessive targets, blank target
+  patterns, oversized target patterns, and create-view execution.
 
 The search boundary covers:
 
@@ -3338,6 +3354,25 @@ index options before rejecting at admission. At roughly 1.57M ops/s in the
 latest local release run, it stays in the lightweight metadata transport range;
 the extra wildcard string and indices-options comparison make it slightly
 heavier than the smallest BroadcastRequest reject paths.
+
+Current create-view reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin create-view-reject-wire-benchmark
+create_view_reject_request_encode iterations=400000 elapsed_ms=336.649 ops_per_second=1188182.52 nanos_per_op=841.62
+create_view_reject_request_decode iterations=400000 elapsed_ms=334.119 ops_per_second=1197179.29 nanos_per_op=835.30
+create_view_reject_validation iterations=400000 elapsed_ms=344.107 ops_per_second=1162430.32 nanos_per_op=860.27
+create_view_response_decode iterations=400000 elapsed_ms=201.902 ops_per_second=1981162.08 nanos_per_op=504.75
+create_view_reject_wire_bottleneck_ops_per_second=1162430.32
+```
+
+The current create-view fail-closed boundary bottleneck is validation. This
+path carries the ClusterManagerNode envelope, view name, description, and
+target index-pattern list before rejecting at admission. At roughly 1.16M ops/s
+in the latest local release run, the extra string length and target-list checks
+make it heavier than the adjacent data-stream and resolve-index reject paths.
+Future performance-sensitive work is target resolution, view metadata mutation,
+and response rendering.
 
 Current search reject wire microbenchmark:
 
