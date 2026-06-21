@@ -238,6 +238,15 @@
       "reason": "Explain transport execution requires query explain response rendering mapping before Steelsearch can serve OpenSearch explain semantics."
     },
     {
+      "action_name": "indices:data/read/point_in_time/create",
+      "action_type": "CreatePitAction",
+      "transport_action": "TransportCreatePitAction",
+      "request_wire_type": "CreatePitRequest",
+      "response_wire_type": "CreatePitResponse",
+      "disposition": "rejected",
+      "reason": "Create-PIT transport execution requires PIT context lifecycle mapping before Steelsearch can serve OpenSearch PIT creation semantics."
+    },
+    {
       "action_name": "indices:data/read/point_in_time/delete",
       "action_type": "DeletePitAction",
       "transport_action": "TransportDeletePitAction",
