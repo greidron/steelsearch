@@ -1,6 +1,6 @@
 use os_transport::action::{
     classify_opensearch_transport_action, OpenSearchTransportActionDisposition,
-    SOURCE_DERIVED_CLUSTER_ACTIONS,
+    OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS, SOURCE_DERIVED_CLUSTER_ACTIONS,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,7 +33,7 @@ struct EvidenceAction {
 }
 
 #[test]
-fn interop_accepted_transport_action_evidence_covers_every_implemented_source_action() {
+fn interop_accepted_transport_action_evidence_covers_every_implemented_action() {
     let inventory: ActionInventory = serde_json::from_str(include_str!(
         "../../../tools/fixtures/interop-transport-action-inventory.json"
     ))
@@ -64,7 +64,10 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_source_ac
             action.action_name
         );
         assert!(
-            matches!(action.evidence_kind.as_str(), "java_fixture" | "wire_round_trip" | "live_probe"),
+            matches!(
+                action.evidence_kind.as_str(),
+                "java_fixture" | "wire_round_trip" | "live_probe"
+            ),
             "unexpected evidence kind for {}",
             action.action_name
         );
@@ -78,7 +81,11 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_source_ac
             "missing response evidence for {}",
             action.action_name
         );
-        assert!(seen.insert(action.action_name.clone()), "duplicate {}", action.action_name);
+        assert!(
+            seen.insert(action.action_name.clone()),
+            "duplicate {}",
+            action.action_name
+        );
         by_action.insert(action.action_name.clone(), action);
     }
 
@@ -93,6 +100,15 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_source_ac
             assert!(
                 !by_action.contains_key(spec.action_name),
                 "non-implemented action {} must not appear in accepted evidence ledger",
+                spec.action_name
+            );
+        }
+    }
+    for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
+        if implemented_actions.contains(spec.action_name) {
+            assert!(
+                by_action.contains_key(spec.action_name),
+                "missing evidence ledger entry for implemented action {}",
                 spec.action_name
             );
         }

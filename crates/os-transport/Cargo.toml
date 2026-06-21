@@ -20,3 +20,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+
+[[bin]]
+name = "refresh-wire-benchmark"
+path = "benchmarks/refresh_wire.rs"

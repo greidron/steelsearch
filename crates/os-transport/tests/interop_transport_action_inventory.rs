@@ -1,6 +1,6 @@
 use os_transport::action::{
     classify_opensearch_transport_action, OpenSearchTransportActionDisposition,
-    SOURCE_DERIVED_CLUSTER_ACTIONS,
+    OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS, SOURCE_DERIVED_CLUSTER_ACTIONS,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,17 +33,24 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
 
     assert_eq!(inventory.phase, "Phase B");
     assert_eq!(inventory.profile, "interop-baseline");
-    assert_eq!(inventory.scope, "source-derived-transport-actions");
+    assert_eq!(inventory.scope, "accepted-interop-transport-actions");
 
     let mut seen_actions = BTreeSet::new();
     let mut by_action = BTreeMap::new();
     for action in inventory.actions {
         assert!(
-            matches!(action.disposition.as_str(), "implemented" | "rejected" | "phase_c"),
+            matches!(
+                action.disposition.as_str(),
+                "implemented" | "rejected" | "phase_c"
+            ),
             "unexpected disposition for {}",
             action.action_name
         );
-        assert!(!action.reason.is_empty(), "reason missing for {}", action.action_name);
+        assert!(
+            !action.reason.is_empty(),
+            "reason missing for {}",
+            action.action_name
+        );
         assert!(
             seen_actions.insert(action.action_name.clone()),
             "duplicate action {}",
@@ -52,7 +59,7 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
         by_action.insert(action.action_name.clone(), action);
     }
 
-    assert_eq!(by_action.len(), SOURCE_DERIVED_CLUSTER_ACTIONS.len());
+    assert_eq!(by_action.len(), SOURCE_DERIVED_CLUSTER_ACTIONS.len() + 1);
     for spec in SOURCE_DERIVED_CLUSTER_ACTIONS {
         let action = by_action
             .get(spec.action_name)
@@ -74,6 +81,17 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
             spec.action_name
         );
     }
+    let refresh_spec = OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
+        .iter()
+        .find(|spec| spec.action_name == "indices:admin/refresh")
+        .expect("refresh priority action should be registered");
+    let refresh = by_action
+        .get(refresh_spec.action_name)
+        .expect("missing refresh transport action inventory row");
+    assert_eq!(refresh.action_type, refresh_spec.action_type);
+    assert_eq!(refresh.transport_action, refresh_spec.transport_action);
+    assert_eq!(refresh.request_wire_type, refresh_spec.request_wire_type);
+    assert_eq!(refresh.response_wire_type, refresh_spec.response_wire_type);
 
     assert_eq!(
         by_action["cluster:monitor/state"].disposition,
@@ -83,8 +101,9 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
         by_action["cluster:admin/settings/update"].disposition,
         "rejected"
     );
+    assert_eq!(by_action["cluster:monitor/task"].disposition, "implemented");
     assert_eq!(
-        by_action["cluster:monitor/task"].disposition,
+        by_action["indices:admin/refresh"].disposition,
         "implemented"
     );
 }

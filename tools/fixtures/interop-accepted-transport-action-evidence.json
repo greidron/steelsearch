@@ -15,6 +15,13 @@
       "evidence_kind": "wire_round_trip",
       "request_evidence": "crates/os-transport/src/action.rs::pending_cluster_tasks_wire_round_trips",
       "response_evidence": "crates/os-transport/src/action.rs::pending_cluster_tasks_wire_round_trips"
+    },
+    {
+      "action_name": "indices:admin/refresh",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_refresh_transport_messages_bind_action_frames",
+      "response_evidence": "crates/os-transport/src/action.rs::opensearch_refresh_transport_messages_bind_action_frames"
     }
   ]
 }

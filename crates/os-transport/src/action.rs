@@ -1,6 +1,9 @@
 use bytes::{Bytes, BytesMut};
 use os_core::Version;
-use os_engine::{SearchHit, SearchRequest, SearchShardSearchResult, SearchShardTarget};
+use os_engine::{
+    RefreshRequest, RefreshResponse, SearchHit, SearchRequest, SearchShardSearchResult,
+    SearchShardTarget,
+};
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
 use os_wire::TransportStatus;
@@ -258,6 +261,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster settings mutation is not admitted through transport",
+        },
+        OPENSEARCH_REFRESH_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "refresh transport adapter is available",
         },
         _ if OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
             .iter()
@@ -588,6 +596,273 @@ impl PendingClusterTasksResponseWire {
         }
         require_no_trailing_bytes(&input)?;
         Ok(Self { tasks })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRefreshRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl OpenSearchRefreshRequestWire {
+    pub fn new(indices: Vec<String>) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices,
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_request(&self) -> RefreshRequest {
+        RefreshRequest {
+            indices: self.indices.clone(),
+        }
+    }
+}
+
+impl From<RefreshRequest> for OpenSearchRefreshRequestWire {
+    fn from(request: RefreshRequest) -> Self {
+        Self::new(request.indices)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRefreshResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+}
+
+impl OpenSearchRefreshResponseWire {
+    pub fn success(total_shards: i32) -> Self {
+        Self {
+            total_shards,
+            successful_shards: total_shards,
+            failed_shards: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(0);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+        };
+        let failure_count = input.read_vint()?;
+        if failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "refresh response shard failures",
+                reason: "non-empty failure arrays are not decoded by the refresh adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn to_engine_response(&self) -> RefreshResponse {
+        RefreshResponse {
+            refreshed: self.failed_shards == 0,
+        }
+    }
+}
+
+impl From<RefreshResponse> for OpenSearchRefreshResponseWire {
+    fn from(response: RefreshResponse) -> Self {
+        if response.refreshed {
+            Self::success(1)
+        } else {
+            Self {
+                total_shards: 1,
+                successful_shards: 0,
+                failed_shards: 1,
+            }
+        }
+    }
+}
+
+pub fn build_opensearch_refresh_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchRefreshRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_REFRESH_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_refresh_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRefreshRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_REFRESH_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_REFRESH_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchRefreshRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_refresh_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchRefreshResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_refresh_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRefreshResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchRefreshResponseWire::read(message.body.clone().freeze())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpenSearchIndicesOptionsWire {
+    pub ignore_unavailable: bool,
+    pub ignore_aliases: bool,
+    pub allow_no_indices: bool,
+    pub forbid_aliases_to_multiple_indices: bool,
+    pub forbid_closed_indices: bool,
+    pub ignore_throttled: bool,
+    pub expand_open: bool,
+    pub expand_closed: bool,
+    pub expand_hidden: bool,
+}
+
+impl OpenSearchIndicesOptionsWire {
+    pub const fn strict_expand_open_forbid_closed() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: false,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: true,
+            ignore_throttled: false,
+            expand_open: true,
+            expand_closed: false,
+            expand_hidden: false,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        write_enum_set(output, &self.option_ordinals());
+        write_enum_set(output, &self.wildcard_state_ordinals());
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let options = read_enum_set(input, 6, "indices options")?;
+        let wildcard_states = read_enum_set(input, 3, "indices wildcard states")?;
+        Ok(Self {
+            ignore_unavailable: options.contains(&0),
+            ignore_aliases: options.contains(&1),
+            allow_no_indices: options.contains(&2),
+            forbid_aliases_to_multiple_indices: options.contains(&3),
+            forbid_closed_indices: options.contains(&4),
+            ignore_throttled: options.contains(&5),
+            expand_open: wildcard_states.contains(&0),
+            expand_closed: wildcard_states.contains(&1),
+            expand_hidden: wildcard_states.contains(&2),
+        })
+    }
+
+    fn option_ordinals(&self) -> Vec<u8> {
+        let mut values = Vec::new();
+        if self.ignore_unavailable {
+            values.push(0);
+        }
+        if self.ignore_aliases {
+            values.push(1);
+        }
+        if self.allow_no_indices {
+            values.push(2);
+        }
+        if self.forbid_aliases_to_multiple_indices {
+            values.push(3);
+        }
+        if self.forbid_closed_indices {
+            values.push(4);
+        }
+        if self.ignore_throttled {
+            values.push(5);
+        }
+        values
+    }
+
+    fn wildcard_state_ordinals(&self) -> Vec<u8> {
+        let mut values = Vec::new();
+        if self.expand_open {
+            values.push(0);
+        }
+        if self.expand_closed {
+            values.push(1);
+        }
+        if self.expand_hidden {
+            values.push(2);
+        }
+        values
     }
 }
 
@@ -1064,6 +1339,11 @@ pub enum TransportActionWireError {
     },
     #[error("unexpected transport message status: expected {expected}, got bits {actual}")]
     UnexpectedMessageStatus { expected: &'static str, actual: u8 },
+    #[error("unsupported transport wire shape {shape}: {reason}")]
+    UnsupportedWireShape {
+        shape: &'static str,
+        reason: &'static str,
+    },
 }
 
 fn write_json_value<T: Serialize>(
@@ -1116,6 +1396,36 @@ fn read_optional_i64(input: &mut StreamInput) -> Result<Option<i64>, TransportAc
     } else {
         Ok(None)
     }
+}
+
+fn write_enum_set(output: &mut StreamOutput, ordinals: &[u8]) {
+    output.write_vint(ordinals.len() as i32);
+    for ordinal in ordinals {
+        output.write_vint(i32::from(*ordinal));
+    }
+}
+
+fn read_enum_set(
+    input: &mut StreamInput,
+    variant_count: u8,
+    shape: &'static str,
+) -> Result<Vec<u8>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut ordinals = Vec::with_capacity(len);
+    for _ in 0..len {
+        let ordinal = input.read_vint()?;
+        if ordinal < 0 || ordinal >= i32::from(variant_count) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "enum ordinal is outside the OpenSearch source-derived range",
+            });
+        }
+        let ordinal = ordinal as u8;
+        if !ordinals.contains(&ordinal) {
+            ordinals.push(ordinal);
+        }
+    }
+    Ok(ordinals)
 }
 
 fn write_json_section_map(
@@ -1317,12 +1627,25 @@ mod tests {
             classify_opensearch_transport_action(OPENSEARCH_SEARCH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Missing
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_REFRESH_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
     }
 
     #[test]
     fn opensearch_transport_action_dispatch_marks_priority_targets_explicitly() {
         for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
             let decision = classify_opensearch_transport_action(spec.action_name);
+            if spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME {
+                assert_eq!(
+                    decision.disposition,
+                    OpenSearchTransportActionDisposition::Implemented,
+                    "{}",
+                    spec.action_name
+                );
+                continue;
+            }
 
             assert_eq!(
                 decision.disposition,
@@ -1347,6 +1670,88 @@ mod tests {
         assert_eq!(
             unknown.reason,
             "no OpenSearch transport action adapter is registered"
+        );
+    }
+
+    #[test]
+    fn opensearch_refresh_request_wire_round_trips_and_maps_to_engine_request() {
+        let request = OpenSearchRefreshRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            indices: vec!["logs-000001".into(), "metrics-000001".into()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+        let decoded = OpenSearchRefreshRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_request(),
+            RefreshRequest {
+                indices: vec!["logs-000001".into(), "metrics-000001".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn opensearch_refresh_response_wire_round_trips_and_maps_to_engine_response() {
+        let response = OpenSearchRefreshResponseWire {
+            total_shards: 3,
+            successful_shards: 3,
+            failed_shards: 0,
+        };
+
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+        let decoded = OpenSearchRefreshResponseWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, response);
+        assert_eq!(
+            decoded.to_engine_response(),
+            RefreshResponse { refreshed: true }
+        );
+    }
+
+    #[test]
+    fn opensearch_refresh_transport_messages_bind_action_frames() {
+        let request = OpenSearchRefreshRequestWire::new(vec!["logs-000001".into()]);
+        let mut frame =
+            build_opensearch_refresh_request_message(19, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 19);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_refresh_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = OpenSearchRefreshResponseWire::success(1);
+        let mut frame =
+            build_opensearch_refresh_response_message(19, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 19);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_refresh_response_message(&message).unwrap(),
+            response
         );
     }
 

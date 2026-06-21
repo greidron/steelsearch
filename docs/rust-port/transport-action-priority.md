@@ -171,6 +171,42 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
    - Expand once the task and cluster/admin contracts are stable enough to
      measure coherently.
 
+## Current Server-Side Transport Adapters
+
+As of the refresh transport adapter pass, the explicit dispatcher contract in
+`crates/os-transport/src/action.rs` accepts:
+
+- `cluster:monitor/state`
+- `cluster:monitor/task`
+- `indices:admin/refresh`
+
+The refresh adapter covers:
+
+- OpenSearch `RefreshRequest` parent task, indices array, and
+  `strictExpandOpenAndForbidClosed` indices options wire shape;
+- OpenSearch `RefreshResponse` broadcast shard counters for the no-failure
+  response shape;
+- conversion between the refresh transport wire type and the Rust
+  `RefreshRequest` / `RefreshResponse` engine types;
+- request and response frame binding for `indices:admin/refresh`.
+
+Current refresh wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin refresh-wire-benchmark
+refresh_request_encode ops_per_second=1417470.66 nanos_per_op=705.48
+refresh_response_encode ops_per_second=4334563.27 nanos_per_op=230.70
+refresh_request_decode ops_per_second=1213053.89 nanos_per_op=824.37
+refresh_response_decode ops_per_second=3983807.58 nanos_per_op=251.02
+refresh_wire_bottleneck_ops_per_second=1213053.89
+```
+
+The current refresh wire bottleneck alternates between request encode and
+request decode across local release runs. At roughly 1.21M ops/s in the latest
+run, this adapter is not the bottleneck relative to the existing HTTP
+search/write/refresh benchmark paths. Re-run the command above after each
+transport adapter change that affects request/response framing.
+
 ## Tier 1 Implementation And Test Ownership Draft
 
 ### 1. `ClusterHealthAction.INSTANCE`

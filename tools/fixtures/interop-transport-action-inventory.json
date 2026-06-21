@@ -1,7 +1,7 @@
 {
   "phase": "Phase B",
   "profile": "interop-baseline",
-  "scope": "source-derived-transport-actions",
+  "scope": "accepted-interop-transport-actions",
   "actions": [
     {
       "action_name": "cluster:monitor/state",
@@ -29,6 +29,15 @@
       "response_wire_type": "PendingClusterTasksResponse",
       "disposition": "implemented",
       "reason": "Pending-task observer reads are part of the initial Phase B baseline."
+    },
+    {
+      "action_name": "indices:admin/refresh",
+      "action_type": "RefreshAction",
+      "transport_action": "TransportRefreshAction",
+      "request_wire_type": "RefreshRequest",
+      "response_wire_type": "RefreshResponse",
+      "disposition": "implemented",
+      "reason": "Refresh request/response transport codec maps onto the Rust refresh semantic adapter."
     }
   ]
 }
