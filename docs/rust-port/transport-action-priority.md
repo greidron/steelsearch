@@ -194,6 +194,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/segments` (rejected fail-closed)
 - `indices:monitor/shard_stores` (rejected fail-closed)
 - `indices:admin/data_stream/get` (rejected fail-closed)
+- `indices:monitor/data_stream/stats` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -398,6 +399,16 @@ The get-data-stream boundary covers:
 - explicit rejection for custom cluster-manager timeout, local reads, name
   filters, null name arrays outside the REST default path, and get-data-stream
   execution.
+
+The data-streams-stats boundary covers:
+
+- OpenSearch `DataStreamsStatsAction.Request` parent task, indices array, and
+  `IndicesOptions.strictExpandOpenAndForbidClosed()` at the wire decode/build
+  layer;
+- explicit fail-closed classification for `indices:monitor/data_stream/stats`
+  until data-stream stats aggregation and response rendering are implemented;
+- explicit rejection for name filters, custom indices options, and
+  data-streams-stats execution.
 
 The indices-stats boundary covers:
 
@@ -849,6 +860,22 @@ This path carries the ClusterManagerNodeRead envelope and default empty optional
 data-stream name array before rejecting at admission. At roughly 1.71M ops/s in
 the latest local release run, the boundary remains in the lightweight admin
 transport range and does not expose a material wire-codec bottleneck.
+
+Current data-streams-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin data-streams-stats-reject-wire-benchmark
+data_streams_stats_reject_request_encode iterations=400000 elapsed_ms=242.482 ops_per_second=1649607.33 nanos_per_op=606.20
+data_streams_stats_reject_request_decode iterations=400000 elapsed_ms=237.477 ops_per_second=1684370.66 nanos_per_op=593.69
+data_streams_stats_reject_validation iterations=400000 elapsed_ms=241.015 ops_per_second=1659648.46 nanos_per_op=602.54
+data_streams_stats_reject_wire_bottleneck_ops_per_second=1649607.33
+```
+
+The current data-streams-stats fail-closed boundary bottleneck is request
+encode. This path carries the BroadcastRequest parent task, empty name array,
+and strict open forbid-closed index options before rejecting at admission. At
+roughly 1.65M ops/s in the latest local release run, it stays in the lightweight
+admin transport range and does not expose a material wire-codec bottleneck.
 
 Current indices-stats reject wire microbenchmark:
 

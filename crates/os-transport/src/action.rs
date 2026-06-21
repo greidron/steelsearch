@@ -43,6 +43,7 @@ pub const OPENSEARCH_RECOVERY_ACTION_NAME: &str = "indices:monitor/recovery";
 pub const OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME: &str = "indices:monitor/segments";
 pub const OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME: &str = "indices:monitor/shard_stores";
 pub const OPENSEARCH_GET_DATA_STREAM_ACTION_NAME: &str = "indices:admin/data_stream/get";
+pub const OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME: &str = "indices:monitor/data_stream/stats";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
@@ -281,6 +282,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "GetDataStreamAction.Response",
         adapter_stage: "data-stream-admin",
         next_step: "map bounded data-stream reads onto Rust data-stream metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME,
+        action_type: "DataStreamsStatsAction",
+        transport_action: "DataStreamsStatsAction.TransportAction",
+        request_wire_type: "DataStreamsStatsAction.Request",
+        response_wire_type: "DataStreamsStatsAction.Response",
+        adapter_stage: "data-stream-admin",
+        next_step: "map bounded data-stream stats reads onto Rust data-stream stats aggregation and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
@@ -544,6 +554,12 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason:
                 "get-data-stream transport execution requires data-stream metadata response rendering",
+        },
+        OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason:
+                "data-streams-stats transport execution requires data-stream stats aggregation and response rendering",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2485,6 +2501,44 @@ pub fn read_opensearch_get_data_stream_request_message(
     OpenSearchGetDataStreamRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_data_streams_stats_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchDataStreamsStatsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_data_streams_stats_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDataStreamsStatsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchDataStreamsStatsRequestWire::read(message.body.clone().freeze())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterUpdateSettingsRequestWire {
     pub parent_task_node: String,
@@ -3492,6 +3546,68 @@ impl OpenSearchGetDataStreamRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get data stream execution",
             reason: "get-data-stream transport execution requires data-stream metadata response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDataStreamsStatsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl Default for OpenSearchDataStreamsStatsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+        }
+    }
+}
+
+impl OpenSearchDataStreamsStatsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats name filter",
+                reason: "name-scoped data-stream stats require data-stream stats filtering",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats indices options",
+                reason:
+                    "custom data-stream stats indices options require index resolution semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "data streams stats execution",
+            reason:
+                "data-streams-stats transport execution requires data-stream stats aggregation and response rendering",
         })
     }
 }
@@ -7860,6 +7976,15 @@ mod tests {
                     next_step: "map bounded data-stream reads onto Rust data-stream metadata response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:monitor/data_stream/stats",
+                    action_type: "DataStreamsStatsAction",
+                    transport_action: "DataStreamsStatsAction.TransportAction",
+                    request_wire_type: "DataStreamsStatsAction.Request",
+                    response_wire_type: "DataStreamsStatsAction.Response",
+                    adapter_stage: "data-stream-admin",
+                    next_step: "map bounded data-stream stats reads onto Rust data-stream stats aggregation and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -8066,6 +8191,11 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -8098,6 +8228,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -11928,6 +12059,77 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get data stream execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_data_streams_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchDataStreamsStatsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchDataStreamsStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_data_streams_stats_request_rejects_unsupported_shapes() {
+        let name_filter = OpenSearchDataStreamsStatsRequestWire {
+            indices: vec!["logs".to_string()],
+            ..OpenSearchDataStreamsStatsRequestWire::default()
+        };
+        assert!(matches!(
+            name_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats name filter",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchDataStreamsStatsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ..OpenSearchDataStreamsStatsRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats indices options",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_data_streams_stats_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchDataStreamsStatsRequestWire::default();
+        let mut frame = build_opensearch_data_streams_stats_request_message(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected data streams stats request message");
+        };
+        assert_eq!(
+            read_opensearch_data_streams_stats_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_data_streams_stats_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats execution",
                 ..
             })
         ));

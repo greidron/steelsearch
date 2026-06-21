@@ -166,6 +166,15 @@
       "reason": "Get-data-stream transport execution requires data-stream metadata response rendering before Steelsearch can serve OpenSearch data-stream read semantics."
     },
     {
+      "action_name": "indices:monitor/data_stream/stats",
+      "action_type": "DataStreamsStatsAction",
+      "transport_action": "DataStreamsStatsAction.TransportAction",
+      "request_wire_type": "DataStreamsStatsAction.Request",
+      "response_wire_type": "DataStreamsStatsAction.Response",
+      "disposition": "rejected",
+      "reason": "Data-streams-stats transport execution requires data-stream stats aggregation and response rendering before Steelsearch can serve OpenSearch data-stream stats semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",
