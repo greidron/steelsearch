@@ -286,6 +286,10 @@ name = "force-merge-reject-wire-benchmark"
 path = "benchmarks/force_merge_reject_wire.rs"
 
 [[bin]]
+name = "upgrade-reject-wire-benchmark"
+path = "benchmarks/upgrade_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

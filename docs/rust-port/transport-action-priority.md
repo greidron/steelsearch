@@ -253,6 +253,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/refresh`
 - `indices:admin/flush` (rejected fail-closed)
 - `indices:admin/forcemerge` (rejected fail-closed)
+- `indices:admin/upgrade` (rejected fail-closed)
 - `indices:monitor/stats` (rejected fail-closed)
 
 The health adapter covers:
@@ -1044,6 +1045,17 @@ The force-merge boundary covers:
 - explicit rejection for index filters, custom indices options, bounded segment
   counts, delete-expunge-only merges, `flush=false`, primary-only routing,
   empty force-merge UUIDs, and force-merge execution.
+
+The upgrade boundary covers:
+
+- OpenSearch `UpgradeRequest` parent task, nullable index array, default
+  `IndicesOptions.strictExpandOpenAndForbidClosed()`, and
+  upgrade-only-ancient-segments flag at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/upgrade` until shard
+  segment upgrade execution, primary availability checks, settings update, and
+  response rendering are implemented against Rust shard state;
+- explicit rejection for index filters, custom indices options,
+  ancient-segment-only upgrades, and upgrade execution.
 
 The field-capabilities boundary covers:
 
@@ -2543,6 +2555,24 @@ expunge/flush/primary flags, and the force-merge UUID before rejecting
 execution. At roughly 1.17M ops/s in the latest local release run, the
 remaining performance-sensitive work is segment merge scheduling, primary-only
 routing, post-merge flush coordination, and shard status response rendering.
+
+Current upgrade reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin upgrade-reject-wire-benchmark
+upgrade_reject_request_encode iterations=400000 elapsed_ms=220.184 ops_per_second=1816664.31 nanos_per_op=550.46
+upgrade_reject_request_decode iterations=400000 elapsed_ms=241.184 ops_per_second=1658482.81 nanos_per_op=602.96
+upgrade_reject_validation iterations=400000 elapsed_ms=259.297 ops_per_second=1542635.05 nanos_per_op=648.24
+upgrade_reject_wire_bottleneck_ops_per_second=1542635.05
+```
+
+The current upgrade fail-closed boundary bottleneck is validation. The default
+benchmark writes the broadcast request envelope, empty index array, default
+strict-expand-open-forbid-closed indices options, and
+`upgrade_only_ancient_segments=false` before rejecting execution. At roughly
+1.54M ops/s in the latest local release run, the remaining performance-sensitive
+work is segment upgrade scheduling, primary availability validation, settings
+update coordination, and response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 

@@ -589,6 +589,15 @@
       "reason": "Force-merge transport execution requires shard segment merge execution, primary-only routing, post-merge flush, and shard status response rendering before Steelsearch can serve OpenSearch force-merge semantics."
     },
     {
+      "action_name": "indices:admin/upgrade",
+      "action_type": "UpgradeAction",
+      "transport_action": "TransportUpgradeAction",
+      "request_wire_type": "UpgradeRequest",
+      "response_wire_type": "UpgradeResponse",
+      "disposition": "rejected",
+      "reason": "Upgrade transport execution requires shard segment upgrade execution, primary availability checks, settings update, and response rendering before Steelsearch can serve OpenSearch upgrade semantics."
+    },
+    {
       "action_name": "indices:admin/aliases/get",
       "action_type": "GetAliasesAction",
       "transport_action": "TransportGetAliasesAction",

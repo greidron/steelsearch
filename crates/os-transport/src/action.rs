@@ -109,6 +109,7 @@ pub const OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME: &str = "indices:admin/index_
 pub const OPENSEARCH_VALIDATE_QUERY_ACTION_NAME: &str = "indices:admin/validate/query";
 pub const OPENSEARCH_FLUSH_ACTION_NAME: &str = "indices:admin/flush";
 pub const OPENSEARCH_FORCE_MERGE_ACTION_NAME: &str = "indices:admin/forcemerge";
+pub const OPENSEARCH_UPGRADE_ACTION_NAME: &str = "indices:admin/upgrade";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -794,6 +795,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map force-merge requests onto Rust shard segment merge execution, primary-only routing, post-merge flush, and shard status response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPGRADE_ACTION_NAME,
+        action_type: "UpgradeAction",
+        transport_action: "TransportUpgradeAction",
+        request_wire_type: "UpgradeRequest",
+        response_wire_type: "UpgradeResponse",
+        adapter_stage: "index-upgrade-admin",
+        next_step: "map upgrade requests onto Rust shard segment upgrade execution, primary availability checks, settings update, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
         action_type: "GetAliasesAction",
         transport_action: "TransportGetAliasesAction",
@@ -1395,6 +1405,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "force-merge transport execution requires shard segment merge execution, primary-only routing, post-merge flush, and shard status response rendering",
+        },
+        OPENSEARCH_UPGRADE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "upgrade transport execution requires shard segment upgrade execution, primary availability checks, settings update, and response rendering",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -16899,6 +16914,76 @@ impl OpenSearchForceMergeRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpgradeRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub upgrade_only_ancient_segments: bool,
+}
+
+impl Default for OpenSearchUpgradeRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            upgrade_only_ancient_segments: false,
+        }
+    }
+}
+
+impl OpenSearchUpgradeRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_bool(self.upgrade_only_ancient_segments);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            upgrade_only_ancient_segments: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade indices",
+                reason: "index-scoped upgrade requires OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade indices options",
+                reason: "custom upgrade indices options require index resolution semantics",
+            });
+        }
+        if self.upgrade_only_ancient_segments {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade only ancient segments",
+                reason: "ancient-segment-only upgrade requires shard segment version inspection",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "upgrade execution",
+            reason: "upgrade transport execution requires shard segment upgrade execution and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchValidateQueryRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -17180,6 +17265,44 @@ pub fn read_opensearch_force_merge_request_message(
         });
     }
     OpenSearchForceMergeRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_upgrade_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchUpgradeRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPGRADE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_upgrade_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpgradeRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPGRADE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPGRADE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchUpgradeRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_refresh_response_message(
@@ -19247,6 +19370,15 @@ mod tests {
                     next_step: "map force-merge requests onto Rust shard segment merge execution, primary-only routing, post-merge flush, and shard status response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/upgrade",
+                    action_type: "UpgradeAction",
+                    transport_action: "TransportUpgradeAction",
+                    request_wire_type: "UpgradeRequest",
+                    response_wire_type: "UpgradeResponse",
+                    adapter_stage: "index-upgrade-admin",
+                    next_step: "map upgrade requests onto Rust shard segment upgrade execution, primary availability checks, settings update, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -19765,6 +19897,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPGRADE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -19868,6 +20004,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -29817,6 +29954,100 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "force merge execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchUpgradeRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchUpgradeRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchUpgradeRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(!decoded.upgrade_only_ancient_segments);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_request_rejects_unsupported_shapes() {
+        let indices = OpenSearchUpgradeRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..OpenSearchUpgradeRequestWire::default()
+        };
+        assert!(matches!(
+            indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade indices",
+                ..
+            })
+        ));
+
+        let custom_options = OpenSearchUpgradeRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..OpenSearchUpgradeRequestWire::default()
+        };
+        assert!(matches!(
+            custom_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade indices options",
+                ..
+            })
+        ));
+
+        let only_ancient = OpenSearchUpgradeRequestWire {
+            upgrade_only_ancient_segments: true,
+            ..OpenSearchUpgradeRequestWire::default()
+        };
+        assert!(matches!(
+            only_ancient.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade only ancient segments",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_upgrade_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchUpgradeRequestWire::default();
+        let mut frame =
+            build_opensearch_upgrade_request_message(71, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected upgrade request message");
+        };
+        assert_eq!(
+            read_opensearch_upgrade_request_message(&message).unwrap(),
+            request
+        );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert!(matches!(
+            read_opensearch_upgrade_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "upgrade execution",
                 ..
             })
         ));
