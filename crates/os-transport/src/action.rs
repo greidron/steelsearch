@@ -31,6 +31,7 @@ pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
+pub const CLUSTER_REROUTE_ACTION_NAME: &str = "cluster:admin/reroute";
 pub const GET_REPOSITORIES_ACTION_NAME: &str = "cluster:admin/repository/get";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -191,6 +192,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportClusterUpdateSettingsAction",
         request_wire_type: "ClusterUpdateSettingsRequest",
         response_wire_type: "ClusterUpdateSettingsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLUSTER_REROUTE_ACTION_NAME,
+        action_type: "ClusterRerouteAction",
+        transport_action: "TransportClusterRerouteAction",
+        request_wire_type: "ClusterRerouteRequest",
+        response_wire_type: "ClusterRerouteResponse",
     },
     SourceTransportActionSpec {
         action_name: GET_REPOSITORIES_ACTION_NAME,
@@ -788,6 +796,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster settings mutation is not admitted through transport",
+        },
+        CLUSTER_REROUTE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "cluster reroute transport execution requires allocation command and publication semantics",
         },
         GET_REPOSITORIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2832,6 +2845,44 @@ pub fn read_cluster_update_settings_request_message(
         });
     }
     ClusterUpdateSettingsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_reroute_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterRerouteRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_REROUTE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_reroute_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterRerouteRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_REROUTE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_REROUTE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterRerouteRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_get_repositories_request_message(
@@ -7631,6 +7682,120 @@ impl GetTermVersionRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterRerouteRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub commands_count: i32,
+    pub dry_run: bool,
+    pub explain: bool,
+    pub retry_failed: bool,
+}
+
+impl Default for ClusterRerouteRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            commands_count: 0,
+            dry_run: false,
+            explain: false,
+            retry_failed: false,
+        }
+    }
+}
+
+impl ClusterRerouteRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_vint(self.commands_count);
+        output.write_bool(self.dry_run);
+        output.write_bool(self.explain);
+        output.write_bool(self.retry_failed);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let commands_count = input.read_vint()?;
+        if commands_count < 0 {
+            return Err(StreamInputError::NegativeLength(commands_count).into());
+        }
+        if commands_count > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute commands",
+                reason:
+                    "allocation command payloads require named-writeable command decoding and routing mutation semantics",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            commands_count,
+            dry_run: input.read_bool()?,
+            explain: input.read_bool()?,
+            retry_failed: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires cluster-manager routing semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute ack timeout",
+                reason:
+                    "custom acknowledgement timeout requires publication acknowledgement semantics",
+            });
+        }
+        if self.commands_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute commands",
+                reason:
+                    "allocation commands require routing mutation and explanation response semantics",
+            });
+        }
+        if self.dry_run {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute dry run",
+                reason: "dry-run reroute requires simulated allocation and cluster-state response rendering",
+            });
+        }
+        if self.explain {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute explain",
+                reason: "reroute explanations require allocation decision rendering",
+            });
+        }
+        if self.retry_failed {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute retry failed",
+                reason: "retry-failed reroute requires failed-allocation accounting semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster reroute execution",
+            reason: "cluster reroute transport execution requires routing mutation and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcknowledgedResponseWire {
     pub acknowledged: bool,
 }
@@ -12022,6 +12187,13 @@ mod tests {
                     response_wire_type: "ClusterUpdateSettingsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/reroute",
+                    action_type: "ClusterRerouteAction",
+                    transport_action: "TransportClusterRerouteAction",
+                    request_wire_type: "ClusterRerouteRequest",
+                    response_wire_type: "ClusterRerouteResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/repository/get",
                     action_type: "GetRepositoriesAction",
                     transport_action: "TransportGetRepositoriesAction",
@@ -12508,6 +12680,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(CLUSTER_REROUTE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -15757,6 +15933,144 @@ mod tests {
             persistent_settings.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings persistent settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_reroute_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ClusterRerouteRequestWire {
+            parent_task_node: "reroute-node".to_string(),
+            parent_task_id: Some(91),
+            ..ClusterRerouteRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClusterRerouteRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_reroute_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = ClusterRerouteRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..ClusterRerouteRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = ClusterRerouteRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..ClusterRerouteRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute ack timeout",
+                ..
+            })
+        ));
+
+        let commands = ClusterRerouteRequestWire {
+            commands_count: 1,
+            ..ClusterRerouteRequestWire::default()
+        };
+        assert!(matches!(
+            commands.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute commands",
+                ..
+            })
+        ));
+
+        let dry_run = ClusterRerouteRequestWire {
+            dry_run: true,
+            ..ClusterRerouteRequestWire::default()
+        };
+        assert!(matches!(
+            dry_run.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute dry run",
+                ..
+            })
+        ));
+
+        let explain = ClusterRerouteRequestWire {
+            explain: true,
+            ..ClusterRerouteRequestWire::default()
+        };
+        assert!(matches!(
+            explain.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute explain",
+                ..
+            })
+        ));
+
+        let retry_failed = ClusterRerouteRequestWire {
+            retry_failed: true,
+            ..ClusterRerouteRequestWire::default()
+        };
+        assert!(matches!(
+            retry_failed.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute retry failed",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_reroute_request_decode_rejects_allocation_commands() {
+        let request = ClusterRerouteRequestWire {
+            commands_count: 1,
+            ..ClusterRerouteRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        assert!(matches!(
+            ClusterRerouteRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute commands",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cluster_reroute_transport_messages_bind_rejected_action_frame() {
+        let request = ClusterRerouteRequestWire::default();
+        let mut frame =
+            build_cluster_reroute_request_message(41, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster reroute request message");
+        };
+        assert_eq!(
+            read_cluster_reroute_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_cluster_reroute_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute execution",
                 ..
             })
         ));

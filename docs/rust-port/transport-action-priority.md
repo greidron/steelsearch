@@ -188,6 +188,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
+- `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
@@ -351,6 +352,18 @@ The cluster-update-settings boundary covers:
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
   timeout, transient settings, persistent settings, and update-settings
   execution.
+
+The cluster-reroute boundary covers:
+
+- OpenSearch `ClusterRerouteRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, empty allocation command set, `dryRun`, `explain`,
+  and `retryFailed` flags at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/reroute` until
+  allocation command decoding, routing mutation, acknowledgement, and response
+  rendering are implemented;
+- explicit rejection for non-empty allocation commands, custom
+  cluster-manager timeout, custom acknowledgement timeout, dry-run execution,
+  explanation rendering, retry-failed execution, and reroute execution.
 
 The get-repositories boundary covers:
 
@@ -1104,6 +1117,22 @@ encode. The request payload writes the parent task, two timeout values, and the
 empty transient/persistent settings maps before failing closed at admission. At
 roughly 1.51M ops/s in the latest local release run, it stays in the same range
 as the lightweight admin transport boundaries.
+
+Current cluster-reroute reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin cluster-reroute-reject-wire-benchmark
+cluster_reroute_reject_request_encode iterations=400000 elapsed_ms=201.057 ops_per_second=1989487.94 nanos_per_op=502.64
+cluster_reroute_reject_request_decode iterations=400000 elapsed_ms=185.703 ops_per_second=2153982.47 nanos_per_op=464.26
+cluster_reroute_reject_validation iterations=400000 elapsed_ms=188.575 ops_per_second=2121174.19 nanos_per_op=471.44
+cluster_reroute_reject_wire_bottleneck_ops_per_second=1989487.94
+```
+
+The current cluster-reroute fail-closed boundary bottleneck is request encode
+over the parent task, two timeouts, empty allocation-command set, and reroute
+flags. At roughly 1.99M ops/s in the latest local release run, this boundary is
+not a material performance bottleneck; the first performance-sensitive work is
+allocation command execution, routing mutation, and reroute response rendering.
 
 Current get-repositories reject wire microbenchmark:
 
