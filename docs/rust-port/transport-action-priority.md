@@ -405,6 +405,19 @@ The close-index boundary covers:
   acknowledgement timeouts, empty or blank index targets, custom indices
   options, custom wait-for-active-shards, and close-index execution.
 
+The add-index-block boundary covers:
+
+- OpenSearch `AddIndexBlockRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, indices array, `IndicesOptions.strictExpandOpen()`,
+  and `IndexMetadata.APIBlock` ordinal at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/block/add` until
+  index block metadata mutation and add-block response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, empty or blank index targets, custom indices
+  options, unknown APIBlock ordinals, internal-only `read_only_allow_delete`,
+  and add-index-block execution.
+
 The get-index boundary covers:
 
 - OpenSearch `GetIndexRequest` parent task, cluster-manager timeout, local
@@ -1133,6 +1146,24 @@ close-index default indices options, and `ActiveShardCount.NONE` before the
 execution boundary rejects. At roughly 1.42M ops/s in the latest local release
 run, the future performance-sensitive work is index metadata mutation, shard
 state transition, and close response rendering rather than the fail-closed wire
+boundary.
+
+Current add-index-block reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin add-index-block-reject-wire-benchmark
+add_index_block_reject_request_encode iterations=400000 elapsed_ms=281.863 ops_per_second=1419127.12 nanos_per_op=704.66
+add_index_block_reject_request_decode iterations=400000 elapsed_ms=277.215 ops_per_second=1442924.82 nanos_per_op=693.04
+add_index_block_reject_validation iterations=400000 elapsed_ms=317.918 ops_per_second=1258185.20 nanos_per_op=794.80
+add_index_block_reject_wire_bottleneck_ops_per_second=1258185.20
+```
+
+The current add-index-block fail-closed boundary bottleneck is validation over
+the decoded request. The request carries an acknowledged-request envelope,
+non-empty index target, strict-open indices options, and APIBlock ordinal before
+the execution boundary rejects. At roughly 1.26M ops/s in the latest local
+release run, the future performance-sensitive work is index block metadata
+mutation and add-block response rendering rather than the fail-closed wire
 boundary.
 
 Current get-index reject wire microbenchmark:

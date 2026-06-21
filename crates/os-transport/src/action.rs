@@ -48,6 +48,7 @@ pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
 pub const OPENSEARCH_OPEN_INDEX_ACTION_NAME: &str = "indices:admin/open";
 pub const OPENSEARCH_CLOSE_INDEX_ACTION_NAME: &str = "indices:admin/close";
+pub const OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME: &str = "indices:admin/block/add";
 pub const OPENSEARCH_GET_INDEX_ACTION_NAME: &str = "indices:admin/get";
 pub const OPENSEARCH_INDICES_EXISTS_ACTION_NAME: &str = "indices:admin/exists";
 pub const OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME: &str = "indices:admin/template/get";
@@ -350,6 +351,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "CloseIndexResponse",
         adapter_stage: "metadata-write",
         next_step: "map index closing onto Rust cluster metadata mutation, shard state transition, and per-index close response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME,
+        action_type: "AddIndexBlockAction",
+        transport_action: "TransportAddIndexBlockAction",
+        request_wire_type: "AddIndexBlockRequest",
+        response_wire_type: "AddIndexBlockResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map index block mutation onto Rust cluster metadata updates and per-index block response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_INDEX_ACTION_NAME,
@@ -774,6 +784,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "close-index transport execution requires index metadata mutation, shard state transition, and close response rendering",
+        },
+        OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "add-index-block transport execution requires index block metadata mutation and response rendering",
         },
         OPENSEARCH_GET_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3046,6 +3061,44 @@ pub fn read_opensearch_close_index_request_message(
     OpenSearchCloseIndexRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_add_index_block_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchAddIndexBlockRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_add_index_block_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchAddIndexBlockRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchAddIndexBlockRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_delete_index_template_request_message(
     request_id: i64,
     version: Version,
@@ -5047,6 +5100,115 @@ impl OpenSearchCloseIndexRequestWire {
             shape: "close index execution",
             reason:
                 "close-index transport execution requires index metadata mutation, shard state transition, and close response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAddIndexBlockRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub block: i32,
+}
+
+impl Default for OpenSearchAddIndexBlockRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            block: 2,
+        }
+    }
+}
+
+impl OpenSearchAddIndexBlockRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_vint(self.block);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            block: input.read_vint()?,
+        };
+        if !(0..=5).contains(&request.block) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block ordinal",
+                reason: "OpenSearch APIBlock ordinal must be in the known 0..=5 range",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the add-index-block adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block ack timeout",
+                reason: "custom ack timeout is not mapped by the add-index-block adapter yet",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block empty indices",
+                reason: "OpenSearch add-index-block requests require at least one index expression",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block blank index",
+                reason: "blank add-index-block targets require index validation before execution",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block indices options",
+                reason: "custom add-index-block indices options require index resolution semantics",
+            });
+        }
+        if self.block == 4 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block read-only-allow-delete",
+                reason: "OpenSearch reserves read_only_allow_delete blocks for internal use",
+            });
+        }
+        if !(0..=5).contains(&self.block) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block ordinal",
+                reason: "OpenSearch APIBlock ordinal must be in the known 0..=5 range",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "add index block execution",
+            reason:
+                "add-index-block transport execution requires index block metadata mutation and response rendering",
         })
     }
 }
@@ -11725,6 +11887,15 @@ mod tests {
                     next_step: "map index closing onto Rust cluster metadata mutation, shard state transition, and per-index close response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/block/add",
+                    action_type: "AddIndexBlockAction",
+                    transport_action: "TransportAddIndexBlockAction",
+                    request_wire_type: "AddIndexBlockRequest",
+                    response_wire_type: "AddIndexBlockResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map index block mutation onto Rust cluster metadata updates and per-index block response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/get",
                     action_type: "GetIndexAction",
                     transport_action: "TransportGetIndexAction",
@@ -12123,6 +12294,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -12243,6 +12419,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
@@ -16290,6 +16467,156 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "close index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_add_index_block_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchAddIndexBlockRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchAddIndexBlockRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.indices, vec!["logs-000001"]);
+        assert_eq!(decoded.block, 2);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_add_index_block_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchAddIndexBlockRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchAddIndexBlockRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block ack timeout",
+                ..
+            })
+        ));
+
+        let empty_indices = OpenSearchAddIndexBlockRequestWire {
+            indices: Vec::new(),
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            empty_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block empty indices",
+                ..
+            })
+        ));
+
+        let blank_index = OpenSearchAddIndexBlockRequestWire {
+            indices: vec![" ".to_string()],
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = OpenSearchAddIndexBlockRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::open_index_default(),
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block indices options",
+                ..
+            })
+        ));
+
+        let internal_block = OpenSearchAddIndexBlockRequestWire {
+            block: 4,
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            internal_block.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block read-only-allow-delete",
+                ..
+            })
+        ));
+
+        let unknown_block = OpenSearchAddIndexBlockRequestWire {
+            block: 6,
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        assert!(matches!(
+            unknown_block.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block ordinal",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_add_index_block_request_decode_rejects_unknown_block_ordinals() {
+        let request = OpenSearchAddIndexBlockRequestWire {
+            block: 6,
+            ..OpenSearchAddIndexBlockRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+        assert!(matches!(
+            OpenSearchAddIndexBlockRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block ordinal",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_add_index_block_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchAddIndexBlockRequestWire::default();
+        let mut frame = build_opensearch_add_index_block_request_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected add index block request message");
+        };
+        assert_eq!(
+            read_opensearch_add_index_block_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_add_index_block_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "add index block execution",
                 ..
             })
         ));
