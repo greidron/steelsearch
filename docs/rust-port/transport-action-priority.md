@@ -173,12 +173,25 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
 
 ## Current Server-Side Transport Adapters
 
-As of the refresh transport adapter pass, the explicit dispatcher contract in
+As of the get transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
 - `cluster:monitor/state`
 - `cluster:monitor/task`
+- `indices:data/read/get`
 - `indices:admin/refresh`
+
+The get adapter covers:
+
+- OpenSearch `GetRequest` parent task, optional index, id, realtime flag,
+  internal version type, and match-any version wire shape;
+- OpenSearch `GetResponse` / `GetResult` fields for found and not-found
+  documents with empty document/meta fields;
+- conversion between the default get transport wire subset and the Rust
+  `GetDocumentRequest` / `GetDocumentResponse` engine types;
+- explicit rejection for routing, preference, stored fields, pre-get refresh,
+  non-realtime reads, versioned reads, explicit shard ids, and fetch source
+  context until those semantics are mapped.
 
 The refresh adapter covers:
 
@@ -206,6 +219,24 @@ request decode across local release runs. At roughly 1.21M ops/s in the latest
 run, this adapter is not the bottleneck relative to the existing HTTP
 search/write/refresh benchmark paths. Re-run the command above after each
 transport adapter change that affects request/response framing.
+
+Current get wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-wire-benchmark
+get_request_encode ops_per_second=1321329.18 nanos_per_op=756.81
+get_response_encode ops_per_second=1287337.52 nanos_per_op=776.80
+get_request_decode ops_per_second=1456526.71 nanos_per_op=686.56
+get_response_decode ops_per_second=1123797.39 nanos_per_op=889.84
+get_wire_bottleneck_ops_per_second=1123797.39
+```
+
+The current get wire bottleneck is response decode, which includes JSON source
+decode for the benchmark payload. At roughly 1.12M ops/s in the latest local
+release run, this adapter is also not the bottleneck relative to the existing
+HTTP search/write/refresh benchmark paths. Re-run the command above after each
+get transport adapter change that affects request/response framing or source
+materialization.
 
 ## Tier 1 Implementation And Test Ownership Draft
 

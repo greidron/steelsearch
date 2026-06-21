@@ -1,8 +1,8 @@
 use bytes::{Bytes, BytesMut};
 use os_core::Version;
 use os_engine::{
-    RefreshRequest, RefreshResponse, SearchHit, SearchRequest, SearchShardSearchResult,
-    SearchShardTarget,
+    DocumentMetadata, GetDocumentRequest, GetDocumentResponse, RefreshRequest, RefreshResponse,
+    SearchHit, SearchRequest, SearchShardSearchResult, SearchShardTarget,
 };
 use os_stream::input::{StreamInput, StreamInputError};
 use os_stream::output::StreamOutput;
@@ -261,6 +261,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster settings mutation is not admitted through transport",
+        },
+        OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get transport adapter is available for the default single-document subset",
         },
         OPENSEARCH_REFRESH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -597,6 +602,373 @@ impl PendingClusterTasksResponseWire {
         require_no_trailing_bytes(&input)?;
         Ok(Self { tasks })
     }
+}
+
+const OPENSEARCH_VERSION_TYPE_INTERNAL: u8 = 0;
+const OPENSEARCH_MATCH_ANY_VERSION: i64 = -3;
+const OPENSEARCH_UNASSIGNED_SEQ_NO: i64 = -2;
+const OPENSEARCH_UNASSIGNED_PRIMARY_TERM: i64 = 0;
+const OPENSEARCH_NOT_FOUND_VERSION: i64 = -1;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub internal_shard_id_present: bool,
+    pub index: Option<String>,
+    pub id: String,
+    pub routing: Option<String>,
+    pub preference: Option<String>,
+    pub refresh: bool,
+    pub stored_fields: Option<Vec<String>>,
+    pub realtime: bool,
+    pub version_type: u8,
+    pub version: i64,
+    pub fetch_source_context_present: bool,
+}
+
+impl OpenSearchGetRequestWire {
+    pub fn new(index: String, id: String) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            internal_shard_id_present: false,
+            index: Some(index),
+            id,
+            routing: None,
+            preference: None,
+            refresh: false,
+            stored_fields: None,
+            realtime: true,
+            version_type: OPENSEARCH_VERSION_TYPE_INTERNAL,
+            version: OPENSEARCH_MATCH_ANY_VERSION,
+            fetch_source_context_present: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        if self.internal_shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request internal shard id",
+                reason: "explicit shard ids are not encoded by the get adapter yet",
+            });
+        }
+        output.write_bool(false);
+        output.write_optional_string(self.index.as_deref());
+        output.write_string(&self.id);
+        output.write_optional_string(self.routing.as_deref());
+        output.write_optional_string(self.preference.as_deref());
+        output.write_bool(self.refresh);
+        write_optional_string_array(output, self.stored_fields.as_deref());
+        output.write_bool(self.realtime);
+        output.write_byte(self.version_type);
+        output.write_i64(self.version);
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request fetch source context",
+                reason: "fetch source context encoding is not implemented by the get adapter yet",
+            });
+        }
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let internal_shard_id_present = input.read_bool()?;
+        if internal_shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request internal shard id",
+                reason: "explicit shard ids are not decoded by the get adapter yet",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            internal_shard_id_present,
+            index: input.read_optional_string()?,
+            id: input.read_string()?,
+            routing: input.read_optional_string()?,
+            preference: input.read_optional_string()?,
+            refresh: input.read_bool()?,
+            stored_fields: read_optional_string_array(&mut input)?,
+            realtime: input.read_bool()?,
+            version_type: input.read_byte()?,
+            version: input.read_i64()?,
+            fetch_source_context_present: input.read_bool()?,
+        };
+        if request.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request fetch source context",
+                reason: "fetch source context decoding is not implemented by the get adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn to_engine_request(&self) -> Result<GetDocumentRequest, TransportActionWireError> {
+        if self.internal_shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request internal shard id",
+                reason: "explicit shard ids cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request routing",
+                reason: "routing cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request preference",
+                reason: "preference cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.refresh {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request refresh",
+                reason: "pre-get refresh is not part of the current get adapter subset",
+            });
+        }
+        if self.stored_fields.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request stored fields",
+                reason: "stored fields cannot be mapped onto the current get engine request",
+            });
+        }
+        if !self.realtime {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request realtime flag",
+                reason: "non-realtime get cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.version_type != OPENSEARCH_VERSION_TYPE_INTERNAL
+            || self.version != OPENSEARCH_MATCH_ANY_VERSION
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request versioning",
+                reason: "versioned get cannot be mapped onto the current get engine request",
+            });
+        }
+        if self.fetch_source_context_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get request fetch source context",
+                reason:
+                    "fetch source filtering cannot be mapped onto the current get engine request",
+            });
+        }
+        Ok(GetDocumentRequest {
+            index: self
+                .index
+                .clone()
+                .ok_or(TransportActionWireError::MissingRequiredField { field: "index" })?,
+            id: self.id.clone(),
+        })
+    }
+}
+
+impl From<GetDocumentRequest> for OpenSearchGetRequestWire {
+    fn from(request: GetDocumentRequest) -> Self {
+        Self::new(request.index, request.id)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchGetResponseWire {
+    pub index: String,
+    pub id: String,
+    pub seq_no: i64,
+    pub primary_term: i64,
+    pub version: i64,
+    pub found: bool,
+    pub source: Option<Value>,
+}
+
+impl OpenSearchGetResponseWire {
+    pub fn found(index: String, metadata: DocumentMetadata, source: Value) -> Self {
+        Self {
+            index,
+            id: metadata.id,
+            seq_no: metadata.seq_no,
+            primary_term: metadata.primary_term as i64,
+            version: metadata.version as i64,
+            found: true,
+            source: Some(source),
+        }
+    }
+
+    pub fn not_found(index: String, id: String) -> Self {
+        Self {
+            index,
+            id,
+            seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+            primary_term: OPENSEARCH_UNASSIGNED_PRIMARY_TERM,
+            version: OPENSEARCH_NOT_FOUND_VERSION,
+            found: false,
+            source: None,
+        }
+    }
+
+    pub fn from_engine_response(
+        index: String,
+        id: String,
+        response: Option<GetDocumentResponse>,
+    ) -> Self {
+        match response {
+            Some(response) => {
+                OpenSearchGetResponseWire::found(response.index, response.metadata, response.source)
+            }
+            None => OpenSearchGetResponseWire::not_found(index, id),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_string(&self.index);
+        output.write_string(&self.id);
+        output.write_zlong(self.seq_no);
+        output.write_vlong(self.primary_term);
+        output.write_i64(self.version);
+        output.write_bool(self.found);
+        if self.found {
+            let source = self
+                .source
+                .as_ref()
+                .ok_or(TransportActionWireError::MissingRequiredField { field: "source" })?;
+            write_json_bytes_reference(output, source)?;
+            output.write_vint(0);
+            output.write_vint(0);
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let index = input.read_string()?;
+        let id = input.read_string()?;
+        let seq_no = read_zlong(&mut input)?;
+        let primary_term = input.read_vlong()?;
+        let version = input.read_i64()?;
+        let found = input.read_bool()?;
+        let source = if found {
+            let source = read_json_bytes_reference(&mut input)?;
+            let document_field_count = input.read_vint()?;
+            if document_field_count != 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get response document fields",
+                    reason: "document fields are not decoded by the get adapter yet",
+                });
+            }
+            let meta_field_count = input.read_vint()?;
+            if meta_field_count != 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get response metadata fields",
+                    reason: "metadata fields are not decoded by the get adapter yet",
+                });
+            }
+            Some(source)
+        } else {
+            None
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            index,
+            id,
+            seq_no,
+            primary_term,
+            version,
+            found,
+            source,
+        })
+    }
+
+    pub fn into_engine_response(self) -> Option<GetDocumentResponse> {
+        if !self.found {
+            return None;
+        }
+        Some(GetDocumentResponse {
+            index: self.index,
+            metadata: DocumentMetadata {
+                id: self.id,
+                version: self.version as u64,
+                seq_no: self.seq_no,
+                primary_term: self.primary_term as u64,
+            },
+            source: self.source.unwrap_or(Value::Null),
+            found: true,
+        })
+    }
+}
+
+pub fn build_opensearch_get_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchGetRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_GET_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_GET_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_GET_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchGetRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1337,6 +1709,8 @@ pub enum TransportActionWireError {
         expected: &'static str,
         actual: String,
     },
+    #[error("missing required transport wire field {field}")]
+    MissingRequiredField { field: &'static str },
     #[error("unexpected transport message status: expected {expected}, got bits {actual}")]
     UnexpectedMessageStatus { expected: &'static str, actual: u8 },
     #[error("unsupported transport wire shape {shape}: {reason}")]
@@ -1398,6 +1772,25 @@ fn read_optional_i64(input: &mut StreamInput) -> Result<Option<i64>, TransportAc
     }
 }
 
+fn write_optional_string_array(output: &mut StreamOutput, values: Option<&[String]>) {
+    if let Some(values) = values {
+        output.write_bool(true);
+        output.write_string_array(values);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_string_array(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<String>>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_string_array()?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_enum_set(output: &mut StreamOutput, ordinals: &[u8]) {
     output.write_vint(ordinals.len() as i32);
     for ordinal in ordinals {
@@ -1426,6 +1819,20 @@ fn read_enum_set(
         }
     }
     Ok(ordinals)
+}
+
+fn write_json_bytes_reference(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    let encoded = serde_json::to_vec(value).map_err(TransportActionWireError::JsonEncode)?;
+    output.write_bytes_reference(&encoded);
+    Ok(())
+}
+
+fn read_json_bytes_reference(input: &mut StreamInput) -> Result<Value, TransportActionWireError> {
+    let value = input.read_bytes_reference()?;
+    serde_json::from_slice(&value).map_err(TransportActionWireError::JsonDecode)
 }
 
 fn write_json_section_map(
@@ -1628,6 +2035,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Missing
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_REFRESH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -1637,7 +2048,9 @@ mod tests {
     fn opensearch_transport_action_dispatch_marks_priority_targets_explicitly() {
         for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
             let decision = classify_opensearch_transport_action(spec.action_name);
-            if spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME {
+            if spec.action_name == OPENSEARCH_GET_ACTION_NAME
+                || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
+            {
                 assert_eq!(
                     decision.disposition,
                     OpenSearchTransportActionDisposition::Implemented,
@@ -1670,6 +2083,136 @@ mod tests {
         assert_eq!(
             unknown.reason,
             "no OpenSearch transport action adapter is registered"
+        );
+    }
+
+    #[test]
+    fn opensearch_get_request_wire_round_trips_and_maps_to_engine_request() {
+        let request = OpenSearchGetRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchGetRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchGetRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.to_engine_request().unwrap(),
+            GetDocumentRequest {
+                index: "logs-000001".into(),
+                id: "doc-1".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn opensearch_get_request_rejects_unsupported_engine_mapping_options() {
+        let request = OpenSearchGetRequestWire {
+            routing: Some("tenant-a".into()),
+            ..OpenSearchGetRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        match request.to_engine_request().unwrap_err() {
+            TransportActionWireError::UnsupportedWireShape { shape, .. } => {
+                assert_eq!(shape, "get request routing");
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensearch_get_response_wire_round_trips_found_and_missing_documents() {
+        let found = OpenSearchGetResponseWire::found(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 3,
+                seq_no: 7,
+                primary_term: 2,
+            },
+            json!({ "message": "hello", "tenant": "tenant-a" }),
+        );
+
+        let mut output = StreamOutput::new();
+        found.write(&mut output).unwrap();
+        let decoded = OpenSearchGetResponseWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, found);
+        assert_eq!(
+            decoded.into_engine_response().unwrap(),
+            GetDocumentResponse {
+                index: "logs-000001".into(),
+                metadata: DocumentMetadata {
+                    id: "doc-1".into(),
+                    version: 3,
+                    seq_no: 7,
+                    primary_term: 2,
+                },
+                source: json!({ "message": "hello", "tenant": "tenant-a" }),
+                found: true,
+            }
+        );
+
+        let missing = OpenSearchGetResponseWire::not_found("logs-000001".into(), "doc-404".into());
+        let mut output = StreamOutput::new();
+        missing.write(&mut output).unwrap();
+        assert_eq!(
+            OpenSearchGetResponseWire::read(output.freeze())
+                .unwrap()
+                .into_engine_response(),
+            None
+        );
+    }
+
+    #[test]
+    fn opensearch_get_transport_messages_bind_action_frames() {
+        let request = OpenSearchGetRequestWire::new("logs-000001".into(), "doc-1".into());
+        let mut frame =
+            build_opensearch_get_request_message(21, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 21);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_opensearch_get_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = OpenSearchGetResponseWire::found(
+            "logs-000001".into(),
+            DocumentMetadata {
+                id: "doc-1".into(),
+                version: 1,
+                seq_no: 0,
+                primary_term: 1,
+            },
+            json!({ "message": "hello" }),
+        );
+        let mut frame =
+            build_opensearch_get_response_message(21, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 21);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_opensearch_get_response_message(&message).unwrap(),
+            response
         );
     }
 

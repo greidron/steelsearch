@@ -59,7 +59,17 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
         by_action.insert(action.action_name.clone(), action);
     }
 
-    assert_eq!(by_action.len(), SOURCE_DERIVED_CLUSTER_ACTIONS.len() + 1);
+    let implemented_priority_actions = OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
+        .iter()
+        .filter(|spec| {
+            classify_opensearch_transport_action(spec.action_name).disposition
+                == OpenSearchTransportActionDisposition::Implemented
+        })
+        .count();
+    assert_eq!(
+        by_action.len(),
+        SOURCE_DERIVED_CLUSTER_ACTIONS.len() + implemented_priority_actions
+    );
     for spec in SOURCE_DERIVED_CLUSTER_ACTIONS {
         let action = by_action
             .get(spec.action_name)
@@ -81,17 +91,34 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
             spec.action_name
         );
     }
-    let refresh_spec = OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
-        .iter()
-        .find(|spec| spec.action_name == "indices:admin/refresh")
-        .expect("refresh priority action should be registered");
-    let refresh = by_action
-        .get(refresh_spec.action_name)
-        .expect("missing refresh transport action inventory row");
-    assert_eq!(refresh.action_type, refresh_spec.action_type);
-    assert_eq!(refresh.transport_action, refresh_spec.transport_action);
-    assert_eq!(refresh.request_wire_type, refresh_spec.request_wire_type);
-    assert_eq!(refresh.response_wire_type, refresh_spec.response_wire_type);
+    for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
+        if classify_opensearch_transport_action(spec.action_name).disposition
+            == OpenSearchTransportActionDisposition::Implemented
+        {
+            let action = by_action.get(spec.action_name).unwrap_or_else(|| {
+                panic!(
+                    "missing {} transport action inventory row",
+                    spec.action_name
+                )
+            });
+            assert_eq!(action.action_type, spec.action_type, "{}", spec.action_name);
+            assert_eq!(
+                action.transport_action, spec.transport_action,
+                "{}",
+                spec.action_name
+            );
+            assert_eq!(
+                action.request_wire_type, spec.request_wire_type,
+                "{}",
+                spec.action_name
+            );
+            assert_eq!(
+                action.response_wire_type, spec.response_wire_type,
+                "{}",
+                spec.action_name
+            );
+        }
+    }
 
     assert_eq!(
         by_action["cluster:monitor/state"].disposition,
@@ -104,6 +131,10 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
     assert_eq!(by_action["cluster:monitor/task"].disposition, "implemented");
     assert_eq!(
         by_action["indices:admin/refresh"].disposition,
+        "implemented"
+    );
+    assert_eq!(
+        by_action["indices:data/read/get"].disposition,
         "implemented"
     );
 }
