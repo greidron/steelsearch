@@ -170,6 +170,10 @@ name = "get-field-mappings-reject-wire-benchmark"
 path = "benchmarks/get_field_mappings_reject_wire.rs"
 
 [[bin]]
+name = "put-mapping-reject-wire-benchmark"
+path = "benchmarks/put_mapping_reject_wire.rs"
+
+[[bin]]
 name = "get-index-reject-wire-benchmark"
 path = "benchmarks/get_index_reject_wire.rs"
 

@@ -658,6 +658,21 @@ The get-field-mappings boundary covers:
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and get-field-mappings execution.
 
+The put-mapping boundary covers:
+
+- OpenSearch `PutMappingRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, indices array, `IndicesOptions.fromOptions(false,
+  false, true, true)`, mapping source string, optional concrete `Index`,
+  optional origin, and `writeIndexOnly` at the OpenSearch 3.x wire decode/build
+  layer;
+- explicit fail-closed classification for `indices:admin/mapping/put` until
+  mapping validation, metadata mutation, and acknowledged response rendering
+  are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing index targets, custom indices options,
+  empty mapping sources, concrete-index routing, custom origins,
+  write-index-only updates, and put-mapping execution.
+
 The create-index boundary covers:
 
 - OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
@@ -1833,6 +1848,24 @@ encode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
+
+Current put-mapping reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-mapping-reject-wire-benchmark
+put_mapping_reject_request_encode iterations=400000 elapsed_ms=449.071 ops_per_second=890727.50 nanos_per_op=1122.68
+put_mapping_reject_request_decode iterations=400000 elapsed_ms=369.100 ops_per_second=1083715.91 nanos_per_op=922.75
+put_mapping_reject_validation iterations=400000 elapsed_ms=360.289 ops_per_second=1110219.42 nanos_per_op=900.72
+put_mapping_reject_wire_bottleneck_ops_per_second=890727.50
+```
+
+The current put-mapping fail-closed boundary bottleneck is request encode. The
+path writes the acknowledged-request envelope, index target array, indices
+options, mapping source string, absent concrete-index marker, origin marker,
+and `writeIndexOnly` flag before rejecting execution. At roughly 0.89M ops/s in
+the latest local release run, the current overhead is still request wire
+boundary work; future performance-sensitive work is mapping validation,
+metadata mutation, and acknowledged response rendering.
 
 Current create-index reject wire microbenchmark:
 
