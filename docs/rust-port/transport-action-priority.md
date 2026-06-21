@@ -353,6 +353,20 @@ The get-field-mappings boundary covers:
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and get-field-mappings execution.
 
+The create-index boundary covers:
+
+- OpenSearch `CreateIndexRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, cause, index, string-valued settings map, mappings
+  string, alias count, `ActiveShardCount`, and absent context marker at the
+  OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/create` until index
+  metadata mutation, shard allocation, and create-index response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing index names, custom cause strings,
+  settings, mappings, aliases, custom wait-for-active-shards, context payloads,
+  and create-index execution.
+
 The delete-index boundary covers:
 
 - OpenSearch `DeleteIndexRequest` parent task, cluster-manager timeout,
@@ -1023,6 +1037,24 @@ encode. This path checks indices options, local execution, field filters,
 and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
+
+Current create-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin create-index-reject-wire-benchmark
+create_index_reject_request_encode iterations=400000 elapsed_ms=274.096 ops_per_second=1459343.83 nanos_per_op=685.24
+create_index_reject_request_decode iterations=400000 elapsed_ms=256.711 ops_per_second=1558169.59 nanos_per_op=641.78
+create_index_reject_validation iterations=400000 elapsed_ms=264.949 ops_per_second=1509721.87 nanos_per_op=662.37
+create_index_reject_wire_bottleneck_ops_per_second=1459343.83
+```
+
+The current create-index fail-closed boundary bottleneck is request encode. The
+request carries an acknowledged-request envelope, index name, empty settings,
+default mappings, empty alias count, default wait-for-active-shards, and absent
+context before the execution boundary rejects. At roughly 1.46M ops/s in the
+latest local release run, the future performance-sensitive work is index
+metadata mutation, shard allocation, and create-index response rendering rather
+than the fail-closed wire boundary.
 
 Current delete-index reject wire microbenchmark:
 

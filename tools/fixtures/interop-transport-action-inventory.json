@@ -112,6 +112,15 @@
       "reason": "Get-field-mappings transport execution requires field mapping metadata response rendering before Steelsearch can serve OpenSearch field mapping read semantics."
     },
     {
+      "action_name": "indices:admin/create",
+      "action_type": "CreateIndexAction",
+      "transport_action": "TransportCreateIndexAction",
+      "request_wire_type": "CreateIndexRequest",
+      "response_wire_type": "CreateIndexResponse",
+      "disposition": "rejected",
+      "reason": "Create-index transport execution requires index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index creation semantics."
+    },
+    {
       "action_name": "indices:admin/delete",
       "action_type": "DeleteIndexAction",
       "transport_action": "TransportDeleteIndexAction",
