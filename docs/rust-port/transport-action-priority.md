@@ -686,6 +686,20 @@ The resize boundary covers:
   non-default `copySettings`, `maxShardSize`, unsupported nested target
   create-index shapes, and resize execution.
 
+The rollover boundary covers:
+
+- OpenSearch `RolloverRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, rollover target, optional new index name, `dryRun`,
+  zero-condition marker, and nested `CreateIndexRequest` at the OpenSearch 3.x
+  wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/rollover` until alias
+  or data-stream metadata validation, condition evaluation, index creation, and
+  rollover response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing rollover targets, dry-run requests,
+  condition payloads, unsupported nested create-index shapes, and rollover
+  execution.
+
 The delete-index boundary covers:
 
 - OpenSearch `DeleteIndexRequest` parent task, cluster-manager timeout,
@@ -1856,6 +1870,25 @@ the nested target create-index shape before rejecting execution. At roughly
 boundary work; the future performance-sensitive work is source index metadata
 validation, target index metadata mutation, shard allocation, and resize
 response rendering.
+
+Current rollover reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin rollover-reject-wire-benchmark
+rollover_reject_request_encode iterations=400000 elapsed_ms=445.147 ops_per_second=898578.64 nanos_per_op=1112.87
+rollover_reject_request_decode iterations=400000 elapsed_ms=327.549 ops_per_second=1221189.60 nanos_per_op=818.87
+rollover_reject_validation iterations=400000 elapsed_ms=343.380 ops_per_second=1164890.98 nanos_per_op=858.45
+rollover_reject_wire_bottleneck_ops_per_second=898578.64
+```
+
+The current rollover fail-closed boundary bottleneck is request encode. The
+path writes the acknowledged-request envelope, rollover target, optional new
+index marker, dry-run flag, zero-condition marker, and nested
+`CreateIndexRequest` before rejecting execution. At roughly 0.90M ops/s in the
+latest local release run, the current overhead is still request wire boundary
+work; future performance-sensitive work is alias or data-stream metadata
+validation, condition evaluation, index creation, and rollover response
+rendering.
 
 Current delete-index reject wire microbenchmark:
 

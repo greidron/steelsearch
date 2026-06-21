@@ -346,6 +346,15 @@
       "reason": "Resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index resize semantics."
     },
     {
+      "action_name": "indices:admin/rollover",
+      "action_type": "RolloverAction",
+      "transport_action": "TransportRolloverAction",
+      "request_wire_type": "RolloverRequest",
+      "response_wire_type": "RolloverResponse",
+      "disposition": "rejected",
+      "reason": "Rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering before Steelsearch can serve OpenSearch rollover semantics."
+    },
+    {
       "action_name": "indices:admin/delete",
       "action_type": "DeleteIndexAction",
       "transport_action": "TransportDeleteIndexAction",

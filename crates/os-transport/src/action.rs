@@ -75,6 +75,7 @@ pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/ge
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
 pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
+pub const OPENSEARCH_ROLLOVER_ACTION_NAME: &str = "indices:admin/rollover";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
 pub const OPENSEARCH_OPEN_INDEX_ACTION_NAME: &str = "indices:admin/open";
 pub const OPENSEARCH_CLOSE_INDEX_ACTION_NAME: &str = "indices:admin/close";
@@ -531,6 +532,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "ResizeResponse",
         adapter_stage: "metadata-write",
         next_step: "map index resize onto Rust cluster metadata mutation, shard allocation, and resize response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_ROLLOVER_ACTION_NAME,
+        action_type: "RolloverAction",
+        transport_action: "TransportRolloverAction",
+        request_wire_type: "RolloverRequest",
+        response_wire_type: "RolloverResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map alias and data-stream rollover onto Rust metadata mutation, condition evaluation, and rollover response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_DELETE_INDEX_ACTION_NAME,
@@ -1101,6 +1111,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering",
+        },
+        OPENSEARCH_ROLLOVER_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering",
         },
         OPENSEARCH_DELETE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4529,6 +4544,44 @@ pub fn read_opensearch_resize_request_message(
     OpenSearchResizeRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_rollover_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchRolloverRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_ROLLOVER_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_rollover_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRolloverRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_ROLLOVER_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_ROLLOVER_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchRolloverRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_delete_index_request_message(
     request_id: i64,
     version: Version,
@@ -7921,6 +7974,133 @@ impl OpenSearchResizeRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "resize execution",
             reason: "resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRolloverRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub rollover_target: String,
+    pub new_index_name: Option<String>,
+    pub dry_run: bool,
+    pub conditions_count: i32,
+    pub create_index_request: OpenSearchCreateIndexRequestWire,
+}
+
+impl Default for OpenSearchRolloverRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            rollover_target: "logs-write".to_string(),
+            new_index_name: None,
+            dry_run: false,
+            conditions_count: 0,
+            create_index_request: OpenSearchCreateIndexRequestWire {
+                index: "_na_".to_string(),
+                ..OpenSearchCreateIndexRequestWire::default()
+            },
+        }
+    }
+}
+
+impl OpenSearchRolloverRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.rollover_target);
+        output.write_optional_string(self.new_index_name.as_deref());
+        output.write_bool(self.dry_run);
+        output.write_vint(self.conditions_count);
+        if self.conditions_count == 0 {
+            self.create_index_request.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let rollover_target = input.read_string()?;
+        let new_index_name = input.read_optional_string()?;
+        let dry_run = input.read_bool()?;
+        let conditions_count = input.read_vint()?;
+        if conditions_count < 0 {
+            return Err(StreamInputError::NegativeLength(conditions_count).into());
+        }
+        if conditions_count > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover conditions",
+                reason: "rollover conditions require named Condition writeable decoding and metadata-backed evaluation",
+            });
+        }
+        let create_index_request = OpenSearchCreateIndexRequestWire::read_from(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            rollover_target,
+            new_index_name,
+            dry_run,
+            conditions_count,
+            create_index_request,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the rollover adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover ack timeout",
+                reason: "custom ack timeout is not mapped by the rollover adapter yet",
+            });
+        }
+        if self.rollover_target.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover missing target",
+                reason:
+                    "OpenSearch rollover requests require a concrete alias or data-stream target",
+            });
+        }
+        if self.dry_run {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover dry run",
+                reason: "dry-run rollover requires metadata lookup and condition evaluation without publication",
+            });
+        }
+        if self.conditions_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover conditions",
+                reason: "rollover conditions require named Condition writeable decoding and metadata-backed evaluation",
+            });
+        }
+        match self.create_index_request.reject_unsupported_execution() {
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create index execution",
+                ..
+            }) => {}
+            Err(err) => return Err(err),
+            Ok(()) => unreachable!("create-index boundary always rejects execution"),
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "rollover execution",
+            reason: "rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering",
         })
     }
 }
@@ -15913,6 +16093,15 @@ mod tests {
                     next_step: "map index resize onto Rust cluster metadata mutation, shard allocation, and resize response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/rollover",
+                    action_type: "RolloverAction",
+                    transport_action: "TransportRolloverAction",
+                    request_wire_type: "RolloverRequest",
+                    response_wire_type: "RolloverResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map alias and data-stream rollover onto Rust metadata mutation, condition evaluation, and rollover response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/delete",
                     action_type: "DeleteIndexAction",
                     transport_action: "TransportDeleteIndexAction",
@@ -16410,6 +16599,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_ROLLOVER_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -16545,6 +16738,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
@@ -23078,6 +23272,157 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "resize execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_rollover_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchRolloverRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchRolloverRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.rollover_target, "logs-write");
+        assert_eq!(decoded.create_index_request.index, "_na_");
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_rollover_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchRolloverRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchRolloverRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover ack timeout",
+                ..
+            })
+        ));
+
+        let missing_target = OpenSearchRolloverRequestWire {
+            rollover_target: " ".to_string(),
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            missing_target.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover missing target",
+                ..
+            })
+        ));
+
+        let dry_run = OpenSearchRolloverRequestWire {
+            dry_run: true,
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            dry_run.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover dry run",
+                ..
+            })
+        ));
+
+        let conditions = OpenSearchRolloverRequestWire {
+            conditions_count: 1,
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            conditions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover conditions",
+                ..
+            })
+        ));
+
+        let create_index_settings = OpenSearchRolloverRequestWire {
+            create_index_request: OpenSearchCreateIndexRequestWire {
+                settings: BTreeMap::from([("index.number_of_shards".to_string(), "1".to_string())]),
+                ..OpenSearchCreateIndexRequestWire::default()
+            },
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            create_index_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create index settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_rollover_request_decode_rejects_condition_payloads() {
+        let conditions = OpenSearchRolloverRequestWire {
+            conditions_count: 1,
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        conditions.write(&mut output);
+        assert!(matches!(
+            OpenSearchRolloverRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover conditions",
+                ..
+            })
+        ));
+
+        let negative_conditions = OpenSearchRolloverRequestWire {
+            conditions_count: -1,
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        negative_conditions.write(&mut output);
+        assert!(matches!(
+            OpenSearchRolloverRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::Stream(
+                StreamInputError::NegativeLength(-1)
+            ))
+        ));
+    }
+
+    #[test]
+    fn opensearch_rollover_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchRolloverRequestWire::default();
+        let mut frame =
+            build_opensearch_rollover_request_message(69, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected rollover request message");
+        };
+        assert_eq!(
+            read_opensearch_rollover_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_rollover_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover execution",
                 ..
             })
         ));
