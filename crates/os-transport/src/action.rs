@@ -29,6 +29,7 @@ pub const CAT_SHARDS_ACTION_NAME: &str = "cluster:monitor/shards";
 pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const WLM_STATS_ACTION_NAME: &str = "cluster:monitor/wlm/stats";
+pub const REMOTE_STORE_STATS_ACTION_NAME: &str = "cluster:monitor/_remotestore/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
@@ -184,6 +185,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportWlmStatsAction",
         request_wire_type: "WlmStatsRequest",
         response_wire_type: "WlmStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: REMOTE_STORE_STATS_ACTION_NAME,
+        action_type: "RemoteStoreStatsAction",
+        transport_action: "TransportRemoteStoreStatsAction",
+        request_wire_type: "RemoteStoreStatsRequest",
+        response_wire_type: "RemoteStoreStatsResponse",
     },
     SourceTransportActionSpec {
         action_name: NODES_USAGE_ACTION_NAME,
@@ -800,6 +808,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "wlm-stats transport execution requires workload group runtime telemetry mapping",
+        },
+        REMOTE_STORE_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "remote-store-stats transport execution requires remote store shard stats rendering",
         },
         NODES_USAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2235,6 +2248,87 @@ impl WlmStatsRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoteStoreStatsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub shards: Vec<String>,
+    pub local: bool,
+}
+
+impl Default for RemoteStoreStatsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Vec::new(),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            shards: Vec::new(),
+            local: false,
+        }
+    }
+}
+
+impl RemoteStoreStatsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_string_array(&self.shards);
+        output.write_bool(self.local);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: input.read_string_array()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+            shards: input.read_string_array()?,
+            local: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats index filter",
+                reason: "remote-store-stats index filtering requires runtime index and shard routing resolution",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats indices options",
+                reason: "remote-store-stats non-default indices options require index resolution semantics",
+            });
+        }
+        if !self.shards.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats shard filter",
+                reason: "remote-store-stats shard filtering requires shard routing resolution",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats local",
+                reason: "local remote-store-stats execution requires local shard stats collection semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "remote store stats execution",
+            reason:
+                "remote-store-stats transport execution requires remote store shard stats rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct NodesUsageRequestWire {
     pub parent_task_node: String,
@@ -2875,6 +2969,44 @@ pub fn read_wlm_stats_request_message(
         });
     }
     WlmStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_remote_store_stats_request_message(
+    request_id: i64,
+    version: Version,
+    request: &RemoteStoreStatsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(REMOTE_STORE_STATS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_remote_store_stats_request_message(
+    message: &TransportMessage,
+) -> Result<RemoteStoreStatsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != REMOTE_STORE_STATS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: REMOTE_STORE_STATS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    RemoteStoreStatsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_usage_request_message(
@@ -12745,6 +12877,13 @@ mod tests {
                     response_wire_type: "WlmStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/_remotestore/stats",
+                    action_type: "RemoteStoreStatsAction",
+                    transport_action: "TransportRemoteStoreStatsAction",
+                    request_wire_type: "RemoteStoreStatsRequest",
+                    response_wire_type: "RemoteStoreStatsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/nodes/usage",
                     action_type: "NodesUsageAction",
                     transport_action: "TransportNodesUsageAction",
@@ -13256,6 +13395,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(WLM_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(REMOTE_STORE_STATS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -16240,6 +16383,105 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "wlm stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = RemoteStoreStatsRequestWire {
+            parent_task_node: "remote-store-node".to_string(),
+            parent_task_id: Some(28),
+            ..RemoteStoreStatsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = RemoteStoreStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_stats_request_rejects_unsupported_shapes() {
+        let index_filter = RemoteStoreStatsRequestWire {
+            indices: vec!["logs".to_string()],
+            ..RemoteStoreStatsRequestWire::default()
+        };
+        assert!(matches!(
+            index_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats index filter",
+                ..
+            })
+        ));
+
+        let indices_options = RemoteStoreStatsRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..RemoteStoreStatsRequestWire::default()
+        };
+        assert!(matches!(
+            indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats indices options",
+                ..
+            })
+        ));
+
+        let shard_filter = RemoteStoreStatsRequestWire {
+            shards: vec!["0".to_string()],
+            ..RemoteStoreStatsRequestWire::default()
+        };
+        assert!(matches!(
+            shard_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats shard filter",
+                ..
+            })
+        ));
+
+        let local = RemoteStoreStatsRequestWire {
+            local: true,
+            ..RemoteStoreStatsRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats local",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_stats_transport_messages_bind_rejected_action_frame() {
+        let request = RemoteStoreStatsRequestWire::default();
+        let mut frame =
+            build_remote_store_stats_request_message(28, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remote store stats request message");
+        };
+        assert_eq!(
+            read_remote_store_stats_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_remote_store_stats_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats execution",
                 ..
             })
         ));
