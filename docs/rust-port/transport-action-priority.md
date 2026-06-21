@@ -979,6 +979,19 @@ The delete-composable-index-template boundary covers:
 - explicit rejection for custom cluster-manager timeouts and
   delete-composable-index-template execution.
 
+The simulate-index-template boundary covers:
+
+- OpenSearch `SimulateIndexTemplateRequest` parent task, cluster-manager
+  timeout, local flag, index name, and optional nested
+  `PutComposableIndexTemplateAction.Request` marker at the OpenSearch 3.x wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `indices:admin/index_template/simulate_index` until composable template
+  resolution and simulated metadata response rendering are implemented against
+  Rust cluster metadata;
+- explicit rejection for custom cluster-manager timeouts, local reads, missing
+  index names, inline template bodies, and simulate-index-template execution.
+
 The field-capabilities boundary covers:
 
 - OpenSearch `FieldCapabilitiesRequest` parent task, fields array, indices
@@ -2389,6 +2402,23 @@ request encode. This path stays cheap because validation checks only the
 default timeout before failing closed; the future performance-sensitive work is
 composable index-template metadata mutation, publication, and acknowledged
 response rendering.
+
+Current simulate-index-template reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin simulate-index-template-reject-wire-benchmark
+simulate_index_template_reject_request_encode iterations=400000 elapsed_ms=294.544 ops_per_second=1358033.57 nanos_per_op=736.36
+simulate_index_template_reject_request_decode iterations=400000 elapsed_ms=286.071 ops_per_second=1398255.80 nanos_per_op=715.18
+simulate_index_template_reject_validation iterations=400000 elapsed_ms=293.855 ops_per_second=1361217.60 nanos_per_op=734.64
+simulate_index_template_reject_wire_bottleneck_ops_per_second=1358033.57
+```
+
+The current simulate-index-template fail-closed boundary bottleneck is request
+encode. The default benchmark writes the cluster-manager read request envelope,
+local flag, index name, and absent inline template body before rejecting
+execution. At roughly 1.36M ops/s in the latest local release run, the
+remaining performance-sensitive work is composable template resolution,
+simulation merge logic, and simulated metadata response rendering.
 
 Current field-capabilities reject wire microbenchmark:
 

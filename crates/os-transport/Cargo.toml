@@ -266,6 +266,10 @@ name = "delete-composable-index-template-reject-wire-benchmark"
 path = "benchmarks/delete_composable_index_template_reject_wire.rs"
 
 [[bin]]
+name = "simulate-index-template-reject-wire-benchmark"
+path = "benchmarks/simulate_index_template_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 

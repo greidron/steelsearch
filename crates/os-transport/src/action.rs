@@ -103,6 +103,8 @@ pub const OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME: &str =
     "indices:admin/index_template/get";
 pub const OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME: &str =
     "indices:admin/index_template/delete";
+pub const OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME: &str =
+    "indices:admin/index_template/simulate_index";
 pub const OPENSEARCH_GET_ALIASES_ACTION_NAME: &str = "indices:admin/aliases/get";
 pub const OPENSEARCH_GET_SETTINGS_ACTION_NAME: &str = "indices:monitor/settings/get";
 pub const OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME: &str = "indices:admin/shards/search_shards";
@@ -743,6 +745,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map composable index-template deletion onto Rust template metadata mutation and ack rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME,
+        action_type: "SimulateIndexTemplateAction",
+        transport_action: "TransportSimulateIndexTemplateAction",
+        request_wire_type: "SimulateIndexTemplateRequest",
+        response_wire_type: "SimulateIndexTemplateResponse",
+        adapter_stage: "metadata-read",
+        next_step: "map composable index-template simulation onto Rust template resolution and simulated metadata response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALIASES_ACTION_NAME,
         action_type: "GetAliasesAction",
         transport_action: "TransportGetAliasesAction",
@@ -1320,6 +1331,11 @@ pub fn classify_opensearch_transport_action(
                 reason: "delete-composable-index-template transport execution requires composable index template metadata mutation and ack rendering",
             }
         }
+        OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "simulate-index-template transport execution requires composable template resolution and simulated metadata response rendering",
+        },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
@@ -5407,6 +5423,45 @@ pub fn read_opensearch_delete_composable_index_template_request_message(
         });
     }
     OpenSearchDeleteComposableIndexTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_simulate_index_template_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchSimulateIndexTemplateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME).to_bytes()
+                [..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_simulate_index_template_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSimulateIndexTemplateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchSimulateIndexTemplateRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_field_capabilities_request_message(
@@ -10527,18 +10582,22 @@ impl OpenSearchPutComposableIndexTemplateRequestWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let request = Self {
+        let request = Self::read_from_input(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    fn read_from_input(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
+        Ok(Self {
             parent_task_node,
             parent_task_id,
-            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            cluster_manager_timeout: TimeValueWire::read(input)?,
             name: input.read_string()?,
             cause: input.read_optional_string()?,
             create: input.read_bool()?,
-            index_template: OpenSearchComposableIndexTemplateWire::read(&mut input)?,
-        };
-        require_no_trailing_bytes(&input)?;
-        Ok(request)
+            index_template: OpenSearchComposableIndexTemplateWire::read(input)?,
+        })
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
@@ -10780,6 +10839,98 @@ impl OpenSearchDeleteComposableIndexTemplateRequestWire {
             shape: "delete composable index template execution",
             reason:
                 "delete-composable-index-template transport execution requires composable index template metadata mutation and ack rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSimulateIndexTemplateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub index_name: String,
+    pub index_template_request: Option<OpenSearchPutComposableIndexTemplateRequestWire>,
+}
+
+impl Default for OpenSearchSimulateIndexTemplateRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            index_name: "logs-000001".to_string(),
+            index_template_request: None,
+        }
+    }
+}
+
+impl OpenSearchSimulateIndexTemplateRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string(&self.index_name);
+        if let Some(index_template_request) = &self.index_template_request {
+            output.write_bool(true);
+            index_template_request.write(output);
+        } else {
+            output.write_bool(false);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            index_name: input.read_string()?,
+            index_template_request: if input.read_bool()? {
+                Some(OpenSearchPutComposableIndexTemplateRequestWire::read_from_input(&mut input)?)
+            } else {
+                None
+            },
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the simulate-index-template adapter yet",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template local",
+                reason:
+                    "local simulate-index-template reads require local cluster-state simulation semantics",
+            });
+        }
+        if self.index_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template missing index name",
+                reason: "OpenSearch simulate-index-template requests require an index name",
+            });
+        }
+        if self.index_template_request.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template inline template",
+                reason:
+                    "inline simulate-index-template bodies require composable template validation and merge simulation",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "simulate index template execution",
+            reason:
+                "simulate-index-template transport execution requires template resolution and simulated metadata response rendering",
         })
     }
 }
@@ -18391,6 +18542,15 @@ mod tests {
                     next_step: "map composable index-template deletion onto Rust template metadata mutation and ack rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/index_template/simulate_index",
+                    action_type: "SimulateIndexTemplateAction",
+                    transport_action: "TransportSimulateIndexTemplateAction",
+                    request_wire_type: "SimulateIndexTemplateRequest",
+                    response_wire_type: "SimulateIndexTemplateResponse",
+                    adapter_stage: "metadata-read",
+                    next_step: "map composable index-template simulation onto Rust template resolution and simulated metadata response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/aliases/get",
                     action_type: "GetAliasesAction",
                     transport_action: "TransportGetAliasesAction",
@@ -18887,6 +19047,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -18985,6 +19150,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
@@ -28263,6 +28429,123 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete composable index template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_simulate_index_template_request_wire_round_trips_and_rejects_execution_boundary()
+    {
+        let request = OpenSearchSimulateIndexTemplateRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchSimulateIndexTemplateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.index_name, "logs-000001");
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_simulate_index_template_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchSimulateIndexTemplateRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = OpenSearchSimulateIndexTemplateRequestWire {
+            local: true,
+            ..OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template local",
+                ..
+            })
+        ));
+
+        let missing_index_name = OpenSearchSimulateIndexTemplateRequestWire {
+            index_name: " ".to_string(),
+            ..OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_index_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template missing index name",
+                ..
+            })
+        ));
+
+        let inline_template = OpenSearchSimulateIndexTemplateRequestWire {
+            index_template_request: Some(OpenSearchPutComposableIndexTemplateRequestWire::default()),
+            ..OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        assert!(matches!(
+            inline_template.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template inline template",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_simulate_index_template_request_decodes_inline_template_payload() {
+        let request = OpenSearchSimulateIndexTemplateRequestWire {
+            index_template_request: Some(OpenSearchPutComposableIndexTemplateRequestWire::default()),
+            ..OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchSimulateIndexTemplateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template inline template",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_simulate_index_template_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchSimulateIndexTemplateRequestWire::default();
+        let mut frame = build_opensearch_simulate_index_template_request_message(
+            66,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected simulate index template request message");
+        };
+        assert_eq!(
+            read_opensearch_simulate_index_template_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_simulate_index_template_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "simulate index template execution",
                 ..
             })
         ));
