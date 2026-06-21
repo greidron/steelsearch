@@ -125,6 +125,7 @@ pub const OPENSEARCH_GET_DATA_STREAM_ACTION_NAME: &str = "indices:admin/data_str
 pub const OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME: &str = "indices:monitor/data_stream/stats";
 pub const OPENSEARCH_RESOLVE_INDEX_ACTION_NAME: &str = "indices:admin/resolve/index";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
+pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
 pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
 pub const OPENSEARCH_INDEX_ACTION_NAME: &str = "indices:data/write/index";
@@ -944,6 +945,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map document get requests onto Rust point lookup semantics",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_TERM_VECTORS_ACTION_NAME,
+        action_type: "TermVectorsAction",
+        transport_action: "TransportTermVectorsAction",
+        request_wire_type: "TermVectorsRequest",
+        response_wire_type: "TermVectorsResponse",
+        adapter_stage: "document-read",
+        next_step: "map term-vectors requests onto Rust shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_MULTI_GET_ACTION_NAME,
         action_type: "MultiGetAction",
         transport_action: "TransportMultiGetAction",
@@ -1563,6 +1573,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "get transport adapter is available for the default single-document subset",
+        },
+        OPENSEARCH_TERM_VECTORS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
         },
         OPENSEARCH_MULTI_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14445,6 +14460,255 @@ impl From<GetDocumentRequest> for OpenSearchGetRequestWire {
     }
 }
 
+const OPENSEARCH_TERM_VECTORS_DEFAULT_FLAGS: i64 = 0b0_1111;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchTermVectorsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub internal_shard_id_present: bool,
+    pub index: Option<String>,
+    pub id: String,
+    pub doc: Option<Bytes>,
+    pub media_type: Option<String>,
+    pub routing: Option<String>,
+    pub preference: Option<String>,
+    pub flags: i64,
+    pub selected_fields: Vec<String>,
+    pub per_field_analyzer: BTreeMap<String, String>,
+    pub filter_settings_present: bool,
+    pub realtime: bool,
+    pub version_type: u8,
+    pub version: i64,
+}
+
+impl OpenSearchTermVectorsRequestWire {
+    pub fn new(index: String, id: String) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            internal_shard_id_present: false,
+            index: Some(index),
+            id,
+            doc: None,
+            media_type: None,
+            routing: None,
+            preference: None,
+            flags: OPENSEARCH_TERM_VECTORS_DEFAULT_FLAGS,
+            selected_fields: Vec::new(),
+            per_field_analyzer: BTreeMap::new(),
+            filter_settings_present: false,
+            realtime: true,
+            version_type: OPENSEARCH_VERSION_TYPE_INTERNAL,
+            version: OPENSEARCH_MATCH_ANY_VERSION,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        if self.internal_shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors internal shard id",
+                reason: "explicit shard ids are not encoded by the term-vectors adapter yet",
+            });
+        }
+        output.write_bool(false);
+        output.write_optional_string(self.index.as_deref());
+        output.write_string(&self.id);
+        output.write_bool(self.doc.is_some());
+        if let Some(doc) = &self.doc {
+            output.write_bytes_reference(doc);
+            let media_type = self.media_type.as_deref().ok_or(
+                TransportActionWireError::MissingRequiredField {
+                    field: "media_type",
+                },
+            )?;
+            output.write_string(media_type);
+        }
+        output.write_optional_string(self.routing.as_deref());
+        output.write_optional_string(self.preference.as_deref());
+        output.write_vlong(self.flags);
+        output.write_vint(self.selected_fields.len() as i32);
+        for field in &self.selected_fields {
+            output.write_string(field);
+        }
+        output.write_bool(!self.per_field_analyzer.is_empty());
+        if !self.per_field_analyzer.is_empty() {
+            write_generic_string_map(output, &self.per_field_analyzer);
+        }
+        output.write_bool(self.filter_settings_present);
+        if self.filter_settings_present {
+            for _ in 0..7 {
+                write_optional_vint(output, None);
+            }
+        }
+        output.write_bool(self.realtime);
+        output.write_byte(self.version_type);
+        output.write_i64(self.version);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let internal_shard_id_present = input.read_bool()?;
+        if internal_shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors internal shard id",
+                reason: "explicit shard ids are not decoded by the term-vectors adapter yet",
+            });
+        }
+        let index = input.read_optional_string()?;
+        let id = input.read_string()?;
+        let doc = if input.read_bool()? {
+            Some(input.read_bytes_reference()?)
+        } else {
+            None
+        };
+        let media_type = if doc.is_some() {
+            Some(input.read_string()?)
+        } else {
+            None
+        };
+        let routing = input.read_optional_string()?;
+        let preference = input.read_optional_string()?;
+        let flags = input.read_vlong()?;
+        let selected_field_count = input.read_vint()?;
+        if selected_field_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors selected fields",
+                reason: "selected field count cannot be negative",
+            });
+        }
+        let mut selected_fields = Vec::with_capacity(selected_field_count as usize);
+        for _ in 0..selected_field_count {
+            selected_fields.push(input.read_string()?);
+        }
+        let per_field_analyzer = if input.read_bool()? {
+            read_generic_string_map(&mut input)?
+        } else {
+            BTreeMap::new()
+        };
+        let filter_settings_present = input.read_bool()?;
+        if filter_settings_present {
+            for _ in 0..7 {
+                let _ = read_optional_vint(&mut input)?;
+            }
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            internal_shard_id_present,
+            index,
+            id,
+            doc,
+            media_type,
+            routing,
+            preference,
+            flags,
+            selected_fields,
+            per_field_analyzer,
+            filter_settings_present,
+            realtime: input.read_bool()?,
+            version_type: input.read_byte()?,
+            version: input.read_i64()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.internal_shard_id_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors internal shard id",
+                reason: "explicit shard ids require single-shard routing semantics",
+            });
+        }
+        if matches!(self.index.as_deref(), None | Some("")) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors index",
+                reason: "OpenSearch term-vectors requests require a non-empty index",
+            });
+        }
+        if self.id.is_empty() && self.doc.is_none() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors id or doc",
+                reason: "OpenSearch term-vectors requests require an id or artificial document",
+            });
+        }
+        if self.doc.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors artificial document",
+                reason: "artificial document term-vectors require document parsing and analyzer execution",
+            });
+        }
+        if self.routing.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors routing",
+                reason: "routing requires OpenSearch shard routing semantics",
+            });
+        }
+        if self.preference.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors preference",
+                reason: "preference requires OpenSearch shard preference routing semantics",
+            });
+        }
+        if self.flags != OPENSEARCH_TERM_VECTORS_DEFAULT_FLAGS {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors flags",
+                reason: "custom term-vector flags require term statistics response shaping",
+            });
+        }
+        if self
+            .selected_fields
+            .iter()
+            .any(|field| field.trim().is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors selected fields",
+                reason: "selected term-vector fields require non-empty field names",
+            });
+        }
+        if !self.selected_fields.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors selected field execution",
+                reason: "selected field term-vectors require field-level analyzer and postings selection",
+            });
+        }
+        if !self.per_field_analyzer.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors per-field analyzer",
+                reason: "per-field analyzers require analyzer registry mapping",
+            });
+        }
+        if self.filter_settings_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors filter settings",
+                reason: "term-vector filtering requires OpenSearch term-vector filter semantics",
+            });
+        }
+        if !self.realtime {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors realtime",
+                reason: "non-realtime term-vectors require refresh-cycle visibility semantics",
+            });
+        }
+        if self.version_type != OPENSEARCH_VERSION_TYPE_INTERNAL
+            || self.version != OPENSEARCH_MATCH_ANY_VERSION
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors versioning",
+                reason: "versioned term-vectors require OpenSearch version resolution semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "term vectors execution",
+            reason: "term-vectors transport execution requires shard term-vector generation and response rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchGetResponseWire {
     pub index: String,
@@ -14642,6 +14906,44 @@ pub fn read_opensearch_get_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     OpenSearchGetResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_term_vectors_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchTermVectorsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_TERM_VECTORS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_term_vectors_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchTermVectorsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_TERM_VECTORS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_TERM_VECTORS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchTermVectorsRequestWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18595,6 +18897,48 @@ fn read_optional_vint(input: &mut StreamInput) -> Result<Option<i32>, TransportA
     }
 }
 
+fn write_generic_string_map(output: &mut StreamOutput, values: &BTreeMap<String, String>) {
+    output.write_byte(10);
+    output.write_vint(values.len() as i32);
+    for (key, value) in values {
+        output.write_string(key);
+        output.write_byte(0);
+        output.write_string(value);
+    }
+}
+
+fn read_generic_string_map(
+    input: &mut StreamInput,
+) -> Result<BTreeMap<String, String>, TransportActionWireError> {
+    let map_type = input.read_byte()?;
+    if map_type != 9 && map_type != 10 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "generic string map",
+            reason: "only OpenSearch generic linked-hash-map/hash-map string values are decoded",
+        });
+    }
+    let len = input.read_vint()?;
+    if len < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "generic string map",
+            reason: "generic map length cannot be negative",
+        });
+    }
+    let mut values = BTreeMap::new();
+    for _ in 0..len {
+        let key = input.read_string()?;
+        let value_type = input.read_byte()?;
+        if value_type != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "generic string map value",
+                reason: "only OpenSearch generic string map values are decoded",
+            });
+        }
+        values.insert(key, input.read_string()?);
+    }
+    Ok(values)
+}
+
 fn write_optional_vlong(output: &mut StreamOutput, value: Option<i64>) {
     if let Some(value) = value {
         output.write_bool(true);
@@ -19979,6 +20323,15 @@ mod tests {
                     next_step: "map document get requests onto Rust point lookup semantics",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/tv",
+                    action_type: "TermVectorsAction",
+                    transport_action: "TransportTermVectorsAction",
+                    request_wire_type: "TermVectorsRequest",
+                    response_wire_type: "TermVectorsResponse",
+                    adapter_stage: "document-read",
+                    next_step: "map term-vectors requests onto Rust shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/mget",
                     action_type: "MultiGetAction",
                     transport_action: "TransportMultiGetAction",
@@ -20213,6 +20566,10 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_TERM_VECTORS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_MULTI_GET_ACTION_NAME).disposition,
@@ -20479,6 +20836,7 @@ mod tests {
                 continue;
             }
             if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
@@ -20698,6 +21056,199 @@ mod tests {
             read_opensearch_get_response_message(&message).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn opensearch_term_vectors_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchTermVectorsRequestWire {
+            parent_task_node: "node-a".into(),
+            parent_task_id: Some(42),
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
+        let decoded = OpenSearchTermVectorsRequestWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_term_vectors_request_rejects_unsupported_shapes() {
+        let missing_index = OpenSearchTermVectorsRequestWire {
+            index: None,
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            missing_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors index",
+                ..
+            })
+        ));
+
+        let missing_id_or_doc = OpenSearchTermVectorsRequestWire {
+            id: String::new(),
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            missing_id_or_doc.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors id or doc",
+                ..
+            })
+        ));
+
+        let doc = OpenSearchTermVectorsRequestWire {
+            doc: Some(Bytes::from_static(br#"{"message":"hello"}"#)),
+            media_type: Some(OPENSEARCH_JSON_MEDIA_TYPE.to_string()),
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            doc.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors artificial document",
+                ..
+            })
+        ));
+
+        let routing = OpenSearchTermVectorsRequestWire {
+            routing: Some("tenant-a".into()),
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            routing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors routing",
+                ..
+            })
+        ));
+
+        let custom_flags = OpenSearchTermVectorsRequestWire {
+            flags: OPENSEARCH_TERM_VECTORS_DEFAULT_FLAGS | 0b1_0000,
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            custom_flags.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors flags",
+                ..
+            })
+        ));
+
+        let blank_field = OpenSearchTermVectorsRequestWire {
+            selected_fields: vec![" ".to_string()],
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            blank_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors selected fields",
+                ..
+            })
+        ));
+
+        let selected_fields = OpenSearchTermVectorsRequestWire {
+            selected_fields: vec!["message".to_string()],
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            selected_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors selected field execution",
+                ..
+            })
+        ));
+
+        let mut analyzers = BTreeMap::new();
+        analyzers.insert("message".to_string(), "standard".to_string());
+        let per_field_analyzer = OpenSearchTermVectorsRequestWire {
+            per_field_analyzer: analyzers,
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            per_field_analyzer.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors per-field analyzer",
+                ..
+            })
+        ));
+
+        let filter_settings = OpenSearchTermVectorsRequestWire {
+            filter_settings_present: true,
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            filter_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors filter settings",
+                ..
+            })
+        ));
+
+        let non_realtime = OpenSearchTermVectorsRequestWire {
+            realtime: false,
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            non_realtime.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors realtime",
+                ..
+            })
+        ));
+
+        let versioned = OpenSearchTermVectorsRequestWire {
+            version: 7,
+            ..OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into())
+        };
+        assert!(matches!(
+            versioned.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors versioning",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_term_vectors_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into());
+        let mut frame =
+            build_opensearch_term_vectors_request_message(22, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected term vectors request message");
+        };
+
+        assert_eq!(message.request_id, 22);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_term_vectors_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_term_vectors_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "term vectors execution",
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -251,6 +251,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/update`
 - `indices:data/write/delete`
 - `indices:admin/refresh`
+- `indices:data/read/tv` (rejected fail-closed)
 - `indices:admin/flush` (rejected fail-closed)
 - `indices:admin/forcemerge` (rejected fail-closed)
 - `indices:admin/upgrade` (rejected fail-closed)
@@ -1445,6 +1446,23 @@ The multi-get adapter covers:
 - explicit rejection for top-level preference, pre-get refresh, non-realtime
   reads, item routing, item stored fields, item versioned reads, item fetch
   source context, and failure response items until those semantics are mapped.
+
+The term-vectors boundary covers:
+
+- OpenSearch `TermVectorsRequest` parent task, optional single-shard id marker,
+  optional index, document id, optional artificial document marker/media type,
+  optional routing, optional preference, term-vector flags bitset, selected
+  fields collection, per-field analyzer generic string map, filter-settings
+  marker, realtime flag, internal version type, and match-any version at the
+  wire decode/build layer;
+- explicit fail-closed classification for `indices:data/read/tv` until shard
+  routing, realtime/non-realtime visibility, analyzer selection, term
+  statistics generation, and response rendering are implemented against Rust
+  shard state;
+- explicit rejection for explicit shard ids, missing index, missing id/doc,
+  artificial documents, routing, preference, custom flags, selected fields,
+  per-field analyzers, filter settings, non-realtime reads, versioned reads,
+  and term-vectors execution.
 
 The get adapter covers:
 
@@ -3100,6 +3118,25 @@ release run, this adapter is also not the bottleneck relative to the existing
 HTTP search/write/refresh benchmark paths. Re-run the command above after each
 get transport adapter change that affects request/response framing or source
 materialization.
+
+Current term-vectors reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin term-vectors-reject-wire-benchmark
+term_vectors_reject_request_encode iterations=400000 elapsed_ms=297.994 ops_per_second=1342308.16 nanos_per_op=744.99
+term_vectors_reject_request_decode iterations=400000 elapsed_ms=278.066 ops_per_second=1438505.86 nanos_per_op=695.17
+term_vectors_reject_validation iterations=400000 elapsed_ms=281.866 ops_per_second=1419115.39 nanos_per_op=704.66
+term_vectors_reject_wire_bottleneck_ops_per_second=1342308.16
+```
+
+The current term-vectors fail-closed boundary bottleneck is request encode. The
+default benchmark writes the single-shard request envelope, optional index,
+document id, absent doc/routing/preference markers, default flags, empty
+selected fields, absent analyzer/filter settings, realtime flag, and default
+versioning before rejecting execution. At roughly 1.34M ops/s in the latest
+local release run, the remaining performance-sensitive work is shard routing,
+postings/term-vector generation, analyzer lookup, term statistics collection,
+and response rendering.
 
 Current multi-get wire microbenchmark:
 
