@@ -86,6 +86,10 @@ name = "recovery-reject-wire-benchmark"
 path = "benchmarks/recovery_reject_wire.rs"
 
 [[bin]]
+name = "indices-segments-reject-wire-benchmark"
+path = "benchmarks/indices_segments_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 

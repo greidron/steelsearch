@@ -191,6 +191,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
 - `indices:monitor/recovery` (rejected fail-closed)
+- `indices:monitor/segments` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -363,6 +364,16 @@ The recovery boundary covers:
   shard recovery metadata response rendering is implemented;
 - explicit rejection for index filters, custom indices options, detailed
   recovery output, active-only filtering, and recovery execution.
+
+The indices-segments boundary covers:
+
+- OpenSearch `IndicesSegmentsRequest` parent task, indices array,
+  `IndicesOptions.strictExpandOpenAndForbidClosed()`, and `verbose` at the wire
+  decode/build layer;
+- explicit fail-closed classification for `indices:monitor/segments` until
+  shard segment metadata response rendering is implemented;
+- explicit rejection for index filters, custom indices options, verbose segment
+  output, and indices-segments execution.
 
 The indices-stats boundary covers:
 
@@ -763,6 +774,23 @@ index options, detailed flag, and active-only flag before rejecting at
 admission. At roughly 1.76M ops/s in the latest local release run, the boundary
 is lighter than the cluster-search-shards reject path and does not expose a
 material wire-codec bottleneck.
+
+Current indices-segments reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin indices-segments-reject-wire-benchmark
+indices_segments_reject_request_encode iterations=400000 elapsed_ms=208.391 ops_per_second=1919464.98 nanos_per_op=520.98
+indices_segments_reject_request_decode iterations=400000 elapsed_ms=223.254 ops_per_second=1791683.29 nanos_per_op=558.13
+indices_segments_reject_validation iterations=400000 elapsed_ms=226.423 ops_per_second=1766601.77 nanos_per_op=566.06
+indices_segments_reject_wire_bottleneck_ops_per_second=1766601.77
+```
+
+The current indices-segments fail-closed boundary bottleneck is validation. This
+path carries the BroadcastRequest parent task, empty index array, strict open
+forbid-closed index options, and verbose flag before rejecting at admission. At
+roughly 1.77M ops/s in the latest local release run, it is effectively the same
+weight as the recovery reject boundary and does not expose a material wire-codec
+bottleneck.
 
 Current indices-stats reject wire microbenchmark:
 
