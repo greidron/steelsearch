@@ -256,6 +256,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/auto_create` (rejected fail-closed)
 - `cluster:admin/script/put` (rejected fail-closed)
 - `cluster:admin/script/get` (rejected fail-closed)
+- `cluster:admin/script/delete` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -828,6 +829,18 @@ The get-stored-script boundary covers:
   implemented;
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
   ids, invalid ids, and get-stored-script execution.
+
+The delete-stored-script boundary covers:
+
+- OpenSearch `DeleteStoredScriptRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, and stored script id at the OpenSearch 3.x wire
+  decode/build layer;
+- explicit fail-closed classification for `cluster:admin/script/delete` until
+  stored script metadata mutation, delete-task throttling, and acknowledgement
+  response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing ids, invalid ids, and
+  delete-stored-script execution.
 
 The resize boundary covers:
 
@@ -2398,6 +2411,23 @@ also covers `StoredScriptSource` language/source/options. At roughly 1.32M
 ops/s in the latest local release run, current overhead is transport
 serialization, not response decode. Future performance-sensitive work is script
 metadata lookup and found/not-found response rendering.
+
+Current delete-stored-script reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-stored-script-reject-wire-benchmark
+delete_stored_script_reject_request_encode iterations=400000 elapsed_ms=279.007 ops_per_second=1433656.03 nanos_per_op=697.52
+delete_stored_script_reject_request_decode iterations=400000 elapsed_ms=251.419 ops_per_second=1590968.57 nanos_per_op=628.55
+delete_stored_script_reject_validation iterations=400000 elapsed_ms=261.307 ops_per_second=1530768.46 nanos_per_op=653.27
+delete_stored_script_reject_wire_bottleneck_ops_per_second=1433656.03
+```
+
+The current delete-stored-script fail-closed boundary bottleneck is request
+encode. The request path carries the acknowledged cluster-manager envelope and
+stored script id before rejecting execution. At roughly 1.43M ops/s in the
+latest local release run, current overhead is transport serialization; future
+performance-sensitive work is script metadata mutation, delete-task throttling,
+and ack rendering.
 
 Current resize reject wire microbenchmark:
 

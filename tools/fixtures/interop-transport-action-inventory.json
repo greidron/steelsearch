@@ -427,6 +427,15 @@
       "reason": "Get-stored-script transport execution requires script metadata lookup and found/not-found response rendering before Steelsearch can serve OpenSearch stored script read semantics."
     },
     {
+      "action_name": "cluster:admin/script/delete",
+      "action_type": "DeleteStoredScriptAction",
+      "transport_action": "TransportDeleteStoredScriptAction",
+      "request_wire_type": "DeleteStoredScriptRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-stored-script transport execution requires script metadata mutation, delete throttling, and ack rendering before Steelsearch can serve OpenSearch stored script delete semantics."
+    },
+    {
       "action_name": "indices:admin/resize",
       "action_type": "ResizeAction",
       "transport_action": "TransportResizeAction",

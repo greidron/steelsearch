@@ -218,6 +218,10 @@ name = "get-stored-script-reject-wire-benchmark"
 path = "benchmarks/get_stored_script_reject_wire.rs"
 
 [[bin]]
+name = "delete-stored-script-reject-wire-benchmark"
+path = "benchmarks/delete_stored_script_reject_wire.rs"
+
+[[bin]]
 name = "resize-reject-wire-benchmark"
 path = "benchmarks/resize_reject_wire.rs"
 
