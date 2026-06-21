@@ -59,6 +59,8 @@ pub const CLUSTER_DELETE_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/delete";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const PRUNE_FILE_CACHE_ACTION_NAME: &str = "cluster:admin/filecache/prune";
+pub const NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME: &str =
+    "cluster:admin/nodes/reload_secure_settings";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
 pub const GET_TASK_ACTION_NAME: &str = "cluster:monitor/task/get";
 pub const CANCEL_TASKS_ACTION_NAME: &str = "cluster:admin/tasks/cancel";
@@ -300,6 +302,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportPruneFileCacheAction",
         request_wire_type: "PruneFileCacheRequest",
         response_wire_type: "PruneFileCacheResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME,
+        action_type: "NodesReloadSecureSettingsAction",
+        transport_action: "TransportNodesReloadSecureSettingsAction",
+        request_wire_type: "NodesReloadSecureSettingsRequest",
+        response_wire_type: "NodesReloadSecureSettingsResponse",
     },
     SourceTransportActionSpec {
         action_name: PUT_REPOSITORY_ACTION_NAME,
@@ -1210,6 +1219,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "prune-file-cache transport execution requires warm-node file cache pruning and response rendering",
+        },
+        NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "reload-secure-settings transport execution requires keystore reload, transport TLS password safety, reloadable extension hooks, and node response rendering",
         },
         PUT_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3007,6 +3021,95 @@ impl PruneFileCacheRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodesReloadSecureSettingsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Option<Vec<String>>,
+    pub timeout: Option<TimeValueWire>,
+    pub secure_settings_password: Option<Bytes>,
+}
+
+impl Default for NodesReloadSecureSettingsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: None,
+            timeout: None,
+            secure_settings_password: None,
+        }
+    }
+}
+
+impl NodesReloadSecureSettingsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_nullable_string_array(output, self.node_ids.as_deref());
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        if let Some(password) = &self.secure_settings_password {
+            output.write_bool(true);
+            output.write_bytes_reference(password);
+        } else {
+            output.write_bool(false);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = read_nullable_string_array(&mut input)?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings concrete nodes",
+                reason: "reload-secure-settings concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let timeout = read_optional_time_value(&mut input)?;
+        let secure_settings_password = if input.read_bool()? {
+            Some(input.read_bytes_reference()?)
+        } else {
+            None
+        };
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout,
+            secure_settings_password,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if matches!(self.node_ids.as_ref(), Some(node_ids) if !node_ids.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings node filter",
+                reason: "reload-secure-settings node filtering requires node resolution semantics",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings timeout",
+                reason: "reload-secure-settings timeout semantics require transport nodes action execution",
+            });
+        }
+        if self.secure_settings_password.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings password",
+                reason: "secure settings password handling requires transport TLS safety and keystore reload semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "reload secure settings execution",
+            reason: "reload-secure-settings transport execution requires keystore reload, reloadable extension hooks, and node response rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct NodesUsageRequestWire {
     pub parent_task_node: String,
@@ -3761,6 +3864,44 @@ pub fn read_prune_file_cache_request_message(
         });
     }
     PruneFileCacheRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_reload_secure_settings_request_message(
+    request_id: i64,
+    version: Version,
+    request: &NodesReloadSecureSettingsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_reload_secure_settings_request_message(
+    message: &TransportMessage,
+) -> Result<NodesReloadSecureSettingsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    NodesReloadSecureSettingsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_usage_request_message(
@@ -19964,6 +20105,13 @@ mod tests {
                     response_wire_type: "PruneFileCacheResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/nodes/reload_secure_settings",
+                    action_type: "NodesReloadSecureSettingsAction",
+                    transport_action: "TransportNodesReloadSecureSettingsAction",
+                    request_wire_type: "NodesReloadSecureSettingsRequest",
+                    response_wire_type: "NodesReloadSecureSettingsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/repository/put",
                     action_type: "PutRepositoryAction",
                     transport_action: "TransportPutRepositoryAction",
@@ -20736,6 +20884,11 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(PRUNE_FILE_CACHE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME)
+                .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -24448,6 +24601,109 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "prune file cache execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_reload_secure_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = NodesReloadSecureSettingsRequestWire {
+            parent_task_node: "node-admin".to_string(),
+            parent_task_id: Some(31),
+            ..NodesReloadSecureSettingsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = NodesReloadSecureSettingsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_reload_secure_settings_request_rejects_unsupported_shapes() {
+        let node_filter = NodesReloadSecureSettingsRequestWire {
+            node_ids: Some(vec!["node-a".to_string()]),
+            ..NodesReloadSecureSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings node filter",
+                ..
+            })
+        ));
+
+        let timeout = NodesReloadSecureSettingsRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..NodesReloadSecureSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings timeout",
+                ..
+            })
+        ));
+
+        let password = NodesReloadSecureSettingsRequestWire {
+            secure_settings_password: Some(Bytes::from_static(b"secret")),
+            ..NodesReloadSecureSettingsRequestWire::default()
+        };
+        assert!(matches!(
+            password.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings password",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_reload_secure_settings_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        write_nullable_string_array(&mut output, None);
+        output.write_bool(true);
+
+        assert!(matches!(
+            NodesReloadSecureSettingsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_reload_secure_settings_transport_messages_bind_rejected_action_frame() {
+        let request = NodesReloadSecureSettingsRequestWire::default();
+        let mut frame = build_nodes_reload_secure_settings_request_message(
+            31,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected reload secure settings request message");
+        };
+        assert_eq!(
+            read_nodes_reload_secure_settings_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_nodes_reload_secure_settings_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings execution",
                 ..
             })
         ));

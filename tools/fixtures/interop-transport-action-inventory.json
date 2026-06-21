@@ -121,6 +121,15 @@
       "reason": "Prune-file-cache transport execution requires warm-node file cache pruning and node response aggregation before Steelsearch can serve OpenSearch file cache prune semantics."
     },
     {
+      "action_name": "cluster:admin/nodes/reload_secure_settings",
+      "action_type": "NodesReloadSecureSettingsAction",
+      "transport_action": "TransportNodesReloadSecureSettingsAction",
+      "request_wire_type": "NodesReloadSecureSettingsRequest",
+      "response_wire_type": "NodesReloadSecureSettingsResponse",
+      "disposition": "rejected",
+      "reason": "Reload-secure-settings transport execution requires keystore reload, transport TLS password safety, reloadable extension hooks, and node response rendering before Steelsearch can serve OpenSearch secure settings reload semantics."
+    },
+    {
       "action_name": "cluster:admin/repository/put",
       "action_type": "PutRepositoryAction",
       "transport_action": "TransportPutRepositoryAction",

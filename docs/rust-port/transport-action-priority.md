@@ -196,6 +196,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/filecache/prune` (rejected fail-closed)
+- `cluster:admin/nodes/reload_secure_settings` (rejected fail-closed)
 - `cluster:admin/repository/put` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `cluster:admin/repository/delete` (rejected fail-closed)
@@ -471,6 +472,18 @@ The prune-file-cache boundary covers:
   response rendering are implemented;
 - explicit rejection for concrete node payloads, node filters, timeout, and
   prune-file-cache execution.
+
+The reload-secure-settings boundary covers:
+
+- OpenSearch `NodesReloadSecureSettingsRequest` parent task, nullable node id
+  selector array, concrete node payload marker, optional timeout, and optional
+  secure-settings password bytes at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/nodes/reload_secure_settings` until keystore reload,
+  transport TLS password safety, reloadable extension hooks, node response
+  collection, and aggregate response rendering are implemented;
+- explicit rejection for concrete node payloads, node filters, timeout,
+  password payloads, and reload-secure-settings execution.
 
 The put-repository boundary covers:
 
@@ -1732,6 +1745,25 @@ concrete-node payload marker, and optional timeout before admission rejects
 execution. At roughly 1.89M ops/s in the latest local release run, this
 boundary is not a material transport bottleneck; the first
 performance-sensitive work is warm-node resolution, file cache pruning, and
+node response aggregation.
+
+Current reload-secure-settings reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin nodes-reload-secure-settings-reject-wire-benchmark
+nodes_reload_secure_settings_reject_request_encode iterations=500000 elapsed_ms=288.656 ops_per_second=1732167.77 nanos_per_op=577.31
+nodes_reload_secure_settings_reject_request_decode iterations=500000 elapsed_ms=287.771 ops_per_second=1737490.28 nanos_per_op=575.54
+nodes_reload_secure_settings_reject_validation iterations=500000 elapsed_ms=295.404 ops_per_second=1692594.59 nanos_per_op=590.81
+nodes_reload_secure_settings_reject_wire_bottleneck_ops_per_second=1692594.59
+```
+
+The current reload-secure-settings fail-closed boundary bottleneck is
+validation. The payload includes the base nodes request envelope, nullable node
+selector array, concrete-node payload marker, optional timeout, and optional
+password-bytes marker before admission rejects execution. At roughly 1.69M
+ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is keystore reload,
+transport TLS password safety checks, reloadable extension hook execution, and
 node response aggregation.
 
 Current put-repository reject wire microbenchmark:
