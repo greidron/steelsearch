@@ -175,6 +175,15 @@
       "reason": "Get-composable-index-template transport execution requires composable index-template metadata response rendering before Steelsearch can serve OpenSearch composable index-template reads."
     },
     {
+      "action_name": "indices:admin/index_template/delete",
+      "action_type": "DeleteComposableIndexTemplateAction",
+      "transport_action": "TransportDeleteComposableIndexTemplateAction",
+      "request_wire_type": "DeleteComposableIndexTemplateAction.Request",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-composable-index-template transport execution requires composable index-template metadata mutation and ack rendering before Steelsearch can serve OpenSearch composable index-template deletes."
+    },
+    {
       "action_name": "indices:admin/aliases/get",
       "action_type": "GetAliasesAction",
       "transport_action": "TransportGetAliasesAction",
