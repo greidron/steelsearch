@@ -178,6 +178,10 @@ name = "create-index-reject-wire-benchmark"
 path = "benchmarks/create_index_reject_wire.rs"
 
 [[bin]]
+name = "resize-reject-wire-benchmark"
+path = "benchmarks/resize_reject_wire.rs"
+
+[[bin]]
 name = "delete-index-reject-wire-benchmark"
 path = "benchmarks/delete_index_reject_wire.rs"
 

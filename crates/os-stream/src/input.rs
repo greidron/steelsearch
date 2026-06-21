@@ -107,6 +107,11 @@ impl StreamInput {
         }
     }
 
+    pub fn read_zlong(&mut self) -> Result<i64, StreamInputError> {
+        let value = self.read_vlong()? as u64;
+        Ok(((value >> 1) as i64) ^ (-((value & 1) as i64)))
+    }
+
     pub fn read_string(&mut self) -> Result<String, StreamInputError> {
         let char_count = self.read_vint()?;
         if char_count < 0 {

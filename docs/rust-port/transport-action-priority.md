@@ -672,6 +672,20 @@ The create-index boundary covers:
   settings, mappings, aliases, custom wait-for-active-shards, context payloads,
   and create-index execution.
 
+The resize boundary covers:
+
+- OpenSearch `ResizeRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, nested `CreateIndexRequest`, source index,
+  `ResizeType`, `copySettings`, and optional `ByteSizeValue` `maxShardSize` at
+  the OpenSearch 3.x wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/resize` until source
+  index metadata validation, target index metadata mutation, shard allocation,
+  and resize response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom
+  acknowledgement timeouts, missing source indices, split/clone resize types,
+  non-default `copySettings`, `maxShardSize`, unsupported nested target
+  create-index shapes, and resize execution.
+
 The delete-index boundary covers:
 
 - OpenSearch `DeleteIndexRequest` parent task, cluster-manager timeout,
@@ -1823,6 +1837,25 @@ context before the execution boundary rejects. At roughly 1.46M ops/s in the
 latest local release run, the future performance-sensitive work is index
 metadata mutation, shard allocation, and create-index response rendering rather
 than the fail-closed wire boundary.
+
+Current resize reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin resize-reject-wire-benchmark
+resize_reject_request_encode iterations=400000 elapsed_ms=360.201 ops_per_second=1110490.53 nanos_per_op=900.50
+resize_reject_request_decode iterations=400000 elapsed_ms=375.027 ops_per_second=1066589.98 nanos_per_op=937.57
+resize_reject_validation iterations=400000 elapsed_ms=375.871 ops_per_second=1064195.44 nanos_per_op=939.68
+resize_reject_wire_bottleneck_ops_per_second=1064195.44
+```
+
+The current resize fail-closed boundary bottleneck is validation. The path
+decodes the acknowledged-request envelope, nested `CreateIndexRequest`, source
+index, resize type, `copySettings`, and optional `maxShardSize`, then verifies
+the nested target create-index shape before rejecting execution. At roughly
+1.06M ops/s in the latest local release run, the current overhead is still wire
+boundary work; the future performance-sensitive work is source index metadata
+validation, target index metadata mutation, shard allocation, and resize
+response rendering.
 
 Current delete-index reject wire microbenchmark:
 

@@ -174,6 +174,21 @@ mod tests {
     }
 
     #[test]
+    fn roundtrips_zig_zag_long_values() {
+        let mut output = StreamOutput::new();
+        output.write_zlong(0);
+        output.write_zlong(-1);
+        output.write_zlong(1);
+        output.write_zlong(30);
+
+        let mut input = StreamInput::new(output.freeze());
+        assert_eq!(input.read_zlong().unwrap(), 0);
+        assert_eq!(input.read_zlong().unwrap(), -1);
+        assert_eq!(input.read_zlong().unwrap(), 1);
+        assert_eq!(input.read_zlong().unwrap(), 30);
+    }
+
+    #[test]
     fn encodes_strings_with_java_char_count() {
         let mut output = StreamOutput::new();
         output.write_string("😀");

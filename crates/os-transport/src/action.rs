@@ -74,6 +74,7 @@ pub const OPENSEARCH_GET_ALL_PITS_ACTION_NAME: &str = "indices:data/read/point_i
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_CREATE_INDEX_ACTION_NAME: &str = "indices:admin/create";
+pub const OPENSEARCH_RESIZE_ACTION_NAME: &str = "indices:admin/resize";
 pub const OPENSEARCH_DELETE_INDEX_ACTION_NAME: &str = "indices:admin/delete";
 pub const OPENSEARCH_OPEN_INDEX_ACTION_NAME: &str = "indices:admin/open";
 pub const OPENSEARCH_CLOSE_INDEX_ACTION_NAME: &str = "indices:admin/close";
@@ -521,6 +522,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "CreateIndexResponse",
         adapter_stage: "metadata-write",
         next_step: "map index creation onto Rust cluster metadata mutation, shard allocation, and create-index response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_RESIZE_ACTION_NAME,
+        action_type: "ResizeAction",
+        transport_action: "TransportResizeAction",
+        request_wire_type: "ResizeRequest",
+        response_wire_type: "ResizeResponse",
+        adapter_stage: "metadata-write",
+        next_step: "map index resize onto Rust cluster metadata mutation, shard allocation, and resize response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_DELETE_INDEX_ACTION_NAME,
@@ -1086,6 +1096,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "create-index transport execution requires index metadata mutation, shard allocation, and response rendering",
+        },
+        OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering",
         },
         OPENSEARCH_DELETE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4476,6 +4491,44 @@ pub fn read_opensearch_create_index_request_message(
     OpenSearchCreateIndexRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_resize_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchResizeRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_RESIZE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_resize_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchResizeRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_RESIZE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_RESIZE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchResizeRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_delete_index_request_message(
     request_id: i64,
     version: Version,
@@ -7600,12 +7653,18 @@ impl OpenSearchCreateIndexRequestWire {
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
-        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let request = Self::read_from(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    fn read_from(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
+        let cluster_manager_timeout = TimeValueWire::read(input)?;
+        let ack_timeout = TimeValueWire::read(input)?;
         let cause = input.read_string()?;
         let index = input.read_string()?;
-        let settings = read_opensearch_settings_string_map(&mut input)?;
+        let settings = read_opensearch_settings_string_map(input)?;
         let mappings = input.read_string()?;
         let aliases_count = input.read_vint()?;
         if aliases_count < 0 {
@@ -7638,7 +7697,6 @@ impl OpenSearchCreateIndexRequestWire {
             wait_for_active_shards,
             has_context,
         };
-        require_no_trailing_bytes(&input)?;
         Ok(request)
     }
 
@@ -7703,6 +7761,166 @@ impl OpenSearchCreateIndexRequestWire {
             shape: "create index execution",
             reason:
                 "create-index transport execution requires index metadata mutation, shard allocation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchByteSizeValueWire {
+    pub size: i64,
+    pub unit_ordinal: i32,
+}
+
+impl OpenSearchByteSizeValueWire {
+    pub fn bytes(size: i64) -> Self {
+        Self {
+            size,
+            unit_ordinal: 0,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_zlong(self.size);
+        output.write_vint(self.unit_ordinal);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let size = input.read_zlong()?;
+        let unit_ordinal = input.read_vint()?;
+        if !(0..=5).contains(&unit_ordinal) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "byte size unit",
+                reason: "ByteSizeUnit ordinal must be one of bytes, kb, mb, gb, tb, or pb",
+            });
+        }
+        Ok(Self { size, unit_ordinal })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchResizeRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub target_index_request: OpenSearchCreateIndexRequestWire,
+    pub source_index: String,
+    pub resize_type: i32,
+    pub copy_settings: Option<bool>,
+    pub max_shard_size: Option<OpenSearchByteSizeValueWire>,
+}
+
+impl Default for OpenSearchResizeRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            target_index_request: OpenSearchCreateIndexRequestWire {
+                index: "logs-shrunk".to_string(),
+                ..OpenSearchCreateIndexRequestWire::default()
+            },
+            source_index: "logs-000001".to_string(),
+            resize_type: 0,
+            copy_settings: Some(true),
+            max_shard_size: None,
+        }
+    }
+}
+
+impl OpenSearchResizeRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        self.target_index_request.write(output);
+        output.write_string(&self.source_index);
+        output.write_vint(self.resize_type);
+        write_optional_bool(output, self.copy_settings);
+        write_optional_byte_size_value(output, self.max_shard_size.as_ref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let target_index_request = OpenSearchCreateIndexRequestWire::read_from(&mut input)?;
+        let source_index = input.read_string()?;
+        let resize_type = input.read_vint()?;
+        if !(0..=2).contains(&resize_type) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize type",
+                reason: "ResizeType ordinal must be shrink, split, or clone",
+            });
+        }
+        let copy_settings = read_optional_bool(&mut input)?;
+        let max_shard_size = read_optional_byte_size_value(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            target_index_request,
+            source_index,
+            resize_type,
+            copy_settings,
+            max_shard_size,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the resize adapter yet",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize ack timeout",
+                reason: "custom ack timeout is not mapped by the resize adapter yet",
+            });
+        }
+        if self.source_index.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize missing source index",
+                reason: "OpenSearch resize requests require a concrete source index",
+            });
+        }
+        if self.resize_type != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize type",
+                reason: "split and clone require resize-specific metadata validation and allocation semantics",
+            });
+        }
+        if self.copy_settings != Some(true) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize copy settings",
+                reason: "resize copySettings must be the OpenSearch default true value until resize metadata semantics are mapped",
+            });
+        }
+        if self.max_shard_size.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize max shard size",
+                reason:
+                    "max_shard_size requires shrink planning against source index store statistics",
+            });
+        }
+        match self.target_index_request.reject_unsupported_execution() {
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create index execution",
+                ..
+            }) => {}
+            Err(err) => return Err(err),
+            Ok(()) => unreachable!("create-index boundary always rejects execution"),
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "resize execution",
+            reason: "resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering",
         })
     }
 }
@@ -14843,6 +15061,28 @@ fn read_optional_bool(input: &mut StreamInput) -> Result<Option<bool>, Transport
     }
 }
 
+fn write_optional_byte_size_value(
+    output: &mut StreamOutput,
+    value: Option<&OpenSearchByteSizeValueWire>,
+) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        value.write(output);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_byte_size_value(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchByteSizeValueWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(OpenSearchByteSizeValueWire::read(input)?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_optional_time_value(output: &mut StreamOutput, value: Option<&TimeValueWire>) {
     if let Some(value) = value {
         output.write_bool(true);
@@ -15664,6 +15904,15 @@ mod tests {
                     next_step: "map index creation onto Rust cluster metadata mutation, shard allocation, and create-index response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/resize",
+                    action_type: "ResizeAction",
+                    transport_action: "TransportResizeAction",
+                    request_wire_type: "ResizeRequest",
+                    response_wire_type: "ResizeResponse",
+                    adapter_stage: "metadata-write",
+                    next_step: "map index resize onto Rust cluster metadata mutation, shard allocation, and resize response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/delete",
                     action_type: "DeleteIndexAction",
                     transport_action: "TransportDeleteIndexAction",
@@ -16157,6 +16406,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
@@ -16291,6 +16544,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
@@ -22654,6 +22908,176 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_resize_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchResizeRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchResizeRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert_eq!(decoded.source_index, "logs-000001");
+        assert_eq!(decoded.target_index_request.index, "logs-shrunk");
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_resize_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchResizeRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchResizeRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchResizeRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchResizeRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize ack timeout",
+                ..
+            })
+        ));
+
+        let missing_source = OpenSearchResizeRequestWire {
+            source_index: " ".to_string(),
+            ..OpenSearchResizeRequestWire::default()
+        };
+        assert!(matches!(
+            missing_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize missing source index",
+                ..
+            })
+        ));
+
+        let split = OpenSearchResizeRequestWire {
+            resize_type: 1,
+            ..OpenSearchResizeRequestWire::default()
+        };
+        assert!(matches!(
+            split.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize type",
+                ..
+            })
+        ));
+
+        let copy_settings = OpenSearchResizeRequestWire {
+            copy_settings: None,
+            ..OpenSearchResizeRequestWire::default()
+        };
+        assert!(matches!(
+            copy_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize copy settings",
+                ..
+            })
+        ));
+
+        let max_shard_size = OpenSearchResizeRequestWire {
+            max_shard_size: Some(OpenSearchByteSizeValueWire::bytes(1024)),
+            ..OpenSearchResizeRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        max_shard_size.write(&mut output);
+        let decoded = OpenSearchResizeRequestWire::read(output.freeze()).unwrap();
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize max shard size",
+                ..
+            })
+        ));
+
+        let target_settings = OpenSearchResizeRequestWire {
+            target_index_request: OpenSearchCreateIndexRequestWire {
+                settings: BTreeMap::from([("index.number_of_shards".to_string(), "1".to_string())]),
+                ..OpenSearchCreateIndexRequestWire::default()
+            },
+            ..OpenSearchResizeRequestWire::default()
+        };
+        assert!(matches!(
+            target_settings.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create index settings",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_resize_request_decode_rejects_invalid_enums() {
+        let invalid_resize_type = OpenSearchResizeRequestWire {
+            resize_type: 9,
+            ..OpenSearchResizeRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        invalid_resize_type.write(&mut output);
+        assert!(matches!(
+            OpenSearchResizeRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize type",
+                ..
+            })
+        ));
+
+        let invalid_byte_size_unit = OpenSearchResizeRequestWire {
+            max_shard_size: Some(OpenSearchByteSizeValueWire {
+                size: 1024,
+                unit_ordinal: 9,
+            }),
+            ..OpenSearchResizeRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        invalid_byte_size_unit.write(&mut output);
+        assert!(matches!(
+            OpenSearchResizeRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "byte size unit",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_resize_transport_messages_bind_rejected_action_frame() {
+        let request = OpenSearchResizeRequestWire::default();
+        let mut frame =
+            build_opensearch_resize_request_message(68, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected resize request message");
+        };
+        assert_eq!(
+            read_opensearch_resize_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_resize_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resize execution",
                 ..
             })
         ));

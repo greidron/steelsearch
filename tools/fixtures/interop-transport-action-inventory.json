@@ -337,6 +337,15 @@
       "reason": "Create-index transport execution requires index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index creation semantics."
     },
     {
+      "action_name": "indices:admin/resize",
+      "action_type": "ResizeAction",
+      "transport_action": "TransportResizeAction",
+      "request_wire_type": "ResizeRequest",
+      "response_wire_type": "ResizeResponse",
+      "disposition": "rejected",
+      "reason": "Resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index resize semantics."
+    },
+    {
       "action_name": "indices:admin/delete",
       "action_type": "DeleteIndexAction",
       "transport_action": "TransportDeleteIndexAction",
