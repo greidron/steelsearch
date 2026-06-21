@@ -182,6 +182,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/info` (rejected fail-closed)
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
+- `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
@@ -254,6 +255,17 @@ The nodes-usage boundary covers:
   runtime usage telemetry mapping is implemented;
 - explicit rejection for concrete node payloads, node filters, timeout,
   `restActions`, `aggregations`, and nodes-usage execution.
+
+The nodes-hot-threads boundary covers:
+
+- OpenSearch `NodesHotThreadsRequest` parent task, node ids, optional timeout,
+  thread count, idle-thread inclusion flag, sampling type, interval, and
+  snapshot count at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/nodes/hot_threads`
+  until runtime stack sampling and diagnostic output mapping are implemented;
+- explicit rejection for concrete node payloads, node filters, timeout, custom
+  thread count, idle-thread inclusion, non-CPU sampling type, custom interval,
+  custom snapshot count, and nodes-hot-threads execution.
 
 The cluster-update-settings boundary covers:
 
@@ -519,6 +531,22 @@ request payload is compact, with only the BaseNodesRequest envelope and two
 boolean usage flags, so validation does not add measurable overhead. At roughly
 1.91M ops/s in the latest local release run, this is one of the lightest admin
 transport boundaries.
+
+Current nodes-hot-threads reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin nodes-hot-threads-reject-wire-benchmark
+nodes_hot_threads_reject_request_encode iterations=400000 elapsed_ms=262.869 ops_per_second=1521670.82 nanos_per_op=657.17
+nodes_hot_threads_reject_request_decode iterations=400000 elapsed_ms=242.725 ops_per_second=1647956.61 nanos_per_op=606.81
+nodes_hot_threads_reject_validation iterations=400000 elapsed_ms=245.280 ops_per_second=1630792.35 nanos_per_op=613.20
+nodes_hot_threads_reject_wire_bottleneck_ops_per_second=1521670.82
+```
+
+The current nodes-hot-threads fail-closed boundary bottleneck is request encode.
+The payload adds fixed diagnostic sampling controls on top of the BaseNodesRequest
+envelope, so it is heavier than nodes-usage but still in the lightweight admin
+transport range. At roughly 1.52M ops/s in the latest local release run, this
+boundary does not introduce a source-materialization bottleneck.
 
 Current cluster-update-settings reject wire microbenchmark:
 

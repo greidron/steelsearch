@@ -25,6 +25,7 @@ pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
 pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
+pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
@@ -53,6 +54,7 @@ pub const STEELSEARCH_REPLICA_OPERATION_ACTION_NAME: &str =
 
 const TIME_UNIT_SECONDS: u8 = 3;
 const TIME_UNIT_MINUTES: u8 = 4;
+const TIME_UNIT_MILLISECONDS: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SourceTransportActionSpec {
@@ -105,6 +107,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportNodesUsageAction",
         request_wire_type: "NodesUsageRequest",
         response_wire_type: "NodesUsageResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: NODES_HOT_THREADS_ACTION_NAME,
+        action_type: "NodesHotThreadsAction",
+        transport_action: "TransportNodesHotThreadsAction",
+        request_wire_type: "NodesHotThreadsRequest",
+        response_wire_type: "NodesHotThreadsResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_UPDATE_SETTINGS_ACTION_NAME,
@@ -354,6 +363,11 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "nodes-usage transport execution requires runtime usage telemetry mapping",
         },
+        NODES_HOT_THREADS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "nodes-hot-threads transport execution requires runtime stack sampling mapping",
+        },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
@@ -457,6 +471,13 @@ pub struct TimeValueWire {
 }
 
 impl TimeValueWire {
+    pub const fn millis(duration: i64) -> Self {
+        Self {
+            duration,
+            time_unit_ordinal: TIME_UNIT_MILLISECONDS,
+        }
+    }
+
     pub const fn seconds(duration: i64) -> Self {
         Self {
             duration,
@@ -1405,6 +1426,127 @@ impl NodesUsageRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodesHotThreadsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub threads: i32,
+    pub ignore_idle_threads: bool,
+    pub hot_threads_type: String,
+    pub interval: TimeValueWire,
+    pub snapshots: i32,
+}
+
+impl Default for NodesHotThreadsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: Vec::new(),
+            timeout: None,
+            threads: 3,
+            ignore_idle_threads: true,
+            hot_threads_type: "cpu".to_string(),
+            interval: TimeValueWire::millis(500),
+            snapshots: 10,
+        }
+    }
+}
+
+impl NodesHotThreadsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_i32(self.threads);
+        output.write_bool(self.ignore_idle_threads);
+        output.write_string(&self.hot_threads_type);
+        self.interval.write(output);
+        output.write_i32(self.snapshots);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads concrete nodes",
+                reason:
+                    "nodes-hot-threads concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            threads: input.read_i32()?,
+            ignore_idle_threads: input.read_bool()?,
+            hot_threads_type: input.read_string()?,
+            interval: TimeValueWire::read(&mut input)?,
+            snapshots: input.read_i32()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads node filter",
+                reason:
+                    "nodes-hot-threads node-scoped routing requires runtime stack sampling mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads timeout",
+                reason:
+                    "nodes-hot-threads timeout semantics require runtime stack sampling mapping",
+            });
+        }
+        if self.threads != 3 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads thread count",
+                reason: "nodes-hot-threads thread count selection is not mapped by this adapter",
+            });
+        }
+        if !self.ignore_idle_threads {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads idle thread inclusion",
+                reason: "nodes-hot-threads idle thread inclusion is not mapped by this adapter",
+            });
+        }
+        if self.hot_threads_type != "cpu" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads type",
+                reason: "nodes-hot-threads non-cpu sampling type is not mapped by this adapter",
+            });
+        }
+        if self.interval != TimeValueWire::millis(500) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads interval",
+                reason: "nodes-hot-threads custom sampling interval is not mapped by this adapter",
+            });
+        }
+        if self.snapshots != 10 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads snapshots",
+                reason: "nodes-hot-threads snapshot count selection is not mapped by this adapter",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "nodes hot threads execution",
+            reason: "nodes-hot-threads transport execution requires runtime stack sampling mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchIndicesStatsRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -1695,6 +1837,44 @@ pub fn read_nodes_usage_request_message(
         });
     }
     NodesUsageRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_hot_threads_request_message(
+    request_id: i64,
+    version: Version,
+    request: &NodesHotThreadsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(NODES_HOT_THREADS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_hot_threads_request_message(
+    message: &TransportMessage,
+) -> Result<NodesHotThreadsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != NODES_HOT_THREADS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: NODES_HOT_THREADS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    NodesHotThreadsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_indices_stats_request_message(
@@ -6003,6 +6183,13 @@ mod tests {
                     response_wire_type: "NodesUsageResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/nodes/hot_threads",
+                    action_type: "NodesHotThreadsAction",
+                    transport_action: "TransportNodesHotThreadsAction",
+                    request_wire_type: "NodesHotThreadsRequest",
+                    response_wire_type: "NodesHotThreadsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/settings/update",
                     action_type: "ClusterUpdateSettingsAction",
                     transport_action: "TransportClusterUpdateSettingsAction",
@@ -6164,6 +6351,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_USAGE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(NODES_HOT_THREADS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -8631,6 +8822,150 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes usage execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_hot_threads_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = NodesHotThreadsRequestWire::default();
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = NodesHotThreadsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_hot_threads_request_rejects_unsupported_shapes() {
+        let node_filter = NodesHotThreadsRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads node filter",
+                ..
+            })
+        ));
+
+        let timeout = NodesHotThreadsRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads timeout",
+                ..
+            })
+        ));
+
+        let thread_count = NodesHotThreadsRequestWire {
+            threads: 5,
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            thread_count.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads thread count",
+                ..
+            })
+        ));
+
+        let idle_threads = NodesHotThreadsRequestWire {
+            ignore_idle_threads: false,
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            idle_threads.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads idle thread inclusion",
+                ..
+            })
+        ));
+
+        let hot_threads_type = NodesHotThreadsRequestWire {
+            hot_threads_type: "wait".to_string(),
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            hot_threads_type.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads type",
+                ..
+            })
+        ));
+
+        let interval = NodesHotThreadsRequestWire {
+            interval: TimeValueWire::seconds(1),
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            interval.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads interval",
+                ..
+            })
+        ));
+
+        let snapshots = NodesHotThreadsRequestWire {
+            snapshots: 3,
+            ..NodesHotThreadsRequestWire::default()
+        };
+        assert!(matches!(
+            snapshots.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads snapshots",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_hot_threads_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            NodesHotThreadsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_hot_threads_transport_messages_bind_rejected_action_frame() {
+        let request = NodesHotThreadsRequestWire::default();
+        let mut frame =
+            build_nodes_hot_threads_request_message(33, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected nodes hot threads request message");
+        };
+        assert_eq!(
+            read_nodes_hot_threads_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_nodes_hot_threads_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes hot threads execution",
                 ..
             })
         ));

@@ -58,6 +58,15 @@
       "reason": "Nodes-usage transport execution requires runtime usage telemetry mapping before Steelsearch can serve OpenSearch nodes-usage semantics."
     },
     {
+      "action_name": "cluster:monitor/nodes/hot_threads",
+      "action_type": "NodesHotThreadsAction",
+      "transport_action": "TransportNodesHotThreadsAction",
+      "request_wire_type": "NodesHotThreadsRequest",
+      "response_wire_type": "NodesHotThreadsResponse",
+      "disposition": "rejected",
+      "reason": "Nodes-hot-threads transport execution requires runtime stack sampling mapping before Steelsearch can serve OpenSearch hot-threads semantics."
+    },
+    {
       "action_name": "cluster:admin/settings/update",
       "action_type": "ClusterUpdateSettingsAction",
       "transport_action": "TransportClusterUpdateSettingsAction",

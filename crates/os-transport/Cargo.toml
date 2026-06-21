@@ -46,6 +46,10 @@ name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 
 [[bin]]
+name = "nodes-hot-threads-reject-wire-benchmark"
+path = "benchmarks/nodes_hot_threads_reject_wire.rs"
+
+[[bin]]
 name = "indices-stats-reject-wire-benchmark"
 path = "benchmarks/indices_stats_reject_wire.rs"
 
