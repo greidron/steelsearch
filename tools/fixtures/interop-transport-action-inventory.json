@@ -175,6 +175,15 @@
       "reason": "Data-streams-stats transport execution requires data-stream stats aggregation and response rendering before Steelsearch can serve OpenSearch data-stream stats semantics."
     },
     {
+      "action_name": "indices:admin/resolve/index",
+      "action_type": "ResolveIndexAction",
+      "transport_action": "ResolveIndexAction.TransportAction",
+      "request_wire_type": "ResolveIndexAction.Request",
+      "response_wire_type": "ResolveIndexAction.Response",
+      "disposition": "rejected",
+      "reason": "Resolve-index transport execution requires index abstraction metadata response rendering before Steelsearch can serve OpenSearch resolve-index semantics."
+    },
+    {
       "action_name": "cluster:monitor/task",
       "action_type": "PendingClusterTasksAction",
       "transport_action": "TransportPendingClusterTasksAction",

@@ -195,6 +195,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/shard_stores` (rejected fail-closed)
 - `indices:admin/data_stream/get` (rejected fail-closed)
 - `indices:monitor/data_stream/stats` (rejected fail-closed)
+- `indices:admin/resolve/index` (rejected fail-closed)
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
 - `cluster:monitor/task/get` (rejected fail-closed)
@@ -409,6 +410,15 @@ The data-streams-stats boundary covers:
   until data-stream stats aggregation and response rendering are implemented;
 - explicit rejection for name filters, custom indices options, and
   data-streams-stats execution.
+
+The resolve-index boundary covers:
+
+- OpenSearch `ResolveIndexAction.Request` parent task, names array, and
+  `IndicesOptions.strictExpandOpen()` at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/resolve/index` until
+  index abstraction metadata response rendering is implemented;
+- explicit rejection for empty name arrays, custom indices options, and
+  resolve-index execution.
 
 The indices-stats boundary covers:
 
@@ -876,6 +886,23 @@ encode. This path carries the BroadcastRequest parent task, empty name array,
 and strict open forbid-closed index options before rejecting at admission. At
 roughly 1.65M ops/s in the latest local release run, it stays in the lightweight
 admin transport range and does not expose a material wire-codec bottleneck.
+
+Current resolve-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin resolve-index-reject-wire-benchmark
+resolve_index_reject_request_encode iterations=400000 elapsed_ms=224.325 ops_per_second=1783126.69 nanos_per_op=560.81
+resolve_index_reject_request_decode iterations=400000 elapsed_ms=250.029 ops_per_second=1599811.71 nanos_per_op=625.07
+resolve_index_reject_validation iterations=400000 elapsed_ms=251.138 ops_per_second=1592749.33 nanos_per_op=627.85
+resolve_index_reject_wire_bottleneck_ops_per_second=1592749.33
+```
+
+The current resolve-index fail-closed boundary bottleneck is validation. This
+path carries the ActionRequest parent task, wildcard name array, and strict open
+index options before rejecting at admission. At roughly 1.57M ops/s in the
+latest local release run, it stays in the lightweight metadata transport range;
+the extra wildcard string and indices-options comparison make it slightly
+heavier than the smallest BroadcastRequest reject paths.
 
 Current indices-stats reject wire microbenchmark:
 

@@ -102,6 +102,10 @@ name = "data-streams-stats-reject-wire-benchmark"
 path = "benchmarks/data_streams_stats_reject_wire.rs"
 
 [[bin]]
+name = "resolve-index-reject-wire-benchmark"
+path = "benchmarks/resolve_index_reject_wire.rs"
+
+[[bin]]
 name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 
