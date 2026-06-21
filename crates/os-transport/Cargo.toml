@@ -38,6 +38,10 @@ name = "remote-info-reject-wire-benchmark"
 path = "benchmarks/remote_info_reject_wire.rs"
 
 [[bin]]
+name = "get-term-version-reject-wire-benchmark"
+path = "benchmarks/get_term_version_reject_wire.rs"
+
+[[bin]]
 name = "cluster-stats-reject-wire-benchmark"
 path = "benchmarks/cluster_stats_reject_wire.rs"
 

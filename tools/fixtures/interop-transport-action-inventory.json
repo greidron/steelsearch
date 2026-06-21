@@ -22,6 +22,15 @@
       "reason": "Remote-info transport execution requires remote connection info response rendering before Steelsearch can serve OpenSearch remote cluster info semantics."
     },
     {
+      "action_name": "internal:monitor/term",
+      "action_type": "GetTermVersionAction",
+      "transport_action": "TransportGetTermVersionAction",
+      "request_wire_type": "GetTermVersionRequest",
+      "response_wire_type": "GetTermVersionResponse",
+      "disposition": "rejected",
+      "reason": "Get-term-version transport execution requires cluster term/version and remote-publication response rendering before Steelsearch can serve OpenSearch cluster-manager term semantics."
+    },
+    {
       "action_name": "cluster:monitor/state",
       "action_type": "ClusterStateAction",
       "transport_action": "TransportClusterStateAction",

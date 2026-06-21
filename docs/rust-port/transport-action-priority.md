@@ -178,6 +178,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 
 - `cluster:monitor/main` (rejected fail-closed)
 - `cluster:monitor/remote/info` (rejected fail-closed)
+- `internal:monitor/term` (rejected fail-closed)
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
@@ -266,6 +267,15 @@ The remote-info boundary covers:
   remote connection info collection and response rendering are implemented;
 - explicit rejection at execution so Steelsearch does not emit incomplete remote
   cluster info semantics through transport.
+
+The get-term-version boundary covers:
+
+- OpenSearch `GetTermVersionRequest` parent task, cluster-manager timeout, and
+  local flag at the wire decode/build layer;
+- explicit fail-closed classification for `internal:monitor/term` until cluster
+  term/version and remote-publication response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, local execution, and
+  get-term-version execution.
 
 The cluster-stats boundary covers:
 
@@ -963,6 +973,22 @@ the parent-task-only request frame. At roughly 2.08M ops/s in the latest local
 release run, this boundary is not a material performance bottleneck; the first
 performance-sensitive work is remote connection info collection and response
 rendering.
+
+Current get-term-version reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-term-version-reject-wire-benchmark
+get_term_version_reject_request_encode iterations=400000 elapsed_ms=182.897 ops_per_second=2187025.16 nanos_per_op=457.24
+get_term_version_reject_request_decode iterations=400000 elapsed_ms=179.348 ops_per_second=2230304.23 nanos_per_op=448.37
+get_term_version_reject_validation iterations=400000 elapsed_ms=180.954 ops_per_second=2210507.69 nanos_per_op=452.38
+get_term_version_reject_wire_bottleneck_ops_per_second=2187025.16
+```
+
+The current get-term-version fail-closed boundary bottleneck is request encode
+over the parent-task, cluster-manager-timeout, and local-flag request frame. At
+roughly 2.19M ops/s in the latest local release run, this boundary is not a
+material performance bottleneck; the first performance-sensitive work is
+cluster term/version lookup and response rendering.
 
 Current cluster-stats reject wire microbenchmark:
 
