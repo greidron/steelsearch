@@ -16,6 +16,15 @@ use crate::TransportMessage;
 pub const CLUSTER_STATE_ACTION_NAME: &str = "cluster:monitor/state";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
+pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
+pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
+pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
+pub const OPENSEARCH_MULTI_GET_ACTION_NAME: &str = "indices:data/read/mget";
+pub const OPENSEARCH_BULK_ACTION_NAME: &str = "indices:data/write/bulk";
+pub const OPENSEARCH_INDEX_ACTION_NAME: &str = "indices:data/write/index";
+pub const OPENSEARCH_UPDATE_ACTION_NAME: &str = "indices:data/write/update";
+pub const OPENSEARCH_DELETE_ACTION_NAME: &str = "indices:data/write/delete";
+pub const OPENSEARCH_REFRESH_ACTION_NAME: &str = "indices:admin/refresh";
 pub const STEELSEARCH_SHARD_SEARCH_ACTION_NAME: &str = "steelsearch:internal/search/shard";
 pub const STEELSEARCH_RECOVERY_START_ACTION_NAME: &str = "steelsearch:internal/recovery/start";
 pub const STEELSEARCH_RECOVERY_CHUNK_ACTION_NAME: &str = "steelsearch:internal/recovery/chunk";
@@ -60,6 +69,102 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportPendingClusterTasksAction",
         request_wire_type: "PendingClusterTasksRequest",
         response_wire_type: "PendingClusterTasksResponse",
+    },
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpenSearchPriorityTransportActionSpec {
+    pub action_name: &'static str,
+    pub action_type: &'static str,
+    pub transport_action: &'static str,
+    pub request_wire_type: &'static str,
+    pub response_wire_type: &'static str,
+    pub adapter_stage: &'static str,
+    pub next_step: &'static str,
+}
+
+pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportActionSpec] = &[
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_SEARCH_ACTION_NAME,
+        action_type: "SearchAction",
+        transport_action: "TransportSearchAction",
+        request_wire_type: "SearchRequest",
+        response_wire_type: "SearchResponse",
+        adapter_stage: "search-read",
+        next_step: "register request/response codec and route to the Rust search executor",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_MULTI_SEARCH_ACTION_NAME,
+        action_type: "MultiSearchAction",
+        transport_action: "TransportMultiSearchAction",
+        request_wire_type: "MultiSearchRequest",
+        response_wire_type: "MultiSearchResponse",
+        adapter_stage: "search-read",
+        next_step: "decode batched search requests and aggregate Rust search responses",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_GET_ACTION_NAME,
+        action_type: "GetAction",
+        transport_action: "TransportGetAction",
+        request_wire_type: "GetRequest",
+        response_wire_type: "GetResponse",
+        adapter_stage: "document-read",
+        next_step: "map document get requests onto Rust point lookup semantics",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_MULTI_GET_ACTION_NAME,
+        action_type: "MultiGetAction",
+        transport_action: "TransportMultiGetAction",
+        request_wire_type: "MultiGetRequest",
+        response_wire_type: "MultiGetResponse",
+        adapter_stage: "document-read",
+        next_step: "decode batched document gets and preserve per-item response status",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_BULK_ACTION_NAME,
+        action_type: "BulkAction",
+        transport_action: "TransportBulkAction",
+        request_wire_type: "BulkRequest",
+        response_wire_type: "BulkResponse",
+        adapter_stage: "write-replication",
+        next_step: "decode bulk items and route index/update/delete operations through Rust writes",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_INDEX_ACTION_NAME,
+        action_type: "IndexAction",
+        transport_action: "TransportIndexAction",
+        request_wire_type: "IndexRequest",
+        response_wire_type: "IndexResponse",
+        adapter_stage: "write-replication",
+        next_step: "map single-document index requests onto Rust write semantics",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPDATE_ACTION_NAME,
+        action_type: "UpdateAction",
+        transport_action: "TransportUpdateAction",
+        request_wire_type: "UpdateRequest",
+        response_wire_type: "UpdateResponse",
+        adapter_stage: "write-replication",
+        next_step:
+            "resolve update scripts/docs into Rust write operations with matching response status",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_DELETE_ACTION_NAME,
+        action_type: "DeleteAction",
+        transport_action: "TransportDeleteAction",
+        request_wire_type: "DeleteRequest",
+        response_wire_type: "DeleteResponse",
+        adapter_stage: "write-replication",
+        next_step: "map single-document delete requests onto Rust tombstone/write semantics",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_REFRESH_ACTION_NAME,
+        action_type: "RefreshAction",
+        transport_action: "TransportRefreshAction",
+        request_wire_type: "RefreshRequest",
+        response_wire_type: "RefreshResponse",
+        adapter_stage: "refresh-visibility",
+        next_step: "map refresh requests onto Rust visibility barriers and shard status reporting",
     },
 ];
 
@@ -135,6 +240,9 @@ pub struct OpenSearchTransportDispatchDecision {
 pub fn classify_opensearch_transport_action(
     action_name: &str,
 ) -> OpenSearchTransportDispatchDecision {
+    const PRIORITY_TARGET_REASON: &str =
+        "priority transport adapter target; request/response codec and semantic adapter are not registered yet";
+
     match action_name {
         CLUSTER_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -151,6 +259,16 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "cluster settings mutation is not admitted through transport",
         },
+        _ if OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
+            .iter()
+            .any(|spec| spec.action_name == action_name) =>
+        {
+            OpenSearchTransportDispatchDecision {
+                action_name: action_name.to_string(),
+                disposition: OpenSearchTransportActionDisposition::Missing,
+                reason: PRIORITY_TARGET_REASON,
+            }
+        }
         _ => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Missing,
@@ -1092,6 +1210,96 @@ mod tests {
     }
 
     #[test]
+    fn opensearch_priority_transport_actions_have_source_names_and_stages() {
+        assert_eq!(
+            OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS,
+            &[
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search",
+                    action_type: "SearchAction",
+                    transport_action: "TransportSearchAction",
+                    request_wire_type: "SearchRequest",
+                    response_wire_type: "SearchResponse",
+                    adapter_stage: "search-read",
+                    next_step: "register request/response codec and route to the Rust search executor",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/msearch",
+                    action_type: "MultiSearchAction",
+                    transport_action: "TransportMultiSearchAction",
+                    request_wire_type: "MultiSearchRequest",
+                    response_wire_type: "MultiSearchResponse",
+                    adapter_stage: "search-read",
+                    next_step: "decode batched search requests and aggregate Rust search responses",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/get",
+                    action_type: "GetAction",
+                    transport_action: "TransportGetAction",
+                    request_wire_type: "GetRequest",
+                    response_wire_type: "GetResponse",
+                    adapter_stage: "document-read",
+                    next_step: "map document get requests onto Rust point lookup semantics",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/mget",
+                    action_type: "MultiGetAction",
+                    transport_action: "TransportMultiGetAction",
+                    request_wire_type: "MultiGetRequest",
+                    response_wire_type: "MultiGetResponse",
+                    adapter_stage: "document-read",
+                    next_step: "decode batched document gets and preserve per-item response status",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/write/bulk",
+                    action_type: "BulkAction",
+                    transport_action: "TransportBulkAction",
+                    request_wire_type: "BulkRequest",
+                    response_wire_type: "BulkResponse",
+                    adapter_stage: "write-replication",
+                    next_step: "decode bulk items and route index/update/delete operations through Rust writes",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/write/index",
+                    action_type: "IndexAction",
+                    transport_action: "TransportIndexAction",
+                    request_wire_type: "IndexRequest",
+                    response_wire_type: "IndexResponse",
+                    adapter_stage: "write-replication",
+                    next_step: "map single-document index requests onto Rust write semantics",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/write/update",
+                    action_type: "UpdateAction",
+                    transport_action: "TransportUpdateAction",
+                    request_wire_type: "UpdateRequest",
+                    response_wire_type: "UpdateResponse",
+                    adapter_stage: "write-replication",
+                    next_step: "resolve update scripts/docs into Rust write operations with matching response status",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/write/delete",
+                    action_type: "DeleteAction",
+                    transport_action: "TransportDeleteAction",
+                    request_wire_type: "DeleteRequest",
+                    response_wire_type: "DeleteResponse",
+                    adapter_stage: "write-replication",
+                    next_step: "map single-document delete requests onto Rust tombstone/write semantics",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/refresh",
+                    action_type: "RefreshAction",
+                    transport_action: "TransportRefreshAction",
+                    request_wire_type: "RefreshRequest",
+                    response_wire_type: "RefreshResponse",
+                    adapter_stage: "refresh-visibility",
+                    next_step: "map refresh requests onto Rust visibility barriers and shard status reporting",
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn opensearch_transport_action_dispatch_classifies_current_adapters() {
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_STATE_ACTION_NAME).disposition,
@@ -1106,8 +1314,39 @@ mod tests {
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
-            classify_opensearch_transport_action("indices:data/read/search").disposition,
+            classify_opensearch_transport_action(OPENSEARCH_SEARCH_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Missing
+        );
+    }
+
+    #[test]
+    fn opensearch_transport_action_dispatch_marks_priority_targets_explicitly() {
+        for spec in OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS {
+            let decision = classify_opensearch_transport_action(spec.action_name);
+
+            assert_eq!(
+                decision.disposition,
+                OpenSearchTransportActionDisposition::Missing,
+                "{}",
+                spec.action_name
+            );
+            assert!(
+                decision
+                    .reason
+                    .starts_with("priority transport adapter target"),
+                "{}",
+                spec.action_name
+            );
+        }
+
+        let unknown = classify_opensearch_transport_action("indices:data/read/unknown");
+        assert_eq!(
+            unknown.disposition,
+            OpenSearchTransportActionDisposition::Missing
+        );
+        assert_eq!(
+            unknown.reason,
+            "no OpenSearch transport action adapter is registered"
         );
     }
 
@@ -1251,7 +1490,7 @@ mod tests {
                     fields: None,
                     highlight: None,
                     explanation: None,
-                sort: None,
+                    sort: None,
                 }],
                 json!({}),
             )
