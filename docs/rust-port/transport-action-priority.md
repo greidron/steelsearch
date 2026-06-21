@@ -180,6 +180,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/health`
 - `cluster:monitor/task`
 - `cluster:monitor/tasks/lists`
+- `cluster:monitor/task/get` (rejected fail-closed)
 - `cluster:admin/tasks/cancel`
 - `indices:data/read/get`
 - `indices:data/read/mget`
@@ -219,6 +220,15 @@ The list-tasks adapter covers:
   action filters, timeout, detailed task info, wait-for-completion, non-empty
   task failure payloads, non-empty node failure payloads, and non-empty task
   info payloads until runtime task lifecycle semantics are mapped.
+
+The get-task boundary covers:
+
+- OpenSearch `GetTaskRequest` parent task, explicit task id, optional timeout,
+  and wait-for-completion fields at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:monitor/task/get` until
+  runtime task result lifecycle and unknown-task error semantics are mapped;
+- explicit rejection for missing task id, timeout, wait-for-completion, point
+  lookup execution, and task-result response payloads.
 
 The cancel-tasks adapter covers:
 
@@ -410,6 +420,23 @@ list-tasks, the default cancel request also writes the default reason string, so
 the request body is slightly heavier. At roughly 1.27M ops/s in the latest local
 release run, this adapter is still far above the source-materializing write/read
 wire paths and does not introduce a new bottleneck.
+
+Current get-task reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-task-reject-wire-benchmark
+get_task_reject_request_encode ops_per_second=1691104.07 nanos_per_op=591.33
+get_task_reject_request_decode ops_per_second=1833500.78 nanos_per_op=545.40
+get_task_reject_validation ops_per_second=1829225.54 nanos_per_op=546.68
+get_task_reject_wire_bottleneck_ops_per_second=1691104.07
+```
+
+The current get-task fail-closed boundary bottleneck is request encode. The
+validation path is effectively the same cost as decode plus a small unsupported
+execution check, so the rejection boundary itself does not introduce a new
+performance bottleneck. At roughly 1.69M ops/s in the latest local release run,
+this path is in the same range as the other lightweight admin transport
+adapters.
 
 Current get wire microbenchmark:
 

@@ -24,6 +24,7 @@ pub const CLUSTER_HEALTH_ACTION_NAME: &str = "cluster:monitor/health";
 pub const CLUSTER_UPDATE_SETTINGS_ACTION_NAME: &str = "cluster:admin/settings/update";
 pub const PENDING_CLUSTER_TASKS_ACTION_NAME: &str = "cluster:monitor/task";
 pub const LIST_TASKS_ACTION_NAME: &str = "cluster:monitor/tasks/lists";
+pub const GET_TASK_ACTION_NAME: &str = "cluster:monitor/task/get";
 pub const CANCEL_TASKS_ACTION_NAME: &str = "cluster:admin/tasks/cancel";
 pub const OPENSEARCH_SEARCH_ACTION_NAME: &str = "indices:data/read/search";
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
@@ -92,6 +93,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportListTasksAction",
         request_wire_type: "ListTasksRequest",
         response_wire_type: "ListTasksResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: GET_TASK_ACTION_NAME,
+        action_type: "GetTaskAction",
+        transport_action: "TransportGetTaskAction",
+        request_wire_type: "GetTaskRequest",
+        response_wire_type: "GetTaskResponse",
     },
     SourceTransportActionSpec {
         action_name: CANCEL_TASKS_ACTION_NAME,
@@ -293,6 +301,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "list-tasks transport adapter is available for the empty default subset",
+        },
+        GET_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-task transport execution requires runtime task result lifecycle mapping",
         },
         CANCEL_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -1318,6 +1331,98 @@ impl ListTasksResponseWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetTaskRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub task_id: TaskIdWire,
+    pub timeout: Option<TimeValueWire>,
+    pub wait_for_completion: bool,
+}
+
+impl GetTaskRequestWire {
+    pub fn new(node_id: String, id: i64) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            task_id: TaskIdWire {
+                node_id,
+                id: Some(id),
+            },
+            timeout: None,
+            wait_for_completion: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.task_id.write(output);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_bool(self.wait_for_completion);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            task_id: TaskIdWire::read(&mut input)?,
+            timeout: read_optional_time_value(&mut input)?,
+            wait_for_completion: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.task_id.is_set() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task missing task id",
+                reason: "OpenSearch get-task requires an explicit task id",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task timeout",
+                reason: "get-task timeout requires runtime task result lifecycle mapping",
+            });
+        }
+        if self.wait_for_completion {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task wait for completion",
+                reason: "wait-for-completion requires runtime task result lifecycle mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get task execution",
+            reason: "point task lookup requires runtime task result lifecycle mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetTaskResponseWire {
+    pub task_result_present: bool,
+}
+
+impl GetTaskResponseWire {
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let task_result_present = input.read_bool()?;
+        if task_result_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task result",
+                reason: "task result payloads are not decoded by this adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            task_result_present,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CancelTasksRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -1494,6 +1599,57 @@ pub fn read_list_tasks_response_message(
     }
     let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
     ListTasksResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_task_request_message(
+    request_id: i64,
+    version: Version,
+    request: &GetTaskRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(GET_TASK_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_task_request_message(
+    message: &TransportMessage,
+) -> Result<GetTaskRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != GET_TASK_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: GET_TASK_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    GetTaskRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn read_get_task_response_message(
+    message: &TransportMessage,
+) -> Result<GetTaskResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    GetTaskResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_cancel_tasks_request_message(
@@ -4976,6 +5132,13 @@ mod tests {
                     response_wire_type: "ListTasksResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/task/get",
+                    action_type: "GetTaskAction",
+                    transport_action: "TransportGetTaskAction",
+                    request_wire_type: "GetTaskRequest",
+                    response_wire_type: "GetTaskResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/tasks/cancel",
                     action_type: "CancelTasksAction",
                     transport_action: "TransportCancelTasksAction",
@@ -5093,6 +5256,10 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(LIST_TASKS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(GET_TASK_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
             classify_opensearch_transport_action(CANCEL_TASKS_ACTION_NAME).disposition,
@@ -7281,6 +7448,113 @@ mod tests {
         assert_eq!(
             read_list_tasks_response_message(&message).unwrap(),
             response
+        );
+    }
+
+    #[test]
+    fn get_task_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = GetTaskRequestWire::new("node-a".to_string(), 7);
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = GetTaskRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_task_request_rejects_missing_task_id_timeout_and_wait_shapes() {
+        let missing = GetTaskRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            task_id: TaskIdWire::unset(),
+            timeout: None,
+            wait_for_completion: false,
+        };
+        assert!(matches!(
+            missing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task missing task id",
+                ..
+            })
+        ));
+
+        let with_timeout = GetTaskRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..GetTaskRequestWire::new("node-a".to_string(), 7)
+        };
+        assert!(matches!(
+            with_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task timeout",
+                ..
+            })
+        ));
+
+        let wait = GetTaskRequestWire {
+            wait_for_completion: true,
+            ..GetTaskRequestWire::new("node-a".to_string(), 7)
+        };
+        assert!(matches!(
+            wait.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task wait for completion",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_task_response_rejects_task_result_payloads_until_lifecycle_is_mapped() {
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+
+        assert!(matches!(
+            GetTaskResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task result",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_task_transport_messages_bind_rejected_action_frame() {
+        let request = GetTaskRequestWire::new("node-a".to_string(), 7);
+        let mut frame =
+            build_get_task_request_message(21, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get task request message");
+        };
+        assert_eq!(read_get_task_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_get_task_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task execution",
+                ..
+            })
+        ));
+
+        let message = TransportMessage {
+            request_id: 21,
+            status: TransportStatus::response(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+            body: BytesMut::from(&[0_u8][..]),
+        };
+        assert_eq!(
+            read_get_task_response_message(&message).unwrap(),
+            GetTaskResponseWire {
+                task_result_present: false
+            }
         );
     }
 
