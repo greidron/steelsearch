@@ -130,6 +130,15 @@
       "reason": "Indices-exists transport execution requires index resolution semantics before Steelsearch can serve OpenSearch index existence checks."
     },
     {
+      "action_name": "indices:admin/template/get",
+      "action_type": "GetIndexTemplatesAction",
+      "transport_action": "TransportGetIndexTemplatesAction",
+      "request_wire_type": "GetIndexTemplatesRequest",
+      "response_wire_type": "GetIndexTemplatesResponse",
+      "disposition": "rejected",
+      "reason": "Get-index-templates transport execution requires template metadata response rendering before Steelsearch can serve OpenSearch legacy index-template reads."
+    },
+    {
       "action_name": "indices:admin/aliases/get",
       "action_type": "GetAliasesAction",
       "transport_action": "TransportGetAliasesAction",

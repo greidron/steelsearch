@@ -190,6 +190,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
+- `indices:admin/template/get` (rejected fail-closed)
 - `indices:admin/aliases/get` (rejected fail-closed)
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
@@ -371,6 +372,16 @@ The indices-exists boundary covers:
   OpenSearch boolean response shape;
 - explicit rejection for custom cluster-manager timeouts, empty index targets,
   local reads, custom indices options, and indices-exists execution.
+
+The get-index-templates boundary covers:
+
+- OpenSearch `GetIndexTemplatesRequest` parent task, cluster-manager timeout,
+  local flag, and names array at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/template/get` until
+  legacy index-template metadata can be rendered from Rust cluster metadata with
+  OpenSearch-compatible name and wildcard matching semantics;
+- explicit rejection for custom cluster-manager timeouts, local reads, blank
+  template names, name filters, and get-index-templates execution.
 
 The field-capabilities boundary covers:
 
@@ -971,6 +982,23 @@ target so it exercises the valid OpenSearch request shape before the execution
 boundary rejects. At roughly 1.48M ops/s in the latest local release run, the
 remaining performance risk is the future index-resolution and boolean response
 rendering path, not the fail-closed wire boundary.
+
+Current get-index-templates reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-index-templates-reject-wire-benchmark
+get_index_templates_reject_request_encode iterations=400000 elapsed_ms=201.579 ops_per_second=1984333.35 nanos_per_op=503.95
+get_index_templates_reject_request_decode iterations=400000 elapsed_ms=191.163 ops_per_second=2092452.77 nanos_per_op=477.91
+get_index_templates_reject_validation iterations=400000 elapsed_ms=196.820 ops_per_second=2032310.60 nanos_per_op=492.05
+get_index_templates_reject_wire_bottleneck_ops_per_second=1984333.35
+```
+
+The current get-index-templates fail-closed boundary bottleneck is request
+encode. The default benchmark uses an empty names array, matching the OpenSearch
+all-templates request shape, so validation is light and the remaining
+performance risk is future template metadata matching and response rendering.
+At roughly 1.74M ops/s in the latest local release run, the fail-closed wire
+boundary is not a material bottleneck.
 
 Current field-capabilities reject wire microbenchmark:
 

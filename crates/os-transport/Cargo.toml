@@ -82,6 +82,10 @@ name = "indices-exists-reject-wire-benchmark"
 path = "benchmarks/indices_exists_reject_wire.rs"
 
 [[bin]]
+name = "get-index-templates-reject-wire-benchmark"
+path = "benchmarks/get_index_templates_reject_wire.rs"
+
+[[bin]]
 name = "field-capabilities-reject-wire-benchmark"
 path = "benchmarks/field_capabilities_reject_wire.rs"
 
