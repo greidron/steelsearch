@@ -58,6 +58,10 @@ name = "nodes-stats-reject-wire-benchmark"
 path = "benchmarks/nodes_stats_reject_wire.rs"
 
 [[bin]]
+name = "wlm-stats-reject-wire-benchmark"
+path = "benchmarks/wlm_stats_reject_wire.rs"
+
+[[bin]]
 name = "nodes-usage-reject-wire-benchmark"
 path = "benchmarks/nodes_usage_reject_wire.rs"
 

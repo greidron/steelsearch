@@ -28,6 +28,7 @@ pub const CLUSTER_STATS_ACTION_NAME: &str = "cluster:monitor/stats";
 pub const CAT_SHARDS_ACTION_NAME: &str = "cluster:monitor/shards";
 pub const NODES_INFO_ACTION_NAME: &str = "cluster:monitor/nodes/info";
 pub const NODES_STATS_ACTION_NAME: &str = "cluster:monitor/nodes/stats";
+pub const WLM_STATS_ACTION_NAME: &str = "cluster:monitor/wlm/stats";
 pub const NODES_USAGE_ACTION_NAME: &str = "cluster:monitor/nodes/usage";
 pub const NODES_HOT_THREADS_ACTION_NAME: &str = "cluster:monitor/nodes/hot_threads";
 pub const ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME: &str =
@@ -176,6 +177,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportNodesStatsAction",
         request_wire_type: "NodesStatsRequest",
         response_wire_type: "NodesStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: WLM_STATS_ACTION_NAME,
+        action_type: "WlmStatsAction",
+        transport_action: "TransportWlmStatsAction",
+        request_wire_type: "WlmStatsRequest",
+        response_wire_type: "WlmStatsResponse",
     },
     SourceTransportActionSpec {
         action_name: NODES_USAGE_ACTION_NAME,
@@ -787,6 +795,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "nodes-stats transport execution requires runtime node telemetry mapping",
+        },
+        WLM_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "wlm-stats transport execution requires workload group runtime telemetry mapping",
         },
         NODES_USAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2132,6 +2145,96 @@ impl NodesStatsRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WlmStatsRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub workload_group_ids: Vec<String>,
+    pub breach: Option<bool>,
+}
+
+impl Default for WlmStatsRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: Vec::new(),
+            timeout: None,
+            workload_group_ids: Vec::new(),
+            breach: Some(false),
+        }
+    }
+}
+
+impl WlmStatsRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_string_array(&self.workload_group_ids);
+        write_optional_bool(output, self.breach);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats concrete nodes",
+                reason: "wlm-stats concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            workload_group_ids: input.read_string_array()?,
+            breach: read_optional_bool(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats node filter",
+                reason: "wlm-stats node-scoped routing requires runtime workload group telemetry mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats timeout",
+                reason:
+                    "wlm-stats timeout semantics require runtime workload group telemetry mapping",
+            });
+        }
+        if !self.workload_group_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats workload group filter",
+                reason: "workload group filtering requires workload group registry and telemetry mapping",
+            });
+        }
+        if self.breach != Some(false) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats breach filter",
+                reason: "breach filtering requires workload group threshold evaluation semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "wlm stats execution",
+            reason:
+                "wlm-stats transport execution requires workload group runtime telemetry mapping",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct NodesUsageRequestWire {
     pub parent_task_node: String,
@@ -2734,6 +2837,44 @@ pub fn read_nodes_stats_request_message(
         });
     }
     NodesStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_wlm_stats_request_message(
+    request_id: i64,
+    version: Version,
+    request: &WlmStatsRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(WLM_STATS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_wlm_stats_request_message(
+    message: &TransportMessage,
+) -> Result<WlmStatsRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != WLM_STATS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: WLM_STATS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    WlmStatsRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_usage_request_message(
@@ -12597,6 +12738,13 @@ mod tests {
                     response_wire_type: "NodesStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:monitor/wlm/stats",
+                    action_type: "WlmStatsAction",
+                    transport_action: "TransportWlmStatsAction",
+                    request_wire_type: "WlmStatsRequest",
+                    response_wire_type: "WlmStatsResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:monitor/nodes/usage",
                     action_type: "NodesUsageAction",
                     transport_action: "TransportNodesUsageAction",
@@ -13104,6 +13252,10 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_STATS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(WLM_STATS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
         assert_eq!(
@@ -15968,6 +16120,126 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn wlm_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = WlmStatsRequestWire {
+            parent_task_node: "wlm-node".to_string(),
+            parent_task_id: Some(27),
+            ..WlmStatsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = WlmStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn wlm_stats_request_rejects_unsupported_shapes() {
+        let node_filter = WlmStatsRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..WlmStatsRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats node filter",
+                ..
+            })
+        ));
+
+        let timeout = WlmStatsRequestWire {
+            timeout: Some(TimeValueWire::seconds(1)),
+            ..WlmStatsRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats timeout",
+                ..
+            })
+        ));
+
+        let workload_group_filter = WlmStatsRequestWire {
+            workload_group_ids: vec!["group-a".to_string()],
+            ..WlmStatsRequestWire::default()
+        };
+        assert!(matches!(
+            workload_group_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats workload group filter",
+                ..
+            })
+        ));
+
+        let breach_true = WlmStatsRequestWire {
+            breach: Some(true),
+            ..WlmStatsRequestWire::default()
+        };
+        assert!(matches!(
+            breach_true.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats breach filter",
+                ..
+            })
+        ));
+
+        let breach_null = WlmStatsRequestWire {
+            breach: None,
+            ..WlmStatsRequestWire::default()
+        };
+        assert!(matches!(
+            breach_null.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats breach filter",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn wlm_stats_request_rejects_concrete_node_payloads() {
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&[]);
+        output.write_bool(true);
+
+        assert!(matches!(
+            WlmStatsRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn wlm_stats_transport_messages_bind_rejected_action_frame() {
+        let request = WlmStatsRequestWire::default();
+        let mut frame =
+            build_wlm_stats_request_message(27, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected wlm stats request message");
+        };
+        assert_eq!(read_wlm_stats_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_wlm_stats_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats execution",
                 ..
             })
         ));

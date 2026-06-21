@@ -185,6 +185,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/shards` (rejected fail-closed)
 - `cluster:monitor/nodes/info` (rejected fail-closed)
 - `cluster:monitor/nodes/stats` (rejected fail-closed)
+- `cluster:monitor/wlm/stats` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
 - `cluster:admin/voting_config/add_exclusions` (rejected fail-closed)
@@ -331,6 +332,16 @@ The nodes-usage boundary covers:
   runtime usage telemetry mapping is implemented;
 - explicit rejection for concrete node payloads, node filters, timeout,
   `restActions`, `aggregations`, and nodes-usage execution.
+
+The wlm-stats boundary covers:
+
+- OpenSearch `WlmStatsRequest` parent task, node ids, optional timeout,
+  workload group id array, and optional breach flag at the wire decode/build
+  layer;
+- explicit fail-closed classification for `cluster:monitor/wlm/stats` until
+  workload group runtime telemetry mapping is implemented;
+- explicit rejection for concrete node payloads, node filters, timeout,
+  workload group filters, breach filters, and wlm-stats execution.
 
 The nodes-hot-threads boundary covers:
 
@@ -1109,6 +1120,23 @@ adds a full `CommonStatsFlags` default-shape comparison after decode, so it is
 slightly heavier than the cluster-stats rejection boundary. At roughly 1.62M
 ops/s in the latest local release run, it remains in the lightweight admin
 transport range and does not introduce a new source-materialization bottleneck.
+
+Current wlm-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin wlm-stats-reject-wire-benchmark
+wlm_stats_reject_request_encode iterations=400000 elapsed_ms=198.339 ops_per_second=2016752.00 nanos_per_op=495.85
+wlm_stats_reject_request_decode iterations=400000 elapsed_ms=213.768 ops_per_second=1871191.12 nanos_per_op=534.42
+wlm_stats_reject_validation iterations=400000 elapsed_ms=214.693 ops_per_second=1863122.80 nanos_per_op=536.73
+wlm_stats_reject_wire_bottleneck_ops_per_second=1863122.80
+```
+
+The current wlm-stats fail-closed boundary bottleneck is validation. The path
+checks node routing, timeout, workload group filters, and breach filter before
+rejecting execution. At roughly 1.86M ops/s in the latest local release run,
+this boundary is not a material transport bottleneck; the first
+performance-sensitive work is workload group runtime telemetry collection and
+response rendering.
 
 Current nodes-usage reject wire microbenchmark:
 

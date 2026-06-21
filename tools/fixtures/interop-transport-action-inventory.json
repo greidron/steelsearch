@@ -85,6 +85,15 @@
       "reason": "Nodes-stats transport execution requires runtime node telemetry mapping before Steelsearch can serve OpenSearch nodes-stats semantics."
     },
     {
+      "action_name": "cluster:monitor/wlm/stats",
+      "action_type": "WlmStatsAction",
+      "transport_action": "TransportWlmStatsAction",
+      "request_wire_type": "WlmStatsRequest",
+      "response_wire_type": "WlmStatsResponse",
+      "disposition": "rejected",
+      "reason": "Wlm-stats transport execution requires workload group runtime telemetry mapping before Steelsearch can serve OpenSearch WLM stats semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "action_type": "NodesUsageAction",
       "transport_action": "TransportNodesUsageAction",
