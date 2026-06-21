@@ -199,6 +199,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/put` (rejected fail-closed)
 - `cluster:admin/repository/get` (rejected fail-closed)
 - `cluster:admin/repository/delete` (rejected fail-closed)
+- `cluster:admin/repository/verify` (rejected fail-closed)
 - `indices:admin/mappings/get` (rejected fail-closed)
 - `indices:admin/mappings/fields/get` (rejected fail-closed)
 - `indices:admin/get` (rejected fail-closed)
@@ -484,6 +485,15 @@ The delete-repository boundary covers:
   implemented;
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
   timeout, blank name, and delete-repository execution.
+
+The verify-repository boundary covers:
+
+- OpenSearch `VerifyRepositoryRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, and repository name at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/repository/verify`
+  until repository verification and node response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, custom acknowledgement
+  timeout, blank name, and verify-repository execution.
 
 The get-mappings boundary covers:
 
@@ -1415,6 +1425,23 @@ repository name before admission rejects execution. At roughly 1.71M ops/s in
 the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is repository metadata
 mutation, cluster-state publication, and acknowledgement rendering.
+
+Current verify-repository reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin verify-repository-reject-wire-benchmark
+verify_repository_reject_request_encode iterations=400000 elapsed_ms=235.596 ops_per_second=1697822.02 nanos_per_op=588.99
+verify_repository_reject_request_decode iterations=400000 elapsed_ms=229.581 ops_per_second=1742304.31 nanos_per_op=573.95
+verify_repository_reject_validation iterations=400000 elapsed_ms=234.461 ops_per_second=1706043.69 nanos_per_op=586.15
+verify_repository_reject_wire_bottleneck_ops_per_second=1697822.02
+```
+
+The current verify-repository fail-closed boundary bottleneck is request encode.
+The payload matches the acknowledged cluster-manager request envelope plus
+repository name before admission rejects execution. At roughly 1.70M ops/s in
+the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is repository verification
+across nodes and verify response rendering.
 
 Current get-mappings reject wire microbenchmark:
 

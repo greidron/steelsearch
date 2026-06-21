@@ -139,6 +139,15 @@
       "reason": "Delete-repository transport execution requires repository metadata mutation and acknowledgement rendering before Steelsearch can serve OpenSearch repository deletion semantics."
     },
     {
+      "action_name": "cluster:admin/repository/verify",
+      "action_type": "VerifyRepositoryAction",
+      "transport_action": "TransportVerifyRepositoryAction",
+      "request_wire_type": "VerifyRepositoryRequest",
+      "response_wire_type": "VerifyRepositoryResponse",
+      "disposition": "rejected",
+      "reason": "Verify-repository transport execution requires repository verification and node response rendering before Steelsearch can serve OpenSearch repository verification semantics."
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "action_type": "NodesUsageAction",
       "transport_action": "TransportNodesUsageAction",
