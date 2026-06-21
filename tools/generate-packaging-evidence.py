@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback is not ex
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PACKAGE_VERSION = "0.2.1"
+EXPECTED_PACKAGE_VERSION = "0.2.2"
 BUILD_COMMAND = (
     "cargo",
     "build",

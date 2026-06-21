@@ -967,7 +967,7 @@
   "info": {
     "description": "Generated OpenAPI companion built from the source-derived REST route inventory. This reflects route inventory and evidence ownership, not a claim that every listed route is fully implemented.",
     "title": "Steelsearch API",
-    "version": "0.2.1"
+    "version": "0.2.2"
   },
   "openapi": "3.0.3",
   "paths": {
