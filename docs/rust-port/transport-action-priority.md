@@ -255,6 +255,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/create` (rejected fail-closed)
 - `indices:admin/auto_create` (rejected fail-closed)
 - `cluster:admin/script/put` (rejected fail-closed)
+- `cluster:admin/script/get` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -813,6 +814,20 @@ The put-stored-script boundary covers:
   acknowledgement timeouts, missing or invalid ids, empty content, non-JSON
   media types, explicit script contexts, missing language/source fields,
   compiler options, and put-stored-script execution.
+
+The get-stored-script boundary covers:
+
+- OpenSearch `GetStoredScriptRequest` parent task, cluster-manager timeout,
+  local-read flag, and stored script id at the OpenSearch 3.x wire decode/build
+  layer;
+- OpenSearch `GetStoredScriptResponse` found marker, optional
+  `StoredScriptSource` language/source/options, and id at the OpenSearch 3.x
+  response wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/script/get` until
+  stored script metadata lookup and found/not-found response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeouts, local reads, missing
+  ids, invalid ids, and get-stored-script execution.
 
 The resize boundary covers:
 
@@ -2364,6 +2379,25 @@ roughly 0.81M ops/s in the latest local release run, current overhead is still
 bounded wire validation; future performance-sensitive work is script source
 parsing, script context validation, cluster metadata mutation, and ack
 rendering.
+
+Current get-stored-script reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-stored-script-reject-wire-benchmark
+get_stored_script_reject_request_encode iterations=400000 elapsed_ms=302.906 ops_per_second=1320541.97 nanos_per_op=757.26
+get_stored_script_reject_request_decode iterations=400000 elapsed_ms=247.197 ops_per_second=1618141.50 nanos_per_op=617.99
+get_stored_script_reject_validation iterations=400000 elapsed_ms=282.449 ops_per_second=1416184.55 nanos_per_op=706.12
+get_stored_script_response_decode iterations=400000 elapsed_ms=228.782 ops_per_second=1748392.68 nanos_per_op=571.95
+get_stored_script_reject_wire_bottleneck_ops_per_second=1320541.97
+```
+
+The current get-stored-script fail-closed boundary bottleneck is request
+encode. The request path carries the cluster-manager read envelope, local-read
+flag, and script id before rejecting execution; the found response decode path
+also covers `StoredScriptSource` language/source/options. At roughly 1.32M
+ops/s in the latest local release run, current overhead is transport
+serialization, not response decode. Future performance-sensitive work is script
+metadata lookup and found/not-found response rendering.
 
 Current resize reject wire microbenchmark:
 
