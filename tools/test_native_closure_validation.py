@@ -94,6 +94,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/report-transport-action-coverage.py", command_text)
         self.assertIn("--require-peer-backpressure", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command_text)
         self.assertIn("target/transport-action-coverage-current.json", command_text)
 
     def test_mixed_cluster_coverage_current_batch_reports_join_and_movement_boundary(self):
@@ -103,6 +105,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/report-mixed-cluster-coverage.py", command_text)
         self.assertIn("--require-passed", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("5184000", command_text)
         self.assertIn("target/mixed-cluster-coverage-current.json", command_text)
 
     def test_materialization_priority_current_batch_requires_zero_ranked(self):

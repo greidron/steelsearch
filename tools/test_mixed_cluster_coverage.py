@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -93,6 +95,50 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "representative mixed-cluster join, movement, recovery",
                 payload["summary"]["claim_boundary"],
             )
+
+    def test_cli_rejects_stale_reports_when_age_gate_is_set(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "passed": True,
+                            "checkpoint_drift_ok": True,
+                            "opensearch_to_steelsearch_passed": True,
+                            "steelsearch_to_opensearch_passed": True,
+                        },
+                        "phases": [{"phase": "replica_on_rust"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            stale_mtime = time.time() - 120.0
+            for path in root.rglob("*.json"):
+                os.utime(path, (stale_mtime, stale_mtime))
+            os.utime(movement, (stale_mtime, stale_mtime))
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--max-report-age-seconds",
+                "60",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["phase_c_fresh_report_count"], 0)
+            self.assertFalse(payload["summary"]["shard_movement_fresh"])
 
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv

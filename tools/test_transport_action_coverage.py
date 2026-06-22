@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -47,6 +49,18 @@ class TransportActionCoverageTests(unittest.TestCase):
         self.assertFalse(self.report.peer_report_passed({"summary": {"passed": False}}))
         self.assertFalse(self.report.peer_report_passed(None))
 
+    def test_peer_report_freshness_rejects_stale_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            path = Path(temp_dir_value) / "peer.json"
+            path.write_text(json.dumps({"summary": {"passed": True}}) + "\n", encoding="utf-8")
+            stale_mtime = time.time() - 120.0
+            os.utime(path, (stale_mtime, stale_mtime))
+
+            freshness = self.report.report_fresh(path, 60.0)
+
+            self.assertFalse(freshness["fresh"])
+            self.assertIn("stale", freshness["reason"])
+
     def test_cli_requires_peer_backpressure_when_requested(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -76,6 +90,38 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["transport_action_count"], 1)
             self.assertEqual(payload["summary"]["planned_action_count"], 1)
             self.assertEqual(payload["summary"]["implemented_action_count"], 0)
+
+    def test_cli_rejects_stale_peer_backpressure_when_age_gate_is_set(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            peer = temp_dir / "peer.json"
+            output = temp_dir / "transport.json"
+            source.write_text(
+                "status\taction\ttransport_handler\tsource\tline\n"
+                "planned\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            peer.write_text(json.dumps({"summary": {"passed": True}}) + "\n", encoding="utf-8")
+            stale_mtime = time.time() - 120.0
+            os.utime(peer, (stale_mtime, stale_mtime))
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--peer-backpressure-report",
+                str(peer),
+                "--require-peer-backpressure",
+                "--max-report-age-seconds",
+                "60",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertFalse(payload["protocol_evidence"]["peer_backpressure"]["fresh"])
 
     def test_inventory_actions_are_not_left_planned_in_source_tsv(self):
         source_actions = {

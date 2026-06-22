@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,21 +25,33 @@ def main() -> int:
     parser.add_argument("--peer-backpressure-report", default=str(DEFAULT_PEER_REPORT))
     parser.add_argument("--output")
     parser.add_argument("--require-peer-backpressure", action="store_true")
+    parser.add_argument(
+        "--max-report-age-seconds",
+        type=float,
+        help="fail if peer backpressure evidence is older than this many seconds",
+    )
     args = parser.parse_args()
 
     actions = load_actions(Path(args.source))
-    peer_report = load_optional_json(Path(args.peer_backpressure_report))
+    peer_path = Path(args.peer_backpressure_report)
+    peer_report = load_optional_json(peer_path)
+    peer_fresh = report_fresh(peer_path, args.max_report_age_seconds)
     errors: list[str] = []
     if args.require_peer_backpressure and not peer_report_passed(peer_report):
         errors.append("peer backpressure report is missing or not passed")
+    if args.require_peer_backpressure and not peer_fresh["fresh"]:
+        errors.append(peer_fresh["reason"])
 
     protocol_evidence = {
         "handshake_version_skew_matrix": file_evidence(HANDSHAKE_MATRIX),
         "transport_message_sequence": file_evidence(MESSAGE_SEQUENCE),
         "peer_backpressure": {
-            "path": str(Path(args.peer_backpressure_report)),
+            "path": str(peer_path),
             "present": peer_report is not None,
             "passed": peer_report_passed(peer_report),
+            "fresh": peer_fresh["fresh"],
+            "age_seconds": peer_fresh["age_seconds"],
+            "max_age_seconds": peer_fresh["max_age_seconds"],
             "profile": (peer_report or {}).get("summary", {}).get("profile"),
             "scope": (peer_report or {}).get("profile", {}).get("scope"),
         },
@@ -95,6 +108,34 @@ def load_optional_json(path_value: str) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+
+
+def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
+    if max_age_seconds is None:
+        return {
+            "fresh": True,
+            "age_seconds": None,
+            "max_age_seconds": None,
+            "reason": "",
+        }
+    if not path.is_file():
+        return {
+            "fresh": False,
+            "age_seconds": None,
+            "max_age_seconds": max_age_seconds,
+            "reason": f"{path} is missing",
+        }
+    age_seconds = time.time() - path.stat().st_mtime
+    return {
+        "fresh": age_seconds <= max_age_seconds,
+        "age_seconds": round(age_seconds, 3),
+        "max_age_seconds": max_age_seconds,
+        "reason": (
+            ""
+            if age_seconds <= max_age_seconds
+            else f"{path} is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
+        ),
+    }
 
 
 def peer_report_passed(report: dict[str, Any] | None) -> bool:
