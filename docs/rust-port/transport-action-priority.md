@@ -939,6 +939,20 @@ The get-model boundary covers:
 - explicit rejection for missing model response payloads, opaque model response
   rendering, and get-model execution.
 
+The delete-model boundary covers:
+
+- OpenSearch k-NN `DeleteModelRequest` parent task and model id at the wire
+  decode/build layer;
+- OpenSearch k-NN `DeleteModelResponse` model id, result, and optional error
+  message at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_delete_model_action` until model id validation, model
+  system-index delete, model cache/graveyard coordination, exception-path
+  behavior, and response rendering are implemented;
+- explicit rejection for blank model ids, blank response model ids, blank
+  response results, deprecated embedded error-message responses, response
+  rendering, and delete-model execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3177,6 +3191,26 @@ full `Model` body as opaque. At roughly 1.34M ops/s in the latest local release
 run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is model system-index lookup, KNN `ModelMetadata`
 parsing, optional model blob handling, model id rendering, and response
+rendering.
+
+Current delete-model reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-model-reject-wire-benchmark
+delete_model_reject_request_encode iterations=400000 elapsed_ms=265.412 ops_per_second=1507092.25 nanos_per_op=663.53
+delete_model_reject_request_decode iterations=400000 elapsed_ms=260.627 ops_per_second=1534759.29 nanos_per_op=651.57
+delete_model_reject_validation iterations=400000 elapsed_ms=265.852 ops_per_second=1504599.04 nanos_per_op=664.63
+delete_model_response_decode iterations=400000 elapsed_ms=136.680 ops_per_second=2926534.01 nanos_per_op=341.70
+delete_model_reject_wire_bottleneck_ops_per_second=1504599.04
+```
+
+The current delete-model fail-closed boundary bottleneck is validation including
+request decode. The payload includes the parent task and model id before
+admission rejects execution; the response path decodes model id, result, and an
+optional deprecated error message. At roughly 1.50M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is model id validation, model system-index delete,
+model cache/graveyard coordination, exception-path behavior, and response
 rendering.
 
 Current snapshots-status reject wire microbenchmark:

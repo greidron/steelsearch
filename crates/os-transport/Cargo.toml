@@ -190,6 +190,10 @@ name = "get-model-reject-wire-benchmark"
 path = "benchmarks/get_model_reject_wire.rs"
 
 [[bin]]
+name = "delete-model-reject-wire-benchmark"
+path = "benchmarks/delete_model_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

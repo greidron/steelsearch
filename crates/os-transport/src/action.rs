@@ -73,6 +73,7 @@ pub const UPDATE_MODEL_METADATA_ACTION_NAME: &str =
 pub const TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME: &str =
     "cluster:admin/knn_training_job_route_decision_info_action";
 pub const GET_MODEL_ACTION_NAME: &str = "cluster:admin/knn_get_model_action";
+pub const DELETE_MODEL_ACTION_NAME: &str = "cluster:admin/knn_delete_model_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -578,6 +579,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "GetModelTransportAction",
         request_wire_type: "GetModelRequest",
         response_wire_type: "GetModelResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: DELETE_MODEL_ACTION_NAME,
+        action_type: "DeleteModelAction",
+        transport_action: "DeleteModelTransportAction",
+        request_wire_type: "DeleteModelRequest",
+        response_wire_type: "DeleteModelResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1847,6 +1855,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering",
+        },
+        DELETE_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6554,6 +6567,73 @@ pub fn read_get_model_response_message(
         });
     }
     GetModelResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_delete_model_request_message(
+    request_id: i64,
+    version: Version,
+    request: &DeleteModelRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(DELETE_MODEL_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_delete_model_request_message(
+    message: &TransportMessage,
+) -> Result<DeleteModelRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != DELETE_MODEL_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: DELETE_MODEL_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    DeleteModelRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_delete_model_response_message(
+    request_id: i64,
+    version: Version,
+    response: &DeleteModelResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_delete_model_response_message(
+    message: &TransportMessage,
+) -> Result<DeleteModelResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    DeleteModelResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -14506,6 +14586,116 @@ impl GetModelResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get model response rendering",
             reason: "GetModelResponse rendering requires KNN ModelMetadata parsing, optional model blob handling, model id rendering, and xcontent rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeleteModelRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub model_id: String,
+}
+
+impl Default for DeleteModelRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            model_id: "model-000001".to_string(),
+        }
+    }
+}
+
+impl DeleteModelRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string(&self.model_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            model_id: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model model id",
+                reason: "OpenSearch delete-model requests require a non-empty model id",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete model execution",
+            reason: "delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeleteModelResponseWire {
+    pub model_id: String,
+    pub result: String,
+    pub error_message: Option<String>,
+}
+
+impl Default for DeleteModelResponseWire {
+    fn default() -> Self {
+        Self {
+            model_id: "model-000001".to_string(),
+            result: "deleted".to_string(),
+            error_message: None,
+        }
+    }
+}
+
+impl DeleteModelResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.model_id);
+        output.write_string(&self.result);
+        output.write_optional_string(self.error_message.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            model_id: input.read_string()?,
+            result: input.read_string()?,
+            error_message: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response model id",
+                reason: "DeleteModelResponse requires a model id",
+            });
+        }
+        if self.result.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response result",
+                reason: "DeleteModelResponse requires a result",
+            });
+        }
+        if self.error_message.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response error message",
+                reason: "OpenSearch delete-model failures should be returned as exceptions rather than embedded response errors",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete model response rendering",
+            reason: "DeleteModelResponse rendering requires model id/result xcontent rendering and exception-path handling",
         })
     }
 }
@@ -30304,6 +30494,13 @@ mod tests {
                     response_wire_type: "GetModelResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_delete_model_action",
+                    action_type: "DeleteModelAction",
+                    transport_action: "DeleteModelTransportAction",
+                    request_wire_type: "DeleteModelRequest",
+                    response_wire_type: "DeleteModelResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -40781,6 +40978,144 @@ mod tests {
             panic!("expected get model response message");
         };
         assert_eq!(read_get_model_response_message(&message).unwrap(), response);
+    }
+
+    #[test]
+    fn delete_model_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = DeleteModelRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(56),
+            model_id: "model-a".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = DeleteModelRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model execution",
+                ..
+            })
+        ));
+
+        let missing_model_id = DeleteModelRequestWire {
+            model_id: " ".to_string(),
+            ..DeleteModelRequestWire::default()
+        };
+        assert!(matches!(
+            missing_model_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model model id",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        DeleteModelRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            DeleteModelRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn delete_model_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = DeleteModelResponseWire {
+            model_id: "model-a".to_string(),
+            result: "deleted".to_string(),
+            error_message: None,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = DeleteModelResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response rendering",
+                ..
+            })
+        ));
+
+        let blank_model_id = DeleteModelResponseWire {
+            model_id: String::new(),
+            ..DeleteModelResponseWire::default()
+        };
+        assert!(matches!(
+            blank_model_id.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response model id",
+                ..
+            })
+        ));
+
+        let blank_result = DeleteModelResponseWire {
+            result: String::new(),
+            ..DeleteModelResponseWire::default()
+        };
+        assert!(matches!(
+            blank_result.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response result",
+                ..
+            })
+        ));
+
+        let error_message = DeleteModelResponseWire {
+            error_message: Some("boom".to_string()),
+            ..DeleteModelResponseWire::default()
+        };
+        assert!(matches!(
+            error_message.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model response error message",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_model_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = DeleteModelRequestWire::default();
+        let mut frame =
+            build_delete_model_request_message(56, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete model request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_delete_model_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_delete_model_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete model execution",
+                ..
+            })
+        ));
+
+        let response = DeleteModelResponseWire::default();
+        let mut frame =
+            build_delete_model_response_message(56, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete model response message");
+        };
+        assert_eq!(
+            read_delete_model_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
