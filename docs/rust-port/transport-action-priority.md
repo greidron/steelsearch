@@ -753,6 +753,23 @@ The delete-search-pipeline boundary covers:
   acknowledgement timeout, missing pipeline id, delete-search-pipeline
   execution, and acknowledgement response rendering.
 
+The pause-ingestion boundary covers:
+
+- OpenSearch `PauseIngestionRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, index selector array, and strict-expand-open
+  `IndicesOptions` at the wire decode/build layer;
+- OpenSearch `PauseIngestionResponse` acknowledgement bit, shard failure array,
+  error string, and shard acknowledgement bit at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/ingestion/pause`
+  until destructive-index guard checks, index resolution, ingestion poller
+  state mutation, shard acknowledgement aggregation, and response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, custom
+  acknowledgement timeout, missing indices, blank index selectors, custom
+  index resolution options, pause-ingestion execution, response shard failure
+  rendering, response error rendering, negative failure counts, and negative
+  shard ids.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2778,6 +2795,25 @@ the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is search pipeline wildcard
 matching, missing-pipeline handling, metadata mutation, cluster-state
 publication, and acknowledgement rendering.
+
+Current pause-ingestion reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin pause-ingestion-reject-wire-benchmark
+pause_ingestion_reject_request_encode iterations=400000 elapsed_ms=361.438 ops_per_second=1106690.45 nanos_per_op=903.60
+pause_ingestion_reject_request_decode iterations=400000 elapsed_ms=294.170 ops_per_second=1359759.53 nanos_per_op=735.42
+pause_ingestion_reject_validation iterations=400000 elapsed_ms=291.013 ops_per_second=1374510.41 nanos_per_op=727.53
+pause_ingestion_response_decode iterations=400000 elapsed_ms=65.463 ops_per_second=6110293.95 nanos_per_op=163.66
+pause_ingestion_reject_wire_bottleneck_ops_per_second=1106690.45
+```
+
+The current pause-ingestion fail-closed boundary bottleneck is request encode.
+The payload includes the acknowledged cluster-manager request envelope, index
+selector array, and strict-expand-open index options before admission rejects
+execution. At roughly 1.11M ops/s in the latest local release run, this
+boundary is not a material transport bottleneck; the first performance-sensitive
+work is destructive-index guard checks, index resolution, ingestion poller state
+mutation, shard acknowledgement aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

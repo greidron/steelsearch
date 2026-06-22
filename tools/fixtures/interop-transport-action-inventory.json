@@ -292,6 +292,15 @@
       "reason": "Delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch search pipeline delete semantics."
     },
     {
+      "action_name": "indices:admin/ingestion/pause",
+      "action_type": "PauseIngestionAction",
+      "transport_action": "TransportPauseIngestionAction",
+      "request_wire_type": "PauseIngestionRequest",
+      "response_wire_type": "PauseIngestionResponse",
+      "disposition": "rejected",
+      "reason": "Pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering before Steelsearch can serve OpenSearch ingestion pause semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",
