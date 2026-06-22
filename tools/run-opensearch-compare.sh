@@ -8,6 +8,7 @@ LOAD_COMPARISON_REPORT="${STEELSEARCH_LOAD_COMPARISON_REPORT:-${COMPARE_DIR}/htt
 NATIVE_ROUTE_COVERAGE_REPORT="${NATIVE_ROUTE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-coverage-report.json}"
 NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT="${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-fixture-coverage-report.json}"
 UNIFIED_E2E_REPORT_DIR="${UNIFIED_E2E_REPORT_DIR:-${COMPARE_DIR}/unified-e2e}"
+UNIFIED_E2E_MAX_REPORT_AGE_SECONDS="${UNIFIED_E2E_MAX_REPORT_AGE_SECONDS:-86400}"
 
 usage() {
   cat <<'USAGE'
@@ -42,6 +43,9 @@ Environment:
                                     report from comparison outputs.
   UNIFIED_E2E_REPORT_DIR            Unified report directory. Default:
                                     COMPARE_DIR/unified-e2e.
+  UNIFIED_E2E_MAX_REPORT_AGE_SECONDS
+                                    Ignore unified suite reports older than
+                                    this many seconds. Default: 86400.
 USAGE
 }
 
@@ -109,6 +113,7 @@ fi
 if [[ "${RUN_UNIFIED_E2E_REPORT:-0}" == "1" ]]; then
   python3 "${ROOT}/tools/run-unified-opensearch-e2e.py" \
     --output-dir "${UNIFIED_E2E_REPORT_DIR}" \
+    --max-report-age-seconds "${UNIFIED_E2E_MAX_REPORT_AGE_SECONDS}" \
     --allow-missing
   python3 "${ROOT}/tools/check-unified-opensearch-e2e-report.py" \
     "${UNIFIED_E2E_REPORT_DIR}/unified-opensearch-e2e-report.json" \

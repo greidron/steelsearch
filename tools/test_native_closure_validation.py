@@ -55,6 +55,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
         self.assertIn("search-semantic", command_text)
         self.assertIn("vector-search", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command_text)
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertIn("--require-no-skips", command_text)
 
@@ -66,6 +68,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
         self.assertIn("search-compat", command_text)
         self.assertIn("search-strict", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command_text)
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertNotIn("--require-no-skips", command_text)
 
@@ -75,6 +79,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertEqual(len(batch), 1)
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command_text)
         self.assertIn("tools/report-rest-api-coverage.py", command_text)
         self.assertIn("--require-live-required-suites", command_text)
         self.assertIn("target/rest-api-coverage-current.json", command_text)
