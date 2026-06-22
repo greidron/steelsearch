@@ -57,6 +57,7 @@ pub const DECOMMISSION_ACTION_NAME: &str = "cluster:admin/decommission/awareness
 pub const GET_DECOMMISSION_STATE_ACTION_NAME: &str = "cluster:admin/decommission/awareness/get";
 pub const DELETE_DECOMMISSION_STATE_ACTION_NAME: &str =
     "cluster:admin/decommission/awareness/delete";
+pub const PUT_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/put";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -464,6 +465,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportDeleteDecommissionStateAction",
         request_wire_type: "DeleteDecommissionStateRequest",
         response_wire_type: "DeleteDecommissionStateResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: PUT_SEARCH_PIPELINE_ACTION_NAME,
+        action_type: "PutSearchPipelineAction",
+        transport_action: "PutSearchPipelineTransportAction",
+        request_wire_type: "PutSearchPipelineRequest",
+        response_wire_type: "AcknowledgedResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1663,6 +1671,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-decommission-state transport execution requires recommission coordination, decommission metadata removal, cluster-state publication, and acknowledgement rendering",
+        },
+        PUT_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5423,6 +5436,73 @@ pub fn build_delete_decommission_state_response_message(
 }
 
 pub fn read_delete_decommission_state_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_put_search_pipeline_request_message(
+    request_id: i64,
+    version: Version,
+    request: &PutSearchPipelineRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(PUT_SEARCH_PIPELINE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_put_search_pipeline_request_message(
+    message: &TransportMessage,
+) -> Result<PutSearchPipelineRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != PUT_SEARCH_PIPELINE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: PUT_SEARCH_PIPELINE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    PutSearchPipelineRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_put_search_pipeline_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_put_search_pipeline_response_message(
     message: &TransportMessage,
 ) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
     if message.status.is_request() {
@@ -10940,6 +11020,142 @@ impl DeleteDecommissionStateRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete decommission state execution",
             reason: "delete-decommission-state transport execution requires recommission coordination, decommission metadata removal, cluster-state publication, and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchXContentTypeWire {
+    Json,
+    Smile,
+    Yaml,
+    Cbor,
+}
+
+impl OpenSearchXContentTypeWire {
+    const JSON_MEDIA_TYPE: &'static str = "application/json; charset=UTF-8";
+
+    fn media_type(self) -> &'static str {
+        match self {
+            Self::Json => Self::JSON_MEDIA_TYPE,
+            Self::Smile => "application/smile",
+            Self::Yaml => "application/yaml",
+            Self::Cbor => "application/cbor",
+        }
+    }
+
+    fn write(self, output: &mut StreamOutput) {
+        output.write_string(self.media_type());
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_string()?.as_str() {
+            "application/json" | "application/json; charset=UTF-8" => Ok(Self::Json),
+            "application/smile" => Ok(Self::Smile),
+            "application/yaml" => Ok(Self::Yaml),
+            "application/cbor" => Ok(Self::Cbor),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline media type",
+                reason: "unknown OpenSearch XContent media type string",
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PutSearchPipelineRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub id: String,
+    pub source: Bytes,
+    pub media_type: OpenSearchXContentTypeWire,
+}
+
+impl Default for PutSearchPipelineRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            id: "pipeline-1".to_string(),
+            source: Bytes::from_static(b"{\"request_processors\":[],\"response_processors\":[]}"),
+            media_type: OpenSearchXContentTypeWire::Json,
+        }
+    }
+}
+
+impl PutSearchPipelineRequestWire {
+    const MAX_BOUNDARY_SOURCE_BYTES: usize = 1024 * 1024;
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.id);
+        output.write_bytes_reference(&self.source);
+        self.media_type.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            id: input.read_string()?,
+            source: input.read_bytes_reference()?,
+            media_type: OpenSearchXContentTypeWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires search pipeline cluster-state publication semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline ack timeout",
+                reason: "custom acknowledgement timeout requires search pipeline cluster-state publication semantics",
+            });
+        }
+        if self.id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline missing id",
+                reason: "pipeline id validation belongs to search pipeline metadata mutation",
+            });
+        }
+        if self.source.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline empty source",
+                reason: "pipeline source parsing and validation are not implemented",
+            });
+        }
+        if self.source.len() > Self::MAX_BOUNDARY_SOURCE_BYTES {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline source length",
+                reason:
+                    "large pipeline source handling should be owned by the search pipeline parser",
+            });
+        }
+        if self.media_type != OpenSearchXContentTypeWire::Json {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline media type",
+                reason: "non-JSON search pipeline source parsing is not implemented",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "put search pipeline execution",
+            reason: "put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering",
         })
     }
 }
@@ -26558,6 +26774,13 @@ mod tests {
                     response_wire_type: "DeleteDecommissionStateResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/search/pipeline/put",
+                    action_type: "PutSearchPipelineAction",
+                    transport_action: "PutSearchPipelineTransportAction",
+                    request_wire_type: "PutSearchPipelineRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -34355,6 +34578,173 @@ mod tests {
         };
         assert_eq!(
             read_delete_decommission_state_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn put_search_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = PutSearchPipelineRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(42),
+            id: "pipeline-a".to_string(),
+            source: Bytes::from_static(b"{\"request_processors\":[]}"),
+            ..PutSearchPipelineRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = PutSearchPipelineRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn put_search_pipeline_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = PutSearchPipelineRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..PutSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = PutSearchPipelineRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..PutSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline ack timeout",
+                ..
+            })
+        ));
+
+        let missing_id = PutSearchPipelineRequestWire {
+            id: String::new(),
+            ..PutSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            missing_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline missing id",
+                ..
+            })
+        ));
+
+        let empty_source = PutSearchPipelineRequestWire {
+            source: Bytes::new(),
+            ..PutSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            empty_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline empty source",
+                ..
+            })
+        ));
+
+        let oversized_source = PutSearchPipelineRequestWire {
+            source: Bytes::from(vec![
+                b'{';
+                PutSearchPipelineRequestWire::MAX_BOUNDARY_SOURCE_BYTES
+                    + 1
+            ]),
+            ..PutSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            oversized_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline source length",
+                ..
+            })
+        ));
+
+        let unsupported_media_type = PutSearchPipelineRequestWire {
+            media_type: OpenSearchXContentTypeWire::Smile,
+            ..PutSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            unsupported_media_type.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline media type",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        PutSearchPipelineRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            PutSearchPipelineRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        TimeValueWire::seconds(30).write(&mut output);
+        TimeValueWire::seconds(30).write(&mut output);
+        output.write_string("pipeline-a");
+        output.write_bytes_reference(b"{\"request_processors\":[]}");
+        output.write_string("application/x-unknown");
+        assert!(matches!(
+            PutSearchPipelineRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline media type",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn put_search_pipeline_transport_messages_bind_rejected_action_frame_and_ack_response() {
+        let request = PutSearchPipelineRequestWire::default();
+        let mut frame =
+            build_put_search_pipeline_request_message(42, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put search pipeline request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_put_search_pipeline_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_put_search_pipeline_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "put search pipeline execution",
+                ..
+            })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame =
+            build_put_search_pipeline_response_message(42, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put search pipeline response message");
+        };
+        assert_eq!(
+            read_put_search_pipeline_response_message(&message).unwrap(),
             response
         );
     }

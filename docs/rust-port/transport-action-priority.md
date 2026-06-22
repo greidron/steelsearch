@@ -708,6 +708,22 @@ The delete-decommission-state boundary covers:
 - explicit rejection for custom cluster-manager timeout, delete-state
   execution, and acknowledgement response rendering.
 
+The put-search-pipeline boundary covers:
+
+- OpenSearch `PutSearchPipelineRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, pipeline id, length-prefixed source bytes, and
+  media type at the wire decode/build layer;
+- OpenSearch `AcknowledgedResponse` payload at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/search/pipeline/put` until search pipeline metadata mutation,
+  pipeline source parsing and validation, node search pipeline capability
+  lookup, cluster-state publication, and acknowledgement rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, custom
+  acknowledgement timeout, missing pipeline id, empty or oversized pipeline
+  source, unsupported media types, put-search-pipeline execution, and
+  acknowledgement response rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2675,6 +2691,26 @@ before admission rejects execution. At roughly 1.73M ops/s in the latest
 local release run, this boundary is not a material transport bottleneck; the
 first performance-sensitive work is recommission coordination, decommission
 metadata removal, cluster-state publication, and acknowledgement rendering.
+
+Current put-search-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin put-search-pipeline-reject-wire-benchmark
+put_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=421.978 ops_per_second=947915.71 nanos_per_op=1054.95
+put_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=377.641 ops_per_second=1059208.39 nanos_per_op=944.10
+put_search_pipeline_reject_validation iterations=400000 elapsed_ms=377.630 ops_per_second=1059237.23 nanos_per_op=944.08
+put_search_pipeline_ack_response_decode iterations=400000 elapsed_ms=55.001 ops_per_second=7272553.13 nanos_per_op=137.50
+put_search_pipeline_reject_wire_bottleneck_ops_per_second=947915.71
+```
+
+The current put-search-pipeline fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager request envelope,
+acknowledgement timeout, pipeline id, source bytes, and media type string
+before admission rejects execution. At roughly 0.95M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is search pipeline source parsing and validation,
+node search pipeline capability lookup, cluster-state publication, and
+acknowledgement rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
