@@ -146,7 +146,7 @@ partial	ResumeIngestionAction.INSTANCE	TransportResumeIngestionAction.class	/hom
 partial	GetIngestionStateAction.INSTANCE	TransportGetIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	847
 partial	UpdateIngestionStateAction.INSTANCE	TransportUpdateIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	848
 partial	ListTieringStatusAction.INSTANCE	TransportListTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	852
-planned	GetTieringStatusAction.INSTANCE	TransportGetTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	853
+partial	GetTieringStatusAction.INSTANCE	TransportGetTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	853
 planned	KNNStatsAction.INSTANCE	KNNStatsTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	348
 planned	KNNWarmupAction.INSTANCE	KNNWarmupTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	349
 planned	UpdateModelMetadataAction.INSTANCE	UpdateModelMetadataTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	350

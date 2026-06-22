@@ -849,6 +849,22 @@ The list-tiering-status boundary covers:
   target tier values, non-empty tiering status response rendering, blank status
   index names, shard-level status rendering, and negative response counts.
 
+The get-tiering-status boundary covers:
+
+- OpenSearch `GetTieringStatusRequest` cluster-manager read parent task,
+  cluster-manager timeout, local flag, index name, and detailed flag at the
+  wire decode/build layer;
+- OpenSearch `GetTieringStatusResponse` single `TieringStatus` base fields for
+  index name, state, source tier, target tier, start time, and optional
+  shard-level status marker at the wire decode/build layer;
+- explicit fail-closed classification for `indices:admin/_tier/get` until
+  metadata read block checks, index resolution, tiering-state lookup, migration
+  service lookup, optional shard-level detail collection, and response rendering
+  are implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, blank
+  index names, get-tiering-status execution, single-status response rendering,
+  blank response index names, and shard-level status rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2971,6 +2987,25 @@ ops/s in the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is metadata read block checks,
 target tier mapping, migration service lookup, tiering status aggregation, and
 response rendering.
+
+Current get-tiering-status reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-tiering-status-reject-wire-benchmark
+get_tiering_status_reject_request_encode iterations=400000 elapsed_ms=263.495 ops_per_second=1518052.61 nanos_per_op=658.74
+get_tiering_status_reject_request_decode iterations=400000 elapsed_ms=232.113 ops_per_second=1723301.69 nanos_per_op=580.28
+get_tiering_status_reject_validation iterations=400000 elapsed_ms=236.959 ops_per_second=1688055.85 nanos_per_op=592.40
+get_tiering_status_response_decode iterations=400000 elapsed_ms=241.764 ops_per_second=1654505.01 nanos_per_op=604.41
+get_tiering_status_reject_wire_bottleneck_ops_per_second=1518052.61
+```
+
+The current get-tiering-status fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager read envelope, local-read flag,
+index name, and detailed flag before admission rejects execution. At roughly
+1.52M ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is metadata read
+block checks, index resolution, tiering-state lookup, migration service lookup,
+optional shard-level detail collection, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
