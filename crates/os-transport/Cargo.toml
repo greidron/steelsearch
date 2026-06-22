@@ -122,6 +122,10 @@ name = "extension-proxy-reject-wire-benchmark"
 path = "benchmarks/extension_proxy_reject_wire.rs"
 
 [[bin]]
+name = "decommission-reject-wire-benchmark"
+path = "benchmarks/decommission_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

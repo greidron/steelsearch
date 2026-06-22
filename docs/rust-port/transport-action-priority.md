@@ -664,6 +664,21 @@ The extension-proxy boundary covers:
   oversized response payloads, extension-proxy execution, and response
   rendering.
 
+The decommission boundary covers:
+
+- OpenSearch `DecommissionRequest` parent task, cluster-manager timeout,
+  `DecommissionAttribute` awareness attribute name/value, decommission delay
+  timeout, `noDelay`, and optional request id at the wire decode/build layer;
+- OpenSearch `DecommissionResponse` acknowledged response payload at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/decommission/awareness/put` until decommission metadata
+  mutation, node draining coordination, cluster-state publication, and
+  acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, missing awareness
+  attribute name/value, invalid `noDelay` timeout pairing, custom delay
+  timeout, and decommission execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2575,6 +2590,25 @@ boundary is not a material transport bottleneck; the first
 performance-sensitive work is extension manager routing, protobuf
 `ExtensionTransportMessage` parsing, extension transport dispatch, and byte
 response rendering.
+
+Current decommission reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin decommission-reject-wire-benchmark
+decommission_reject_request_encode iterations=400000 elapsed_ms=309.881 ops_per_second=1290818.94 nanos_per_op=774.70
+decommission_reject_request_decode iterations=400000 elapsed_ms=300.759 ops_per_second=1329970.33 nanos_per_op=751.90
+decommission_reject_validation iterations=400000 elapsed_ms=302.457 ops_per_second=1322500.62 nanos_per_op=756.14
+decommission_ack_response_decode iterations=400000 elapsed_ms=54.365 ops_per_second=7357715.04 nanos_per_op=135.91
+decommission_reject_wire_bottleneck_ops_per_second=1290818.94
+```
+
+The current decommission fail-closed boundary bottleneck is request encode.
+The payload includes the cluster-manager request envelope, awareness
+attribute name/value, delay timeout, `noDelay`, and optional request id before
+admission rejects execution. At roughly 1.29M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is decommission metadata mutation, node draining
+coordination, cluster-state publication, and acknowledgement rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

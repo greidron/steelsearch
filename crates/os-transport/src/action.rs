@@ -53,6 +53,7 @@ pub const RESTORE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/restore";
 pub const SNAPSHOTS_STATUS_ACTION_NAME: &str = "cluster:admin/snapshot/status";
 pub const RESTORE_REMOTE_STORE_ACTION_NAME: &str = "cluster:admin/remotestore/restore";
 pub const EXTENSION_PROXY_ACTION_NAME: &str = "cluster:internal/extensions";
+pub const DECOMMISSION_ACTION_NAME: &str = "cluster:admin/decommission/awareness/put";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -439,6 +440,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "ExtensionProxyTransportAction",
         request_wire_type: "ExtensionActionRequest",
         response_wire_type: "ExtensionActionResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: DECOMMISSION_ACTION_NAME,
+        action_type: "DecommissionAction",
+        transport_action: "TransportDecommissionAction",
+        request_wire_type: "DecommissionRequest",
+        response_wire_type: "DecommissionResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1623,6 +1631,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering",
+        },
+        DECOMMISSION_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5191,6 +5204,73 @@ pub fn read_extension_proxy_response_message(
         });
     }
     ExtensionProxyResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_decommission_request_message(
+    request_id: i64,
+    version: Version,
+    request: &DecommissionRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(DECOMMISSION_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_decommission_request_message(
+    message: &TransportMessage,
+) -> Result<DecommissionRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != DECOMMISSION_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: DECOMMISSION_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    DecommissionRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_decommission_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_decommission_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -10404,6 +10484,100 @@ impl ExtensionProxyResponseWire {
             shape: "extension proxy response rendering",
             reason:
                 "ExtensionActionResponse rendering requires extension transport execution semantics",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DecommissionRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub attribute_name: String,
+    pub attribute_value: String,
+    pub delay_timeout: TimeValueWire,
+    pub no_delay: bool,
+    pub request_id: Option<String>,
+}
+
+impl Default for DecommissionRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            attribute_name: "zone".to_string(),
+            attribute_value: "zone-a".to_string(),
+            delay_timeout: TimeValueWire::seconds(120),
+            no_delay: false,
+            request_id: None,
+        }
+    }
+}
+
+impl DecommissionRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.attribute_name);
+        output.write_string(&self.attribute_value);
+        self.delay_timeout.write(output);
+        output.write_bool(self.no_delay);
+        output.write_optional_string(self.request_id.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            attribute_name: input.read_string()?,
+            attribute_value: input.read_string()?,
+            delay_timeout: TimeValueWire::read(&mut input)?,
+            no_delay: input.read_bool()?,
+            request_id: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires decommission cluster-manager coordination semantics",
+            });
+        }
+        if self.attribute_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission missing attribute name",
+                reason: "OpenSearch decommission requests require an awareness attribute name",
+            });
+        }
+        if self.attribute_value.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission missing attribute value",
+                reason: "OpenSearch decommission requests require an awareness attribute value",
+            });
+        }
+        if self.no_delay && self.delay_timeout != TimeValueWire::millis(0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission no-delay timeout",
+                reason: "OpenSearch decommission validation requires zero delay timeout when noDelay is true",
+            });
+        }
+        if !self.no_delay && self.delay_timeout != TimeValueWire::seconds(120) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission delay timeout",
+                reason:
+                    "custom decommission delay timeout requires node draining timeout semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "decommission execution",
+            reason: "decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering",
         })
     }
 }
@@ -26001,6 +26175,13 @@ mod tests {
                     response_wire_type: "ExtensionActionResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/decommission/awareness/put",
+                    action_type: "DecommissionAction",
+                    transport_action: "TransportDecommissionAction",
+                    request_wire_type: "DecommissionRequest",
+                    response_wire_type: "DecommissionResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -33410,6 +33591,142 @@ mod tests {
         };
         assert_eq!(
             read_extension_proxy_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn decommission_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = DecommissionRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(39),
+            attribute_name: "zone".to_string(),
+            attribute_value: "zone-a".to_string(),
+            request_id: Some("decommission-1".to_string()),
+            ..DecommissionRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = DecommissionRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn decommission_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = DecommissionRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..DecommissionRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_name = DecommissionRequestWire {
+            attribute_name: String::new(),
+            ..DecommissionRequestWire::default()
+        };
+        assert!(matches!(
+            missing_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission missing attribute name",
+                ..
+            })
+        ));
+
+        let missing_value = DecommissionRequestWire {
+            attribute_value: " ".to_string(),
+            ..DecommissionRequestWire::default()
+        };
+        assert!(matches!(
+            missing_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission missing attribute value",
+                ..
+            })
+        ));
+
+        let no_delay_timeout = DecommissionRequestWire {
+            no_delay: true,
+            delay_timeout: TimeValueWire::seconds(120),
+            ..DecommissionRequestWire::default()
+        };
+        assert!(matches!(
+            no_delay_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission no-delay timeout",
+                ..
+            })
+        ));
+
+        let custom_delay_timeout = DecommissionRequestWire {
+            delay_timeout: TimeValueWire::seconds(60),
+            ..DecommissionRequestWire::default()
+        };
+        assert!(matches!(
+            custom_delay_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission delay timeout",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        DecommissionRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            DecommissionRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn decommission_transport_messages_bind_rejected_action_frame_and_ack_response() {
+        let request = DecommissionRequestWire::default();
+        let mut frame =
+            build_decommission_request_message(39, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected decommission request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_decommission_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_decommission_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission execution",
+                ..
+            })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame =
+            build_decommission_response_message(39, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected decommission response message");
+        };
+        assert_eq!(
+            read_decommission_response_message(&message).unwrap(),
             response
         );
     }
