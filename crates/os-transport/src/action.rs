@@ -78,6 +78,7 @@ pub const TRAINING_JOB_ROUTER_ACTION_NAME: &str = "cluster:admin/knn_training_jo
 pub const TRAINING_MODEL_ACTION_NAME: &str = "cluster:admin/knn_training_model_action";
 pub const REMOVE_MODEL_FROM_CACHE_ACTION_NAME: &str =
     "cluster:admin/knn_remove_model_from_cache_action";
+pub const SEARCH_MODEL_ACTION_NAME: &str = "cluster:admin/knn_search_model_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -611,6 +612,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "RemoveModelFromCacheTransportAction",
         request_wire_type: "RemoveModelFromCacheRequest",
         response_wire_type: "RemoveModelFromCacheResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: SEARCH_MODEL_ACTION_NAME,
+        action_type: "SearchModelAction",
+        transport_action: "SearchModelTransportAction",
+        request_wire_type: "SearchRequest",
+        response_wire_type: "SearchResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1900,6 +1908,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "remove-model-from-cache transport execution requires BaseNodes fanout, per-node model cache eviction, failure aggregation, and response rendering",
+        },
+        SEARCH_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6875,6 +6888,73 @@ pub fn read_remove_model_from_cache_response_message(
         });
     }
     RemoveModelFromCacheResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_search_model_request_message(
+    request_id: i64,
+    version: Version,
+    request: &SearchModelRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(SEARCH_MODEL_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_search_model_request_message(
+    message: &TransportMessage,
+) -> Result<SearchModelRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != SEARCH_MODEL_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: SEARCH_MODEL_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    SearchModelRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_search_model_response_message(
+    request_id: i64,
+    version: Version,
+    response: &SearchModelResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_search_model_response_message(
+    message: &TransportMessage,
+) -> Result<SearchModelResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    SearchModelResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -15215,6 +15295,81 @@ impl RemoveModelFromCacheResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "remove model from cache response rendering",
             reason: "RemoveModelFromCacheResponse rendering requires node aggregation and failure aggregation",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchModelRequestWire {
+    pub search: OpenSearchSearchRequestWire,
+}
+
+impl Default for SearchModelRequestWire {
+    fn default() -> Self {
+        Self {
+            search: OpenSearchSearchRequestWire::default(),
+        }
+    }
+}
+
+impl SearchModelRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        self.search.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            search: OpenSearchSearchRequestWire::read(bytes)?,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.search.validate_supported_shape()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search model execution",
+            reason: "search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct SearchModelResponseWire {
+    pub search_response_payload_present: bool,
+}
+
+impl SearchModelResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        if self.search_response_payload_present {
+            output.write_string("opaque-search-response");
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let remaining = input.remaining();
+        let search_response_payload_present = if remaining > 0 {
+            let _ = input.read_bytes(remaining)?;
+            true
+        } else {
+            false
+        };
+        let response = Self {
+            search_response_payload_present,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.search_response_payload_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search model response payload",
+                reason: "SearchResponse decoding requires OpenSearch search hit, aggregation, suggest, shard failure, and reduce metadata mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search model response rendering",
+            reason: "search-model response rendering requires SearchResponse decoding and xcontent rendering",
         })
     }
 }
@@ -31041,6 +31196,13 @@ mod tests {
                     response_wire_type: "RemoveModelFromCacheResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_search_model_action",
+                    action_type: "SearchModelAction",
+                    transport_action: "SearchModelTransportAction",
+                    request_wire_type: "SearchRequest",
+                    response_wire_type: "SearchResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -41982,6 +42144,121 @@ mod tests {
         };
         assert_eq!(
             read_remove_model_from_cache_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn search_model_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = SearchModelRequestWire {
+            search: OpenSearchSearchRequestWire {
+                parent_task_node: "cluster-manager".to_string(),
+                parent_task_id: Some(60),
+                ..OpenSearchSearchRequestWire::default()
+            },
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = SearchModelRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search model execution",
+                ..
+            })
+        ));
+
+        let index_scoped = SearchModelRequestWire {
+            search: OpenSearchSearchRequestWire {
+                indices: vec!["models".to_string()],
+                ..OpenSearchSearchRequestWire::default()
+            },
+        };
+        assert!(matches!(
+            index_scoped.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request index filter",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn search_model_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = SearchModelResponseWire {
+            search_response_payload_present: false,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = SearchModelResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search model response rendering",
+                ..
+            })
+        ));
+
+        let opaque_response = SearchModelResponseWire {
+            search_response_payload_present: true,
+        };
+        let mut output = StreamOutput::new();
+        opaque_response.write(&mut output);
+        let decoded = SearchModelResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, opaque_response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search model response payload",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn search_model_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = SearchModelRequestWire::default();
+        let mut frame =
+            build_search_model_request_message(60, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search model request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_search_model_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_search_model_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search model execution",
+                ..
+            })
+        ));
+        assert!(matches!(
+            read_opensearch_search_request_message(&message),
+            Err(TransportActionWireError::UnexpectedAction { .. })
+        ));
+
+        let response = SearchModelResponseWire::default();
+        let mut frame =
+            build_search_model_response_message(60, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search model response message");
+        };
+        assert_eq!(
+            read_search_model_response_message(&message).unwrap(),
             response
         );
     }

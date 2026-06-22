@@ -206,6 +206,10 @@ name = "remove-model-from-cache-reject-wire-benchmark"
 path = "benchmarks/remove_model_from_cache_reject_wire.rs"
 
 [[bin]]
+name = "search-model-reject-wire-benchmark"
+path = "benchmarks/search_model_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

@@ -427,6 +427,15 @@
       "reason": "Remove-model-from-cache transport execution requires BaseNodes fanout, per-node model cache eviction, failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN model cache eviction semantics."
     },
     {
+      "action_name": "cluster:admin/knn_search_model_action",
+      "action_type": "SearchModelAction",
+      "transport_action": "SearchModelTransportAction",
+      "request_wire_type": "SearchRequest",
+      "response_wire_type": "SearchResponse",
+      "disposition": "rejected",
+      "reason": "Search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering before Steelsearch can serve OpenSearch k-NN model search semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",

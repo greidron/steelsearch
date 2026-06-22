@@ -993,6 +993,20 @@ The remove-model-from-cache boundary covers:
   semantics, non-empty node responses, non-empty node failures, blank response
   cluster names, response rendering, and remove-model-from-cache execution.
 
+The search-model boundary covers:
+
+- OpenSearch k-NN `SearchModelAction` request frames carrying OpenSearch core
+  `SearchRequest` at the wire decode/build layer;
+- OpenSearch k-NN `SearchModelAction` response frames carrying opaque
+  `SearchResponse` payload presence at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_search_model_action` until model system-index search
+  request mapping, `SearchRequest` source parsing, `ModelDao` search
+  delegation, `SearchResponse` decoding, and response rendering are
+  implemented;
+- explicit rejection for unsupported search request shapes, opaque
+  `SearchResponse` payloads, response rendering, and search-model execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3308,6 +3322,25 @@ envelope, and model id before admission rejects execution. At roughly 1.26M
 ops/s in the latest local release run, this boundary is lighter than the
 training request wire paths; the first performance-sensitive work is BaseNodes
 fanout, per-node model cache eviction, failure aggregation, and response
+rendering.
+
+Current search-model reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin search-model-reject-wire-benchmark
+search_model_reject_request_encode iterations=400000 elapsed_ms=289.154 ops_per_second=1383347.84 nanos_per_op=722.88
+search_model_reject_request_decode iterations=400000 elapsed_ms=280.861 ops_per_second=1424193.88 nanos_per_op=702.15
+search_model_reject_validation iterations=400000 elapsed_ms=286.751 ops_per_second=1394939.38 nanos_per_op=716.88
+search_model_response_decode iterations=400000 elapsed_ms=37.900 ops_per_second=10554157.66 nanos_per_op=94.75
+search_model_reject_wire_bottleneck_ops_per_second=1383347.84
+```
+
+The current search-model fail-closed boundary bottleneck is request encode. The
+payload is the OpenSearch core `SearchRequest` envelope before admission rejects
+execution. At roughly 1.38M ops/s in the latest local release run, this boundary
+is lighter than the training request wire paths; the first performance-sensitive
+work is model system-index search request mapping, `SearchRequest` source
+parsing, `ModelDao` search delegation, `SearchResponse` decoding, and response
 rendering.
 
 Current snapshots-status reject wire microbenchmark:
