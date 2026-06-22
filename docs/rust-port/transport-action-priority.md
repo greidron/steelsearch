@@ -242,6 +242,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `views:data/read/list` (rejected fail-closed)
 - `views:data/read/search` (rejected fail-closed)
 - `cluster:admin/persistent/start` (rejected fail-closed)
+- `cluster:admin/persistent/update_status` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1530,6 +1531,22 @@ The start-persistent-task boundary covers:
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
   task ids/names, params-name mismatches, start-persistent-task execution, and
   persistent-task response rendering.
+
+The update-persistent-task-status boundary covers:
+
+- OpenSearch `UpdatePersistentTaskStatusAction.Request` parent task,
+  cluster-manager timeout, task id, allocation id, and absent optional
+  `PersistentTaskState` named-writeable marker at the wire decode/build layer;
+- reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
+  optional task payload shape, with concrete task payloads rejected until
+  persistent task params/state/metadata named-writeables are mapped;
+- explicit fail-closed classification for
+  `cluster:admin/persistent/update_status` until persistent task state
+  named-writeables, allocation checks, cluster metadata mutation, and response
+  rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, missing or oversized
+  task ids, missing allocation ids, state payloads, update-persistent-task-
+  status execution, and persistent-task response rendering.
 
 The search boundary covers:
 
@@ -3564,6 +3581,25 @@ admission. At roughly 779K ops/s in the latest local release run, the longer
 task/params strings make it heavier than the adjacent view-admin boundaries;
 future performance-sensitive work is params named-writeable decode, cluster
 metadata mutation, task assignment, and response rendering.
+
+Current update-persistent-task-status reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin update-persistent-task-status-reject-wire-benchmark
+update_persistent_task_status_reject_request_encode iterations=400000 elapsed_ms=310.972 ops_per_second=1286288.70 nanos_per_op=777.43
+update_persistent_task_status_reject_request_decode iterations=400000 elapsed_ms=278.119 ops_per_second=1438233.49 nanos_per_op=695.30
+update_persistent_task_status_reject_validation iterations=400000 elapsed_ms=283.443 ops_per_second=1411220.44 nanos_per_op=708.61
+update_persistent_task_status_empty_response_decode iterations=400000 elapsed_ms=54.428 ops_per_second=7349123.28 nanos_per_op=136.07
+update_persistent_task_status_reject_wire_bottleneck_ops_per_second=1286288.70
+```
+
+The current update-persistent-task-status fail-closed boundary bottleneck is
+request encode. This path carries the ClusterManagerNode envelope, task id,
+allocation id, and absent state marker before rejecting at admission. At
+roughly 1.29M ops/s in the latest local release run, it is lighter than the
+start-persistent-task boundary because it avoids the task-name/params-name
+strings; future performance-sensitive work is state named-writeable decode,
+allocation checks, cluster metadata mutation, and response rendering.
 
 Current search reject wire microbenchmark:
 
