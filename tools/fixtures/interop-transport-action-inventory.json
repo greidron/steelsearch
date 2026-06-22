@@ -931,6 +931,15 @@
       "reason": "Completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering before Steelsearch can serve OpenSearch persistent task completion semantics."
     },
     {
+      "action_name": "cluster:admin/persistent/remove",
+      "action_type": "RemovePersistentTaskAction",
+      "transport_action": "RemovePersistentTaskAction.TransportAction",
+      "request_wire_type": "RemovePersistentTaskAction.Request",
+      "response_wire_type": "PersistentTaskResponse",
+      "disposition": "rejected",
+      "reason": "Remove-persistent-task transport execution requires persistent task lookup, cluster metadata removal, and response rendering before Steelsearch can serve OpenSearch persistent task removal semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

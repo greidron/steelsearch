@@ -151,6 +151,7 @@ pub const OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME: &str =
     "cluster:admin/persistent/update_status";
 pub const OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME: &str =
     "cluster:admin/persistent/completion";
+pub const OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME: &str = "cluster:admin/persistent/remove";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1169,6 +1170,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map completion exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME,
+        action_type: "RemovePersistentTaskAction",
+        transport_action: "RemovePersistentTaskAction.TransportAction",
+        request_wire_type: "RemovePersistentTaskAction.Request",
+        response_wire_type: "PersistentTaskResponse",
+        adapter_stage: "persistent-task-admin",
+        next_step: "map persistent task lookup, cluster metadata removal, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1882,6 +1892,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+        },
+        OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "remove-persistent-task transport execution requires persistent task lookup, cluster metadata removal, and response rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7867,6 +7882,73 @@ pub fn build_opensearch_completion_persistent_task_response_message(
 }
 
 pub fn read_opensearch_completion_persistent_task_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchPersistentTaskResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchPersistentTaskResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_remove_persistent_task_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchRemovePersistentTaskRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_remove_persistent_task_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRemovePersistentTaskRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchRemovePersistentTaskRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_remove_persistent_task_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchPersistentTaskResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_remove_persistent_task_response_message(
     message: &TransportMessage,
 ) -> Result<OpenSearchPersistentTaskResponseWire, TransportActionWireError> {
     if message.status.is_request() {
@@ -16527,6 +16609,72 @@ impl OpenSearchCompletionPersistentTaskRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRemovePersistentTaskRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub task_id: String,
+}
+
+impl Default for OpenSearchRemovePersistentTaskRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            task_id: "persistent-task-1".to_string(),
+        }
+    }
+}
+
+impl OpenSearchRemovePersistentTaskRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.task_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let task_id = input.read_string()?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            task_id,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the remove-persistent-task adapter yet",
+            });
+        }
+        if self.task_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task missing task id",
+                reason: "OpenSearch remove-persistent-task requests require a task id",
+            });
+        }
+        if self.task_id.len() > 128 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task id length",
+                reason: "OpenSearch remove-persistent-task ids are bounded to 128 bytes by the Rust boundary",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "remove persistent task execution",
+            reason: "remove-persistent-task transport execution requires persistent task lookup, cluster metadata removal, and response rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OpenSearchPersistentTaskResponseWire {
     pub has_task: bool,
@@ -24755,6 +24903,15 @@ mod tests {
                     next_step: "map completion exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/persistent/remove",
+                    action_type: "RemovePersistentTaskAction",
+                    transport_action: "RemovePersistentTaskAction.TransportAction",
+                    request_wire_type: "RemovePersistentTaskAction.Request",
+                    response_wire_type: "PersistentTaskResponse",
+                    adapter_stage: "persistent-task-admin",
+                    next_step: "map persistent task lookup, cluster metadata removal, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -25377,6 +25534,11 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -25470,6 +25632,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME
+                || spec.action_name == OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -40396,6 +40559,124 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_completion_persistent_task_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_remove_persistent_task_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchRemovePersistentTaskRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(15),
+            task_id: "task-a".to_string(),
+            ..OpenSearchRemovePersistentTaskRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchRemovePersistentTaskRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_remove_persistent_task_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchRemovePersistentTaskRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchRemovePersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_id = OpenSearchRemovePersistentTaskRequestWire {
+            task_id: " ".to_string(),
+            ..OpenSearchRemovePersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            missing_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task missing task id",
+                ..
+            })
+        ));
+
+        let long_id = OpenSearchRemovePersistentTaskRequestWire {
+            task_id: "x".repeat(129),
+            ..OpenSearchRemovePersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            long_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task id length",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        OpenSearchRemovePersistentTaskRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            OpenSearchRemovePersistentTaskRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn opensearch_remove_persistent_task_transport_messages_bind_rejected_action_frame_and_empty_response(
+    ) {
+        let request = OpenSearchRemovePersistentTaskRequestWire::default();
+        let mut frame = build_opensearch_remove_persistent_task_request_message(
+            89,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remove persistent task request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_remove_persistent_task_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_remove_persistent_task_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove persistent task execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+        let mut frame = build_opensearch_remove_persistent_task_response_message(
+            89,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remove persistent task response message");
+        };
+        assert_eq!(
+            read_opensearch_remove_persistent_task_response_message(&message).unwrap(),
             response
         );
     }

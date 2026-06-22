@@ -244,6 +244,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/persistent/start` (rejected fail-closed)
 - `cluster:admin/persistent/update_status` (rejected fail-closed)
 - `cluster:admin/persistent/completion` (rejected fail-closed)
+- `cluster:admin/persistent/remove` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1564,6 +1565,20 @@ The completion-persistent-task boundary covers:
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
   task ids, missing allocation ids, exception payloads, completion-persistent-
   task execution, and persistent-task response rendering.
+
+The remove-persistent-task boundary covers:
+
+- OpenSearch `RemovePersistentTaskAction.Request` parent task,
+  cluster-manager timeout, and task id at the wire decode/build layer;
+- reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
+  optional task payload shape, with concrete task payloads rejected until
+  persistent task params/state/metadata named-writeables are mapped;
+- explicit fail-closed classification for `cluster:admin/persistent/remove`
+  until persistent task lookup, cluster metadata removal, and response
+  rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, missing or oversized
+  task ids, remove-persistent-task execution, and persistent-task response
+  rendering.
 
 The search boundary covers:
 
@@ -3636,6 +3651,24 @@ roughly 1.33M ops/s in the latest local release run, it is close to the
 update-persistent-task-status boundary; future performance-sensitive work is
 exception payload decoding, allocation checks, cluster metadata mutation,
 restart/removal semantics, and response rendering.
+
+Current remove-persistent-task reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin remove-persistent-task-reject-wire-benchmark
+remove_persistent_task_reject_request_encode iterations=400000 elapsed_ms=304.565 ops_per_second=1313347.09 nanos_per_op=761.41
+remove_persistent_task_reject_request_decode iterations=400000 elapsed_ms=286.942 ops_per_second=1394011.82 nanos_per_op=717.35
+remove_persistent_task_reject_validation iterations=400000 elapsed_ms=272.016 ops_per_second=1470500.70 nanos_per_op=680.04
+remove_persistent_task_empty_response_decode iterations=400000 elapsed_ms=54.764 ops_per_second=7304037.16 nanos_per_op=136.91
+remove_persistent_task_reject_wire_bottleneck_ops_per_second=1313347.09
+```
+
+The current remove-persistent-task fail-closed boundary bottleneck is request
+encode. This path carries the ClusterManagerNode envelope and task id before
+rejecting at admission. At roughly 1.31M ops/s in the latest local release run,
+it is in the same range as the adjacent persistent-task admin boundaries;
+future performance-sensitive work is persistent task lookup, cluster metadata
+removal, and response rendering.
 
 Current search reject wire microbenchmark:
 
