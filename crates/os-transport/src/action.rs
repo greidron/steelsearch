@@ -67,6 +67,7 @@ pub const UPDATE_INGESTION_STATE_ACTION_NAME: &str = "indices:admin/ingestion/up
 pub const LIST_TIERING_STATUS_ACTION_NAME: &str = "cluster:admin/_tier/all";
 pub const GET_TIERING_STATUS_ACTION_NAME: &str = "indices:admin/_tier/get";
 pub const KNN_STATS_ACTION_NAME: &str = "cluster:admin/knn_stats_action";
+pub const KNN_WARMUP_ACTION_NAME: &str = "cluster:admin/knn_warmup_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -544,6 +545,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "KNNStatsTransportAction",
         request_wire_type: "KNNStatsRequest",
         response_wire_type: "KNNStatsResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: KNN_WARMUP_ACTION_NAME,
+        action_type: "KNNWarmupAction",
+        transport_action: "KNNWarmupTransportAction",
+        request_wire_type: "KNNWarmupRequest",
+        response_wire_type: "KNNWarmupResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1793,6 +1801,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "knn-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering",
+        },
+        KNN_WARMUP_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "knn-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6232,6 +6245,73 @@ pub fn read_knn_stats_response_message(
         });
     }
     KnnStatsResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_knn_warmup_request_message(
+    request_id: i64,
+    version: Version,
+    request: &KnnWarmupRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(KNN_WARMUP_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_knn_warmup_request_message(
+    message: &TransportMessage,
+) -> Result<KnnWarmupRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != KNN_WARMUP_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: KNN_WARMUP_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    KnnWarmupRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_knn_warmup_response_message(
+    request_id: i64,
+    version: Version,
+    response: &KnnWarmupResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_knn_warmup_response_message(
+    message: &TransportMessage,
+) -> Result<KnnWarmupResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    KnnWarmupResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -13699,6 +13779,142 @@ impl KnnStatsResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "knn stats response rendering",
             reason: "KNNStatsResponse rendering requires node aggregation, failure aggregation, and cluster stat rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KnnWarmupRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Option<Vec<String>>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl Default for KnnWarmupRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Some(vec!["logs-000001".to_string()]),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+        }
+    }
+}
+
+impl KnnWarmupRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_nullable_string_array(output, self.indices.as_deref());
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: read_nullable_string_array(&mut input)?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self
+            .indices
+            .as_ref()
+            .map_or(true, |indices| indices.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup missing indices",
+                reason: "KNN warmup requests require index selectors",
+            });
+        }
+        if self
+            .indices
+            .as_ref()
+            .is_some_and(|indices| indices.iter().any(|index| index.trim().is_empty()))
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup blank index",
+                reason:
+                    "blank KNN warmup index selectors require OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup indices options",
+                reason: "custom KNN warmup index resolution options require OpenSearch index expression resolution semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "knn warmup execution",
+            reason: "knn-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct KnnWarmupResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+}
+
+impl KnnWarmupResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+            shard_failure_count: input.read_vint()?,
+        };
+        if response.total_shards < 0 || response.successful_shards < 0 || response.failed_shards < 0
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup response shard counters",
+                reason: "KNNWarmupResponse shard counters must be non-negative",
+            });
+        }
+        if response.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup response failure count",
+                reason: "KNNWarmupResponse shard failure count must be non-negative",
+            });
+        }
+        if response.shard_failure_count > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup shard failures",
+                reason: "KNNWarmupResponse shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup response failures",
+                reason: "KNN warmup shard failure rendering is not implemented",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "knn warmup response rendering",
+            reason: "KNNWarmupResponse rendering requires broadcast shard execution and shard result aggregation",
         })
     }
 }
@@ -29469,6 +29685,13 @@ mod tests {
                     response_wire_type: "KNNStatsResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_warmup_action",
+                    action_type: "KNNWarmupAction",
+                    transport_action: "KNNWarmupTransportAction",
+                    request_wire_type: "KNNWarmupRequest",
+                    response_wire_type: "KNNWarmupResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -39384,6 +39607,160 @@ mod tests {
             panic!("expected knn stats response message");
         };
         assert_eq!(read_knn_stats_response_message(&message).unwrap(), response);
+    }
+
+    #[test]
+    fn knn_warmup_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = KnnWarmupRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(52),
+            indices: Some(vec!["logs-000002".to_string()]),
+            ..KnnWarmupRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = KnnWarmupRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn knn_warmup_request_rejects_unsupported_shapes() {
+        let missing_indices = KnnWarmupRequestWire {
+            indices: None,
+            ..KnnWarmupRequestWire::default()
+        };
+        assert!(matches!(
+            missing_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup missing indices",
+                ..
+            })
+        ));
+
+        let blank_index = KnnWarmupRequestWire {
+            indices: Some(vec![String::new()]),
+            ..KnnWarmupRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = KnnWarmupRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ..KnnWarmupRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup indices options",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        KnnWarmupRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            KnnWarmupRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn knn_warmup_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = KnnWarmupResponseWire {
+            total_shards: 2,
+            successful_shards: 2,
+            failed_shards: 0,
+            shard_failure_count: 0,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = KnnWarmupResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup response rendering",
+                ..
+            })
+        ));
+
+        let mut negative_counters = StreamOutput::new();
+        negative_counters.write_vint(-1);
+        negative_counters.write_vint(0);
+        negative_counters.write_vint(0);
+        negative_counters.write_vint(0);
+        assert!(matches!(
+            KnnWarmupResponseWire::read(negative_counters.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup response shard counters",
+                ..
+            })
+        ));
+
+        let mut failure_count = StreamOutput::new();
+        failure_count.write_vint(1);
+        failure_count.write_vint(0);
+        failure_count.write_vint(1);
+        failure_count.write_vint(1);
+        assert!(matches!(
+            KnnWarmupResponseWire::read(failure_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup shard failures",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn knn_warmup_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = KnnWarmupRequestWire::default();
+        let mut frame =
+            build_knn_warmup_request_message(52, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected knn warmup request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(read_knn_warmup_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_knn_warmup_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn warmup execution",
+                ..
+            })
+        ));
+
+        let response = KnnWarmupResponseWire::default();
+        let mut frame =
+            build_knn_warmup_response_message(52, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected knn warmup response message");
+        };
+        assert_eq!(
+            read_knn_warmup_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

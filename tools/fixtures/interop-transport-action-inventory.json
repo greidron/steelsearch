@@ -355,6 +355,15 @@
       "reason": "KNN-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN stats semantics."
     },
     {
+      "action_name": "cluster:admin/knn_warmup_action",
+      "action_type": "KNNWarmupAction",
+      "transport_action": "KNNWarmupTransportAction",
+      "request_wire_type": "KNNWarmupRequest",
+      "response_wire_type": "KNNWarmupResponse",
+      "disposition": "rejected",
+      "reason": "KNN-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN warmup semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",

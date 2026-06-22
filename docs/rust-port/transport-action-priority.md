@@ -882,6 +882,20 @@ The knn-stats boundary covers:
   response rendering, node failure rendering, cluster stat rendering, and
   response rendering.
 
+The knn-warmup boundary covers:
+
+- OpenSearch k-NN `KNNWarmupRequest` `BroadcastRequest` parent task, nullable
+  index selector array, and strict-expand-open-forbid-closed `IndicesOptions`
+  at the wire decode/build layer;
+- OpenSearch k-NN `KNNWarmupResponse` broadcast shard counters and zero shard
+  failure count at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/knn_warmup_action`
+  until broadcast shard selection, metadata read block checks, per-shard KNN
+  warmup, shard failure aggregation, and response rendering are implemented;
+- explicit rejection for missing indices, blank index selectors, custom index
+  resolution options, KNN warmup execution, negative shard counters, shard
+  failure rendering, and response rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3043,6 +3057,25 @@ This is still fail-closed admission work, but it is a real performance hotspot
 to keep in view when implementing execution; the first semantic work is
 BaseNodes fanout, node-level KNN stat collection, cluster-level stat
 aggregation, failure aggregation, and response rendering.
+
+Current knn-warmup reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin knn-warmup-reject-wire-benchmark
+knn_warmup_reject_request_encode iterations=400000 elapsed_ms=319.007 ops_per_second=1253890.17 nanos_per_op=797.52
+knn_warmup_reject_request_decode iterations=400000 elapsed_ms=287.917 ops_per_second=1389288.34 nanos_per_op=719.79
+knn_warmup_reject_validation iterations=400000 elapsed_ms=294.781 ops_per_second=1356939.84 nanos_per_op=736.95
+knn_warmup_response_decode iterations=400000 elapsed_ms=58.868 ops_per_second=6794877.51 nanos_per_op=147.17
+knn_warmup_reject_wire_bottleneck_ops_per_second=1253890.17
+```
+
+The current knn-warmup fail-closed boundary bottleneck is request encode. The
+payload includes the broadcast parent task, nullable index selector array, and
+strict-expand-open-forbid-closed index options before admission rejects
+execution. At roughly 1.25M ops/s in the latest local release run, this boundary
+is not a material transport bottleneck; the first performance-sensitive work is
+broadcast shard selection, metadata read block checks, per-shard KNN warmup,
+shard failure aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
