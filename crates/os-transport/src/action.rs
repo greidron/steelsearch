@@ -62,6 +62,7 @@ pub const GET_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline
 pub const DELETE_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/delete";
 pub const PAUSE_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/pause";
 pub const RESUME_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/resume";
+pub const GET_INGESTION_STATE_ACTION_NAME: &str = "indices:monitor/ingestion/state";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -504,6 +505,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportResumeIngestionAction",
         request_wire_type: "ResumeIngestionRequest",
         response_wire_type: "ResumeIngestionResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: GET_INGESTION_STATE_ACTION_NAME,
+        action_type: "GetIngestionStateAction",
+        transport_action: "TransportGetIngestionStateAction",
+        request_wire_type: "GetIngestionStateRequest",
+        response_wire_type: "GetIngestionStateResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1728,6 +1736,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "resume-ingestion transport execution requires destructive-index guard checks, index resolution, optional shard pointer reset, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering",
+        },
+        GET_INGESTION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-ingestion-state transport execution requires broadcast shard selection, optional pagination, shard ingestion-state collection, shard failure aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5832,6 +5845,73 @@ pub fn read_resume_ingestion_response_message(
         });
     }
     ResumeIngestionResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_ingestion_state_request_message(
+    request_id: i64,
+    version: Version,
+    request: &GetIngestionStateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(GET_INGESTION_STATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_ingestion_state_request_message(
+    message: &TransportMessage,
+) -> Result<GetIngestionStateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != GET_INGESTION_STATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: GET_INGESTION_STATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    GetIngestionStateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_ingestion_state_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetIngestionStateResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_ingestion_state_response_message(
+    message: &TransportMessage,
+) -> Result<GetIngestionStateResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    GetIngestionStateResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -12151,6 +12231,347 @@ impl ResumeIngestionResponseWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "resume ingestion response error",
                 reason: "resume-ingestion error rendering is not implemented",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetIngestionStateIndexShardPairWire {
+    pub index: String,
+    pub shard: i32,
+}
+
+impl GetIngestionStateIndexShardPairWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.index);
+        output.write_vint(self.shard);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let index = input.read_string()?;
+        let shard = input.read_vint()?;
+        if shard < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state page shard",
+                reason: "OpenSearch get-ingestion-state pagination shard id cannot be negative",
+            });
+        }
+        Ok(Self { index, shard })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetIngestionStateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub shards: Vec<i32>,
+    pub page_params: Option<OpenSearchPageParamsWire>,
+    pub index_shard_pairs: Vec<GetIngestionStateIndexShardPairWire>,
+}
+
+impl Default for GetIngestionStateRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            shards: Vec::new(),
+            page_params: Some(OpenSearchPageParamsWire {
+                requested_token: None,
+                sort: Some("asc".to_string()),
+                size: 1000,
+            }),
+            index_shard_pairs: Vec::new(),
+        }
+    }
+}
+
+impl GetIngestionStateRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        write_vint_array(output, &self.shards);
+        write_optional_page_params(output, self.page_params.as_ref());
+        output.write_vint(self.index_shard_pairs.len() as i32);
+        for pair in &self.index_shard_pairs {
+            pair.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let indices = input.read_string_array()?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let shards = read_vint_array(&mut input, "get ingestion state shard count")?;
+        if shards.iter().any(|shard| *shard < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state shard",
+                reason: "OpenSearch get-ingestion-state shard ids cannot be negative",
+            });
+        }
+        let page_params = read_optional_page_params(&mut input)?;
+        let pair_count = input.read_vint()?;
+        if pair_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state page pair count",
+                reason: "OpenSearch get-ingestion-state pagination pair count cannot be negative",
+            });
+        }
+        let mut index_shard_pairs = Vec::with_capacity(pair_count as usize);
+        for _ in 0..pair_count {
+            index_shard_pairs.push(GetIngestionStateIndexShardPairWire::read(&mut input)?);
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices,
+            indices_options,
+            shards,
+            page_params,
+            index_shard_pairs,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state missing indices",
+                reason: "OpenSearch get-ingestion-state requests require index selectors",
+            });
+        }
+        let mut seen = std::collections::HashSet::new();
+        if self.indices.iter().any(|index| !seen.insert(index)) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state duplicate indices",
+                reason: "OpenSearch get-ingestion-state validation rejects duplicate index names",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state blank index",
+                reason: "blank index selectors belong to OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state indices options",
+                reason: "custom index resolution options require OpenSearch index expression resolution semantics",
+            });
+        }
+        if self.shards.iter().any(|shard| *shard < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state shard",
+                reason: "OpenSearch get-ingestion-state shard ids cannot be negative",
+            });
+        }
+        if let Some(page_params) = &self.page_params {
+            if page_params.size <= 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get ingestion state page size",
+                    reason:
+                        "OpenSearch get-ingestion-state pagination requires a positive page size",
+                });
+            }
+            if !matches!(page_params.sort.as_deref(), Some("asc") | Some("desc")) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get ingestion state page sort",
+                    reason: "OpenSearch get-ingestion-state pagination sort must be asc or desc",
+                });
+            }
+        }
+        if self
+            .index_shard_pairs
+            .iter()
+            .any(|pair| pair.index.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state page index",
+                reason: "OpenSearch get-ingestion-state pagination pairs require an index name",
+            });
+        }
+        if !self.index_shard_pairs.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state paginated execution",
+                reason: "get-ingestion-state paginated execution requires cluster-state pagination and shard pair filtering",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get ingestion state execution",
+            reason: "get-ingestion-state transport execution requires broadcast shard selection, shard ingestion-state collection, shard failure aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetIngestionShardStateWire {
+    pub index: String,
+    pub shard_id: i32,
+    pub poller_state: Option<String>,
+    pub error_policy: Option<String>,
+    pub poller_paused: bool,
+    pub write_block_enabled: bool,
+    pub batch_start_pointer: String,
+    pub primary: bool,
+    pub node_name: String,
+}
+
+impl Default for GetIngestionShardStateWire {
+    fn default() -> Self {
+        Self {
+            index: "logs-000001".to_string(),
+            shard_id: 0,
+            poller_state: None,
+            error_policy: None,
+            poller_paused: false,
+            write_block_enabled: false,
+            batch_start_pointer: String::new(),
+            primary: true,
+            node_name: String::new(),
+        }
+    }
+}
+
+impl GetIngestionShardStateWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.index);
+        output.write_vint(self.shard_id);
+        output.write_optional_string(self.poller_state.as_deref());
+        output.write_optional_string(self.error_policy.as_deref());
+        output.write_bool(self.poller_paused);
+        output.write_bool(self.write_block_enabled);
+        output.write_string(&self.batch_start_pointer);
+        output.write_bool(self.primary);
+        output.write_string(&self.node_name);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let index = input.read_string()?;
+        let shard_id = input.read_vint()?;
+        if shard_id < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard id",
+                reason: "OpenSearch get-ingestion-state shard state shard id cannot be negative",
+            });
+        }
+        Ok(Self {
+            index,
+            shard_id,
+            poller_state: input.read_optional_string()?,
+            error_policy: input.read_optional_string()?,
+            poller_paused: input.read_bool()?,
+            write_block_enabled: input.read_bool()?,
+            batch_start_pointer: input.read_string()?,
+            primary: input.read_bool()?,
+            node_name: input.read_string()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetIngestionStateResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub shard_states: Vec<GetIngestionShardStateWire>,
+    pub next_page_token: Option<String>,
+}
+
+impl Default for GetIngestionStateResponseWire {
+    fn default() -> Self {
+        Self {
+            total_shards: 0,
+            successful_shards: 0,
+            failed_shards: 0,
+            shard_failure_count: 0,
+            shard_states: Vec::new(),
+            next_page_token: None,
+        }
+    }
+}
+
+impl GetIngestionStateResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_vint(self.shard_states.len() as i32);
+        for shard_state in &self.shard_states {
+            shard_state.write(output);
+        }
+        output.write_optional_string(self.next_page_token.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let total_shards = input.read_vint()?;
+        let successful_shards = input.read_vint()?;
+        let failed_shards = input.read_vint()?;
+        let shard_failure_count = input.read_vint()?;
+        if shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response failure count",
+                reason: "OpenSearch get-ingestion-state response failure count cannot be negative",
+            });
+        }
+        if shard_failure_count > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard failures",
+                reason: "get-ingestion-state shard failure exception rendering is not implemented",
+            });
+        }
+        let shard_state_count = input.read_vint()?;
+        if shard_state_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response state count",
+                reason:
+                    "OpenSearch get-ingestion-state response shard state count cannot be negative",
+            });
+        }
+        let mut shard_states = Vec::with_capacity(shard_state_count as usize);
+        for _ in 0..shard_state_count {
+            shard_states.push(GetIngestionShardStateWire::read(&mut input)?);
+        }
+        let response = Self {
+            total_shards,
+            successful_shards,
+            failed_shards,
+            shard_failure_count,
+            shard_states,
+            next_page_token: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.shard_failure_count != 0 || self.failed_shards != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard failures",
+                reason: "get-ingestion-state shard failure exception rendering is not implemented",
+            });
+        }
+        if !self.shard_states.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard states",
+                reason: "get-ingestion-state shard state response rendering requires live shard ingestion-state collection",
+            });
+        }
+        if self.next_page_token.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response next token",
+                reason: "get-ingestion-state next page token rendering requires pagination response semantics",
             });
         }
         Ok(())
@@ -27020,6 +27441,53 @@ fn read_optional_string_array(
     }
 }
 
+fn write_vint_array(output: &mut StreamOutput, values: &[i32]) {
+    output.write_vint(values.len() as i32);
+    for value in values {
+        output.write_vint(*value);
+    }
+}
+
+fn read_vint_array(
+    input: &mut StreamInput,
+    negative_count_shape: &'static str,
+) -> Result<Vec<i32>, TransportActionWireError> {
+    let count = input.read_vint()?;
+    if count < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: negative_count_shape,
+            reason: "OpenSearch vInt array count cannot be negative",
+        });
+    }
+    let mut values = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        values.push(input.read_vint()?);
+    }
+    Ok(values)
+}
+
+fn write_optional_page_params(
+    output: &mut StreamOutput,
+    page_params: Option<&OpenSearchPageParamsWire>,
+) {
+    if let Some(page_params) = page_params {
+        output.write_bool(true);
+        page_params.write(output);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_page_params(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchPageParamsWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(OpenSearchPageParamsWire::read(input)?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_string_collection(output: &mut StreamOutput, values: &[String]) {
     output.write_vint(values.len() as i32);
     for value in values {
@@ -27804,6 +28272,13 @@ mod tests {
                     transport_action: "TransportResumeIngestionAction",
                     request_wire_type: "ResumeIngestionRequest",
                     response_wire_type: "ResumeIngestionResponse",
+                },
+                SourceTransportActionSpec {
+                    action_name: "indices:monitor/ingestion/state",
+                    action_type: "GetIngestionStateAction",
+                    transport_action: "TransportGetIngestionStateAction",
+                    request_wire_type: "GetIngestionStateRequest",
+                    response_wire_type: "GetIngestionStateResponse",
                 },
                 SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
@@ -36546,6 +37021,331 @@ mod tests {
         };
         assert_eq!(
             read_resume_ingestion_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn get_ingestion_state_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = GetIngestionStateRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(47),
+            indices: vec!["logs-000001".to_string(), "logs-000002".to_string()],
+            shards: vec![0, 1],
+            page_params: Some(OpenSearchPageParamsWire {
+                requested_token: Some("logs-000001:1".to_string()),
+                sort: Some("desc".to_string()),
+                size: 100,
+            }),
+            ..GetIngestionStateRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = GetIngestionStateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_ingestion_state_request_rejects_unsupported_shapes() {
+        let duplicate_indices = GetIngestionStateRequestWire {
+            indices: vec!["logs-000001".to_string(), "logs-000001".to_string()],
+            ..GetIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            duplicate_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state duplicate indices",
+                ..
+            })
+        ));
+
+        let blank_index = GetIngestionStateRequestWire {
+            indices: vec![" ".to_string()],
+            ..GetIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = GetIngestionStateRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..GetIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state indices options",
+                ..
+            })
+        ));
+
+        let invalid_page_size = GetIngestionStateRequestWire {
+            page_params: Some(OpenSearchPageParamsWire {
+                requested_token: None,
+                sort: Some("asc".to_string()),
+                size: 0,
+            }),
+            ..GetIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_page_size.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state page size",
+                ..
+            })
+        ));
+
+        let invalid_page_sort = GetIngestionStateRequestWire {
+            page_params: Some(OpenSearchPageParamsWire {
+                requested_token: None,
+                sort: Some("sideways".to_string()),
+                size: 100,
+            }),
+            ..GetIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_page_sort.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state page sort",
+                ..
+            })
+        ));
+
+        let paginated_pairs = GetIngestionStateRequestWire {
+            index_shard_pairs: vec![GetIngestionStateIndexShardPairWire {
+                index: "logs-000001".to_string(),
+                shard: 0,
+            }],
+            ..GetIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            paginated_pairs.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state paginated execution",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        GetIngestionStateRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            GetIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed().write(&mut output);
+        output.write_vint(-1);
+        assert!(matches!(
+            GetIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state shard count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed().write(&mut output);
+        output.write_vint(1);
+        output.write_vint(-1);
+        write_optional_page_params(
+            &mut output,
+            Some(&OpenSearchPageParamsWire {
+                requested_token: None,
+                sort: Some("asc".to_string()),
+                size: 1000,
+            }),
+        );
+        output.write_vint(0);
+        assert!(matches!(
+            GetIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state shard",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed().write(&mut output);
+        output.write_vint(0);
+        write_optional_page_params(
+            &mut output,
+            Some(&OpenSearchPageParamsWire {
+                requested_token: None,
+                sort: Some("asc".to_string()),
+                size: 1000,
+            }),
+        );
+        output.write_vint(-1);
+        assert!(matches!(
+            GetIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state page pair count",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_ingestion_state_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = GetIngestionStateResponseWire {
+            total_shards: 2,
+            successful_shards: 2,
+            shard_states: vec![GetIngestionShardStateWire {
+                poller_state: Some("POLLING".to_string()),
+                error_policy: Some("DROP".to_string()),
+                poller_paused: true,
+                write_block_enabled: false,
+                batch_start_pointer: "42".to_string(),
+                primary: true,
+                node_name: "node-a".to_string(),
+                ..GetIngestionShardStateWire::default()
+            }],
+            next_page_token: Some("logs-000002:0".to_string()),
+            ..GetIngestionStateResponseWire::default()
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = GetIngestionStateResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard states",
+                ..
+            })
+        ));
+
+        assert!(GetIngestionStateResponseWire::default()
+            .reject_unsupported_rendering()
+            .is_ok());
+
+        let with_next_token = GetIngestionStateResponseWire {
+            next_page_token: Some("next".to_string()),
+            ..GetIngestionStateResponseWire::default()
+        };
+        assert!(matches!(
+            with_next_token.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response next token",
+                ..
+            })
+        ));
+
+        let with_failures = GetIngestionStateResponseWire {
+            failed_shards: 1,
+            ..GetIngestionStateResponseWire::default()
+        };
+        assert!(matches!(
+            with_failures.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard failures",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(-1);
+        assert!(matches!(
+            GetIngestionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response failure count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(1);
+        assert!(matches!(
+            GetIngestionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response shard failures",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(-1);
+        assert!(matches!(
+            GetIngestionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state response state count",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_ingestion_state_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = GetIngestionStateRequestWire::default();
+        let mut frame =
+            build_get_ingestion_state_request_message(47, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get ingestion state request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_get_ingestion_state_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_get_ingestion_state_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get ingestion state execution",
+                ..
+            })
+        ));
+
+        let response = GetIngestionStateResponseWire::default();
+        let mut frame =
+            build_get_ingestion_state_response_message(47, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get ingestion state response message");
+        };
+        assert_eq!(
+            read_get_ingestion_state_response_message(&message).unwrap(),
             response
         );
     }

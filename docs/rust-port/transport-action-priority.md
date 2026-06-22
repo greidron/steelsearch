@@ -790,6 +790,27 @@ The resume-ingestion boundary covers:
   reset execution, response shard failure rendering, response error rendering,
   negative failure counts, and negative shard ids.
 
+The get-ingestion-state boundary covers:
+
+- OpenSearch `GetIngestionStateRequest` broadcast parent task, nullable index
+  selector array encoded as a string-array count, strict-expand-open-and-forbid
+  closed `IndicesOptions`, shard `vInt` array, optional `PageParams`, and
+  pagination `(index, shard)` pair list at the wire decode/build layer;
+- OpenSearch `PageParams` requested token, optional sort value, and page size;
+- OpenSearch `GetIngestionStateResponse` broadcast shard counters, zero shard
+  failure count, shard ingestion-state array, and optional next-page token at
+  the wire decode/build layer;
+- OpenSearch shard ingestion state fields for index, shard id, optional poller
+  state, optional error policy, poller paused flag, write-block flag, batch start
+  pointer, primary flag, and node name for the OpenSearch 3.7 transport version;
+- explicit fail-closed classification for `indices:monitor/ingestion/state`
+  until broadcast shard selection, optional pagination, shard ingestion-state
+  collection, shard failure aggregation, and response rendering are implemented;
+- explicit rejection for duplicate indices, blank index selectors, custom index
+  resolution options, invalid shard ids, invalid page params, paginated execution
+  pair filters, non-empty shard states, next-page token rendering, shard failure
+  rendering, negative failure counts, and negative state counts.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2854,6 +2875,25 @@ release run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is destructive-index guard checks, index resolution,
 optional shard pointer reset, ingestion poller state mutation, shard
 acknowledgement aggregation, and response rendering.
+
+Current get-ingestion-state reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-ingestion-state-reject-wire-benchmark
+get_ingestion_state_reject_request_encode iterations=400000 elapsed_ms=314.557 ops_per_second=1271628.82 nanos_per_op=786.39
+get_ingestion_state_reject_request_decode iterations=400000 elapsed_ms=333.698 ops_per_second=1198689.01 nanos_per_op=834.24
+get_ingestion_state_reject_validation iterations=400000 elapsed_ms=365.699 ops_per_second=1093796.22 nanos_per_op=914.25
+get_ingestion_state_response_decode iterations=400000 elapsed_ms=66.428 ops_per_second=6021515.75 nanos_per_op=166.07
+get_ingestion_state_reject_wire_bottleneck_ops_per_second=1093796.22
+```
+
+The current get-ingestion-state fail-closed boundary bottleneck is request
+validation. The admission path checks duplicate index selectors, default index
+resolution options, shard selectors, and page params before rejecting execution.
+At roughly 1.09M ops/s in the latest local release run, this boundary is not a
+material transport bottleneck; the first performance-sensitive work is broadcast
+shard selection, optional cluster-state pagination, shard ingestion-state
+collection, shard failure aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
