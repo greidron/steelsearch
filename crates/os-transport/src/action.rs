@@ -52,6 +52,7 @@ pub const CLONE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/clone";
 pub const RESTORE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/restore";
 pub const SNAPSHOTS_STATUS_ACTION_NAME: &str = "cluster:admin/snapshot/status";
 pub const RESTORE_REMOTE_STORE_ACTION_NAME: &str = "cluster:admin/remotestore/restore";
+pub const EXTENSION_PROXY_ACTION_NAME: &str = "cluster:internal/extensions";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -431,6 +432,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportRestoreRemoteStoreAction",
         request_wire_type: "RestoreRemoteStoreRequest",
         response_wire_type: "RestoreRemoteStoreResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: EXTENSION_PROXY_ACTION_NAME,
+        action_type: "ExtensionProxyAction",
+        transport_action: "ExtensionProxyTransportAction",
+        request_wire_type: "ExtensionActionRequest",
+        response_wire_type: "ExtensionActionResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1610,6 +1618,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering",
+        },
+        EXTENSION_PROXY_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5111,6 +5124,73 @@ pub fn read_restore_remote_store_response_message(
         });
     }
     RestoreRemoteStoreResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_extension_proxy_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ExtensionProxyRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(EXTENSION_PROXY_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_extension_proxy_request_message(
+    message: &TransportMessage,
+) -> Result<ExtensionProxyRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != EXTENSION_PROXY_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: EXTENSION_PROXY_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ExtensionProxyRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_extension_proxy_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ExtensionProxyResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_extension_proxy_response_message(
+    message: &TransportMessage,
+) -> Result<ExtensionProxyResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    ExtensionProxyResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -10232,6 +10312,98 @@ impl RestoreRemoteStoreResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "restore remote store response rendering",
             reason: "RestoreRemoteStoreResponse rendering requires remote-store restore completion and RestoreInfo mapping",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionProxyRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub extension_transport_message: Bytes,
+}
+
+impl Default for ExtensionProxyRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            extension_transport_message: build_extension_transport_message_bytes(
+                "steelsearch.extension.noop",
+                &[],
+            ),
+        }
+    }
+}
+
+impl ExtensionProxyRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_bytes_reference(&self.extension_transport_message);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            extension_transport_message: input.read_bytes_reference()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.extension_transport_message.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy empty transport message",
+                reason: "ExtensionActionRequest requires a serialized ExtensionTransportMessage protobuf payload",
+            });
+        }
+        if self.extension_transport_message.len() > 1024 * 1024 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy payload length",
+                reason: "extension proxy payloads are bounded to 1 MiB by the Rust boundary",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "extension proxy execution",
+            reason: "extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ExtensionProxyResponseWire {
+    pub response_bytes: Bytes,
+}
+
+impl ExtensionProxyResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bytes_reference(&self.response_bytes);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            response_bytes: input.read_bytes_reference()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.response_bytes.len() > 1024 * 1024 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy response length",
+                reason: "extension proxy responses are bounded to 1 MiB by the Rust boundary",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "extension proxy response rendering",
+            reason:
+                "ExtensionActionResponse rendering requires extension transport execution semantics",
         })
     }
 }
@@ -24982,6 +25154,22 @@ fn read_optional_bool(input: &mut StreamInput) -> Result<Option<bool>, Transport
     }
 }
 
+fn build_extension_transport_message_bytes(action: &str, request_bytes: &[u8]) -> Bytes {
+    let mut output = StreamOutput::new();
+    output.write_byte(0x0a);
+    write_protobuf_bytes(&mut output, action.as_bytes());
+    output.write_byte(0x12);
+    write_protobuf_bytes(&mut output, request_bytes);
+    output.freeze()
+}
+
+fn write_protobuf_bytes(output: &mut StreamOutput, bytes: &[u8]) {
+    output.write_vint(bytes.len() as i32);
+    for byte in bytes {
+        output.write_byte(*byte);
+    }
+}
+
 fn write_optional_byte_size_value(
     output: &mut StreamOutput,
     value: Option<&OpenSearchByteSizeValueWire>,
@@ -25804,6 +25992,13 @@ mod tests {
                     transport_action: "TransportRestoreRemoteStoreAction",
                     request_wire_type: "RestoreRemoteStoreRequest",
                     response_wire_type: "RestoreRemoteStoreResponse",
+                },
+                SourceTransportActionSpec {
+                    action_name: "cluster:internal/extensions",
+                    action_type: "ExtensionProxyAction",
+                    transport_action: "ExtensionProxyTransportAction",
+                    request_wire_type: "ExtensionActionRequest",
+                    response_wire_type: "ExtensionActionResponse",
                 },
                 SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
@@ -33082,6 +33277,139 @@ mod tests {
         };
         assert_eq!(
             read_restore_remote_store_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn extension_proxy_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ExtensionProxyRequestWire {
+            parent_task_node: "extension-node".to_string(),
+            parent_task_id: Some(38),
+            extension_transport_message: build_extension_transport_message_bytes(
+                "steelsearch.extension.echo",
+                b"payload",
+            ),
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ExtensionProxyRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn extension_proxy_request_rejects_unsupported_shapes() {
+        let empty_payload = ExtensionProxyRequestWire {
+            extension_transport_message: Bytes::new(),
+            ..ExtensionProxyRequestWire::default()
+        };
+        assert!(matches!(
+            empty_payload.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy empty transport message",
+                ..
+            })
+        ));
+
+        let oversized_payload = ExtensionProxyRequestWire {
+            extension_transport_message: Bytes::from(vec![0; 1024 * 1024 + 1]),
+            ..ExtensionProxyRequestWire::default()
+        };
+        assert!(matches!(
+            oversized_payload.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy payload length",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        ExtensionProxyRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            ExtensionProxyRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn extension_proxy_response_wire_round_trips_and_rejects_rendering_boundary() {
+        let response = ExtensionProxyResponseWire {
+            response_bytes: Bytes::from_static(b"extension-response"),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = ExtensionProxyResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy response rendering",
+                ..
+            })
+        ));
+
+        let oversized_response = ExtensionProxyResponseWire {
+            response_bytes: Bytes::from(vec![0; 1024 * 1024 + 1]),
+        };
+        assert!(matches!(
+            oversized_response.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy response length",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn extension_proxy_transport_messages_bind_rejected_action_frame_and_byte_response() {
+        let request = ExtensionProxyRequestWire::default();
+        let mut frame =
+            build_extension_proxy_request_message(38, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected extension proxy request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_extension_proxy_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_extension_proxy_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy execution",
+                ..
+            })
+        ));
+
+        let response = ExtensionProxyResponseWire {
+            response_bytes: Bytes::from_static(b"ok"),
+        };
+        let mut frame =
+            build_extension_proxy_response_message(38, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected extension proxy response message");
+        };
+        assert_eq!(
+            read_extension_proxy_response_message(&message).unwrap(),
             response
         );
     }

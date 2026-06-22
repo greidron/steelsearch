@@ -650,6 +650,20 @@ The restore-remote-store boundary covers:
   `RestoreInfo` payloads, restore-remote-store execution, and response
   rendering.
 
+The extension-proxy boundary covers:
+
+- OpenSearch `ExtensionActionRequest` parent task plus length-prefixed
+  serialized `ExtensionTransportMessage` protobuf payload at the wire
+  decode/build layer;
+- OpenSearch `ExtensionActionResponse` length-prefixed raw response bytes at
+  the wire decode/build layer;
+- explicit fail-closed classification for `cluster:internal/extensions` until
+  extension manager routing, protobuf `ExtensionTransportMessage` parsing,
+  extension transport dispatch, and byte response rendering are implemented;
+- explicit rejection for empty or oversized extension request payloads,
+  oversized response payloads, extension-proxy execution, and response
+  rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2541,6 +2555,26 @@ ops/s in the latest local release run, this boundary is not a material
 transport bottleneck; the first performance-sensitive work is remote-store
 restore service coordination, shard restore planning, completion listener
 registration, `RestoreInfo` decoding, and response rendering.
+
+Current extension-proxy reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin extension-proxy-reject-wire-benchmark
+extension_proxy_reject_request_encode iterations=400000 elapsed_ms=201.982 ops_per_second=1980373.42 nanos_per_op=504.96
+extension_proxy_reject_request_decode iterations=400000 elapsed_ms=193.443 ops_per_second=2067793.12 nanos_per_op=483.61
+extension_proxy_reject_validation iterations=400000 elapsed_ms=194.113 ops_per_second=2060652.91 nanos_per_op=485.28
+extension_proxy_response_decode iterations=400000 elapsed_ms=59.317 ops_per_second=6743424.71 nanos_per_op=148.29
+extension_proxy_reject_wire_bottleneck_ops_per_second=1980373.42
+```
+
+The current extension-proxy fail-closed boundary bottleneck is request encode.
+The payload includes the parent task envelope plus the length-prefixed
+serialized `ExtensionTransportMessage` bytes before admission rejects
+execution. At roughly 1.98M ops/s in the latest local release run, this
+boundary is not a material transport bottleneck; the first
+performance-sensitive work is extension manager routing, protobuf
+`ExtensionTransportMessage` parsing, extension transport dispatch, and byte
+response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

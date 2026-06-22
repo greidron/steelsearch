@@ -229,6 +229,15 @@
       "reason": "Restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering before Steelsearch can serve OpenSearch remote-store restore semantics."
     },
     {
+      "action_name": "cluster:internal/extensions",
+      "action_type": "ExtensionProxyAction",
+      "transport_action": "ExtensionProxyTransportAction",
+      "request_wire_type": "ExtensionActionRequest",
+      "response_wire_type": "ExtensionActionResponse",
+      "disposition": "rejected",
+      "reason": "Extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering before Steelsearch can serve OpenSearch extension proxy semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",
