@@ -966,6 +966,19 @@ The training-job-router boundary covers:
 - explicit rejection for missing training request payloads, blank response model
   ids, response rendering, and training-job-router execution.
 
+The training-model boundary covers:
+
+- OpenSearch k-NN `TrainingModelRequest` parent task, optional model id, and
+  opaque training request payload presence at the wire decode/build layer;
+- OpenSearch k-NN `TrainingModelResponse` optional model id at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_training_model_action` until KNN native training data
+  loading, memory reservation, training job execution, model system-index
+  write, counter updates, and response rendering are implemented;
+- explicit rejection for missing training request payloads, blank response model
+  ids, response rendering, and training-model execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3244,6 +3257,25 @@ training request payload stand-in before admission rejects execution. At roughly
 k-NN action wire hotspot to watch; the first performance-sensitive work is
 training index sizing, training config validation, route-decision fanout, node
 selection, forwarding to `TrainingModelAction`, and response rendering.
+
+Current training-model reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin training-model-reject-wire-benchmark
+training_model_reject_request_encode iterations=400000 elapsed_ms=614.546 ops_per_second=650886.60 nanos_per_op=1536.37
+training_model_reject_request_decode iterations=400000 elapsed_ms=273.319 ops_per_second=1463489.39 nanos_per_op=683.30
+training_model_reject_validation iterations=400000 elapsed_ms=272.993 ops_per_second=1465241.14 nanos_per_op=682.48
+training_model_response_decode iterations=400000 elapsed_ms=98.172 ops_per_second=4074480.32 nanos_per_op=245.43
+training_model_reject_wire_bottleneck_ops_per_second=650886.60
+```
+
+The current training-model fail-closed boundary bottleneck is request encode.
+The payload includes the parent task, optional model id, and an opaque training
+request payload stand-in before admission rejects execution. At roughly 651k
+ops/s in the latest local release run, this boundary is near the
+training-job-router wire cost; the first performance-sensitive work is KNN
+native training data loading, memory reservation, training job execution, model
+system-index write, counter updates, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
