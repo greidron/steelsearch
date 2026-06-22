@@ -83,6 +83,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("604800", command_text)
         self.assertIn("tools/report-rest-api-coverage.py", command_text)
         self.assertIn("--require-live-required-suites", command_text)
+        self.assertIn("--min-live-required-matched-source-route-count", command_text)
+        self.assertIn("15", command_text)
         self.assertIn("target/rest-api-coverage-current.json", command_text)
 
     def test_transport_action_coverage_current_batch_reports_inventory_and_peer_evidence(self):

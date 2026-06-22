@@ -323,6 +323,107 @@ class RestApiCoverageTests(unittest.TestCase):
             },
         )
 
+    def test_live_required_coverage_errors_enforce_minimum_count_and_ratio(self):
+        self.assertEqual(
+            self.report.live_required_coverage_errors(
+                matched_count=15,
+                matched_ratio=0.0404,
+                min_count=15,
+                min_ratio=0.0404,
+            ),
+            [],
+        )
+
+        errors = self.report.live_required_coverage_errors(
+            matched_count=14,
+            matched_ratio=0.0399,
+            min_count=15,
+            min_ratio=0.0404,
+        )
+
+        self.assertIn(
+            "live_required_matched_source_route_count 14 is below required minimum 15",
+            errors,
+        )
+        self.assertIn(
+            "live_required_matched_source_route_ratio 0.0399 is below required minimum 0.0404",
+            errors,
+        )
+
+    def test_cli_fails_when_live_required_source_route_count_is_below_floor(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            fixtures = temp_dir / "fixtures"
+            fixtures.mkdir()
+            fixture = fixtures / "search.json"
+            unified = temp_dir / "unified.json"
+            output = temp_dir / "coverage.json"
+            source.write_text(
+                "status\tmethod\tpath_or_expression\tsource\tline\n"
+                "implemented\tPOST\t/{index}/_search\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "name": "search",
+                                "method": "POST",
+                                "path": "/logs-000001/_search",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            unified.write_text(
+                json.dumps(
+                    {
+                        "suite_results": [
+                            {
+                                "name": "search",
+                                "required": True,
+                                "status": "ok",
+                                "fixture_path": str(fixture),
+                                "classification": {
+                                    "missing": 0,
+                                    "failed": 0,
+                                    "known_gap_or_skipped": 0,
+                                },
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--fixtures-dir",
+                str(fixtures),
+                "--unified-report",
+                str(unified),
+                "--require-live-required-suites",
+                "--min-live-required-matched-source-route-count",
+                "2",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["live_required_matched_source_route_count"], 1)
+            self.assertIn(
+                "live_required_matched_source_route_count 1 is below required minimum 2",
+                payload["errors"],
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:

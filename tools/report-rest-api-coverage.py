@@ -33,6 +33,18 @@ def main() -> int:
         action="store_true",
         help="with --require-live-required-suites, tolerate known_gap_or_skipped counts while still failing missing/failed cases",
     )
+    parser.add_argument(
+        "--min-live-required-matched-source-route-count",
+        type=int,
+        default=0,
+        help="fail unless live-required fixture routes match at least this many in-scope source routes",
+    )
+    parser.add_argument(
+        "--min-live-required-matched-source-route-ratio",
+        type=float,
+        default=0.0,
+        help="fail unless live-required fixture routes match at least this in-scope source-route ratio",
+    )
     args = parser.parse_args()
 
     source_routes = load_source_routes(Path(args.source))
@@ -54,6 +66,17 @@ def main() -> int:
             errors.append("--unified-report is required with --require-live-required-suites")
         else:
             errors.extend(unified_required_suite_errors(unified, allow_known_gaps=args.allow_known_gaps))
+    errors.extend(
+        live_required_coverage_errors(
+            matched_count=len(live_coverage["matched_source_route_keys"]),
+            matched_ratio=ratio(
+                len(live_coverage["matched_source_route_keys"]),
+                sum(1 for route in source_routes if route["status"] != "out-of-scope"),
+            ),
+            min_count=args.min_live_required_matched_source_route_count,
+            min_ratio=args.min_live_required_matched_source_route_ratio,
+        )
+    )
 
     report = {
         "status": "ok" if not errors else "failed",
@@ -292,6 +315,27 @@ def ratio(numerator: int, denominator: int) -> float:
     if denominator == 0:
         return 0.0
     return round(numerator / denominator, 4)
+
+
+def live_required_coverage_errors(
+    *,
+    matched_count: int,
+    matched_ratio: float,
+    min_count: int,
+    min_ratio: float,
+) -> list[str]:
+    errors = []
+    if matched_count < min_count:
+        errors.append(
+            "live_required_matched_source_route_count "
+            f"{matched_count} is below required minimum {min_count}"
+        )
+    if matched_ratio < min_ratio:
+        errors.append(
+            "live_required_matched_source_route_ratio "
+            f"{matched_ratio:.4f} is below required minimum {min_ratio:.4f}"
+        )
+    return errors
 
 
 def required_suite_status(report: dict[str, Any], *, allow_known_gaps: bool = False) -> str:
