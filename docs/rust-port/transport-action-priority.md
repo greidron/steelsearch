@@ -695,6 +695,19 @@ The get-decommission-state boundary covers:
   awareness attribute name, unknown decommission status strings, get-state
   execution, and response rendering.
 
+The delete-decommission-state boundary covers:
+
+- OpenSearch `DeleteDecommissionStateRequest` parent task and cluster-manager
+  timeout at the wire decode/build layer;
+- OpenSearch `DeleteDecommissionStateResponse` acknowledged response payload
+  at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/decommission/awareness/delete` until recommission
+  coordination, decommission metadata removal, cluster-state publication, and
+  acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, delete-state
+  execution, and acknowledgement response rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2644,6 +2657,24 @@ execution. At roughly 1.38M ops/s in the latest local release run, this
 boundary is not a material transport bottleneck; the first
 performance-sensitive work is decommission metadata lookup, local read
 semantics, and decommission status response rendering.
+
+Current delete-decommission-state reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-decommission-state-reject-wire-benchmark
+delete_decommission_state_reject_request_encode iterations=400000 elapsed_ms=231.121 ops_per_second=1730693.90 nanos_per_op=577.80
+delete_decommission_state_reject_request_decode iterations=400000 elapsed_ms=229.797 ops_per_second=1740669.81 nanos_per_op=574.49
+delete_decommission_state_reject_validation iterations=400000 elapsed_ms=230.574 ops_per_second=1734803.64 nanos_per_op=576.43
+delete_decommission_state_ack_response_decode iterations=400000 elapsed_ms=56.465 ops_per_second=7084068.23 nanos_per_op=141.16
+delete_decommission_state_reject_wire_bottleneck_ops_per_second=1730693.90
+```
+
+The current delete-decommission-state fail-closed boundary bottleneck is
+request encode. The payload includes only the cluster-manager request envelope
+before admission rejects execution. At roughly 1.73M ops/s in the latest
+local release run, this boundary is not a material transport bottleneck; the
+first performance-sensitive work is recommission coordination, decommission
+metadata removal, cluster-state publication, and acknowledgement rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

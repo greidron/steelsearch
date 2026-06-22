@@ -130,6 +130,10 @@ name = "get-decommission-state-reject-wire-benchmark"
 path = "benchmarks/get_decommission_state_reject_wire.rs"
 
 [[bin]]
+name = "delete-decommission-state-reject-wire-benchmark"
+path = "benchmarks/delete_decommission_state_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 
