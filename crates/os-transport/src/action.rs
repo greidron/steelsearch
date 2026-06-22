@@ -74,6 +74,7 @@ pub const TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME: &str =
     "cluster:admin/knn_training_job_route_decision_info_action";
 pub const GET_MODEL_ACTION_NAME: &str = "cluster:admin/knn_get_model_action";
 pub const DELETE_MODEL_ACTION_NAME: &str = "cluster:admin/knn_delete_model_action";
+pub const TRAINING_JOB_ROUTER_ACTION_NAME: &str = "cluster:admin/knn_training_job_router_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -586,6 +587,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "DeleteModelTransportAction",
         request_wire_type: "DeleteModelRequest",
         response_wire_type: "DeleteModelResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: TRAINING_JOB_ROUTER_ACTION_NAME,
+        action_type: "TrainingJobRouterAction",
+        transport_action: "TrainingJobRouterTransportAction",
+        request_wire_type: "TrainingModelRequest",
+        response_wire_type: "TrainingModelResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1860,6 +1868,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering",
+        },
+        TRAINING_JOB_ROUTER_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6634,6 +6647,73 @@ pub fn read_delete_model_response_message(
         });
     }
     DeleteModelResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_training_job_router_request_message(
+    request_id: i64,
+    version: Version,
+    request: &TrainingModelRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(TRAINING_JOB_ROUTER_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_training_job_router_request_message(
+    message: &TransportMessage,
+) -> Result<TrainingModelRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != TRAINING_JOB_ROUTER_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: TRAINING_JOB_ROUTER_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    TrainingModelRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_training_job_router_response_message(
+    request_id: i64,
+    version: Version,
+    response: &TrainingModelResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_training_job_router_response_message(
+    message: &TransportMessage,
+) -> Result<TrainingModelResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    TrainingModelResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -14696,6 +14776,122 @@ impl DeleteModelResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete model response rendering",
             reason: "DeleteModelResponse rendering requires model id/result xcontent rendering and exception-path handling",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrainingModelRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub model_id: Option<String>,
+    pub training_payload_present: bool,
+}
+
+impl Default for TrainingModelRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            model_id: Some("model-000001".to_string()),
+            training_payload_present: true,
+        }
+    }
+}
+
+impl TrainingModelRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_optional_string(self.model_id.as_deref());
+        if self.training_payload_present {
+            output.write_string("nmslib");
+            output.write_string("hnsw");
+            output.write_string("train-index");
+            output.write_string("vector");
+            output.write_optional_string(None);
+            output.write_i32(1);
+            output.write_optional_string(Some("training request"));
+            output.write_i32(i32::MAX);
+            output.write_i32(10_000);
+            output.write_i32(1);
+            output.write_string("float");
+            output.write_optional_string(Some("not_configured"));
+            output.write_optional_string(Some("not_configured"));
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let model_id = input.read_optional_string()?;
+        let remaining = input.remaining();
+        let training_payload_present = if remaining > 0 {
+            let _ = input.read_bytes(remaining)?;
+            true
+        } else {
+            false
+        };
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            model_id,
+            training_payload_present,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_router_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.training_payload_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model missing payload",
+                reason: "TrainingModelRequest requires KNN method context, training index, training field, dimension, and training parameters",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "training job router execution",
+            reason: "training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrainingModelResponseWire {
+    pub model_id: Option<String>,
+}
+
+impl Default for TrainingModelResponseWire {
+    fn default() -> Self {
+        Self {
+            model_id: Some("model-000001".to_string()),
+        }
+    }
+}
+
+impl TrainingModelResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_optional_string(self.model_id.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            model_id: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if matches!(self.model_id.as_ref(), Some(model_id) if model_id.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model response model id",
+                reason: "TrainingModelResponse model id must be non-empty when present",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "training model response rendering",
+            reason: "TrainingModelResponse rendering requires model id xcontent rendering and train-model exception-path handling",
         })
     }
 }
@@ -30501,6 +30697,13 @@ mod tests {
                     response_wire_type: "DeleteModelResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_training_job_router_action",
+                    action_type: "TrainingJobRouterAction",
+                    transport_action: "TrainingJobRouterTransportAction",
+                    request_wire_type: "TrainingModelRequest",
+                    response_wire_type: "TrainingModelResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -41114,6 +41317,118 @@ mod tests {
         };
         assert_eq!(
             read_delete_model_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn training_model_request_wire_round_trips_and_rejects_router_execution_boundary() {
+        let request = TrainingModelRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(57),
+            model_id: Some("model-a".to_string()),
+            training_payload_present: true,
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = TrainingModelRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_router_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job router execution",
+                ..
+            })
+        ));
+
+        let missing_payload = TrainingModelRequestWire {
+            training_payload_present: false,
+            ..TrainingModelRequestWire::default()
+        };
+        assert!(matches!(
+            missing_payload.reject_unsupported_router_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model missing payload",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn training_model_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = TrainingModelResponseWire {
+            model_id: Some("model-a".to_string()),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = TrainingModelResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model response rendering",
+                ..
+            })
+        ));
+
+        let empty_response = TrainingModelResponseWire { model_id: None };
+        let mut output = StreamOutput::new();
+        empty_response.write(&mut output);
+        let decoded = TrainingModelResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, empty_response);
+
+        let blank_model_id = TrainingModelResponseWire {
+            model_id: Some(String::new()),
+        };
+        assert!(matches!(
+            blank_model_id.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model response model id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn training_job_router_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = TrainingModelRequestWire::default();
+        let mut frame =
+            build_training_job_router_request_message(57, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected training job router request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_training_job_router_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_training_job_router_request_message(&message)
+                .unwrap()
+                .reject_unsupported_router_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job router execution",
+                ..
+            })
+        ));
+
+        let response = TrainingModelResponseWire::default();
+        let mut frame =
+            build_training_job_router_response_message(57, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected training job router response message");
+        };
+        assert_eq!(
+            read_training_job_router_response_message(&message).unwrap(),
             response
         );
     }
