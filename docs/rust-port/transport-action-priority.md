@@ -1676,6 +1676,22 @@ The delete-dangling-index boundary covers:
   timeouts, missing or oversized index UUIDs, `acceptDataLoss=false`,
   delete-dangling-index execution, and acknowledgement rendering.
 
+The find-dangling-index boundary covers:
+
+- OpenSearch `FindDanglingIndexRequest` parent task, `BaseNodesRequest` node
+  ids, absent concrete node array, optional timeout, and required index UUID at
+  the wire decode/build layer;
+- OpenSearch `FindDanglingIndexResponse` cluster name plus empty successful
+  node response and failure lists as the bounded response subset;
+- explicit fail-closed classification for
+  `cluster:admin/indices/dangling/find` until BaseNodes fanout, dangling index
+  state scan, node `IndexMetadata` aggregation, failures, and response
+  rendering are implemented;
+- explicit rejection for concrete DiscoveryNode payloads, node filters,
+  timeout semantics, missing or oversized index UUIDs, non-empty node
+  responses, node failures, find-dangling-index execution, and response
+  rendering.
+
 The search boundary covers:
 
 - OpenSearch `SearchRequest` parent task, search type, indices array, routing,
@@ -3877,6 +3893,24 @@ ack timeout, index UUID, and `acceptDataLoss` flag before rejecting at
 admission. At roughly 1.16M ops/s in the latest local release run, future
 performance-sensitive work is dangling index lookup, index graveyard mutation,
 cluster metadata publication, and acknowledgement rendering.
+
+Current find-dangling-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin find-dangling-index-reject-wire-benchmark
+find_dangling_index_reject_request_encode iterations=400000 elapsed_ms=340.891 ops_per_second=1173396.16 nanos_per_op=852.23
+find_dangling_index_reject_request_decode iterations=400000 elapsed_ms=308.503 ops_per_second=1296585.65 nanos_per_op=771.26
+find_dangling_index_reject_validation iterations=400000 elapsed_ms=305.887 ops_per_second=1307672.52 nanos_per_op=764.72
+find_dangling_index_empty_response_decode iterations=400000 elapsed_ms=103.635 ops_per_second=3859692.57 nanos_per_op=259.09
+find_dangling_index_reject_wire_bottleneck_ops_per_second=1173396.16
+```
+
+The current find-dangling-index fail-closed boundary bottleneck is request
+encode. This path carries the `BaseNodesRequest` node filter, timeout, and
+required index UUID before rejecting at admission. At roughly 1.17M ops/s in
+the latest local release run, future performance-sensitive work is BaseNodes
+fanout, dangling index state scan, node `IndexMetadata` aggregation, failures,
+and response rendering.
 
 Current search reject wire microbenchmark:
 
