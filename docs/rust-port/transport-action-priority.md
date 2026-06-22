@@ -865,6 +865,23 @@ The get-tiering-status boundary covers:
   index names, get-tiering-status execution, single-status response rendering,
   blank response index names, and shard-level status rendering.
 
+The knn-stats boundary covers:
+
+- OpenSearch k-NN `KNNStatsRequest` `BaseNodesRequest` parent task, nullable
+  node id selectors, concrete-node marker, optional timeout, valid stat name
+  set, and requested stat name set at the wire decode/build layer;
+- OpenSearch k-NN `KNNStatsResponse` cluster name, empty node response list,
+  empty node failure list, and empty generic cluster-stats map at the wire
+  decode/build layer;
+- explicit fail-closed classification for `cluster:admin/knn_stats_action`
+  until BaseNodes fanout, stat selection validation, node-level KNN stat
+  collection, cluster-level KNN stat aggregation, failure aggregation, and
+  response rendering are implemented;
+- explicit rejection for node filters, concrete node payloads, custom timeout,
+  blank stat names, unknown requested stat names, KNN stats execution, node
+  response rendering, node failure rendering, cluster stat rendering, and
+  response rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3006,6 +3023,26 @@ index name, and detailed flag before admission rejects execution. At roughly
 transport bottleneck; the first performance-sensitive work is metadata read
 block checks, index resolution, tiering-state lookup, migration service lookup,
 optional shard-level detail collection, and response rendering.
+
+Current knn-stats reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin knn-stats-reject-wire-benchmark
+knn_stats_reject_request_encode iterations=400000 elapsed_ms=3033.249 ops_per_second=131871.81 nanos_per_op=7583.12
+knn_stats_reject_request_decode iterations=400000 elapsed_ms=2992.545 ops_per_second=133665.50 nanos_per_op=7481.36
+knn_stats_reject_validation iterations=400000 elapsed_ms=3083.152 ops_per_second=129737.36 nanos_per_op=7707.88
+knn_stats_response_decode iterations=400000 elapsed_ms=98.807 ops_per_second=4048277.57 nanos_per_op=247.02
+knn_stats_reject_wire_bottleneck_ops_per_second=129737.36
+```
+
+The current knn-stats fail-closed boundary bottleneck is request validation
+including frame/request decode. The payload includes the BaseNodes envelope plus
+the full k-NN valid stat-name set, so string allocation and stat-set validation
+dominate this boundary at roughly 130k ops/s in the latest local release run.
+This is still fail-closed admission work, but it is a real performance hotspot
+to keep in view when implementing execution; the first semantic work is
+BaseNodes fanout, node-level KNN stat collection, cluster-level stat
+aggregation, failure aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

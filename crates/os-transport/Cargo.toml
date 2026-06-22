@@ -170,6 +170,10 @@ name = "get-tiering-status-reject-wire-benchmark"
 path = "benchmarks/get_tiering_status_reject_wire.rs"
 
 [[bin]]
+name = "knn-stats-reject-wire-benchmark"
+path = "benchmarks/knn_stats_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 
