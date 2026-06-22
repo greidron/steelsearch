@@ -162,6 +162,10 @@ name = "update-ingestion-state-reject-wire-benchmark"
 path = "benchmarks/update_ingestion_state_reject_wire.rs"
 
 [[bin]]
+name = "list-tiering-status-reject-wire-benchmark"
+path = "benchmarks/list_tiering_status_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

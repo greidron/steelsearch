@@ -834,6 +834,21 @@ The update-ingestion-state boundary covers:
   execution, response broadcast failure rendering, response error rendering,
   response shard failure rendering, and negative failure counts.
 
+The list-tiering-status boundary covers:
+
+- OpenSearch `ListTieringStatusRequest` cluster-manager read parent task,
+  cluster-manager timeout, local flag, and optional target tier string at the
+  wire decode/build layer;
+- OpenSearch `ListTieringStatusResponse` tiering status count and per-status
+  base fields for index name, state, source tier, target tier, start time, and
+  optional shard-level status marker at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/_tier/all` until
+  metadata read block checks, target tier mapping, migration service lookup,
+  tiering status aggregation, and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, local reads, invalid
+  target tier values, non-empty tiering status response rendering, blank status
+  index names, shard-level status rendering, and negative response counts.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2937,6 +2952,25 @@ roughly 1.07M ops/s in the latest local release run, this boundary is not a
 material transport bottleneck; the first performance-sensitive work is broadcast
 shard selection, metadata write block checks, shard pointer reset, ingestion
 paused-state mutation, shard failure aggregation, and response rendering.
+
+Current list-tiering-status reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin list-tiering-status-reject-wire-benchmark
+list_tiering_status_reject_request_encode iterations=400000 elapsed_ms=196.115 ops_per_second=2039619.63 nanos_per_op=490.29
+list_tiering_status_reject_request_decode iterations=400000 elapsed_ms=183.921 ops_per_second=2174843.92 nanos_per_op=459.80
+list_tiering_status_reject_validation iterations=400000 elapsed_ms=189.032 ops_per_second=2116044.17 nanos_per_op=472.58
+list_tiering_status_response_decode iterations=400000 elapsed_ms=59.608 ops_per_second=6710535.79 nanos_per_op=149.02
+list_tiering_status_reject_wire_bottleneck_ops_per_second=2039619.63
+```
+
+The current list-tiering-status fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager read envelope, local-read flag,
+and optional target tier before admission rejects execution. At roughly 2.04M
+ops/s in the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is metadata read block checks,
+target tier mapping, migration service lookup, tiering status aggregation, and
+response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

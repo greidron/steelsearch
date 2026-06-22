@@ -64,6 +64,7 @@ pub const PAUSE_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/pause";
 pub const RESUME_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/resume";
 pub const GET_INGESTION_STATE_ACTION_NAME: &str = "indices:monitor/ingestion/state";
 pub const UPDATE_INGESTION_STATE_ACTION_NAME: &str = "indices:admin/ingestion/updateState";
+pub const LIST_TIERING_STATUS_ACTION_NAME: &str = "cluster:admin/_tier/all";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -520,6 +521,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportUpdateIngestionStateAction",
         request_wire_type: "UpdateIngestionStateRequest",
         response_wire_type: "UpdateIngestionStateResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: LIST_TIERING_STATUS_ACTION_NAME,
+        action_type: "ListTieringStatusAction",
+        transport_action: "TransportListTieringStatusAction",
+        request_wire_type: "ListTieringStatusRequest",
+        response_wire_type: "ListTieringStatusResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1754,6 +1762,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering",
+        },
+        LIST_TIERING_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "list-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5992,6 +6005,73 @@ pub fn read_update_ingestion_state_response_message(
         });
     }
     UpdateIngestionStateResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_list_tiering_status_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ListTieringStatusRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(LIST_TIERING_STATUS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_list_tiering_status_request_message(
+    message: &TransportMessage,
+) -> Result<ListTieringStatusRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != LIST_TIERING_STATUS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: LIST_TIERING_STATUS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ListTieringStatusRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_list_tiering_status_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ListTieringStatusResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_list_tiering_status_response_message(
+    message: &TransportMessage,
+) -> Result<ListTieringStatusResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    ListTieringStatusResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -12908,6 +12988,192 @@ impl UpdateIngestionStateResponseWire {
                 shape: "update ingestion state response shard failures",
                 reason:
                     "update-ingestion-state ingestion shard failure rendering is not implemented",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListTieringStatusRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub target_tier: Option<String>,
+}
+
+impl Default for ListTieringStatusRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            target_tier: None,
+        }
+    }
+}
+
+impl ListTieringStatusRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_optional_string(self.target_tier.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            target_tier: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout requires tiering status read timeout semantics",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status local",
+                reason: "local tiering status reads require local cluster-state read semantics",
+            });
+        }
+        if let Some(target_tier) = &self.target_tier {
+            if !matches!(target_tier.as_str(), "HOT" | "WARM") {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "list tiering status target tier",
+                    reason: "OpenSearch list-tiering-status target tier must map to HOT or WARM",
+                });
+            }
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "list tiering status execution",
+            reason: "list-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TieringStatusWire {
+    pub index_name: String,
+    pub status: String,
+    pub source: String,
+    pub target: String,
+    pub start_time: i64,
+    pub shard_level_status_present: bool,
+}
+
+impl Default for TieringStatusWire {
+    fn default() -> Self {
+        Self {
+            index_name: "logs-000001".to_string(),
+            status: "RUNNING_SHARD_RELOCATION".to_string(),
+            source: "HOT".to_string(),
+            target: "WARM".to_string(),
+            start_time: 0,
+            shard_level_status_present: false,
+        }
+    }
+}
+
+impl TieringStatusWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.index_name);
+        output.write_string(&self.status);
+        output.write_string(&self.source);
+        output.write_string(&self.target);
+        output.write_i64(self.start_time);
+        output.write_bool(self.shard_level_status_present);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let status = Self {
+            index_name: input.read_string()?,
+            status: input.read_string()?,
+            source: input.read_string()?,
+            target: input.read_string()?,
+            start_time: input.read_i64()?,
+            shard_level_status_present: input.read_bool()?,
+        };
+        if status.shard_level_status_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status shard-level status",
+                reason: "tiering shard-level status generic map/list rendering is not implemented",
+            });
+        }
+        Ok(status)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct ListTieringStatusResponseWire {
+    pub statuses: Vec<TieringStatusWire>,
+}
+
+impl ListTieringStatusResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.statuses.len() as i32);
+        for status in &self.statuses {
+            status.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let status_count = input.read_vint()?;
+        if status_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status response count",
+                reason: "OpenSearch list-tiering-status response count cannot be negative",
+            });
+        }
+        let mut statuses = Vec::with_capacity(status_count as usize);
+        for _ in 0..status_count {
+            statuses.push(TieringStatusWire::read(&mut input)?);
+        }
+        let response = Self { statuses };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self
+            .statuses
+            .iter()
+            .any(|status| status.index_name.trim().is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status response index",
+                reason: "OpenSearch tiering status entries require an index name",
+            });
+        }
+        if self
+            .statuses
+            .iter()
+            .any(|status| status.shard_level_status_present)
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status shard-level status",
+                reason: "tiering shard-level status generic map/list rendering is not implemented",
+            });
+        }
+        if !self.statuses.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status response statuses",
+                reason: "list-tiering-status response rendering requires migration service tiering status aggregation",
             });
         }
         Ok(())
@@ -28659,6 +28925,13 @@ mod tests {
                     response_wire_type: "UpdateIngestionStateResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/_tier/all",
+                    action_type: "ListTieringStatusAction",
+                    transport_action: "TransportListTieringStatusAction",
+                    request_wire_type: "ListTieringStatusRequest",
+                    response_wire_type: "ListTieringStatusResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -38031,6 +38304,180 @@ mod tests {
         };
         assert_eq!(
             read_update_ingestion_state_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn list_tiering_status_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ListTieringStatusRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(49),
+            target_tier: Some("WARM".to_string()),
+            ..ListTieringStatusRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ListTieringStatusRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn list_tiering_status_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = ListTieringStatusRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..ListTieringStatusRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = ListTieringStatusRequestWire {
+            local: true,
+            ..ListTieringStatusRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status local",
+                ..
+            })
+        ));
+
+        let invalid_target_tier = ListTieringStatusRequestWire {
+            target_tier: Some("COLD".to_string()),
+            ..ListTieringStatusRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_target_tier.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status target tier",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        ListTieringStatusRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            ListTieringStatusRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn list_tiering_status_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = ListTieringStatusResponseWire {
+            statuses: vec![TieringStatusWire::default()],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = ListTieringStatusResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status response statuses",
+                ..
+            })
+        ));
+
+        assert!(ListTieringStatusResponseWire::default()
+            .reject_unsupported_rendering()
+            .is_ok());
+
+        let blank_index = ListTieringStatusResponseWire {
+            statuses: vec![TieringStatusWire {
+                index_name: String::new(),
+                ..TieringStatusWire::default()
+            }],
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status response index",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(-1);
+        assert!(matches!(
+            ListTieringStatusResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status response count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        output.write_string("logs-000001");
+        output.write_string("RUNNING_SHARD_RELOCATION");
+        output.write_string("HOT");
+        output.write_string("WARM");
+        output.write_i64(42);
+        output.write_bool(true);
+        assert!(matches!(
+            ListTieringStatusResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status shard-level status",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn list_tiering_status_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = ListTieringStatusRequestWire::default();
+        let mut frame =
+            build_list_tiering_status_request_message(49, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list tiering status request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_list_tiering_status_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_list_tiering_status_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tiering status execution",
+                ..
+            })
+        ));
+
+        let response = ListTieringStatusResponseWire::default();
+        let mut frame =
+            build_list_tiering_status_response_message(49, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list tiering status response message");
+        };
+        assert_eq!(
+            read_list_tiering_status_response_message(&message).unwrap(),
             response
         );
     }

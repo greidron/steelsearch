@@ -328,6 +328,15 @@
       "reason": "Update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch ingestion state update semantics."
     },
     {
+      "action_name": "cluster:admin/_tier/all",
+      "action_type": "ListTieringStatusAction",
+      "transport_action": "TransportListTieringStatusAction",
+      "request_wire_type": "ListTieringStatusRequest",
+      "response_wire_type": "ListTieringStatusResponse",
+      "disposition": "rejected",
+      "reason": "List-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering before Steelsearch can serve OpenSearch tiering status list semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",
