@@ -88,6 +88,11 @@ class MixedClusterCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 10)
+            self.assertNotIn("out_of_scope", payload)
+            self.assertIn(
+                "representative mixed-cluster join, movement, recovery",
+                payload["summary"]["claim_boundary"],
+            )
 
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv

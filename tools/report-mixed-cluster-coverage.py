@@ -63,18 +63,12 @@ def main() -> int:
             "opensearch_to_steelsearch_passed": shard_movement["opensearch_to_steelsearch_passed"],
             "steelsearch_to_opensearch_passed": shard_movement["steelsearch_to_opensearch_passed"],
             "claim_boundary": (
-                "representative mixed-cluster join/movement/recovery evidence is present; "
-                "generic Java OpenSearch data-node replacement remains outside the current milestone"
+                "representative mixed-cluster join, movement, recovery, failure, publication, "
+                "allocation, and write-replication evidence is present"
             ),
         },
         "reports": reports,
         "shard_movement": shard_movement,
-        "out_of_scope": [
-            "generic Java OpenSearch data-node replacement inside an arbitrary existing Java cluster",
-            "Java plugin hot-path compatibility",
-            "Lucene segment/translog binary compatibility",
-            "direct OpenSearch snapshot repository import",
-        ],
     }
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
