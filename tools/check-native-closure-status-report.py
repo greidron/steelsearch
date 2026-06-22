@@ -134,6 +134,8 @@ def validate_report(
     if not isinstance(inventory, dict):
         errors.append("final_cutover.evidence_inventory is missing or not an object")
     else:
+        if not isinstance(inventory.get("returncode"), int):
+            errors.append("final_cutover.evidence_inventory.returncode is missing or not an integer")
         inventory_summary = inventory.get("summary")
         if not isinstance(inventory_summary, dict):
             errors.append("final_cutover.evidence_inventory.summary is missing or not an object")

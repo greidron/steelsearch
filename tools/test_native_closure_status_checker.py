@@ -68,6 +68,7 @@ def valid_report():
                 "missing_items": startup,
                 "readiness_attachment_missing_items": [*startup, "load_comparison"],
                 "evidence_inventory": {
+                    "returncode": 0,
                     "summary": {
                         "complete": False,
                         "startup_missing_items": startup,

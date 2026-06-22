@@ -206,7 +206,6 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             temp_dir = Path(temp_dir_value)
             manifest = temp_dir / "release-readiness.json"
             readiness = temp_dir / "readiness.json"
-            load_comparison = temp_dir / "final-load-comparison.json"
             artifacts = {
                 "benchmark_coverage": "benchmark.jsonl",
                 "load_test_coverage": "load.json",
@@ -214,59 +213,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 "packaging_verified": "packaging.json",
                 "rolling_upgrade_coverage": "rolling.json",
             }
-            (temp_dir / artifacts["benchmark_coverage"]).write_text(
-                json.dumps({"benchmark": "final-smoke"}) + "\n",
-                encoding="utf-8",
-            )
-            (temp_dir / artifacts["load_test_coverage"]).write_text(
-                json.dumps({"summary": {"error_count": 0, "operation_count": 10}}),
-                encoding="utf-8",
-            )
-            (temp_dir / artifacts["chaos_test_coverage"]).write_text(
-                json.dumps(
-                    {
-                        "ready": True,
-                        "passed": True,
-                        "blockers": [],
-                        "summary": {
-                            "passed": True,
-                            "error_count": 0,
-                            "coverage_scope": "mixed-cluster failure fixture",
-                        },
-                        "source_report": {"summary": {"passed": True}},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (temp_dir / artifacts["packaging_verified"]).write_text("{}\n", encoding="utf-8")
-            (temp_dir / artifacts["rolling_upgrade_coverage"]).write_text(
-                json.dumps(
-                    {
-                        "ready": True,
-                        "passed": True,
-                        "blockers": [],
-                        "summary": {
-                            "passed": True,
-                            "error_count": 0,
-                            "coverage_scope": "rolling-upgrade transcript fixture",
-                        },
-                        "transcript": {"profile": "rolling-upgrade"},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            load_comparison.write_text(
-                json.dumps(
-                    {
-                        "targets": {
-                            "steelsearch": {"returncode": 0},
-                            "opensearch": {"returncode": 0},
-                        },
-                        "comparison": {"mode": "completed"},
-                    }
-                ),
-                encoding="utf-8",
-            )
+            load_comparison = write_valid_release_inventory_artifacts(temp_dir, artifacts)
             manifest.write_text(
                 json.dumps(
                     {
@@ -314,6 +261,74 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertTrue(final_cutover["evidence_inventory"]["summary"]["complete"])
             self.assertTrue(report["summary"]["passed"])
             self.assertEqual(report["summary"]["status"], "ready")
+
+    def test_complete_manifest_and_readiness_still_fail_when_inventory_is_incomplete(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            manifest = temp_dir / "release-readiness.json"
+            readiness = temp_dir / "readiness.json"
+            load_comparison = temp_dir / "final-load-comparison.json"
+            load_comparison.write_text(
+                json.dumps(
+                    {
+                        "targets": {
+                            "steelsearch": {"returncode": 0},
+                            "opensearch": {"returncode": 0},
+                        },
+                        "comparison": {"mode": "completed"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            artifacts = {
+                "benchmark_coverage": "benchmark.jsonl",
+                "load_test_coverage": "load.json",
+                "chaos_test_coverage": "chaos.json",
+                "packaging_verified": "packaging.json",
+                "rolling_upgrade_coverage": "rolling.json",
+            }
+            for artifact in artifacts.values():
+                (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        name: {
+                            "passed": True,
+                            "artifact_path": artifact,
+                            "blockers": [],
+                        }
+                        for name, artifact in artifacts.items()
+                    }
+                ),
+                encoding="utf-8",
+            )
+            readiness.write_text(
+                json.dumps(
+                    {
+                        "release_evidence": {
+                            "load_comparison": {
+                                "ready": True,
+                                "path": str(load_comparison),
+                                "blockers": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            final_cutover = self.reporter.inspect_release_readiness(
+                manifest,
+                readiness_report_path=readiness,
+                evidence_root=temp_dir,
+                evidence_max_age_seconds=60.0,
+            )
+
+            self.assertFalse(final_cutover["passed"])
+            self.assertIn(
+                "release evidence inventory is incomplete",
+                final_cutover["readiness_attachment_errors"],
+            )
 
     def test_release_evidence_inventory_is_reported_with_summary_and_command_template(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -363,6 +378,64 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             )
             self.assertTrue(current["groups"]["transport-action-coverage-current"]["ok"])
             self.assertTrue(current["groups"]["mixed-cluster-coverage-current"]["ok"])
+
+
+def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str, str]) -> Path:
+    (temp_dir / artifacts["benchmark_coverage"]).write_text(
+        json.dumps({"benchmark": "final-smoke"}) + "\n",
+        encoding="utf-8",
+    )
+    (temp_dir / artifacts["load_test_coverage"]).write_text(
+        json.dumps({"summary": {"error_count": 0, "operation_count": 10}}),
+        encoding="utf-8",
+    )
+    (temp_dir / artifacts["chaos_test_coverage"]).write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "passed": True,
+                "blockers": [],
+                "summary": {
+                    "passed": True,
+                    "error_count": 0,
+                    "coverage_scope": "mixed-cluster failure fixture",
+                },
+                "source_report": {"summary": {"passed": True}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (temp_dir / artifacts["packaging_verified"]).write_text("{}\n", encoding="utf-8")
+    (temp_dir / artifacts["rolling_upgrade_coverage"]).write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "passed": True,
+                "blockers": [],
+                "summary": {
+                    "passed": True,
+                    "error_count": 0,
+                    "coverage_scope": "rolling-upgrade transcript fixture",
+                },
+                "transcript": {"profile": "rolling-upgrade"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    load_comparison = temp_dir / "final-load-comparison.json"
+    load_comparison.write_text(
+        json.dumps(
+            {
+                "targets": {
+                    "steelsearch": {"returncode": 0},
+                    "opensearch": {"returncode": 0},
+                },
+                "comparison": {"mode": "completed"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return load_comparison
 
 
 if __name__ == "__main__":

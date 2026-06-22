@@ -190,7 +190,18 @@ def inspect_release_readiness(
         readiness_report_path=readiness_report_path,
         missing_startup_items=missing_items,
     )
-    passed = completed.returncode == 0 and not readiness_attachment["missing_items"]
+    inventory_summary = evidence_inventory.get("summary", {})
+    inventory_complete = (
+        isinstance(inventory_summary, dict)
+        and evidence_inventory.get("returncode") == 0
+        and inventory_summary.get("complete") is True
+    )
+    inventory_errors = release_inventory_errors(evidence_inventory)
+    passed = (
+        completed.returncode == 0
+        and not readiness_attachment["missing_items"]
+        and inventory_complete
+    )
     return {
         "name": "release-readiness",
         "command": command,
@@ -206,7 +217,7 @@ def inspect_release_readiness(
         "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
         "readiness_report_path": str(readiness_report_path) if readiness_report_path else None,
         "readiness_attachment_missing_items": readiness_attachment["missing_items"],
-        "readiness_attachment_errors": readiness_attachment["errors"],
+        "readiness_attachment_errors": [*readiness_attachment["errors"], *inventory_errors],
         "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
         "evidence_inventory": evidence_inventory,
         "manifest_command_template": release_readiness_manifest_command_template(),
@@ -237,6 +248,27 @@ def inspect_release_evidence_inventory(root: Path, *, max_age_seconds: float) ->
         "summary": payload.get("summary", {}) if isinstance(payload, dict) else {},
         "attach_command_template": payload.get("attach_command_template", []) if isinstance(payload, dict) else [],
     }
+
+
+def release_inventory_errors(inventory: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if inventory.get("returncode") != 0:
+        errors.append(f"release evidence inventory failed: returncode={inventory.get('returncode')}")
+    summary = inventory.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("release evidence inventory summary is missing")
+        return errors
+    if summary.get("complete") is not True:
+        errors.append("release evidence inventory is incomplete")
+    startup_missing = summary.get("startup_missing_items")
+    if isinstance(startup_missing, list) and startup_missing:
+        errors.append(f"release evidence inventory startup_missing_items={','.join(startup_missing)}")
+    attachment_missing = summary.get("readiness_attachment_missing_items")
+    if isinstance(attachment_missing, list) and attachment_missing:
+        errors.append(
+            f"release evidence inventory readiness_attachment_missing_items={','.join(attachment_missing)}"
+        )
+    return errors
 
 
 def build_status_report(
