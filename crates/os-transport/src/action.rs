@@ -54,6 +54,7 @@ pub const SNAPSHOTS_STATUS_ACTION_NAME: &str = "cluster:admin/snapshot/status";
 pub const RESTORE_REMOTE_STORE_ACTION_NAME: &str = "cluster:admin/remotestore/restore";
 pub const EXTENSION_PROXY_ACTION_NAME: &str = "cluster:internal/extensions";
 pub const DECOMMISSION_ACTION_NAME: &str = "cluster:admin/decommission/awareness/put";
+pub const GET_DECOMMISSION_STATE_ACTION_NAME: &str = "cluster:admin/decommission/awareness/get";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -447,6 +448,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportDecommissionAction",
         request_wire_type: "DecommissionRequest",
         response_wire_type: "DecommissionResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: GET_DECOMMISSION_STATE_ACTION_NAME,
+        action_type: "GetDecommissionStateAction",
+        transport_action: "TransportGetDecommissionStateAction",
+        request_wire_type: "GetDecommissionStateRequest",
+        response_wire_type: "GetDecommissionStateResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1636,6 +1644,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering",
+        },
+        GET_DECOMMISSION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-decommission-state transport execution requires decommission metadata lookup, local read semantics, and decommission status response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5271,6 +5284,73 @@ pub fn read_decommission_response_message(
         });
     }
     AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_decommission_state_request_message(
+    request_id: i64,
+    version: Version,
+    request: &GetDecommissionStateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(GET_DECOMMISSION_STATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_decommission_state_request_message(
+    message: &TransportMessage,
+) -> Result<GetDecommissionStateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != GET_DECOMMISSION_STATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: GET_DECOMMISSION_STATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    GetDecommissionStateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_decommission_state_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetDecommissionStateResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_decommission_state_response_message(
+    message: &TransportMessage,
+) -> Result<GetDecommissionStateResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    GetDecommissionStateResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -10579,6 +10659,157 @@ impl DecommissionRequestWire {
             shape: "decommission execution",
             reason: "decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetDecommissionStateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub attribute_name: String,
+}
+
+impl Default for GetDecommissionStateRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            attribute_name: "zone".to_string(),
+        }
+    }
+}
+
+impl GetDecommissionStateRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string(&self.attribute_name);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            attribute_name: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires decommission metadata lookup coordination semantics",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state local read",
+                reason:
+                    "local decommission-state reads require node-local cluster-state read semantics",
+            });
+        }
+        if self.attribute_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state missing attribute name",
+                reason:
+                    "OpenSearch get-decommission-state requests require an awareness attribute name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get decommission state execution",
+            reason: "get-decommission-state transport execution requires decommission metadata lookup, local read semantics, and decommission status response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct GetDecommissionStateResponseWire {
+    pub state: Option<GetDecommissionStateResponseEntryWire>,
+}
+
+impl GetDecommissionStateResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        match &self.state {
+            Some(state) => {
+                output.write_bool(true);
+                output.write_string(&state.attribute_value);
+                output.write_string(state.status.as_str());
+            }
+            None => output.write_bool(false),
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let state = if input.read_bool()? {
+            Some(GetDecommissionStateResponseEntryWire {
+                attribute_value: input.read_string()?,
+                status: DecommissionStatusWire::read(&mut input)?,
+            })
+        } else {
+            None
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { state })
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get decommission state response rendering",
+            reason: "GetDecommissionStateResponse rendering requires decommission metadata lookup semantics",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetDecommissionStateResponseEntryWire {
+    pub attribute_value: String,
+    pub status: DecommissionStatusWire,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DecommissionStatusWire {
+    Init,
+    Draining,
+    InProgress,
+    Successful,
+    Failed,
+}
+
+impl DecommissionStatusWire {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Init => "init",
+            Self::Draining => "draining",
+            Self::InProgress => "in_progress",
+            Self::Successful => "successful",
+            Self::Failed => "failed",
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_string()?.as_str() {
+            "init" => Ok(Self::Init),
+            "draining" => Ok(Self::Draining),
+            "in_progress" => Ok(Self::InProgress),
+            "successful" => Ok(Self::Successful),
+            "failed" => Ok(Self::Failed),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state status",
+                reason: "unknown OpenSearch decommission status string",
+            }),
+        }
     }
 }
 
@@ -26182,6 +26413,13 @@ mod tests {
                     response_wire_type: "DecommissionResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/decommission/awareness/get",
+                    action_type: "GetDecommissionStateAction",
+                    transport_action: "TransportGetDecommissionStateAction",
+                    request_wire_type: "GetDecommissionStateRequest",
+                    response_wire_type: "GetDecommissionStateResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -33727,6 +33965,166 @@ mod tests {
         };
         assert_eq!(
             read_decommission_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn get_decommission_state_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = GetDecommissionStateRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(40),
+            attribute_name: "zone".to_string(),
+            ..GetDecommissionStateRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = GetDecommissionStateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_decommission_state_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = GetDecommissionStateRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..GetDecommissionStateRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local_read = GetDecommissionStateRequestWire {
+            local: true,
+            ..GetDecommissionStateRequestWire::default()
+        };
+        assert!(matches!(
+            local_read.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state local read",
+                ..
+            })
+        ));
+
+        let missing_attribute = GetDecommissionStateRequestWire {
+            attribute_name: " ".to_string(),
+            ..GetDecommissionStateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_attribute.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state missing attribute name",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        GetDecommissionStateRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            GetDecommissionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn get_decommission_state_response_wire_round_trips_empty_and_present_states() {
+        let empty = GetDecommissionStateResponseWire::default();
+        let mut output = StreamOutput::new();
+        empty.write(&mut output);
+        assert_eq!(
+            GetDecommissionStateResponseWire::read(output.freeze()).unwrap(),
+            empty
+        );
+
+        let present = GetDecommissionStateResponseWire {
+            state: Some(GetDecommissionStateResponseEntryWire {
+                attribute_value: "zone-a".to_string(),
+                status: DecommissionStatusWire::Draining,
+            }),
+        };
+        let mut output = StreamOutput::new();
+        present.write(&mut output);
+        let decoded = GetDecommissionStateResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, present);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state response rendering",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_string("zone-a");
+        output.write_string("unknown");
+        assert!(matches!(
+            GetDecommissionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state status",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_decommission_state_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = GetDecommissionStateRequestWire::default();
+        let mut frame =
+            build_get_decommission_state_request_message(40, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get decommission state request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_get_decommission_state_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_get_decommission_state_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get decommission state execution",
+                ..
+            })
+        ));
+
+        let response = GetDecommissionStateResponseWire {
+            state: Some(GetDecommissionStateResponseEntryWire {
+                attribute_value: "zone-a".to_string(),
+                status: DecommissionStatusWire::Successful,
+            }),
+        };
+        let mut frame = build_get_decommission_state_response_message(
+            40,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get decommission state response message");
+        };
+        assert_eq!(
+            read_get_decommission_state_response_message(&message).unwrap(),
             response
         );
     }
