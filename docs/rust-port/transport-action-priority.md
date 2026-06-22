@@ -979,6 +979,20 @@ The training-model boundary covers:
 - explicit rejection for missing training request payloads, blank response model
   ids, response rendering, and training-model execution.
 
+The remove-model-from-cache boundary covers:
+
+- OpenSearch k-NN `RemoveModelFromCacheRequest` parent task, nullable node id
+  selectors, optional timeout, and model id at the wire decode/build layer;
+- OpenSearch k-NN `RemoveModelFromCacheResponse` cluster name with empty node
+  responses and empty node failures at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_remove_model_from_cache_action` until BaseNodes fanout,
+  per-node model cache eviction, failure aggregation, and response rendering
+  are implemented;
+- explicit rejection for blank model ids, node-scoped routing, timeout
+  semantics, non-empty node responses, non-empty node failures, blank response
+  cluster names, response rendering, and remove-model-from-cache execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3276,6 +3290,25 @@ ops/s in the latest local release run, this boundary is near the
 training-job-router wire cost; the first performance-sensitive work is KNN
 native training data loading, memory reservation, training job execution, model
 system-index write, counter updates, and response rendering.
+
+Current remove-model-from-cache reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin remove-model-from-cache-reject-wire-benchmark
+remove_model_from_cache_reject_request_encode iterations=400000 elapsed_ms=317.879 ops_per_second=1258339.12 nanos_per_op=794.70
+remove_model_from_cache_reject_request_decode iterations=400000 elapsed_ms=289.042 ops_per_second=1383879.90 nanos_per_op=722.61
+remove_model_from_cache_reject_validation iterations=400000 elapsed_ms=293.611 ops_per_second=1362344.99 nanos_per_op=734.03
+remove_model_from_cache_response_decode iterations=400000 elapsed_ms=97.761 ops_per_second=4091616.41 nanos_per_op=244.40
+remove_model_from_cache_reject_wire_bottleneck_ops_per_second=1258339.12
+```
+
+The current remove-model-from-cache fail-closed boundary bottleneck is request
+encode. The payload includes the parent task, node selector envelope, timeout
+envelope, and model id before admission rejects execution. At roughly 1.26M
+ops/s in the latest local release run, this boundary is lighter than the
+training request wire paths; the first performance-sensitive work is BaseNodes
+fanout, per-node model cache eviction, failure aggregation, and response
+rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

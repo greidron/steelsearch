@@ -76,6 +76,8 @@ pub const GET_MODEL_ACTION_NAME: &str = "cluster:admin/knn_get_model_action";
 pub const DELETE_MODEL_ACTION_NAME: &str = "cluster:admin/knn_delete_model_action";
 pub const TRAINING_JOB_ROUTER_ACTION_NAME: &str = "cluster:admin/knn_training_job_router_action";
 pub const TRAINING_MODEL_ACTION_NAME: &str = "cluster:admin/knn_training_model_action";
+pub const REMOVE_MODEL_FROM_CACHE_ACTION_NAME: &str =
+    "cluster:admin/knn_remove_model_from_cache_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -602,6 +604,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TrainingModelTransportAction",
         request_wire_type: "TrainingModelRequest",
         response_wire_type: "TrainingModelResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: REMOVE_MODEL_FROM_CACHE_ACTION_NAME,
+        action_type: "RemoveModelFromCacheAction",
+        transport_action: "RemoveModelFromCacheTransportAction",
+        request_wire_type: "RemoveModelFromCacheRequest",
+        response_wire_type: "RemoveModelFromCacheResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1886,6 +1895,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "training-model transport execution requires KNN native training data loading, memory reservation, training job execution, model system-index write, counter updates, and response rendering",
+        },
+        REMOVE_MODEL_FROM_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "remove-model-from-cache transport execution requires BaseNodes fanout, per-node model cache eviction, failure aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6794,6 +6808,73 @@ pub fn read_training_model_response_message(
         });
     }
     TrainingModelResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_remove_model_from_cache_request_message(
+    request_id: i64,
+    version: Version,
+    request: &RemoveModelFromCacheRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(REMOVE_MODEL_FROM_CACHE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_remove_model_from_cache_request_message(
+    message: &TransportMessage,
+) -> Result<RemoveModelFromCacheRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != REMOVE_MODEL_FROM_CACHE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: REMOVE_MODEL_FROM_CACHE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    RemoveModelFromCacheRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_remove_model_from_cache_response_message(
+    request_id: i64,
+    version: Version,
+    response: &RemoveModelFromCacheResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_remove_model_from_cache_response_message(
+    message: &TransportMessage,
+) -> Result<RemoveModelFromCacheResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    RemoveModelFromCacheResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -14985,6 +15066,155 @@ impl TrainingModelResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "training model response rendering",
             reason: "TrainingModelResponse rendering requires model id xcontent rendering and train-model exception-path handling",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoveModelFromCacheRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Option<Vec<String>>,
+    pub timeout: Option<TimeValueWire>,
+    pub model_id: String,
+}
+
+impl Default for RemoveModelFromCacheRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: None,
+            timeout: None,
+            model_id: "model-000001".to_string(),
+        }
+    }
+}
+
+impl RemoveModelFromCacheRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_nullable_string_array(output, self.node_ids.as_deref());
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_string(&self.model_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = read_nullable_string_array(&mut input)?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache concrete nodes",
+                reason: "RemoveModelFromCacheRequest concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            model_id: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache model id",
+                reason: "OpenSearch remove-model-from-cache requests require a model id",
+            });
+        }
+        if matches!(self.node_ids.as_ref(), Some(node_ids) if !node_ids.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache node filter",
+                reason:
+                    "remove-model-from-cache node-scoped routing requires BaseNodes fanout mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache timeout",
+                reason:
+                    "remove-model-from-cache timeout semantics require BaseNodes fanout mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "remove model from cache execution",
+            reason: "remove-model-from-cache transport execution requires BaseNodes fanout, per-node model cache eviction, failure aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoveModelFromCacheResponseWire {
+    pub cluster_name: String,
+}
+
+impl Default for RemoveModelFromCacheResponseWire {
+    fn default() -> Self {
+        Self {
+            cluster_name: "steelsearch".to_string(),
+        }
+    }
+}
+
+impl RemoveModelFromCacheResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.cluster_name);
+        output.write_vint(0);
+        output.write_vint(0);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let nodes_count = input.read_vint()?;
+        if nodes_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache response nodes count",
+                reason: "RemoveModelFromCacheResponse nodes count must be non-negative",
+            });
+        }
+        if nodes_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache node responses",
+                reason:
+                    "RemoveModelFromCacheResponse node responses require DiscoveryNode decoding",
+            });
+        }
+        let failures_count = input.read_vint()?;
+        if failures_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache response failures count",
+                reason: "RemoveModelFromCacheResponse failures count must be non-negative",
+            });
+        }
+        if failures_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache node failures",
+                reason: "RemoveModelFromCacheResponse node failures require FailedNodeException decoding",
+            });
+        }
+        let response = Self { cluster_name };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache response cluster name",
+                reason: "RemoveModelFromCacheResponse requires a cluster name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "remove model from cache response rendering",
+            reason: "RemoveModelFromCacheResponse rendering requires node aggregation and failure aggregation",
         })
     }
 }
@@ -30804,6 +31034,13 @@ mod tests {
                     response_wire_type: "TrainingModelResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_remove_model_from_cache_action",
+                    action_type: "RemoveModelFromCacheAction",
+                    transport_action: "RemoveModelFromCacheTransportAction",
+                    request_wire_type: "RemoveModelFromCacheRequest",
+                    response_wire_type: "RemoveModelFromCacheResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -41608,6 +41845,143 @@ mod tests {
         };
         assert_eq!(
             read_training_model_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn remove_model_from_cache_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = RemoveModelFromCacheRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(59),
+            node_ids: None,
+            timeout: None,
+            model_id: "model-a".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = RemoveModelFromCacheRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache execution",
+                ..
+            })
+        ));
+
+        let blank_model_id = RemoveModelFromCacheRequestWire {
+            model_id: String::new(),
+            ..RemoveModelFromCacheRequestWire::default()
+        };
+        assert!(matches!(
+            blank_model_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache model id",
+                ..
+            })
+        ));
+
+        let node_scoped = RemoveModelFromCacheRequestWire {
+            node_ids: Some(vec!["node-a".to_string()]),
+            ..RemoveModelFromCacheRequestWire::default()
+        };
+        assert!(matches!(
+            node_scoped.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache node filter",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remove_model_from_cache_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = RemoveModelFromCacheResponseWire {
+            cluster_name: "opensearch".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = RemoveModelFromCacheResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache response rendering",
+                ..
+            })
+        ));
+
+        let blank_cluster = RemoveModelFromCacheResponseWire {
+            cluster_name: String::new(),
+        };
+        assert!(matches!(
+            blank_cluster.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache response cluster name",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_string("opensearch");
+        output.write_vint(1);
+        assert!(matches!(
+            RemoveModelFromCacheResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache node responses",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remove_model_from_cache_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = RemoveModelFromCacheRequestWire::default();
+        let mut frame =
+            build_remove_model_from_cache_request_message(59, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remove model from cache request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_remove_model_from_cache_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_remove_model_from_cache_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache execution",
+                ..
+            })
+        ));
+        assert!(matches!(
+            read_training_model_request_message(&message),
+            Err(TransportActionWireError::UnexpectedAction { .. })
+        ));
+
+        let response = RemoveModelFromCacheResponseWire::default();
+        let mut frame = build_remove_model_from_cache_response_message(
+            59,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remove model from cache response message");
+        };
+        assert_eq!(
+            read_remove_model_from_cache_response_message(&message).unwrap(),
             response
         );
     }
