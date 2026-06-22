@@ -139,6 +139,8 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             "--load-comparison-report",
             final_cutover["manifest_command_template"],
         )
+        self.assertIn("evidence_inventory", final_cutover)
+        self.assertIn("summary", final_cutover["evidence_inventory"])
 
     def test_missing_release_items_reports_only_failed_or_missing_items(self):
         missing = self.reporter.missing_release_items(
@@ -204,7 +206,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             temp_dir = Path(temp_dir_value)
             manifest = temp_dir / "release-readiness.json"
             readiness = temp_dir / "readiness.json"
-            load_comparison = temp_dir / "comparison.json"
+            load_comparison = temp_dir / "final-load-comparison.json"
             artifacts = {
                 "benchmark_coverage": "benchmark.jsonl",
                 "load_test_coverage": "load.json",
@@ -212,9 +214,59 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 "packaging_verified": "packaging.json",
                 "rolling_upgrade_coverage": "rolling.json",
             }
-            for artifact in artifacts.values():
-                (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
-            load_comparison.write_text("{}\n", encoding="utf-8")
+            (temp_dir / artifacts["benchmark_coverage"]).write_text(
+                json.dumps({"benchmark": "final-smoke"}) + "\n",
+                encoding="utf-8",
+            )
+            (temp_dir / artifacts["load_test_coverage"]).write_text(
+                json.dumps({"summary": {"error_count": 0, "operation_count": 10}}),
+                encoding="utf-8",
+            )
+            (temp_dir / artifacts["chaos_test_coverage"]).write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "passed": True,
+                        "blockers": [],
+                        "summary": {
+                            "passed": True,
+                            "error_count": 0,
+                            "coverage_scope": "mixed-cluster failure fixture",
+                        },
+                        "source_report": {"summary": {"passed": True}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (temp_dir / artifacts["packaging_verified"]).write_text("{}\n", encoding="utf-8")
+            (temp_dir / artifacts["rolling_upgrade_coverage"]).write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "passed": True,
+                        "blockers": [],
+                        "summary": {
+                            "passed": True,
+                            "error_count": 0,
+                            "coverage_scope": "rolling-upgrade transcript fixture",
+                        },
+                        "transcript": {"profile": "rolling-upgrade"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            load_comparison.write_text(
+                json.dumps(
+                    {
+                        "targets": {
+                            "steelsearch": {"returncode": 0},
+                            "opensearch": {"returncode": 0},
+                        },
+                        "comparison": {"mode": "completed"},
+                    }
+                ),
+                encoding="utf-8",
+            )
             manifest.write_text(
                 json.dumps(
                     {
@@ -246,6 +298,8 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             final_cutover = self.reporter.inspect_release_readiness(
                 manifest,
                 readiness_report_path=readiness,
+                evidence_root=temp_dir,
+                evidence_max_age_seconds=60.0,
             )
             report = self.reporter.build_status_report(
                 current_evidence={"passed": True},
@@ -257,8 +311,23 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertTrue(final_cutover["passed"])
             self.assertEqual(final_cutover["missing_items"], [])
             self.assertEqual(final_cutover["readiness_attachment_missing_items"], [])
+            self.assertTrue(final_cutover["evidence_inventory"]["summary"]["complete"])
             self.assertTrue(report["summary"]["passed"])
             self.assertEqual(report["summary"]["status"], "ready")
+
+    def test_release_evidence_inventory_is_reported_with_summary_and_command_template(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            inventory = self.reporter.inspect_release_evidence_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+            )
+
+            self.assertEqual(inventory["returncode"], 0)
+            self.assertEqual(inventory["summary"]["complete"], False)
+            self.assertIn("benchmark_coverage", inventory["summary"]["startup_missing_items"])
+            self.assertIn("--root", inventory["command"])
+            self.assertIn("--release-readiness-file", inventory["attach_command_template"])
 
     def test_cli_writes_status_report_to_output_path(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

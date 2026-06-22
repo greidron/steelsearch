@@ -136,6 +136,36 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(item["ready"])
             self.assertIn("load comparison is a dry-run report", item["blockers"])
 
+    def test_inventory_ignores_cargo_fingerprint_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            fingerprint = (
+                temp_dir
+                / "debug"
+                / ".fingerprint"
+                / "os-transport-abc"
+                / "bin-nodes-reload-secure-settings-reject-wire-benchmark.json"
+            )
+            fingerprint.parent.mkdir(parents=True)
+            fingerprint.write_text(
+                json.dumps({"summary": {"error_count": 0, "operation_count": 1}}),
+                encoding="utf-8",
+            )
+            os.utime(fingerprint, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["load_test_coverage"]
+            self.assertEqual(item["candidate_count"], 0)
+            self.assertFalse(item["ready"])
+            self.assertIn("artifact candidate is missing", item["blockers"])
+
     def test_cli_returns_nonzero_when_complete_inventory_is_required(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             result = subprocess.run(

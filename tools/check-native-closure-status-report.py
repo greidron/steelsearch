@@ -130,6 +130,31 @@ def validate_report(
     if require_final_cutover and final.get("passed") is not True:
         errors.append("final_cutover.passed is not true")
 
+    inventory = final.get("evidence_inventory")
+    if not isinstance(inventory, dict):
+        errors.append("final_cutover.evidence_inventory is missing or not an object")
+    else:
+        inventory_summary = inventory.get("summary")
+        if not isinstance(inventory_summary, dict):
+            errors.append("final_cutover.evidence_inventory.summary is missing or not an object")
+        else:
+            startup_missing = inventory_summary.get("startup_missing_items")
+            attachment_missing = inventory_summary.get("readiness_attachment_missing_items")
+            if not isinstance(startup_missing, list):
+                errors.append("final_cutover.evidence_inventory.summary.startup_missing_items is missing")
+            if not isinstance(attachment_missing, list):
+                errors.append(
+                    "final_cutover.evidence_inventory.summary.readiness_attachment_missing_items is missing"
+                )
+            if final.get("passed") is True and inventory_summary.get("complete") is not True:
+                errors.append("final_cutover passed but evidence inventory is not complete")
+            if final.get("passed") is True and startup_missing != []:
+                errors.append("final_cutover passed but evidence inventory startup_missing_items is not empty")
+            if final.get("passed") is True and attachment_missing != []:
+                errors.append(
+                    "final_cutover passed but evidence inventory readiness_attachment_missing_items is not empty"
+                )
+
     return {
         "status": "ok" if not errors else "failed",
         "errors": errors,

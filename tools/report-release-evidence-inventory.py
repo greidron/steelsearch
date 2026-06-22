@@ -149,7 +149,10 @@ def inspect_item(
 
 def excluded_candidate(path: Path, spec: dict[str, Any]) -> bool:
     name = path.name.lower()
-    return any(part in name for part in spec.get("exclude_name_parts", ()))
+    if any(part in name for part in spec.get("exclude_name_parts", ())):
+        return True
+    internal_parts = {".fingerprint", "deps", "incremental", "build"}
+    return any(part in internal_parts for part in path.parts)
 
 
 def validate_artifact_shape(name: str, path: Path) -> list[str]:

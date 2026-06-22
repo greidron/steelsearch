@@ -65,6 +65,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-readiness-file", type=Path)
     parser.add_argument("--readiness-report", type=Path)
+    parser.add_argument("--release-evidence-root", type=Path, default=ROOT / "target")
+    parser.add_argument("--release-evidence-max-age-seconds", type=float, default=86_400.0)
     parser.add_argument("--output", type=Path, help="write the JSON status report to this path")
     parser.add_argument(
         "--require-final-cutover",
@@ -78,6 +80,8 @@ def main() -> int:
     final_cutover = inspect_release_readiness(
         args.release_readiness_file,
         readiness_report_path=args.readiness_report,
+        evidence_root=args.release_evidence_root,
+        evidence_max_age_seconds=args.release_evidence_max_age_seconds,
     )
     report = build_status_report(
         current_evidence=current_evidence,
@@ -142,7 +146,13 @@ def inspect_release_readiness(
     path: Path | None,
     *,
     readiness_report_path: Path | None = None,
+    evidence_root: Path | None = None,
+    evidence_max_age_seconds: float = 86_400.0,
 ) -> dict[str, Any]:
+    evidence_inventory = inspect_release_evidence_inventory(
+        evidence_root or ROOT / "target",
+        max_age_seconds=evidence_max_age_seconds,
+    )
     if path is None:
         return {
             "name": "release-readiness",
@@ -157,6 +167,7 @@ def inspect_release_readiness(
             "readiness_report_path": str(readiness_report_path) if readiness_report_path else None,
             "readiness_attachment_missing_items": list(READINESS_ATTACHMENT_INPUTS),
             "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
+            "evidence_inventory": evidence_inventory,
             "manifest_command_template": release_readiness_manifest_command_template(),
         }
     command = [
@@ -197,7 +208,34 @@ def inspect_release_readiness(
         "readiness_attachment_missing_items": readiness_attachment["missing_items"],
         "readiness_attachment_errors": readiness_attachment["errors"],
         "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
+        "evidence_inventory": evidence_inventory,
         "manifest_command_template": release_readiness_manifest_command_template(),
+    }
+
+
+def inspect_release_evidence_inventory(root: Path, *, max_age_seconds: float) -> dict[str, Any]:
+    command = [
+        sys.executable,
+        "tools/report-release-evidence-inventory.py",
+        "--root",
+        str(root),
+        "--max-age-seconds",
+        str(max_age_seconds),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    payload = parse_json_payload(completed.stdout)
+    return {
+        "command": command,
+        "returncode": completed.returncode,
+        "summary": payload.get("summary", {}) if isinstance(payload, dict) else {},
+        "attach_command_template": payload.get("attach_command_template", []) if isinstance(payload, dict) else [],
     }
 
 
