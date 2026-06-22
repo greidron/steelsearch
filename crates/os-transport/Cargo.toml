@@ -442,6 +442,10 @@ name = "remove-persistent-task-reject-wire-benchmark"
 path = "benchmarks/remove_persistent_task_reject_wire.rs"
 
 [[bin]]
+name = "add-retention-lease-reject-wire-benchmark"
+path = "benchmarks/add_retention_lease_reject_wire.rs"
+
+[[bin]]
 name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 
