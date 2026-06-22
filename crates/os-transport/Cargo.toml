@@ -458,6 +458,10 @@ name = "list-dangling-indices-reject-wire-benchmark"
 path = "benchmarks/list_dangling_indices_reject_wire.rs"
 
 [[bin]]
+name = "import-dangling-index-reject-wire-benchmark"
+path = "benchmarks/import_dangling_index_reject_wire.rs"
+
+[[bin]]
 name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 

@@ -160,6 +160,8 @@ pub const OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME: &str =
     "indices:admin/seq_no/remove_retention_lease";
 pub const OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME: &str =
     "cluster:admin/indices/dangling/list";
+pub const OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME: &str =
+    "cluster:admin/indices/dangling/import";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1223,6 +1225,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME,
+        action_type: "ImportDanglingIndexAction",
+        transport_action: "TransportImportDanglingIndexAction",
+        request_wire_type: "ImportDanglingIndexRequest",
+        response_wire_type: "AcknowledgedResponse",
+        adapter_stage: "dangling-index-admin",
+        next_step: "map dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1961,6 +1972,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "list-dangling-indices transport execution requires BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
+        },
+        OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -8290,6 +8306,73 @@ pub fn read_opensearch_list_dangling_indices_response_message(
         });
     }
     OpenSearchListDanglingIndicesResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_import_dangling_index_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchImportDanglingIndexRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_import_dangling_index_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchImportDanglingIndexRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchImportDanglingIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_import_dangling_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_import_dangling_index_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_search_request_message(
@@ -17521,6 +17604,92 @@ impl OpenSearchListDanglingIndicesResponseWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchImportDanglingIndexRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub index_uuid: String,
+    pub accept_data_loss: bool,
+}
+
+impl Default for OpenSearchImportDanglingIndexRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            index_uuid: "steelsearch-dangling-index-uuid".to_string(),
+            accept_data_loss: true,
+        }
+    }
+}
+
+impl OpenSearchImportDanglingIndexRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.index_uuid);
+        output.write_bool(self.accept_data_loss);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            index_uuid: input.read_string()?,
+            accept_data_loss: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires dangling index import coordination semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index ack timeout",
+                reason: "custom acknowledgement timeout requires dangling index allocation publication semantics",
+            });
+        }
+        if self.index_uuid.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index missing index uuid",
+                reason: "OpenSearch import-dangling-index requests require an index UUID",
+            });
+        }
+        if self.index_uuid.len() > 512 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index uuid length",
+                reason: "OpenSearch import-dangling-index UUIDs are bounded to 512 bytes by the Rust boundary",
+            });
+        }
+        if !self.accept_data_loss {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index accept data loss",
+                reason:
+                    "OpenSearch requires accept_data_loss=true before importing a dangling index",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "import dangling index execution",
+            reason: "import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OpenSearchRetentionLeaseResponseWire;
 
@@ -25826,6 +25995,15 @@ mod tests {
                     next_step: "map BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/indices/dangling/import",
+                    action_type: "ImportDanglingIndexAction",
+                    transport_action: "TransportImportDanglingIndexAction",
+                    request_wire_type: "ImportDanglingIndexRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                    adapter_stage: "dangling-index-admin",
+                    next_step: "map dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -26473,6 +26651,11 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -26571,6 +26754,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -42206,6 +42390,137 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_list_dangling_indices_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_import_dangling_index_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchImportDanglingIndexRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(20),
+            index_uuid: "uuid-1".to_string(),
+            accept_data_loss: true,
+            ..OpenSearchImportDanglingIndexRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchImportDanglingIndexRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_import_dangling_index_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = OpenSearchImportDanglingIndexRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(5),
+            ..OpenSearchImportDanglingIndexRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = OpenSearchImportDanglingIndexRequestWire {
+            ack_timeout: TimeValueWire::seconds(5),
+            ..OpenSearchImportDanglingIndexRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index ack timeout",
+                ..
+            })
+        ));
+
+        let missing_uuid = OpenSearchImportDanglingIndexRequestWire {
+            index_uuid: " ".to_string(),
+            ..OpenSearchImportDanglingIndexRequestWire::default()
+        };
+        assert!(matches!(
+            missing_uuid.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index missing index uuid",
+                ..
+            })
+        ));
+
+        let accept_data_loss = OpenSearchImportDanglingIndexRequestWire {
+            accept_data_loss: false,
+            ..OpenSearchImportDanglingIndexRequestWire::default()
+        };
+        assert!(matches!(
+            accept_data_loss.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index accept data loss",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        OpenSearchImportDanglingIndexRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            OpenSearchImportDanglingIndexRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn opensearch_import_dangling_index_transport_messages_bind_rejected_action_frame_and_ack_response(
+    ) {
+        let request = OpenSearchImportDanglingIndexRequestWire::default();
+        let mut frame = build_opensearch_import_dangling_index_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected import dangling index request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_import_dangling_index_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_import_dangling_index_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "import dangling index execution",
+                ..
+            })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_import_dangling_index_response_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected import dangling index response message");
+        };
+        assert_eq!(
+            read_opensearch_import_dangling_index_response_message(&message).unwrap(),
             response
         );
     }

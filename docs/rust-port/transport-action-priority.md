@@ -249,6 +249,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
 - `cluster:admin/indices/dangling/list` (rejected fail-closed)
+- `cluster:admin/indices/dangling/import` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1646,6 +1647,20 @@ The list-dangling-indices boundary covers:
   timeout semantics, empty or oversized index UUID filters, non-empty node
   responses, node failures, list-dangling-indices execution, and response
   rendering.
+
+The import-dangling-index boundary covers:
+
+- OpenSearch `ImportDanglingIndexRequest` parent task, cluster-manager
+  timeout, acknowledgement timeout, index UUID, and `acceptDataLoss` flag at
+  the wire decode/build layer;
+- OpenSearch `AcknowledgedResponse` decode/build for the acknowledgement flag;
+- explicit fail-closed classification for
+  `cluster:admin/indices/dangling/import` until dangling index lookup,
+  accept-data-loss validation, allocation, cluster metadata mutation, and
+  acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom ack
+  timeouts, missing or oversized index UUIDs, `acceptDataLoss=false`,
+  import-dangling-index execution, and acknowledgement rendering.
 
 The search boundary covers:
 
@@ -3812,6 +3827,24 @@ UUID filter before rejecting at admission. At roughly 750K ops/s in the latest
 local release run, future performance-sensitive work is BaseNodes fanout,
 dangling index state scan, node aggregation, failure decoding, and response
 rendering.
+
+Current import-dangling-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin import-dangling-index-reject-wire-benchmark
+import_dangling_index_reject_request_encode iterations=400000 elapsed_ms=603.521 ops_per_second=662777.21 nanos_per_op=1508.80
+import_dangling_index_reject_request_decode iterations=400000 elapsed_ms=740.160 ops_per_second=540423.57 nanos_per_op=1850.40
+import_dangling_index_reject_validation iterations=400000 elapsed_ms=629.356 ops_per_second=635570.48 nanos_per_op=1573.39
+import_dangling_index_ack_response_decode iterations=400000 elapsed_ms=78.197 ops_per_second=5115277.12 nanos_per_op=195.49
+import_dangling_index_reject_wire_bottleneck_ops_per_second=540423.57
+```
+
+The current import-dangling-index fail-closed boundary bottleneck is request
+decode. This path carries the `AcknowledgedRequest` cluster-manager timeout,
+ack timeout, index UUID, and `acceptDataLoss` flag before rejecting at
+admission. At roughly 540K ops/s in the latest local release run, future
+performance-sensitive work is dangling index lookup, allocation, cluster
+metadata mutation, and acknowledgement rendering.
 
 Current search reject wire microbenchmark:
 
