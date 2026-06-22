@@ -158,6 +158,8 @@ pub const OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME: &str =
     "indices:admin/seq_no/renew_retention_lease";
 pub const OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME: &str =
     "indices:admin/seq_no/remove_retention_lease";
+pub const OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME: &str =
+    "cluster:admin/indices/dangling/list";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1212,6 +1214,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME,
+        action_type: "ListDanglingIndicesAction",
+        transport_action: "TransportListDanglingIndicesAction",
+        request_wire_type: "ListDanglingIndicesRequest",
+        response_wire_type: "ListDanglingIndicesResponse",
+        adapter_stage: "dangling-index-admin",
+        next_step: "map BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1945,6 +1956,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
+        },
+        OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "list-dangling-indices transport execution requires BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -8207,6 +8223,73 @@ pub fn read_opensearch_remove_retention_lease_response_message(
         });
     }
     OpenSearchRetentionLeaseResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_list_dangling_indices_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchListDanglingIndicesRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_list_dangling_indices_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchListDanglingIndicesRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchListDanglingIndicesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_list_dangling_indices_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchListDanglingIndicesResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_list_dangling_indices_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchListDanglingIndicesResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchListDanglingIndicesResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_search_request_message(
@@ -17292,6 +17375,152 @@ impl OpenSearchRemoveRetentionLeaseRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchListDanglingIndicesRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Vec<String>,
+    pub timeout: Option<TimeValueWire>,
+    pub index_uuid: Option<String>,
+}
+
+impl Default for OpenSearchListDanglingIndicesRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: Vec::new(),
+            timeout: None,
+            index_uuid: None,
+        }
+    }
+}
+
+impl OpenSearchListDanglingIndicesRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.node_ids);
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+        output.write_optional_string(self.index_uuid.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = input.read_string_array()?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices concrete nodes",
+                reason: "list-dangling-indices concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+            index_uuid: input.read_optional_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if !self.node_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices node filter",
+                reason: "list-dangling-indices node-scoped fanout requires runtime node resolution",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices timeout",
+                reason: "list-dangling-indices timeout semantics require BaseNodes fanout mapping",
+            });
+        }
+        if matches!(self.index_uuid.as_deref(), Some(index_uuid) if index_uuid.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices empty index uuid",
+                reason: "list-dangling-indices index UUID filters must be non-empty when present",
+            });
+        }
+        if matches!(self.index_uuid.as_ref(), Some(index_uuid) if index_uuid.len() > 512) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices index uuid length",
+                reason: "list-dangling-indices index UUID filters are bounded to 512 bytes by the Rust boundary",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "list dangling indices execution",
+            reason: "list-dangling-indices transport execution requires BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchListDanglingIndicesResponseWire {
+    pub cluster_name: String,
+}
+
+impl Default for OpenSearchListDanglingIndicesResponseWire {
+    fn default() -> Self {
+        Self {
+            cluster_name: "steelsearch".to_string(),
+        }
+    }
+}
+
+impl OpenSearchListDanglingIndicesResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.cluster_name);
+        output.write_vint(0);
+        output.write_vint(0);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let nodes_count = input.read_vint()?;
+        if nodes_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices response nodes count",
+                reason: "ListDanglingIndicesResponse nodes count must be non-negative",
+            });
+        }
+        if nodes_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices node responses",
+                reason: "ListDanglingIndicesResponse node responses require DiscoveryNode and DanglingIndexInfo decoding",
+            });
+        }
+        let failures_count = input.read_vint()?;
+        if failures_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices response failures count",
+                reason: "ListDanglingIndicesResponse failures count must be non-negative",
+            });
+        }
+        if failures_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices node failures",
+                reason:
+                    "ListDanglingIndicesResponse node failures require FailedNodeException decoding",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { cluster_name })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "list dangling indices response rendering",
+            reason: "ListDanglingIndicesResponse rendering requires node aggregation and dangling index metadata",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OpenSearchRetentionLeaseResponseWire;
 
@@ -25588,6 +25817,15 @@ mod tests {
                     next_step: "map shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/indices/dangling/list",
+                    action_type: "ListDanglingIndicesAction",
+                    transport_action: "TransportListDanglingIndicesAction",
+                    request_wire_type: "ListDanglingIndicesRequest",
+                    response_wire_type: "ListDanglingIndicesResponse",
+                    adapter_stage: "dangling-index-admin",
+                    next_step: "map BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -26220,6 +26458,21 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -26317,6 +26570,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -41780,6 +42034,178 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_remove_retention_lease_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_list_dangling_indices_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchListDanglingIndicesRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(19),
+            index_uuid: Some("uuid-1".to_string()),
+            ..OpenSearchListDanglingIndicesRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchListDanglingIndicesRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_list_dangling_indices_request_rejects_unsupported_shapes() {
+        let node_filter = OpenSearchListDanglingIndicesRequestWire {
+            node_ids: vec!["node-a".to_string()],
+            ..OpenSearchListDanglingIndicesRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices node filter",
+                ..
+            })
+        ));
+
+        let timeout = OpenSearchListDanglingIndicesRequestWire {
+            timeout: Some(TimeValueWire::seconds(5)),
+            ..OpenSearchListDanglingIndicesRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices timeout",
+                ..
+            })
+        ));
+
+        let empty_uuid = OpenSearchListDanglingIndicesRequestWire {
+            index_uuid: Some(" ".to_string()),
+            ..OpenSearchListDanglingIndicesRequestWire::default()
+        };
+        assert!(matches!(
+            empty_uuid.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices empty index uuid",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        OpenSearchListDanglingIndicesRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            OpenSearchListDanglingIndicesRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+
+        let mut concrete_nodes = StreamOutput::new();
+        write_parent_task_id(&mut concrete_nodes, "", None);
+        concrete_nodes.write_string_array(&[]);
+        concrete_nodes.write_bool(true);
+        assert!(matches!(
+            OpenSearchListDanglingIndicesRequestWire::read(concrete_nodes.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices concrete nodes",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_list_dangling_indices_response_wire_round_trips_empty_nodes_subset() {
+        let response = OpenSearchListDanglingIndicesResponseWire {
+            cluster_name: "steel-dev".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = OpenSearchListDanglingIndicesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices response rendering",
+                ..
+            })
+        ));
+
+        let mut node_payload = StreamOutput::new();
+        node_payload.write_string("steel-dev");
+        node_payload.write_vint(1);
+        assert!(matches!(
+            OpenSearchListDanglingIndicesResponseWire::read(node_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices node responses",
+                ..
+            })
+        ));
+
+        let mut failure_payload = StreamOutput::new();
+        failure_payload.write_string("steel-dev");
+        failure_payload.write_vint(0);
+        failure_payload.write_vint(1);
+        assert!(matches!(
+            OpenSearchListDanglingIndicesResponseWire::read(failure_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices node failures",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_list_dangling_indices_transport_messages_bind_rejected_action_frame_and_empty_response(
+    ) {
+        let request = OpenSearchListDanglingIndicesRequestWire::default();
+        let mut frame = build_opensearch_list_dangling_indices_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list dangling indices request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_list_dangling_indices_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_list_dangling_indices_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchListDanglingIndicesResponseWire::default();
+        let mut frame = build_opensearch_list_dangling_indices_response_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected list dangling indices response message");
+        };
+        assert_eq!(
+            read_opensearch_list_dangling_indices_response_message(&message).unwrap(),
             response
         );
     }

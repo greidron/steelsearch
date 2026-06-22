@@ -248,6 +248,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/seq_no/add_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
+- `cluster:admin/indices/dangling/list` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1629,6 +1630,22 @@ The remove-retention-lease boundary covers:
 - explicit rejection for shard/index mismatches, missing or oversized lease
   ids, remove-retention-lease execution, and non-empty retention lease
   responses.
+
+The list-dangling-indices boundary covers:
+
+- OpenSearch `ListDanglingIndicesRequest` parent task, `BaseNodesRequest`
+  node ids, absent concrete node array, optional timeout, and optional
+  index UUID filter at the wire decode/build layer;
+- OpenSearch `ListDanglingIndicesResponse` cluster name plus empty successful
+  node response and failure lists as the bounded response subset;
+- explicit fail-closed classification for
+  `cluster:admin/indices/dangling/list` until BaseNodes fanout, dangling index
+  state scan, node aggregation, failures, and response rendering are
+  implemented;
+- explicit rejection for concrete DiscoveryNode payloads, node filters,
+  timeout semantics, empty or oversized index UUID filters, non-empty node
+  responses, node failures, list-dangling-indices execution, and response
+  rendering.
 
 The search boundary covers:
 
@@ -3777,6 +3794,24 @@ the latest local release run, it is currently slower than add/renew in this
 microbenchmark despite the smaller payload; future performance-sensitive work
 is shard routing, primary operation permit acquisition, retention lease
 removal, sync, and response rendering.
+
+Current list-dangling-indices reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin list-dangling-indices-reject-wire-benchmark
+list_dangling_indices_reject_request_encode iterations=400000 elapsed_ms=533.451 ops_per_second=749835.21 nanos_per_op=1333.63
+list_dangling_indices_reject_request_decode iterations=400000 elapsed_ms=433.038 ops_per_second=923706.54 nanos_per_op=1082.59
+list_dangling_indices_reject_validation iterations=400000 elapsed_ms=464.575 ops_per_second=861002.69 nanos_per_op=1161.44
+list_dangling_indices_empty_response_decode iterations=400000 elapsed_ms=99.589 ops_per_second=4016510.67 nanos_per_op=248.97
+list_dangling_indices_reject_wire_bottleneck_ops_per_second=749835.21
+```
+
+The current list-dangling-indices fail-closed boundary bottleneck is request
+encode. This path carries the `BaseNodesRequest` envelope and optional index
+UUID filter before rejecting at admission. At roughly 750K ops/s in the latest
+local release run, future performance-sensitive work is BaseNodes fanout,
+dangling index state scan, node aggregation, failure decoding, and response
+rendering.
 
 Current search reject wire microbenchmark:
 

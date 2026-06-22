@@ -967,6 +967,15 @@
       "reason": "Remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering before Steelsearch can serve OpenSearch retention lease remove semantics."
     },
     {
+      "action_name": "cluster:admin/indices/dangling/list",
+      "action_type": "ListDanglingIndicesAction",
+      "transport_action": "TransportListDanglingIndicesAction",
+      "request_wire_type": "ListDanglingIndicesRequest",
+      "response_wire_type": "ListDanglingIndicesResponse",
+      "disposition": "rejected",
+      "reason": "List-dangling-indices transport execution requires BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering before Steelsearch can serve OpenSearch dangling index listing semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",
