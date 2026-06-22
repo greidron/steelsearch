@@ -178,6 +178,10 @@ name = "knn-warmup-reject-wire-benchmark"
 path = "benchmarks/knn_warmup_reject_wire.rs"
 
 [[bin]]
+name = "update-model-metadata-reject-wire-benchmark"
+path = "benchmarks/update_model_metadata_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

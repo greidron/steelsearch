@@ -68,6 +68,8 @@ pub const LIST_TIERING_STATUS_ACTION_NAME: &str = "cluster:admin/_tier/all";
 pub const GET_TIERING_STATUS_ACTION_NAME: &str = "indices:admin/_tier/get";
 pub const KNN_STATS_ACTION_NAME: &str = "cluster:admin/knn_stats_action";
 pub const KNN_WARMUP_ACTION_NAME: &str = "cluster:admin/knn_warmup_action";
+pub const UPDATE_MODEL_METADATA_ACTION_NAME: &str =
+    "cluster:admin/knn_update_model_metadata_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -552,6 +554,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "KNNWarmupTransportAction",
         request_wire_type: "KNNWarmupRequest",
         response_wire_type: "KNNWarmupResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: UPDATE_MODEL_METADATA_ACTION_NAME,
+        action_type: "UpdateModelMetadataAction",
+        transport_action: "UpdateModelMetadataTransportAction",
+        request_wire_type: "UpdateModelMetadataRequest",
+        response_wire_type: "AcknowledgedResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1806,6 +1815,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "knn-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering",
+        },
+        UPDATE_MODEL_METADATA_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6312,6 +6326,73 @@ pub fn read_knn_warmup_response_message(
         });
     }
     KnnWarmupResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_update_model_metadata_request_message(
+    request_id: i64,
+    version: Version,
+    request: &UpdateModelMetadataRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(UPDATE_MODEL_METADATA_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_update_model_metadata_request_message(
+    message: &TransportMessage,
+) -> Result<UpdateModelMetadataRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != UPDATE_MODEL_METADATA_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: UPDATE_MODEL_METADATA_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    UpdateModelMetadataRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_update_model_metadata_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_update_model_metadata_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -13915,6 +13996,118 @@ impl KnnWarmupResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "knn warmup response rendering",
             reason: "KNNWarmupResponse rendering requires broadcast shard execution and shard result aggregation",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateModelMetadataRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub model_id: String,
+    pub remove_request: bool,
+    pub model_metadata_present: bool,
+}
+
+impl Default for UpdateModelMetadataRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            model_id: "model-000001".to_string(),
+            remove_request: true,
+            model_metadata_present: false,
+        }
+    }
+}
+
+impl UpdateModelMetadataRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.model_id);
+        output.write_bool(self.remove_request);
+        if !self.remove_request && self.model_metadata_present {
+            output.write_string("nmslib");
+            output.write_string("l2");
+            output.write_i32(1);
+            output.write_string("created");
+            output.write_string("1970-01-01T00:00:00Z");
+            output.write_string("");
+            output.write_string("");
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let model_id = input.read_string()?;
+        let remove_request = input.read_bool()?;
+        let model_metadata_present = if remove_request {
+            false
+        } else {
+            let remaining = input.remaining();
+            if remaining > 0 {
+                let _ = input.read_bytes(remaining)?;
+                true
+            } else {
+                false
+            }
+        };
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            model_id,
+            remove_request,
+            model_metadata_present,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires model metadata update timeout semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata ack timeout",
+                reason: "custom acknowledgement timeout requires model metadata update acknowledgement semantics",
+            });
+        }
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata model id",
+                reason: "OpenSearch update-model-metadata requests require a model id",
+            });
+        }
+        if !self.remove_request && !self.model_metadata_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata missing metadata",
+                reason: "OpenSearch update-model-metadata add requests require model metadata",
+            });
+        }
+        if self.model_metadata_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata model metadata",
+                reason: "KNN ModelMetadata parsing and rendering is not implemented",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update model metadata execution",
+            reason: "update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering",
         })
     }
 }
@@ -29692,6 +29885,13 @@ mod tests {
                     response_wire_type: "KNNWarmupResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_update_model_metadata_action",
+                    action_type: "UpdateModelMetadataAction",
+                    transport_action: "UpdateModelMetadataTransportAction",
+                    request_wire_type: "UpdateModelMetadataRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -39759,6 +39959,148 @@ mod tests {
         };
         assert_eq!(
             read_knn_warmup_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn update_model_metadata_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = UpdateModelMetadataRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(53),
+            model_id: "model-a".to_string(),
+            remove_request: true,
+            ..UpdateModelMetadataRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = UpdateModelMetadataRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_model_metadata_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = UpdateModelMetadataRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..UpdateModelMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = UpdateModelMetadataRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..UpdateModelMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata ack timeout",
+                ..
+            })
+        ));
+
+        let missing_model_id = UpdateModelMetadataRequestWire {
+            model_id: String::new(),
+            ..UpdateModelMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            missing_model_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata model id",
+                ..
+            })
+        ));
+
+        let missing_metadata = UpdateModelMetadataRequestWire {
+            remove_request: false,
+            model_metadata_present: false,
+            ..UpdateModelMetadataRequestWire::default()
+        };
+        assert!(matches!(
+            missing_metadata.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata missing metadata",
+                ..
+            })
+        ));
+
+        let metadata_present = UpdateModelMetadataRequestWire {
+            remove_request: false,
+            model_metadata_present: true,
+            ..UpdateModelMetadataRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        metadata_present.write(&mut output);
+        let decoded = UpdateModelMetadataRequestWire::read(output.freeze()).unwrap();
+        assert!(decoded.model_metadata_present);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata model metadata",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        UpdateModelMetadataRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            UpdateModelMetadataRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn update_model_metadata_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = UpdateModelMetadataRequestWire::default();
+        let mut frame =
+            build_update_model_metadata_request_message(53, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update model metadata request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_update_model_metadata_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_update_model_metadata_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata execution",
+                ..
+            })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame =
+            build_update_model_metadata_response_message(53, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update model metadata response message");
+        };
+        assert_eq!(
+            read_update_model_metadata_response_message(&message).unwrap(),
             response
         );
     }

@@ -149,7 +149,7 @@ partial	ListTieringStatusAction.INSTANCE	TransportListTieringStatusAction.class	
 partial	GetTieringStatusAction.INSTANCE	TransportGetTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	853
 partial	KNNStatsAction.INSTANCE	KNNStatsTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	348
 partial	KNNWarmupAction.INSTANCE	KNNWarmupTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	349
-planned	UpdateModelMetadataAction.INSTANCE	UpdateModelMetadataTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	350
+partial	UpdateModelMetadataAction.INSTANCE	UpdateModelMetadataTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	350
 planned	TrainingJobRouteDecisionInfoAction.INSTANCE	TrainingJobRouteDecisionInfoTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	351
 planned	GetModelAction.INSTANCE	GetModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	352
 planned	DeleteModelAction.INSTANCE	DeleteModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	353

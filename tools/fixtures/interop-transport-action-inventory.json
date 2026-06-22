@@ -364,6 +364,15 @@
       "reason": "KNN-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN warmup semantics."
     },
     {
+      "action_name": "cluster:admin/knn_update_model_metadata_action",
+      "action_type": "UpdateModelMetadataAction",
+      "transport_action": "UpdateModelMetadataTransportAction",
+      "request_wire_type": "UpdateModelMetadataRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch k-NN model metadata update semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",

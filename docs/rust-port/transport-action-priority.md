@@ -896,6 +896,22 @@ The knn-warmup boundary covers:
   resolution options, KNN warmup execution, negative shard counters, shard
   failure rendering, and response rendering.
 
+The update-model-metadata boundary covers:
+
+- OpenSearch k-NN `UpdateModelMetadataRequest` acknowledged cluster-manager
+  write parent task, cluster-manager timeout, acknowledgement timeout, model id,
+  remove flag, and opaque model-metadata body presence at the wire decode/build
+  layer;
+- OpenSearch `AcknowledgedResponse` acknowledgement bit at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_update_model_metadata_action` until model metadata
+  validation, model system-index custom metadata mutation, cluster-state
+  publication, and acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, custom acknowledgement
+  timeout, blank model ids, add requests without metadata, model metadata body
+  parsing/rendering, and update-model-metadata execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3076,6 +3092,26 @@ execution. At roughly 1.25M ops/s in the latest local release run, this boundary
 is not a material transport bottleneck; the first performance-sensitive work is
 broadcast shard selection, metadata read block checks, per-shard KNN warmup,
 shard failure aggregation, and response rendering.
+
+Current update-model-metadata reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin update-model-metadata-reject-wire-benchmark
+update_model_metadata_reject_request_encode iterations=400000 elapsed_ms=322.144 ops_per_second=1241681.38 nanos_per_op=805.36
+update_model_metadata_reject_request_decode iterations=400000 elapsed_ms=288.566 ops_per_second=1386163.36 nanos_per_op=721.42
+update_model_metadata_reject_validation iterations=400000 elapsed_ms=292.944 ops_per_second=1365449.63 nanos_per_op=732.36
+update_model_metadata_response_decode iterations=400000 elapsed_ms=55.010 ops_per_second=7271421.33 nanos_per_op=137.52
+update_model_metadata_reject_wire_bottleneck_ops_per_second=1241681.38
+```
+
+The current update-model-metadata fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager parent task, cluster-manager
+timeout, acknowledgement timeout, model id, remove flag, and opaque model
+metadata body presence before admission rejects execution. At roughly 1.24M
+ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is model metadata
+validation, model system-index custom metadata mutation, cluster-state
+publication, and acknowledgement rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
