@@ -150,6 +150,10 @@ name = "pause-ingestion-reject-wire-benchmark"
 path = "benchmarks/pause_ingestion_reject_wire.rs"
 
 [[bin]]
+name = "resume-ingestion-reject-wire-benchmark"
+path = "benchmarks/resume_ingestion_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

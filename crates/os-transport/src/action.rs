@@ -61,6 +61,7 @@ pub const PUT_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline
 pub const GET_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/get";
 pub const DELETE_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/delete";
 pub const PAUSE_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/pause";
+pub const RESUME_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/resume";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -496,6 +497,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportPauseIngestionAction",
         request_wire_type: "PauseIngestionRequest",
         response_wire_type: "PauseIngestionResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: RESUME_INGESTION_ACTION_NAME,
+        action_type: "ResumeIngestionAction",
+        transport_action: "TransportResumeIngestionAction",
+        request_wire_type: "ResumeIngestionRequest",
+        response_wire_type: "ResumeIngestionResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1715,6 +1723,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering",
+        },
+        RESUME_INGESTION_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "resume-ingestion transport execution requires destructive-index guard checks, index resolution, optional shard pointer reset, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5752,6 +5765,73 @@ pub fn read_pause_ingestion_response_message(
         });
     }
     PauseIngestionResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_resume_ingestion_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ResumeIngestionRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(RESUME_INGESTION_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_resume_ingestion_request_message(
+    message: &TransportMessage,
+) -> Result<ResumeIngestionRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != RESUME_INGESTION_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: RESUME_INGESTION_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ResumeIngestionRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_resume_ingestion_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ResumeIngestionResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_resume_ingestion_response_message(
+    message: &TransportMessage,
+) -> Result<ResumeIngestionResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    ResumeIngestionResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -11726,11 +11806,21 @@ impl IngestionStateShardFailureWire {
     }
 
     fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Self::read_for(input, "pause ingestion")
+    }
+
+    fn read_for(
+        input: &mut StreamInput,
+        action_label: &'static str,
+    ) -> Result<Self, TransportActionWireError> {
         let index = input.read_string()?;
         let shard = input.read_vint()?;
         if shard < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pause ingestion response shard failure shard",
+                shape: match action_label {
+                    "resume ingestion" => "resume ingestion response shard failure shard",
+                    _ => "pause ingestion response shard failure shard",
+                },
                 reason: "OpenSearch ingestion shard failure shard id cannot be negative",
             });
         }
@@ -11738,6 +11828,63 @@ impl IngestionStateShardFailureWire {
             index,
             shard,
             error_message: input.read_string()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResumeIngestionResetModeWire {
+    Offset,
+    Timestamp,
+}
+
+impl ResumeIngestionResetModeWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(match self {
+            Self::Offset => 0,
+            Self::Timestamp => 1,
+        });
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        match input.read_vint()? {
+            0 => Ok(Self::Offset),
+            1 => Ok(Self::Timestamp),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset mode",
+                reason: "OpenSearch resume-ingestion reset mode must be OFFSET or TIMESTAMP",
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResumeIngestionResetSettingsWire {
+    pub shard: i32,
+    pub mode: ResumeIngestionResetModeWire,
+    pub value: String,
+}
+
+impl ResumeIngestionResetSettingsWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.shard);
+        self.mode.write(output);
+        output.write_string(&self.value);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let shard = input.read_vint()?;
+        if shard < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset shard",
+                reason:
+                    "OpenSearch resume-ingestion reset settings require a non-negative shard id",
+            });
+        }
+        Ok(Self {
+            shard,
+            mode: ResumeIngestionResetModeWire::read(input)?,
+            value: input.read_string()?,
         })
     }
 }
@@ -11807,6 +11954,203 @@ impl PauseIngestionResponseWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pause ingestion response error",
                 reason: "pause-ingestion error rendering is not implemented",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResumeIngestionRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub reset_settings: Vec<ResumeIngestionResetSettingsWire>,
+}
+
+impl Default for ResumeIngestionRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            reset_settings: Vec::new(),
+        }
+    }
+}
+
+impl ResumeIngestionRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string_array(&self.indices);
+        self.indices_options.write(output);
+        output.write_vint(self.reset_settings.len() as i32);
+        for reset_setting in &self.reset_settings {
+            reset_setting.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let ack_timeout = TimeValueWire::read(&mut input)?;
+        let indices = input.read_string_array()?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let reset_settings_len = input.read_vint()?;
+        if reset_settings_len < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset settings count",
+                reason: "OpenSearch resume-ingestion reset settings count cannot be negative",
+            });
+        }
+        let mut reset_settings = Vec::with_capacity(reset_settings_len as usize);
+        for _ in 0..reset_settings_len {
+            reset_settings.push(ResumeIngestionResetSettingsWire::read(&mut input)?);
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            ack_timeout,
+            indices,
+            indices_options,
+            reset_settings,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires ingestion poller state mutation semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion ack timeout",
+                reason: "custom acknowledgement timeout requires shard acknowledgement aggregation semantics",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion missing indices",
+                reason: "OpenSearch resume-ingestion requests require at least one index",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion blank index",
+                reason: "blank index selectors belong to OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion indices options",
+                reason: "custom index resolution options require OpenSearch index expression resolution semantics",
+            });
+        }
+        if self
+            .reset_settings
+            .iter()
+            .any(|setting| setting.value.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset value",
+                reason: "OpenSearch resume-ingestion reset settings require a value",
+            });
+        }
+        if !self.reset_settings.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset execution",
+                reason: "resume-ingestion reset execution requires shard pointer reset semantics before ingestion poller resume",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "resume ingestion execution",
+            reason: "resume-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResumeIngestionResponseWire {
+    pub acknowledged: bool,
+    pub shard_failures: Vec<IngestionStateShardFailureWire>,
+    pub error_message: String,
+    pub shards_acknowledged: bool,
+}
+
+impl Default for ResumeIngestionResponseWire {
+    fn default() -> Self {
+        Self {
+            acknowledged: true,
+            shard_failures: Vec::new(),
+            error_message: String::new(),
+            shards_acknowledged: true,
+        }
+    }
+}
+
+impl ResumeIngestionResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(self.acknowledged);
+        output.write_vint(self.shard_failures.len() as i32);
+        for failure in &self.shard_failures {
+            failure.write(output);
+        }
+        output.write_string(&self.error_message);
+        output.write_bool(self.shards_acknowledged);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let acknowledged = input.read_bool()?;
+        let failure_count = input.read_vint()?;
+        if failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response failure count",
+                reason: "OpenSearch resume-ingestion response failure count cannot be negative",
+            });
+        }
+        let mut shard_failures = Vec::with_capacity(failure_count as usize);
+        for _ in 0..failure_count {
+            shard_failures.push(IngestionStateShardFailureWire::read_for(
+                &mut input,
+                "resume ingestion",
+            )?);
+        }
+        let response = Self {
+            acknowledged,
+            shard_failures,
+            error_message: input.read_string()?,
+            shards_acknowledged: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if !self.shard_failures.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response shard failures",
+                reason: "resume-ingestion shard failure rendering is not implemented",
+            });
+        }
+        if !self.error_message.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response error",
+                reason: "resume-ingestion error rendering is not implemented",
             });
         }
         Ok(())
@@ -27455,6 +27799,13 @@ mod tests {
                     response_wire_type: "PauseIngestionResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "indices:admin/ingestion/resume",
+                    action_type: "ResumeIngestionAction",
+                    transport_action: "TransportResumeIngestionAction",
+                    request_wire_type: "ResumeIngestionRequest",
+                    response_wire_type: "ResumeIngestionResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -35912,6 +36263,289 @@ mod tests {
         };
         assert_eq!(
             read_pause_ingestion_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn resume_ingestion_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ResumeIngestionRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(46),
+            indices: vec!["logs-000001".to_string(), "logs-000002".to_string()],
+            reset_settings: vec![ResumeIngestionResetSettingsWire {
+                shard: 0,
+                mode: ResumeIngestionResetModeWire::Offset,
+                value: "42".to_string(),
+            }],
+            ..ResumeIngestionRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ResumeIngestionRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset execution",
+                ..
+            })
+        ));
+
+        let simple_resume = ResumeIngestionRequestWire::default();
+        assert!(matches!(
+            simple_resume.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn resume_ingestion_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = ResumeIngestionRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..ResumeIngestionRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = ResumeIngestionRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..ResumeIngestionRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion ack timeout",
+                ..
+            })
+        ));
+
+        let missing_indices = ResumeIngestionRequestWire {
+            indices: Vec::new(),
+            ..ResumeIngestionRequestWire::default()
+        };
+        assert!(matches!(
+            missing_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion missing indices",
+                ..
+            })
+        ));
+
+        let blank_index = ResumeIngestionRequestWire {
+            indices: vec![" ".to_string()],
+            ..ResumeIngestionRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = ResumeIngestionRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open()
+            },
+            ..ResumeIngestionRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion indices options",
+                ..
+            })
+        ));
+
+        let missing_reset_value = ResumeIngestionRequestWire {
+            reset_settings: vec![ResumeIngestionResetSettingsWire {
+                shard: 0,
+                mode: ResumeIngestionResetModeWire::Timestamp,
+                value: String::new(),
+            }],
+            ..ResumeIngestionRequestWire::default()
+        };
+        assert!(matches!(
+            missing_reset_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset value",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        ResumeIngestionRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            ResumeIngestionRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        TimeValueWire::seconds(30).write(&mut output);
+        TimeValueWire::seconds(30).write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open().write(&mut output);
+        output.write_vint(-1);
+        assert!(matches!(
+            ResumeIngestionRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset settings count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        TimeValueWire::seconds(30).write(&mut output);
+        TimeValueWire::seconds(30).write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open().write(&mut output);
+        output.write_vint(1);
+        output.write_vint(-1);
+        output.write_vint(0);
+        output.write_string("42");
+        assert!(matches!(
+            ResumeIngestionRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset shard",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        TimeValueWire::seconds(30).write(&mut output);
+        TimeValueWire::seconds(30).write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open().write(&mut output);
+        output.write_vint(1);
+        output.write_vint(0);
+        output.write_vint(2);
+        output.write_string("42");
+        assert!(matches!(
+            ResumeIngestionRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion reset mode",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn resume_ingestion_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = ResumeIngestionResponseWire::default();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = ResumeIngestionResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(decoded.reject_unsupported_rendering().is_ok());
+
+        let with_error = ResumeIngestionResponseWire {
+            error_message: "resume failed".to_string(),
+            ..ResumeIngestionResponseWire::default()
+        };
+        assert!(matches!(
+            with_error.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response error",
+                ..
+            })
+        ));
+
+        let with_failure = ResumeIngestionResponseWire {
+            shard_failures: vec![IngestionStateShardFailureWire {
+                index: "logs-000001".to_string(),
+                shard: 0,
+                error_message: "poller missing".to_string(),
+            }],
+            ..ResumeIngestionResponseWire::default()
+        };
+        assert!(matches!(
+            with_failure.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response shard failures",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_vint(-1);
+        assert!(matches!(
+            ResumeIngestionResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response failure count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_bool(true);
+        output.write_vint(1);
+        output.write_string("logs-000001");
+        output.write_vint(-1);
+        output.write_string("bad shard");
+        assert!(matches!(
+            ResumeIngestionResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion response shard failure shard",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn resume_ingestion_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = ResumeIngestionRequestWire::default();
+        let mut frame =
+            build_resume_ingestion_request_message(46, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected resume ingestion request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_resume_ingestion_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_resume_ingestion_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "resume ingestion execution",
+                ..
+            })
+        ));
+
+        let response = ResumeIngestionResponseWire::default();
+        let mut frame =
+            build_resume_ingestion_response_message(46, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected resume ingestion response message");
+        };
+        assert_eq!(
+            read_resume_ingestion_response_message(&message).unwrap(),
             response
         );
     }

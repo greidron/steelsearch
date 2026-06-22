@@ -770,6 +770,26 @@ The pause-ingestion boundary covers:
   rendering, response error rendering, negative failure counts, and negative
   shard ids.
 
+The resume-ingestion boundary covers:
+
+- OpenSearch `ResumeIngestionRequest` parent task, cluster-manager timeout,
+  acknowledgement timeout, index selector array, strict-expand-open
+  `IndicesOptions`, and reset-settings array at the wire decode/build layer;
+- OpenSearch reset-settings entries as shard `vInt`, reset mode enum ordinal
+  (`OFFSET` or `TIMESTAMP`), and value string;
+- OpenSearch `ResumeIngestionResponse` acknowledgement bit, shard failure
+  array, error string, and shard acknowledgement bit at the wire decode/build
+  layer;
+- explicit fail-closed classification for `indices:admin/ingestion/resume`
+  until destructive-index guard checks, index resolution, optional shard pointer
+  reset, ingestion poller state mutation, shard acknowledgement aggregation,
+  and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, custom
+  acknowledgement timeout, missing indices, blank index selectors, custom
+  index resolution options, invalid reset settings, resume-ingestion execution,
+  reset execution, response shard failure rendering, response error rendering,
+  negative failure counts, and negative shard ids.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2814,6 +2834,26 @@ execution. At roughly 1.11M ops/s in the latest local release run, this
 boundary is not a material transport bottleneck; the first performance-sensitive
 work is destructive-index guard checks, index resolution, ingestion poller state
 mutation, shard acknowledgement aggregation, and response rendering.
+
+Current resume-ingestion reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin resume-ingestion-reject-wire-benchmark
+resume_ingestion_reject_request_encode iterations=400000 elapsed_ms=307.230 ops_per_second=1301957.12 nanos_per_op=768.07
+resume_ingestion_reject_request_decode iterations=400000 elapsed_ms=296.537 ops_per_second=1348902.18 nanos_per_op=741.34
+resume_ingestion_reject_validation iterations=400000 elapsed_ms=304.163 ops_per_second=1315084.73 nanos_per_op=760.41
+resume_ingestion_response_decode iterations=400000 elapsed_ms=65.078 ops_per_second=6146495.42 nanos_per_op=162.69
+resume_ingestion_reject_wire_bottleneck_ops_per_second=1301957.12
+```
+
+The current resume-ingestion fail-closed boundary bottleneck is request encode.
+The payload includes the acknowledged cluster-manager request envelope, index
+selector array, strict-expand-open index options, and empty reset-settings array
+before admission rejects execution. At roughly 1.30M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is destructive-index guard checks, index resolution,
+optional shard pointer reset, ingestion poller state mutation, shard
+acknowledgement aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
