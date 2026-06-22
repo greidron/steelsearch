@@ -6,6 +6,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER_PATH = ROOT / "tools" / "check-native-closure-status-report.py"
+CURRENT_GROUPS = [
+    "non-native-inventory",
+    "e2e-required-parity",
+    "e2e-search-compat-parity",
+    "rest-api-coverage-current",
+    "transport-action-coverage-current",
+    "mixed-cluster-coverage-current",
+    "materialization-priority-current",
+    "release-readiness-tooling",
+]
 
 
 def load_checker_module():
@@ -42,7 +52,14 @@ def valid_report():
             "status": "current-evidence-ready-final-cutover-pending",
         },
         "gates": {
-            "current_evidence": {"passed": True},
+            "current_evidence": {
+                "passed": True,
+                "required_groups": CURRENT_GROUPS,
+                "groups": {
+                    group: {"ok": True, "status": "ok", "returncode": 0}
+                    for group in CURRENT_GROUPS
+                },
+            },
             "runtime_peer_backpressure_current": {"passed": True},
             "final_cutover": {
                 "passed": False,
@@ -65,6 +82,30 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
         self.assertTrue(result["summary"]["passed"])
+
+    def test_rejects_missing_current_evidence_group(self):
+        report = valid_report()
+        del report["gates"]["current_evidence"]["groups"]["mixed-cluster-coverage-current"]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.groups.mixed-cluster-coverage-current is missing",
+            result["errors"],
+        )
+
+    def test_rejects_failed_current_evidence_group(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["groups"]["transport-action-coverage-current"]["ok"] = False
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.groups.transport-action-coverage-current.ok is not true",
+            result["errors"],
+        )
 
     def test_rejects_load_comparison_in_startup_manifest_items(self):
         report = valid_report()

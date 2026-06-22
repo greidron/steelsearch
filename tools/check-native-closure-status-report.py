@@ -18,6 +18,16 @@ STARTUP_MANIFEST_ITEMS = (
     "rolling_upgrade_coverage",
 )
 READINESS_ATTACHMENT_ITEMS = (*STARTUP_MANIFEST_ITEMS, "load_comparison")
+CURRENT_EVIDENCE_GROUPS = (
+    "non-native-inventory",
+    "e2e-required-parity",
+    "e2e-search-compat-parity",
+    "rest-api-coverage-current",
+    "transport-action-coverage-current",
+    "mixed-cluster-coverage-current",
+    "materialization-priority-current",
+    "release-readiness-tooling",
+)
 VALID_STATUSES = {
     "ready",
     "current-evidence-ready-final-cutover-pending",
@@ -82,6 +92,19 @@ def validate_report(
 
     if current.get("passed") is not True:
         errors.append("gates.current_evidence.passed is not true")
+    current_required_groups = tuple(current.get("required_groups") or ())
+    if current_required_groups != CURRENT_EVIDENCE_GROUPS:
+        errors.append("gates.current_evidence.required_groups mismatch")
+    current_groups = current.get("groups")
+    if not isinstance(current_groups, dict):
+        errors.append("gates.current_evidence.groups is missing or not an object")
+    else:
+        for group in CURRENT_EVIDENCE_GROUPS:
+            group_status = current_groups.get(group)
+            if not isinstance(group_status, dict):
+                errors.append(f"gates.current_evidence.groups.{group} is missing")
+            elif group_status.get("ok") is not True:
+                errors.append(f"gates.current_evidence.groups.{group}.ok is not true")
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 

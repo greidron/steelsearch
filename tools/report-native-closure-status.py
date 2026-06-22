@@ -49,6 +49,16 @@ READINESS_ATTACHMENT_INPUTS = {
         "artifact_kind": "Steelsearch-vs-OpenSearch load comparison JSON",
     },
 }
+CURRENT_EVIDENCE_GROUPS = (
+    "non-native-inventory",
+    "e2e-required-parity",
+    "e2e-search-compat-parity",
+    "rest-api-coverage-current",
+    "transport-action-coverage-current",
+    "mixed-cluster-coverage-current",
+    "materialization-priority-current",
+    "release-readiness-tooling",
+)
 
 
 def main() -> int:
@@ -103,12 +113,28 @@ def run_validation_batch(batch: str) -> dict[str, Any]:
     )
     payload = parse_json_payload(completed.stdout)
     summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+    result_entries = [
+        {
+            "group": result.get("group"),
+            "name": result.get("name"),
+            "status": result.get("status"),
+            "ok": result.get("ok"),
+            "returncode": result.get("returncode"),
+            "summary": result.get("summary", {}),
+        }
+        for result in results
+        if isinstance(result, dict)
+    ]
     return {
         "name": batch,
         "command": command,
         "returncode": completed.returncode,
         "passed": completed.returncode == 0 and int(summary.get("failed_count") or 0) == 0,
         "summary": summary,
+        "required_groups": list(CURRENT_EVIDENCE_GROUPS) if batch == "current-evidence-gate" else [],
+        "groups": group_statuses(result_entries),
+        "results": result_entries,
     }
 
 
@@ -183,7 +209,7 @@ def build_status_report(
     require_final_cutover: bool,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    current_ready = bool(current_evidence.get("passed")) and bool(peer_backpressure.get("passed"))
+    current_ready = current_evidence_gate_ready(current_evidence) and bool(peer_backpressure.get("passed"))
     final_ready = bool(final_cutover.get("passed"))
     passed = current_ready and (final_ready or not require_final_cutover)
     return {
@@ -202,6 +228,32 @@ def build_status_report(
             "final_cutover": final_cutover,
         },
     }
+
+
+def group_statuses(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for result in results:
+        group = result.get("group")
+        if not isinstance(group, str) or not group:
+            continue
+        groups[group] = {
+            "ok": result.get("ok") is True,
+            "status": result.get("status"),
+            "returncode": result.get("returncode"),
+        }
+    return groups
+
+
+def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
+    if current_evidence.get("passed") is not True:
+        return False
+    groups = current_evidence.get("groups")
+    if not isinstance(groups, dict):
+        return True
+    return all(
+        isinstance(groups.get(group), dict) and groups[group].get("ok") is True
+        for group in CURRENT_EVIDENCE_GROUPS
+    )
 
 
 def build_metadata() -> dict[str, Any]:

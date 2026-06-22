@@ -65,6 +65,36 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertTrue(report["summary"]["passed"])
         self.assertEqual(report["summary"]["status"], "ready")
 
+    def test_current_evidence_gate_ready_requires_all_groups_when_group_statuses_are_present(self):
+        groups = {
+            group: {"ok": True, "status": "ok", "returncode": 0}
+            for group in self.reporter.CURRENT_EVIDENCE_GROUPS
+        }
+        current_evidence = {"passed": True, "groups": groups}
+
+        self.assertTrue(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        groups["mixed-cluster-coverage-current"]["ok"] = False
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_group_statuses_preserve_result_group_ok_and_returncode(self):
+        statuses = self.reporter.group_statuses(
+            [
+                {
+                    "group": "transport-action-coverage-current",
+                    "ok": True,
+                    "status": "ok",
+                    "returncode": 0,
+                }
+            ]
+        )
+
+        self.assertEqual(
+            statuses["transport-action-coverage-current"],
+            {"ok": True, "status": "ok", "returncode": 0},
+        )
+
     def test_missing_manifest_lists_required_final_cutover_items(self):
         final_cutover = self.reporter.inspect_release_readiness(None)
 
@@ -257,6 +287,13 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertIn("git_clean", file_payload["metadata"])
             self.assertIn("git_status_short", file_payload["metadata"])
             self.assertEqual(file_payload["summary"]["current_evidence_ready"], True)
+            current = file_payload["gates"]["current_evidence"]
+            self.assertEqual(
+                current["required_groups"],
+                list(self.reporter.CURRENT_EVIDENCE_GROUPS),
+            )
+            self.assertTrue(current["groups"]["transport-action-coverage-current"]["ok"])
+            self.assertTrue(current["groups"]["mixed-cluster-coverage-current"]["ok"])
 
 
 if __name__ == "__main__":
