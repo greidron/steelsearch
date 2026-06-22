@@ -634,6 +634,22 @@ The restore-snapshot boundary covers:
   snapshot UUID pinning, remote snapshot storage, source remote repositories,
   alias write-index policy changes, and restore-snapshot execution.
 
+The restore-remote-store boundary covers:
+
+- OpenSearch 3.7 `RestoreRemoteStoreRequest` parent task, cluster-manager
+  timeout, index selector array, optional `waitForCompletion`, and optional
+  `restoreAllShards` flags at the wire decode/build layer;
+- OpenSearch `RestoreRemoteStoreResponse` accepted-only response subset where
+  `RestoreInfo` is absent;
+- explicit fail-closed classification for
+  `cluster:admin/remotestore/restore` until remote-store restore service
+  coordination, shard restore planning, completion listener, `RestoreInfo`
+  decoding, and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, missing or blank
+  index selectors, `waitForCompletion`, `restoreAllShards`, completed
+  `RestoreInfo` payloads, restore-remote-store execution, and response
+  rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2505,6 +2521,26 @@ release run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is snapshot restore coordination, repository
 snapshot metadata loading, index metadata rewrite, shard restore planning,
 cluster-state publication, restore completion tracking, and response rendering.
+
+Current restore-remote-store reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin restore-remote-store-reject-wire-benchmark
+restore_remote_store_reject_request_encode iterations=400000 elapsed_ms=289.172 ops_per_second=1383262.15 nanos_per_op=722.93
+restore_remote_store_reject_request_decode iterations=400000 elapsed_ms=260.038 ops_per_second=1538233.94 nanos_per_op=650.10
+restore_remote_store_reject_validation iterations=400000 elapsed_ms=269.771 ops_per_second=1482737.29 nanos_per_op=674.43
+restore_remote_store_accepted_response_decode iterations=400000 elapsed_ms=54.686 ops_per_second=7314470.42 nanos_per_op=136.72
+restore_remote_store_reject_wire_bottleneck_ops_per_second=1383262.15
+```
+
+The current restore-remote-store fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager request envelope, index
+selector array, optional wait-for-completion flag, and optional
+restore-all-shards flag before admission rejects execution. At roughly 1.38M
+ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is remote-store
+restore service coordination, shard restore planning, completion listener
+registration, `RestoreInfo` decoding, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

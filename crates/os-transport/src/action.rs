@@ -51,6 +51,7 @@ pub const CREATE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/create";
 pub const CLONE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/clone";
 pub const RESTORE_SNAPSHOT_ACTION_NAME: &str = "cluster:admin/snapshot/restore";
 pub const SNAPSHOTS_STATUS_ACTION_NAME: &str = "cluster:admin/snapshot/status";
+pub const RESTORE_REMOTE_STORE_ACTION_NAME: &str = "cluster:admin/remotestore/restore";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -423,6 +424,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportSnapshotsStatusAction",
         request_wire_type: "SnapshotsStatusRequest",
         response_wire_type: "SnapshotsStatusResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: RESTORE_REMOTE_STORE_ACTION_NAME,
+        action_type: "RestoreRemoteStoreAction",
+        transport_action: "TransportRestoreRemoteStoreAction",
+        request_wire_type: "RestoreRemoteStoreRequest",
+        response_wire_type: "RestoreRemoteStoreResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1597,6 +1605,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
+        },
+        RESTORE_REMOTE_STORE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5031,6 +5044,73 @@ pub fn read_restore_snapshot_request_message(
         });
     }
     RestoreSnapshotRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_restore_remote_store_request_message(
+    request_id: i64,
+    version: Version,
+    request: &RestoreRemoteStoreRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(RESTORE_REMOTE_STORE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_restore_remote_store_request_message(
+    message: &TransportMessage,
+) -> Result<RestoreRemoteStoreRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != RESTORE_REMOTE_STORE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: RESTORE_REMOTE_STORE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    RestoreRemoteStoreRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_restore_remote_store_response_message(
+    request_id: i64,
+    version: Version,
+    response: &RestoreRemoteStoreResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_restore_remote_store_response_message(
+    message: &TransportMessage,
+) -> Result<RestoreRemoteStoreResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    RestoreRemoteStoreResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -10029,6 +10109,129 @@ impl RestoreSnapshotRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "restore snapshot execution",
             reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreRemoteStoreRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub indices: Vec<String>,
+    pub wait_for_completion: Option<bool>,
+    pub restore_all_shards: Option<bool>,
+}
+
+impl Default for RestoreRemoteStoreRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            indices: vec!["logs-000001".to_string()],
+            wait_for_completion: Some(false),
+            restore_all_shards: Some(false),
+        }
+    }
+}
+
+impl RestoreRemoteStoreRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string_array(&self.indices);
+        write_optional_bool(output, self.wait_for_completion);
+        write_optional_bool(output, self.restore_all_shards);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            indices: input.read_string_array()?,
+            wait_for_completion: read_optional_bool(&mut input)?,
+            restore_all_shards: read_optional_bool(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires remote-store restore coordination semantics",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store missing indices",
+                reason:
+                    "OpenSearch restore-remote-store requests require at least one index selector",
+            });
+        }
+        if self.indices.iter().any(|index| index.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store blank index selector",
+                reason: "OpenSearch restore-remote-store index selectors must not be blank",
+            });
+        }
+        if self.wait_for_completion != Some(false) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store wait for completion",
+                reason: "wait-for-completion requires remote-store restore completion listener and RestoreInfo response rendering",
+            });
+        }
+        if self.restore_all_shards != Some(false) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store all shards",
+                reason: "restore-all-shards requires remote-store shard restore planning semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "restore remote store execution",
+            reason: "restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreRemoteStoreResponseWire {
+    pub accepted: bool,
+}
+
+impl Default for RestoreRemoteStoreResponseWire {
+    fn default() -> Self {
+        Self { accepted: true }
+    }
+}
+
+impl RestoreRemoteStoreResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(!self.accepted);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let restore_info_present = input.read_bool()?;
+        if restore_info_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store restore info",
+                reason: "RestoreRemoteStoreResponse RestoreInfo payload decoding is not implemented by this boundary",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { accepted: true })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "restore remote store response rendering",
+            reason: "RestoreRemoteStoreResponse rendering requires remote-store restore completion and RestoreInfo mapping",
         })
     }
 }
@@ -25596,6 +25799,13 @@ mod tests {
                     response_wire_type: "SnapshotsStatusResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/remotestore/restore",
+                    action_type: "RestoreRemoteStoreAction",
+                    transport_action: "TransportRestoreRemoteStoreAction",
+                    request_wire_type: "RestoreRemoteStoreRequest",
+                    response_wire_type: "RestoreRemoteStoreResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -27079,6 +27289,10 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME)
                 .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(RESTORE_REMOTE_STORE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
     }
@@ -32708,6 +32922,168 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn restore_remote_store_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = RestoreRemoteStoreRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(37),
+            indices: vec!["logs-*".to_string()],
+            ..RestoreRemoteStoreRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = RestoreRemoteStoreRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restore_remote_store_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = RestoreRemoteStoreRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..RestoreRemoteStoreRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_indices = RestoreRemoteStoreRequestWire {
+            indices: Vec::new(),
+            ..RestoreRemoteStoreRequestWire::default()
+        };
+        assert!(matches!(
+            missing_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store missing indices",
+                ..
+            })
+        ));
+
+        let blank_index = RestoreRemoteStoreRequestWire {
+            indices: vec!["logs".to_string(), " ".to_string()],
+            ..RestoreRemoteStoreRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store blank index selector",
+                ..
+            })
+        ));
+
+        let wait_for_completion = RestoreRemoteStoreRequestWire {
+            wait_for_completion: Some(true),
+            ..RestoreRemoteStoreRequestWire::default()
+        };
+        assert!(matches!(
+            wait_for_completion.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store wait for completion",
+                ..
+            })
+        ));
+
+        let restore_all_shards = RestoreRemoteStoreRequestWire {
+            restore_all_shards: Some(true),
+            ..RestoreRemoteStoreRequestWire::default()
+        };
+        assert!(matches!(
+            restore_all_shards.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store all shards",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        RestoreRemoteStoreRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            RestoreRemoteStoreRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn restore_remote_store_response_wire_round_trips_accepted_subset() {
+        let response = RestoreRemoteStoreResponseWire::default();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = RestoreRemoteStoreResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store response rendering",
+                ..
+            })
+        ));
+
+        let mut restore_info_payload = StreamOutput::new();
+        restore_info_payload.write_bool(true);
+        assert!(matches!(
+            RestoreRemoteStoreResponseWire::read(restore_info_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store restore info",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restore_remote_store_transport_messages_bind_rejected_action_frame_and_accepted_response() {
+        let request = RestoreRemoteStoreRequestWire::default();
+        let mut frame =
+            build_restore_remote_store_request_message(37, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected restore remote store request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_restore_remote_store_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_restore_remote_store_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store execution",
+                ..
+            })
+        ));
+
+        let response = RestoreRemoteStoreResponseWire::default();
+        let mut frame =
+            build_restore_remote_store_response_message(37, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected restore remote store response message");
+        };
+        assert_eq!(
+            read_restore_remote_store_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
