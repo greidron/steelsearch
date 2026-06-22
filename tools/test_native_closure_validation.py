@@ -208,6 +208,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--report", command)
         self.assertIn("target/release-benchmarks/benchmark-report.json", command)
 
+    def test_load_evidence_current_batch_writes_release_load_report(self):
+        batch = self.runner.BATCHES["load-evidence-current"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/generate-load-evidence.py", command)
+        self.assertIn("--output", command)
+        self.assertIn("target/release-load-current/http-load-baseline.json", command)
+
     def test_rolling_upgrade_evidence_current_batch_writes_release_report(self):
         batch = self.runner.BATCHES["rolling-upgrade-evidence-current"]
 
