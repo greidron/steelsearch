@@ -1007,6 +1007,21 @@ The search-model boundary covers:
 - explicit rejection for unsupported search request shapes, opaque
   `SearchResponse` payloads, response rendering, and search-model execution.
 
+The update-model-graveyard boundary covers:
+
+- OpenSearch k-NN `UpdateModelGraveyardRequest` parent task,
+  cluster-manager timeout, acknowledgement timeout, model id, and remove flag
+  at the wire decode/build layer;
+- OpenSearch `AcknowledgedResponse` acknowledgement flag at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_update_model_graveyard_action` until cluster-manager
+  state update submission, model graveyard metadata mutation, model usage
+  mapping scan, delete-model conflict handling, cluster-state publication, and
+  acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, custom acknowledgement
+  timeout, blank model ids, and update-model-graveyard execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3341,6 +3356,26 @@ execution. At roughly 1.38M ops/s in the latest local release run, this boundary
 is lighter than the training request wire paths; the first performance-sensitive
 work is model system-index search request mapping, `SearchRequest` source
 parsing, `ModelDao` search delegation, `SearchResponse` decoding, and response
+rendering.
+
+Current update-model-graveyard reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin update-model-graveyard-reject-wire-benchmark
+update_model_graveyard_reject_request_encode iterations=400000 elapsed_ms=334.017 ops_per_second=1197542.47 nanos_per_op=835.04
+update_model_graveyard_reject_request_decode iterations=400000 elapsed_ms=293.100 ops_per_second=1364721.05 nanos_per_op=732.75
+update_model_graveyard_reject_validation iterations=400000 elapsed_ms=298.628 ops_per_second=1339459.11 nanos_per_op=746.57
+update_model_graveyard_response_decode iterations=400000 elapsed_ms=55.382 ops_per_second=7222515.43 nanos_per_op=138.46
+update_model_graveyard_reject_wire_bottleneck_ops_per_second=1197542.47
+```
+
+The current update-model-graveyard fail-closed boundary bottleneck is request
+encode. The payload includes the acknowledged request timeouts, model id, and
+remove flag before admission rejects execution. At roughly 1.20M ops/s in the
+latest local release run, this boundary is lighter than the training request
+wire paths; the first performance-sensitive work is cluster-manager state update
+submission, model graveyard metadata mutation, model usage mapping scan,
+delete-model conflict handling, cluster-state publication, and acknowledgement
 rendering.
 
 Current snapshots-status reject wire microbenchmark:

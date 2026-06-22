@@ -79,6 +79,8 @@ pub const TRAINING_MODEL_ACTION_NAME: &str = "cluster:admin/knn_training_model_a
 pub const REMOVE_MODEL_FROM_CACHE_ACTION_NAME: &str =
     "cluster:admin/knn_remove_model_from_cache_action";
 pub const SEARCH_MODEL_ACTION_NAME: &str = "cluster:admin/knn_search_model_action";
+pub const UPDATE_MODEL_GRAVEYARD_ACTION_NAME: &str =
+    "cluster:admin/knn_update_model_graveyard_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -619,6 +621,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "SearchModelTransportAction",
         request_wire_type: "SearchRequest",
         response_wire_type: "SearchResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: UPDATE_MODEL_GRAVEYARD_ACTION_NAME,
+        action_type: "UpdateModelGraveyardAction",
+        transport_action: "UpdateModelGraveyardTransportAction",
+        request_wire_type: "UpdateModelGraveyardRequest",
+        response_wire_type: "AcknowledgedResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1913,6 +1922,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering",
+        },
+        UPDATE_MODEL_GRAVEYARD_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6955,6 +6969,73 @@ pub fn read_search_model_response_message(
         });
     }
     SearchModelResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_update_model_graveyard_request_message(
+    request_id: i64,
+    version: Version,
+    request: &UpdateModelGraveyardRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(UPDATE_MODEL_GRAVEYARD_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_update_model_graveyard_request_message(
+    message: &TransportMessage,
+) -> Result<UpdateModelGraveyardRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != UPDATE_MODEL_GRAVEYARD_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: UPDATE_MODEL_GRAVEYARD_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    UpdateModelGraveyardRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_update_model_graveyard_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_update_model_graveyard_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -15370,6 +15451,79 @@ impl SearchModelResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search model response rendering",
             reason: "search-model response rendering requires SearchResponse decoding and xcontent rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateModelGraveyardRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub model_id: String,
+    pub remove_request: bool,
+}
+
+impl Default for UpdateModelGraveyardRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            model_id: "model-000001".to_string(),
+            remove_request: false,
+        }
+    }
+}
+
+impl UpdateModelGraveyardRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.model_id);
+        output.write_bool(self.remove_request);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            model_id: input.read_string()?,
+            remove_request: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires model graveyard update timeout semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard ack timeout",
+                reason: "custom acknowledgement timeout requires model graveyard publication acknowledgement semantics",
+            });
+        }
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard model id",
+                reason: "OpenSearch update-model-graveyard requests require a model id",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update model graveyard execution",
+            reason: "update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering",
         })
     }
 }
@@ -31203,6 +31357,13 @@ mod tests {
                     response_wire_type: "SearchResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_update_model_graveyard_action",
+                    action_type: "UpdateModelGraveyardAction",
+                    transport_action: "UpdateModelGraveyardTransportAction",
+                    request_wire_type: "UpdateModelGraveyardRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -42259,6 +42420,102 @@ mod tests {
         };
         assert_eq!(
             read_search_model_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn update_model_graveyard_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = UpdateModelGraveyardRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(61),
+            model_id: "model-a".to_string(),
+            remove_request: true,
+            ..UpdateModelGraveyardRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = UpdateModelGraveyardRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard execution",
+                ..
+            })
+        ));
+
+        let blank_model_id = UpdateModelGraveyardRequestWire {
+            model_id: String::new(),
+            ..UpdateModelGraveyardRequestWire::default()
+        };
+        assert!(matches!(
+            blank_model_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard model id",
+                ..
+            })
+        ));
+
+        let custom_ack_timeout = UpdateModelGraveyardRequestWire {
+            ack_timeout: TimeValueWire::seconds(5),
+            ..UpdateModelGraveyardRequestWire::default()
+        };
+        assert!(matches!(
+            custom_ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard ack timeout",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_model_graveyard_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = UpdateModelGraveyardRequestWire::default();
+        let mut frame =
+            build_update_model_graveyard_request_message(61, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update model graveyard request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_update_model_graveyard_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_update_model_graveyard_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model graveyard execution",
+                ..
+            })
+        ));
+        assert!(matches!(
+            read_update_model_metadata_request_message(&message),
+            Err(TransportActionWireError::UnexpectedAction { .. })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_update_model_graveyard_response_message(
+            61,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update model graveyard response message");
+        };
+        assert_eq!(
+            read_update_model_graveyard_response_message(&message).unwrap(),
             response
         );
     }
