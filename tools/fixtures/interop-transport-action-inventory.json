@@ -283,6 +283,15 @@
       "reason": "Get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering before Steelsearch can serve OpenSearch search pipeline get semantics."
     },
     {
+      "action_name": "cluster:admin/search/pipeline/delete",
+      "action_type": "DeleteSearchPipelineAction",
+      "transport_action": "DeleteSearchPipelineTransportAction",
+      "request_wire_type": "DeleteSearchPipelineRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch search pipeline delete semantics."
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "action_type": "ClusterAddWeightedRoutingAction",
       "transport_action": "TransportAddWeightedRoutingAction",

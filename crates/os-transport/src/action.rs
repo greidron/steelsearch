@@ -59,6 +59,7 @@ pub const DELETE_DECOMMISSION_STATE_ACTION_NAME: &str =
     "cluster:admin/decommission/awareness/delete";
 pub const PUT_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/put";
 pub const GET_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/get";
+pub const DELETE_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/delete";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -480,6 +481,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "GetSearchPipelineTransportAction",
         request_wire_type: "GetSearchPipelineRequest",
         response_wire_type: "GetSearchPipelineResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: DELETE_SEARCH_PIPELINE_ACTION_NAME,
+        action_type: "DeleteSearchPipelineAction",
+        transport_action: "DeleteSearchPipelineTransportAction",
+        request_wire_type: "DeleteSearchPipelineRequest",
+        response_wire_type: "AcknowledgedResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1689,6 +1697,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering",
+        },
+        DELETE_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5592,6 +5605,73 @@ pub fn read_get_search_pipeline_response_message(
         });
     }
     GetSearchPipelineResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_delete_search_pipeline_request_message(
+    request_id: i64,
+    version: Version,
+    request: &DeleteSearchPipelineRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(DELETE_SEARCH_PIPELINE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_delete_search_pipeline_request_message(
+    message: &TransportMessage,
+) -> Result<DeleteSearchPipelineRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != DELETE_SEARCH_PIPELINE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: DELETE_SEARCH_PIPELINE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    DeleteSearchPipelineRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_delete_search_pipeline_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_delete_search_pipeline_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -11393,6 +11473,76 @@ impl GetSearchPipelineResponseWire {
         }
         require_no_trailing_bytes(&input)?;
         Ok(Self { pipelines })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeleteSearchPipelineRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub ack_timeout: TimeValueWire,
+    pub id: String,
+}
+
+impl Default for DeleteSearchPipelineRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            ack_timeout: TimeValueWire::seconds(30),
+            id: "pipeline-1".to_string(),
+        }
+    }
+}
+
+impl DeleteSearchPipelineRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        self.ack_timeout.write(output);
+        output.write_string(&self.id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            ack_timeout: TimeValueWire::read(&mut input)?,
+            id: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout requires search pipeline metadata mutation semantics",
+            });
+        }
+        if self.ack_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline ack timeout",
+                reason: "custom acknowledgement timeout requires search pipeline cluster-state publication semantics",
+            });
+        }
+        if self.id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline missing id",
+                reason: "pipeline id validation belongs to search pipeline deletion semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete search pipeline execution",
+            reason: "delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering",
+        })
     }
 }
 
@@ -27024,6 +27174,13 @@ mod tests {
                     response_wire_type: "GetSearchPipelineResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/search/pipeline/delete",
+                    action_type: "DeleteSearchPipelineAction",
+                    transport_action: "DeleteSearchPipelineTransportAction",
+                    request_wire_type: "DeleteSearchPipelineRequest",
+                    response_wire_type: "AcknowledgedResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -35153,6 +35310,132 @@ mod tests {
         };
         assert_eq!(
             read_get_search_pipeline_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn delete_search_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = DeleteSearchPipelineRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(44),
+            id: "pipeline-a".to_string(),
+            ..DeleteSearchPipelineRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = DeleteSearchPipelineRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline execution",
+                ..
+            })
+        ));
+
+        let wildcard = DeleteSearchPipelineRequestWire {
+            id: "logs-*".to_string(),
+            ..DeleteSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            wildcard.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_search_pipeline_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = DeleteSearchPipelineRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..DeleteSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let ack_timeout = DeleteSearchPipelineRequestWire {
+            ack_timeout: TimeValueWire::seconds(10),
+            ..DeleteSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            ack_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline ack timeout",
+                ..
+            })
+        ));
+
+        let missing_id = DeleteSearchPipelineRequestWire {
+            id: " ".to_string(),
+            ..DeleteSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            missing_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline missing id",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        DeleteSearchPipelineRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            DeleteSearchPipelineRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn delete_search_pipeline_transport_messages_bind_rejected_action_frame_and_ack_response() {
+        let request = DeleteSearchPipelineRequestWire::default();
+        let mut frame =
+            build_delete_search_pipeline_request_message(44, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete search pipeline request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_delete_search_pipeline_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_delete_search_pipeline_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete search pipeline execution",
+                ..
+            })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_delete_search_pipeline_response_message(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete search pipeline response message");
+        };
+        assert_eq!(
+            read_delete_search_pipeline_response_message(&message).unwrap(),
             response
         );
     }

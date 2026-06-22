@@ -739,6 +739,20 @@ The get-search-pipeline boundary covers:
   reads, blank pipeline id selectors, get-search-pipeline execution, unknown
   response media types, and negative response pipeline counts.
 
+The delete-search-pipeline boundary covers:
+
+- OpenSearch `DeleteSearchPipelineRequest` parent task, cluster-manager
+  timeout, acknowledgement timeout, and pipeline id at the wire decode/build
+  layer;
+- OpenSearch `AcknowledgedResponse` payload at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/search/pipeline/delete` until search pipeline wildcard
+  deletion, missing-pipeline handling, metadata mutation, cluster-state
+  publication, and acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeout, custom
+  acknowledgement timeout, missing pipeline id, delete-search-pipeline
+  execution, and acknowledgement response rendering.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2745,6 +2759,25 @@ flag, and pipeline id selectors before admission rejects execution. At roughly
 transport bottleneck; the first performance-sensitive work is search pipeline
 metadata lookup, id/wildcard resolution, local read semantics, and response
 rendering.
+
+Current delete-search-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-search-pipeline-reject-wire-benchmark
+delete_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=276.359 ops_per_second=1447394.26 nanos_per_op=690.90
+delete_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=255.554 ops_per_second=1565228.47 nanos_per_op=638.88
+delete_search_pipeline_reject_validation iterations=400000 elapsed_ms=261.307 ops_per_second=1530763.68 nanos_per_op=653.27
+delete_search_pipeline_ack_response_decode iterations=400000 elapsed_ms=55.455 ops_per_second=7213034.04 nanos_per_op=138.64
+delete_search_pipeline_reject_wire_bottleneck_ops_per_second=1447394.26
+```
+
+The current delete-search-pipeline fail-closed boundary bottleneck is request
+encode. The payload includes the acknowledged cluster-manager request envelope
+and pipeline id before admission rejects execution. At roughly 1.45M ops/s in
+the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is search pipeline wildcard
+matching, missing-pipeline handling, metadata mutation, cluster-state
+publication, and acknowledgement rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
