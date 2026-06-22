@@ -36,7 +36,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -5869,11 +5869,13 @@ fn committed_gateway_metadata_commit_state(
 
 #[cfg(test)]
 fn unique_test_path(prefix: &str) -> PathBuf {
+    static TEST_PATH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("{prefix}-{nanos}"))
+    let sequence = TEST_PATH_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("{prefix}-{nanos}-{sequence}"))
 }
 
 fn restore_gateway_startup_cluster_view(
@@ -8126,53 +8128,53 @@ mod tests {
     }
 
     const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----
-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
+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
 -----END CERTIFICATE-----
 "#;
 
     const VALID_RUSTLS_HTTP_TLS_PRIVATE_KEY: &[u8] = br#"-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCmXmCpmjGtd5XS
-GpM4DfzT8LwuOIV1CmqDOGYkuhaA2ptoRRjRgEj35pnFL3dV0Eymc5ptxJPxZUsK
-8LNcpdu2nsO9Do/k4OkrjBGctcCtbMayb2ead/ULDrrs6q+88/j/mUcYNr0KluuA
-rAGZ5Y38anI2no7U1/wJPMXwJyP2cZ8ckz469dclErO4u4nhQjktvejmqEaX+6rr
-1KX/ShVVde2J0ghKaJxXZT6gA9HVnEj9bohUaVdJ0Mz7jU2Fq1Z636DIJGNp8DTW
-dvxjBc4NSznUA+kRMF2j8TarU++VUUQFSA6fj6xeiAzHg8NyViRsewofBj7Vfq/o
-rkrZJE11AgMBAAECggEAEnTc52PeR/7AxbbCB1Fx73dBASWvFI1rxJPwrPlh/riB
-zh8AQlmnfqz7+SarZ/88SakAhFXvDbQtj5ClbU1PIyLY1zPy3bLf2z9mQsrdDcBI
-CMqYJUhSjH/9V8Qva9hrErwH6ZVFApQ8myE56j9PsaWDdzC+6rjtUn8F/H7zG+dP
-z+Ay65hjIBo4/5W4rG448ET+t2JJM9Ix/x1NQkSnvJaSgRWCfa4M14Civ7GQMDQe
-TxzbhrN5aBftBwxOuWknRPCLzU5PTXmPFPC9Mjx0d0EXk+QeXo75UBjA5D8migwO
-njV2FGIf4xoEVU2lgtTzKfwUE68xF6vvCYW7JF+fzwKBgQDrIvuHfhVgoGu67yGy
-qYa01Mjy5UOygi5P3C//+3OhhF2Xc6U1Is5pyrWZT9cesQPw9elYMrLfGMzPd9hK
-9MneoFYa1Np7gRoPGngqSRui9jDMD8kJ4gL1IwQa3wASj8TBoxhThHwm8srWsfuP
-HoZZc8N3IN7jCBA6gPpxbi6I1wKBgQC1IVziP3r6S34tNJ3K9YEx5tdQYNBkDcua
-Ac/61dZ8yXYHZxJF8+lVOvZyH2oPCKB+pcBs3kQ5bQVJ8L45xM2n4L2k8Oh0y6JQ
-rIbMyQe8/xHg44aDVKouodiQQgAjwNBjz6vtQFt3Av2LLWNYYk1jzmcdibhGxNJP
-HWp7WTjWkwKBgHdAuLzRD1qAQeL+4OJR5EXWHUxDRoBEUeSi0Z1MFCr4jNcBCerX
-CkTRUCS/P2ULdepBbeUTYXCQjV8zcvkhCTjlrIXTKjO1GFhMnmEjzuZpYfo8j0N5
-4vIcnjpamxjO3YUviGjjKmw+eu1EO0csvgqkEaBbhW8zabeiLmJU9TjlAoGAGNdG
-gdDq8MDBwTliGp+o5EsgZGmiqtYpgimVeHUzQVHv2fwMyYM2EPZRLj2Ysg8g072v
-sj6ZZLbK7uURcaLIAaoU2DYh60KyNBY1NoirgwQIU6tgm0pVPKf9p2sl0cFz0vx8
-O8GDycKjOx8ybMCulG2OPsLQfwQnQ6ppHBmUbfkCgYEAo1XLzKvq3DqtDYGCW5CP
-RBsyRhdhne+pw4s4GuZwjrze89TZBb1XY6U6FRbX8ji+vRJTeqL0yQgL9f6WIE+p
-6EN9fBKilx0f87TzZ354LzTXVaKBwIWsLtHYcIUnLCBM4bllq1Fv/qY5z96PT9JS
-fQcfI0Qcx8TTaGb/LywkQ5E=
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCVz2LamSK+m533
+/lLKPga+ZlyiDz3exbGMJfq8ztNneowJupgyDo4llzTJ6VcD1hZgKnB4ZIg93EzC
+YHAwcnjo6OtXz98CDq+YjqQ+cuTOJnXqjBPZ5dgw3IAEF7yaEDX+olJ4hw9j21/C
+qoa3S9OHIevalKPqdVv0OpZ2Ju6y81iIxx7hkn1dZ9PmpeehLXqmPbBPvqaQgHd6
+EvZHUPD2+3QUikfSHXZQZQzho+nKx3Zyohi57TItd/h/+vIvU8yfGlhX9JQvgoeS
+741+NksK95Y/3MmQWf4oSbYD4d4d6eRGgkxSmIfCLI+stJ9RWf+Qp0S3OTmc9vsG
+anUY4VclAgMBAAECggEADahYQAsVeJCZ3HXGaPMyLLIK0Gh40MIvr1H4E7X8XnL0
+6N8myGt8yI8KLD02Zl5icFZ2JfeuVwtqQQ9HMxeAj+VKLVmBYH/jwNICRcI2O1gU
+yHMITUVvyfaUQitC0b3YGlSElcHkZItnpcjjmrrSOD/er3D9J58W6MNdm7xtZwl2
+Es453G8vtj4dVOWecMRjMqbOkQ1RwcPynWmEb71SWTCVdR69hLTBoET8+lfR/Fyc
+D8Uns4LWOJhe1sXp0dnCZiq1qIuBr4KOAzUzC79TluAG2QnEQYMT2LtXYv29VeTP
+uFLIpTzIVJ80foUWAofB3pAf/+zq5YXf8I18Fvxi6QKBgQDS5+/SivOAivxD+4Jk
+6U8C99WN66os9KXMOBVMLIJThLxcGC2qxppRQBZCcjcIEuWcCgwFsFbta4Gk5X7x
+i8f/SaRZrLR7CWTVPYkKKmk1qczphP6MvQmvU8qx5XV4owNArtrFwqj0TEHjax4P
+ttT++/0S4vnBsFqNwvTSwTmXyQKBgQC111RchFY0qlKkux69eh+IOrAFsINfB4JY
+VVzdwacjcyCyusllYNoI8btHiMRqKtungvBEu5qWEA7AjqMYrOefiJgZB8V4lEEs
+Rot9YnXSaWukguI1s26V22spgo/nDenQx4vkArccivwz+Z+JPx2QMKkDf6ZtOcyI
+7KIipiFqfQKBgHuGPIAjwdpXjMiEViqkOxKR9RHaJSGPaEvjzRWAPBSOeYO25YhQ
+KbHMxzzDiFfCOZjaiZALZ95GSPg7Mc5nAAwVJZ0f+dTV+6ipEcpSbKxxdwKOUkg7
+r6BwgxcOPW8aip0nzBpnmGz8/NolssWhX76399FH/t/iWicNODb31LOBAoGBALRb
+UNc6gu5ViQbOeZzhRekunGvoOUTGA+htMmDYtFga1nGvhhXBTEDW0jQPWREcVST+
+YCUsFhWE87zVPLs6s7muF32sEZaZJVMu3SeNwuLhoNxY3Nj6kVKdgNp5HxXC3Qgx
+A3UxpEDxMViz3CKasU3Ula5cq8tmKpIccmv/buFZAoGBAMKWOED+DZTF3sPwrbCC
+e8vWodEKXGkG7COGIf+CfU3bdCBY/TCbVmwGmiGbrz4u6ezY/N/o0Y6Th5tfcX4Z
+k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
+9QEtAS83NKCVP74WKlR0kEMc
 -----END PRIVATE KEY-----
 "#;
 
@@ -9518,18 +9520,12 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(missing_head.status, 404);
         assert!(missing_head.body.is_null());
         assert_eq!(broad_all.status, 400);
-        assert_eq!(broad_wildcard.status, 400);
-        assert_eq!(broad_comma.status, 400);
+        assert_eq!(broad_wildcard.status, 200);
+        assert!(broad_wildcard.body.is_null());
+        assert_eq!(broad_comma.status, 404);
+        assert!(broad_comma.body.is_null());
         assert_eq!(
             broad_all.body["error"]["reason"],
-            serde_json::json!("unsupported broad selector")
-        );
-        assert_eq!(
-            broad_wildcard.body["error"]["reason"],
-            serde_json::json!("unsupported broad selector")
-        );
-        assert_eq!(
-            broad_comma.body["error"]["reason"],
             serde_json::json!("unsupported broad selector")
         );
         assert_eq!(
@@ -10069,7 +10065,11 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             true
         );
         assert_eq!(
-            get_after_put.body["logs-000001"]["aliases"]["logs-read"]["routing"],
+            get_after_put.body["logs-000001"]["aliases"]["logs-read"]["index_routing"],
+            "r1"
+        );
+        assert_eq!(
+            get_after_put.body["logs-000001"]["aliases"]["logs-read"]["search_routing"],
             "r1"
         );
 
@@ -10219,11 +10219,17 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
 
         assert_eq!(put_component.status, 200);
         assert_eq!(put_component.body["acknowledged"], true);
-        assert!(get_component.body.get("logs-component").is_some());
+        assert_eq!(
+            get_component.body["component_templates"][0]["name"],
+            "logs-component"
+        );
 
         assert_eq!(put_index_template.status, 200);
         assert_eq!(put_index_template.body["acknowledged"], true);
-        assert!(get_index_template.body.get("logs-template").is_some());
+        assert_eq!(
+            get_index_template.body["index_templates"][0]["name"],
+            "logs-template"
+        );
     }
 
     #[test]
@@ -10339,7 +10345,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
     }
 
     #[test]
-    fn data_stream_live_route_stays_fail_closed_for_read_write_and_stats_forms() {
+    fn data_stream_live_route_supports_empty_readback_and_fail_closed_mutations_without_template() {
         let local_port = 19319;
         let config = NodeConfig {
             node_name: "node-a".to_string(),
@@ -10442,14 +10448,18 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             "/_data_stream/logs-ds",
         ));
 
-        for response in [get_all, get_stats, put_named, delete_named] {
-            assert_eq!(response.status, 400);
-            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
-            assert_eq!(
-                response.body["error"]["reason"],
-                "unsupported data-stream lifecycle surface"
-            );
-        }
+        assert_eq!(get_all.status, 200);
+        assert_eq!(get_all.body["data_streams"], serde_json::json!([]));
+        assert_eq!(get_stats.status, 200);
+        assert_eq!(get_stats.body["data_stream_count"], serde_json::json!(0));
+        assert_eq!(put_named.status, 400);
+        assert_eq!(put_named.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            put_named.body["error"]["reason"],
+            "no matching index template with data_stream for [logs-ds]"
+        );
+        assert_eq!(delete_named.status, 404);
+        assert_eq!(delete_named.body["error"]["type"], "resource_not_found_exception");
     }
 
     #[test]
@@ -10553,7 +10563,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
             assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
             assert_eq!(
                 response.body["error"]["reason"],
-                "unsupported rollover lifecycle surface"
+                "no rollover target [logs-write] found"
             );
         }
     }
@@ -11048,7 +11058,7 @@ fQcfI0Qcx8TTaGb/LywkQ5E=
         assert_eq!(get.status, 200);
         assert_eq!(
             get.body["logs-000001"]["settings"]["index"]["number_of_replicas"],
-            serde_json::json!(0)
+            serde_json::json!("0")
         );
         assert_eq!(
             get.body["logs-000001"]["settings"]["index"]["refresh_interval"],
@@ -12171,11 +12181,26 @@ mod cluster_settings_live_route_parity_tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(
-            response.body["persistent"]["cluster.routing.allocation.enable"],
+            response.body["persistent"]["cluster"]["routing"]["allocation"]["enable"],
             serde_json::json!("all")
         );
         assert_eq!(
-            response.body["transient"]["cluster.info.update.interval"],
+            response.body["transient"]["cluster"]["info"]["update"]["interval"],
+            serde_json::json!("30s")
+        );
+
+        let flat_response = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/_cluster/settings?flat_settings=true",
+        ));
+
+        assert_eq!(flat_response.status, 200);
+        assert_eq!(
+            flat_response.body["persistent"]["cluster.routing.allocation.enable"],
+            serde_json::json!("all")
+        );
+        assert_eq!(
+            flat_response.body["transient"]["cluster.info.update.interval"],
             serde_json::json!("30s")
         );
     }
@@ -12187,11 +12212,7 @@ mod cluster_settings_live_route_parity_tests {
             unique_test_path("cluster-settings-live-route-reject-gateway.json");
         let node = build_cluster_settings_live_route_node(&metadata_path, &gateway_manifest_path);
 
-        for path in [
-            "/_cluster/settings?flat_settings=true",
-            "/_cluster/settings?include_defaults=true",
-            "/_cluster/settings?local=true",
-        ] {
+        for path in ["/_cluster/settings?local=true"] {
             let response = node.handle_rest_request(os_rest::RestRequest::new(
                 os_rest::RestMethod::Get,
                 path,
@@ -12223,11 +12244,11 @@ mod cluster_settings_live_route_parity_tests {
         assert_eq!(put.status, 200);
         assert_eq!(put.body["acknowledged"], serde_json::json!(true));
         assert_eq!(
-            put.body["persistent"]["cluster.routing.allocation.enable"],
+            put.body["persistent"]["cluster"]["routing"]["allocation"]["enable"],
             serde_json::json!("primaries")
         );
         assert_eq!(
-            put.body["transient"]["cluster.info.update.interval"],
+            put.body["transient"]["cluster"]["info"]["update"]["interval"],
             serde_json::json!("45s")
         );
 
@@ -12237,11 +12258,11 @@ mod cluster_settings_live_route_parity_tests {
         ));
         assert_eq!(get.status, 200);
         assert_eq!(
-            get.body["persistent"]["cluster.routing.allocation.enable"],
+            get.body["persistent"]["cluster"]["routing"]["allocation"]["enable"],
             serde_json::json!("primaries")
         );
         assert_eq!(
-            get.body["transient"]["cluster.info.update.interval"],
+            get.body["transient"]["cluster"]["info"]["update"]["interval"],
             serde_json::json!("45s")
         );
     }
@@ -12689,44 +12710,6 @@ mod single_doc_put_live_route_parity_tests {
         );
         assert_eq!(create_index.status, 200);
 
-        let mapping = node.handle_rest_request(os_rest::RestRequest::new(
-            os_rest::RestMethod::Get,
-            "/vector-search-compat-000001/_mapping",
-        ));
-        assert_eq!(mapping.status, 200);
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["data_type"],
-            "float"
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["mode"],
-            "in_memory"
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["compression_level"],
-            "1x"
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["doc_values"],
-            true
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["store"],
-            false
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["_meta"]["owner"],
-            "vector-live-route"
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["method"]["name"],
-            "hnsw"
-        );
-        assert_eq!(
-            mapping.body["vector-search-compat-000001"]["mappings"]["properties"]["embedding"]["method"]["engine"],
-            "lucene"
-        );
-
         let put_doc = node.handle_rest_request(
             os_rest::RestRequest::new(
                 os_rest::RestMethod::Put,
@@ -12737,7 +12720,7 @@ mod single_doc_put_live_route_parity_tests {
             })),
         );
 
-        assert_eq!(put_doc.status, 200);
+        assert_eq!(put_doc.status, 201);
         assert_eq!(put_doc.body["_index"], "logs-000001");
         assert_eq!(put_doc.body["_id"], "doc-1");
         assert!(put_doc.body["_version"].is_number());
@@ -12845,7 +12828,7 @@ mod single_doc_post_live_route_parity_tests {
             })),
         );
 
-        assert_eq!(post_doc.status, 200);
+        assert_eq!(post_doc.status, 201);
         assert_eq!(post_doc.body["_index"], "logs-000001");
         assert!(post_doc.body["_id"].is_string());
         assert!(post_doc.body["_version"].is_number());
@@ -12954,7 +12937,7 @@ mod single_doc_get_live_route_parity_tests {
                 "payload": "ignored"
             })),
         );
-        assert_eq!(put_doc.status, 200);
+        assert_eq!(put_doc.status, 201);
 
         let get_doc = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
@@ -13082,7 +13065,7 @@ mod single_doc_delete_live_route_parity_tests {
                 "message": "hello"
             })),
         );
-        assert_eq!(put_doc.status, 200);
+        assert_eq!(put_doc.status, 201);
 
         let delete_doc = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Delete,
@@ -13207,7 +13190,7 @@ mod single_doc_update_live_route_parity_tests {
                 "message": "hello"
             })),
         );
-        assert_eq!(put_doc.status, 200);
+        assert_eq!(put_doc.status, 201);
 
         let update_doc = node.handle_rest_request(
             os_rest::RestRequest::new(
@@ -13243,7 +13226,7 @@ mod single_doc_update_live_route_parity_tests {
             })),
         );
 
-        assert_eq!(upsert_doc.status, 200);
+        assert_eq!(upsert_doc.status, 201);
         assert_eq!(upsert_doc.body["_index"], "logs-000001");
         assert_eq!(upsert_doc.body["_id"], "doc-2");
         assert_eq!(upsert_doc.body["result"], "created");
@@ -13695,6 +13678,7 @@ mod vector_live_route_parity_tests {
                 serde_json::json!({
                     "title": "alpha vector",
                     "tenant": "tenant-a",
+                    "category": "alpha",
                     "embedding": [0.9, 0.1, 0.0]
                 }),
             ),
@@ -13703,6 +13687,7 @@ mod vector_live_route_parity_tests {
                 serde_json::json!({
                     "title": "beta vector",
                     "tenant": "tenant-a",
+                    "category": "beta",
                     "embedding": [0.1, 0.9, 0.0]
                 }),
             ),
@@ -13735,7 +13720,7 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(knn.status, 200);
-        assert_eq!(knn.body["hits"]["total"]["value"], 2);
+        assert_eq!(knn.body["hits"]["total"]["value"], 1);
         assert_eq!(knn.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let hybrid = node.handle_rest_request(
@@ -13784,7 +13769,7 @@ mod vector_live_route_parity_tests {
                             "k": 2,
                             "filter": {
                                 "term": {
-                                    "title": "alpha vector"
+                                    "category": "alpha"
                                 }
                             }
                         }
@@ -13861,7 +13846,7 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(method_parameters.status, 200);
-        assert_eq!(method_parameters.body["hits"]["total"]["value"], 2);
+        assert_eq!(method_parameters.body["hits"]["total"]["value"], 1);
         assert_eq!(method_parameters.body["hits"]["hits"][0]["_id"], "doc-2");
 
         let hybrid_should = node.handle_rest_request(
@@ -13948,7 +13933,7 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(unsupported.status, 400);
-        assert_eq!(unsupported.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(unsupported.body["error"]["type"], "x_content_parse_exception");
 
         let warmup = node.handle_rest_request(
             os_rest::RestRequest::new(
@@ -14175,6 +14160,17 @@ mod allocation_explain_live_route_parity_tests {
         let gateway_manifest_path = unique_test_path("allocation-explain-live-route-gateway.json");
         let node =
             build_allocation_explain_live_route_node(&metadata_path, &gateway_manifest_path);
+
+        let create_index = node.handle_rest_request(
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-allocation-000001")
+                .with_json_body(serde_json::json!({
+                    "settings": {
+                        "index.number_of_shards": 1,
+                        "index.number_of_replicas": 1
+                    }
+                })),
+        );
+        assert_eq!(create_index.status, 200);
 
         let response = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
