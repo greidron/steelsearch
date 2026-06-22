@@ -147,24 +147,31 @@ Interpretation note for the table above:
 | Transport error response decode | Partial | Partial | Known remote errors convert to OpenSearch-shaped errors; complete exception registry is missing. |
 | Cluster-state request/response read path | Partial | Partial | Decode-first scaffold and version-gated custom payload coverage exist; full diff apply and named writeable coverage are incomplete. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
-| Core `ActionModule` transport actions | Planned | Planned | 148 core action registrations exist in OpenSearch and still need per-action replacement decisions. |
-| k-NN transport actions | Planned | Planned | k-NN REST and internal model surfaces exist; OpenSearch k-NN transport handlers are not implemented. |
+| Core `ActionModule` transport actions | Partial | Partial | 12 core action rows are implemented and the remaining 136 core rows have explicit fail-closed transport boundaries; most server-side execution semantics remain partial. |
+| k-NN transport actions | Partial | Partial | All 12 k-NN transport action rows have source-derived fail-closed request/response boundaries; model, cache, warmup, stats, and training execution semantics remain partial. |
 | Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
 
-Current 0.2.3 transport coverage evidence:
+Current transport coverage evidence:
 
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence. The current inventory has 160 transport
-  actions, all classified as `planned`, and zero OpenSearch `ActionModule`
-  transport actions classified as implemented.
+  actions: 12 `implemented`, 148 `partial`, and 0 `planned`.
+- The 148 `partial` rows mean Steelsearch has explicit source-derived
+  fail-closed action classification plus request/response wire boundary
+  coverage where applicable. They do not mean Steelsearch can execute every
+  action server-side yet.
+- All 12 k-NN plugin transport action registrations from
+  `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
+  are now represented as `partial` rows with fail-closed boundaries.
 - `target/runtime-peer-backpressure-current.json` is passing evidence for the
   `mixed-java-rust-query-phase` profile. It proves query-phase backpressure and
   readback behavior across the Rust remote-transport receiver and the Java
   OpenSearch peer search-thread-pool analogue.
-- That evidence does not promote generic OpenSearch transport action dispatch.
-  The current transport claim remains frame/handshake/observe-only plus the
-  explicit query-phase backpressure profile until actions are implemented and
+- That evidence does not promote generic OpenSearch transport action execution.
+  The current transport claim is frame/handshake/probe coverage, explicit
+  fail-closed action admission, implemented core action rows, and the
+  query-phase backpressure profile until additional actions are implemented and
   validated one by one.
 
 ## Replacement Readiness Summary
@@ -208,10 +215,13 @@ Current 0.2.3 mixed-cluster coverage evidence:
 - Current source-derived inventory is not an exhaustive OpenSearch API
   compatibility closure claim. The generated matrix currently has 754 rows:
   389 REST routes, 160 transport actions, 127 search registrations, and 78 node
-  runtime entries. Of the REST source rows, 371 are in scope and all are matched
-  by fixtures, but 363 REST rows remain classified as `planned` in the
-  source-derived matrix until each route has an owner-level implementation
-  classification and exhaustive positive/negative live comparison coverage.
+  runtime entries. Of the transport source rows, 12 are `implemented`, 148 are
+  `partial`, and none remain `planned`; the partial rows still require
+  owner-level server-side execution work before they can be promoted. Of the
+  REST source rows, 371 are in scope and all are matched by fixtures, but 363
+  REST rows remain classified as `planned` in the source-derived matrix until
+  each route has an owner-level implementation classification and exhaustive
+  positive/negative live comparison coverage.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
 - Attach native Steelsearch crate/module owner to each planned OpenSearch route

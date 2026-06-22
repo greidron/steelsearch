@@ -171,6 +171,59 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
    - Expand once the task and cluster/admin contracts are stable enough to
      measure coherently.
 
+## Current Source Boundary Audit
+
+The source-derived transport inventory currently has 160 rows:
+
+| Status | Count | Meaning |
+| --- | ---: | --- |
+| `implemented` | 12 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 148 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `planned` | 0 | No source-derived transport action remains unclassified. |
+
+The k-NN plugin action sweep is complete at the boundary layer. All 12
+registrations from
+`/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
+lines 348-359 are represented as `partial` rows with request/response wire
+coverage and fail-closed admission. This is not a claim that the k-NN transport
+actions execute their full OpenSearch semantics yet; it means unsupported
+transport execution is explicit and measured instead of accidentally passing
+through.
+
+Current k-NN reject-wire bottlenecks from the retained local release runs:
+
+| Action family | Bottleneck | Throughput |
+| --- | --- | ---: |
+| kNN stats | validation/decode | 129,737 ops/s |
+| kNN warmup | request encode | 1,253,890 ops/s |
+| update model metadata | request encode | 1,241,681 ops/s |
+| training job route decision info | request encode | 1,336,729 ops/s |
+| get model | request decode | 1,335,483 ops/s |
+| delete model | validation/decode | 1,504,599 ops/s |
+| training job router | request encode | 635,124 ops/s |
+| training model | request encode | 650,887 ops/s |
+| remove model from cache | request encode | 1,258,339 ops/s |
+| search model | request encode | 1,383,348 ops/s |
+| update model graveyard | request encode | 1,197,542 ops/s |
+| clear cache | validation/decode | 1,152,318 ops/s |
+
+The current k-NN boundary hotspot is `KNNStatsAction`: it validates and
+allocates the stat-name set even on the fail-closed path. The two training
+actions are the next wire-level hotspot because their request boundary carries
+an opaque training payload stand-in. These are still admission-path costs; the
+first real execution bottlenecks to measure after implementation are expected
+to be:
+
+- BaseNodes fanout and per-node response aggregation for stats, route-decision,
+  and remove-model-cache actions;
+- broadcast shard selection and per-shard cache/warmup execution for warmup and
+  clear-cache actions;
+- model system-index lookup, metadata parsing, cache/graveyard coordination,
+  and response rendering for get/delete/search/update-model actions;
+- training data sizing, method-context parsing, memory reservation, native
+  training execution, model writeback, and route-decision forwarding for
+  training actions.
+
 ## Current Server-Side Transport Adapters
 
 As of the bulk transport adapter pass, the explicit dispatcher contract in
