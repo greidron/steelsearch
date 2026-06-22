@@ -241,6 +241,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/views/update` (rejected fail-closed)
 - `views:data/read/list` (rejected fail-closed)
 - `views:data/read/search` (rejected fail-closed)
+- `cluster:admin/persistent/start` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1514,6 +1515,21 @@ The search-view boundary covers:
   rendering are implemented;
 - explicit rejection for missing or oversized view names and search-view
   execution.
+
+The start-persistent-task boundary covers:
+
+- OpenSearch `StartPersistentTaskAction.Request` parent task,
+  cluster-manager timeout, task id, task name, and persistent-task params
+  named-writeable name at the wire decode/build layer;
+- OpenSearch `PersistentTaskResponse` decode/build only for the empty optional
+  task payload shape, with concrete task payloads rejected until persistent
+  task params/state/metadata named-writeables are mapped;
+- explicit fail-closed classification for `cluster:admin/persistent/start`
+  until persistent task params named-writeables, cluster metadata mutation,
+  task assignment, and response rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, missing or oversized
+  task ids/names, params-name mismatches, start-persistent-task execution, and
+  persistent-task response rendering.
 
 The search boundary covers:
 
@@ -3529,6 +3545,25 @@ name string before rejecting at admission. At roughly 1.28M ops/s in the latest
 local release run, it stays close to the existing search reject path; future
 performance-sensitive work is view lookup, target index resolution, search
 execution, and `SearchResponse` rendering.
+
+Current start-persistent-task reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin start-persistent-task-reject-wire-benchmark
+start_persistent_task_reject_request_encode iterations=400000 elapsed_ms=513.472 ops_per_second=779010.24 nanos_per_op=1283.68
+start_persistent_task_reject_request_decode iterations=400000 elapsed_ms=455.093 ops_per_second=878941.47 nanos_per_op=1137.73
+start_persistent_task_reject_validation iterations=400000 elapsed_ms=470.462 ops_per_second=850228.83 nanos_per_op=1176.15
+start_persistent_task_empty_response_decode iterations=400000 elapsed_ms=54.776 ops_per_second=7302532.23 nanos_per_op=136.94
+start_persistent_task_reject_wire_bottleneck_ops_per_second=779010.24
+```
+
+The current start-persistent-task fail-closed boundary bottleneck is request
+encode. This path carries the ClusterManagerNode envelope, task id, task name,
+and persistent-task params named-writeable marker before rejecting at
+admission. At roughly 779K ops/s in the latest local release run, the longer
+task/params strings make it heavier than the adjacent view-admin boundaries;
+future performance-sensitive work is params named-writeable decode, cluster
+metadata mutation, task assignment, and response rendering.
 
 Current search reject wire microbenchmark:
 

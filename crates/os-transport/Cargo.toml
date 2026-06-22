@@ -426,6 +426,10 @@ name = "search-view-reject-wire-benchmark"
 path = "benchmarks/search_view_reject_wire.rs"
 
 [[bin]]
+name = "start-persistent-task-reject-wire-benchmark"
+path = "benchmarks/start_persistent_task_reject_wire.rs"
+
+[[bin]]
 name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 
