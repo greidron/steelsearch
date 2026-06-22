@@ -88,6 +88,12 @@ def build_inventory(
     missing_readiness = [
         name for name in ALL_ITEMS if not items[name]["ready"]
     ]
+    ready_startup = [
+        name for name in STARTUP_ITEMS if items[name]["ready"]
+    ]
+    ready_readiness = [
+        name for name in ALL_ITEMS if items[name]["ready"]
+    ]
     complete = not missing_readiness
     passed = complete if require_complete else True
     return {
@@ -97,7 +103,13 @@ def build_inventory(
             "require_complete": require_complete,
             "root": str(root),
             "max_age_seconds": max_age_seconds,
+            "startup_item_count": len(STARTUP_ITEMS),
+            "startup_ready_item_count": len(ready_startup),
+            "readiness_attachment_item_count": len(ALL_ITEMS),
+            "readiness_attachment_ready_item_count": len(ready_readiness),
+            "startup_ready_items": ready_startup,
             "startup_missing_items": missing_startup,
+            "readiness_attachment_ready_items": ready_readiness,
             "readiness_attachment_missing_items": missing_readiness,
         },
         "items": items,

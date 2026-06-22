@@ -51,6 +51,8 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
 
             self.assertTrue(report["summary"]["passed"])
             self.assertTrue(report["summary"]["complete"])
+            self.assertEqual(report["summary"]["startup_ready_item_count"], 5)
+            self.assertEqual(report["summary"]["readiness_attachment_ready_item_count"], 6)
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(report["summary"]["readiness_attachment_missing_items"], [])
             self.assertIn("--load-comparison-report", report["attach_command_template"])
@@ -78,6 +80,8 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             )
 
             self.assertFalse(report["summary"]["passed"])
+            self.assertEqual(report["summary"]["startup_ready_item_count"], 5)
+            self.assertEqual(report["summary"]["readiness_attachment_ready_item_count"], 5)
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(
                 report["summary"]["readiness_attachment_missing_items"],
