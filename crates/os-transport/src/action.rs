@@ -72,6 +72,7 @@ pub const UPDATE_MODEL_METADATA_ACTION_NAME: &str =
     "cluster:admin/knn_update_model_metadata_action";
 pub const TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME: &str =
     "cluster:admin/knn_training_job_route_decision_info_action";
+pub const GET_MODEL_ACTION_NAME: &str = "cluster:admin/knn_get_model_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -570,6 +571,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TrainingJobRouteDecisionInfoTransportAction",
         request_wire_type: "TrainingJobRouteDecisionInfoRequest",
         response_wire_type: "TrainingJobRouteDecisionInfoResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: GET_MODEL_ACTION_NAME,
+        action_type: "GetModelAction",
+        transport_action: "GetModelTransportAction",
+        request_wire_type: "GetModelRequest",
+        response_wire_type: "GetModelResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1834,6 +1842,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering",
+        },
+        GET_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6474,6 +6487,73 @@ pub fn read_training_job_route_decision_info_response_message(
         });
     }
     TrainingJobRouteDecisionInfoResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_model_request_message(
+    request_id: i64,
+    version: Version,
+    request: &GetModelRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(GET_MODEL_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_model_request_message(
+    message: &TransportMessage,
+) -> Result<GetModelRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != GET_MODEL_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: GET_MODEL_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    GetModelRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_model_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetModelResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_model_response_message(
+    message: &TransportMessage,
+) -> Result<GetModelResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    GetModelResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -14325,6 +14405,107 @@ impl TrainingJobRouteDecisionInfoResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "training job route decision info response rendering",
             reason: "TrainingJobRouteDecisionInfoResponse rendering requires node aggregation, failure aggregation, and training job count rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetModelRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub model_id: String,
+}
+
+impl Default for GetModelRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            model_id: "model-000001".to_string(),
+        }
+    }
+}
+
+impl GetModelRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string(&self.model_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            model_id: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get model execution",
+            reason: "get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetModelResponseWire {
+    pub model_payload_present: bool,
+}
+
+impl Default for GetModelResponseWire {
+    fn default() -> Self {
+        Self {
+            model_payload_present: true,
+        }
+    }
+}
+
+impl GetModelResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        if self.model_payload_present {
+            output.write_string("nmslib");
+            output.write_string("l2");
+            output.write_i32(1);
+            output.write_string("created");
+            output.write_string("1970-01-01T00:00:00Z");
+            output.write_string("");
+            output.write_string("");
+            output.write_bool(false);
+            output.write_string("model-000001");
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let remaining = input.remaining();
+        let model_payload_present = if remaining > 0 {
+            let _ = input.read_bytes(remaining)?;
+            true
+        } else {
+            false
+        };
+        let response = Self {
+            model_payload_present,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if !self.model_payload_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model missing model",
+                reason: "OpenSearch GetModelResponse requires a Model payload",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get model response rendering",
+            reason: "GetModelResponse rendering requires KNN ModelMetadata parsing, optional model blob handling, model id rendering, and xcontent rendering",
         })
     }
 }
@@ -30116,6 +30297,13 @@ mod tests {
                     response_wire_type: "TrainingJobRouteDecisionInfoResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_get_model_action",
+                    action_type: "GetModelAction",
+                    transport_action: "GetModelTransportAction",
+                    request_wire_type: "GetModelRequest",
+                    response_wire_type: "GetModelResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -40497,6 +40685,102 @@ mod tests {
             read_training_job_route_decision_info_response_message(&message).unwrap(),
             response
         );
+    }
+
+    #[test]
+    fn get_model_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = GetModelRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(55),
+            model_id: "model-a".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = GetModelRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model execution",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        GetModelRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            GetModelRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn get_model_response_wire_detects_model_payload_and_rejects_rendering() {
+        let response = GetModelResponseWire {
+            model_payload_present: true,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = GetModelResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model response rendering",
+                ..
+            })
+        ));
+
+        let missing_model = GetModelResponseWire {
+            model_payload_present: false,
+        };
+        let mut output = StreamOutput::new();
+        missing_model.write(&mut output);
+        let decoded = GetModelResponseWire::read(output.freeze()).unwrap();
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model missing model",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_model_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = GetModelRequestWire::default();
+        let mut frame =
+            build_get_model_request_message(55, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get model request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(read_get_model_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_get_model_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model execution",
+                ..
+            })
+        ));
+
+        let response = GetModelResponseWire::default();
+        let mut frame =
+            build_get_model_response_message(55, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get model response message");
+        };
+        assert_eq!(read_get_model_response_message(&message).unwrap(), response);
     }
 
     #[test]

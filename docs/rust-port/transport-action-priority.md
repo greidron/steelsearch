@@ -927,6 +927,18 @@ The training-job-route-decision-info boundary covers:
   response payloads, node failures, blank cluster names, response rendering,
   and training-job-route-decision-info execution.
 
+The get-model boundary covers:
+
+- OpenSearch k-NN `GetModelRequest` parent task and model id at the wire
+  decode/build layer;
+- OpenSearch k-NN `GetModelResponse` model payload presence at the wire
+  decode/build layer while treating the full `Model` body as opaque;
+- explicit fail-closed classification for `cluster:admin/knn_get_model_action`
+  until model system-index lookup, KNN `ModelMetadata` parsing, optional model
+  blob handling, model id rendering, and response rendering are implemented;
+- explicit rejection for missing model response payloads, opaque model response
+  rendering, and get-model execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3146,6 +3158,26 @@ execution. At roughly 1.34M ops/s in the latest local release run, this boundary
 is not a material transport bottleneck; the first performance-sensitive work is
 BaseNodes fanout, node-level training job count collection, failure
 aggregation, and response rendering.
+
+Current get-model reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-model-reject-wire-benchmark
+get_model_reject_request_encode iterations=400000 elapsed_ms=281.684 ops_per_second=1420029.96 nanos_per_op=704.21
+get_model_reject_request_decode iterations=400000 elapsed_ms=299.517 ops_per_second=1335482.89 nanos_per_op=748.79
+get_model_reject_validation iterations=400000 elapsed_ms=252.445 ops_per_second=1584506.57 nanos_per_op=631.11
+get_model_response_decode iterations=400000 elapsed_ms=65.162 ops_per_second=6138586.67 nanos_per_op=162.90
+get_model_reject_wire_bottleneck_ops_per_second=1335482.89
+```
+
+The current get-model fail-closed boundary bottleneck is request decode. The
+payload includes the parent task and model id before admission rejects
+execution; the response path only detects model payload presence and treats the
+full `Model` body as opaque. At roughly 1.34M ops/s in the latest local release
+run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is model system-index lookup, KNN `ModelMetadata`
+parsing, optional model blob handling, model id rendering, and response
+rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
