@@ -958,6 +958,15 @@
       "reason": "Renew-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease renewal, and response rendering before Steelsearch can serve OpenSearch retention lease renew semantics."
     },
     {
+      "action_name": "indices:admin/seq_no/remove_retention_lease",
+      "action_type": "RetentionLeaseActions.Remove",
+      "transport_action": "RetentionLeaseActions.Remove.TransportAction",
+      "request_wire_type": "RetentionLeaseActions.RemoveRequest",
+      "response_wire_type": "RetentionLeaseActions.Response",
+      "disposition": "rejected",
+      "reason": "Remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering before Steelsearch can serve OpenSearch retention lease remove semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

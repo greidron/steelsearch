@@ -156,6 +156,8 @@ pub const OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME: &str =
     "indices:admin/seq_no/add_retention_lease";
 pub const OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME: &str =
     "indices:admin/seq_no/renew_retention_lease";
+pub const OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME: &str =
+    "indices:admin/seq_no/remove_retention_lease";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1201,6 +1203,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map shard routing, primary operation permit acquisition, retention lease renewal, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME,
+        action_type: "RetentionLeaseActions.Remove",
+        transport_action: "RetentionLeaseActions.Remove.TransportAction",
+        request_wire_type: "RetentionLeaseActions.RemoveRequest",
+        response_wire_type: "RetentionLeaseActions.Response",
+        adapter_stage: "retention-lease-admin",
+        next_step: "map shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1929,6 +1940,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "renew-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease renewal, and response rendering",
+        },
+        OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
         },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -8115,6 +8131,73 @@ pub fn build_opensearch_renew_retention_lease_response_message(
 }
 
 pub fn read_opensearch_renew_retention_lease_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRetentionLeaseResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchRetentionLeaseResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_remove_retention_lease_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchRemoveRetentionLeaseRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_remove_retention_lease_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRemoveRetentionLeaseRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchRemoveRetentionLeaseRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_remove_retention_lease_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchRetentionLeaseResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_remove_retention_lease_response_message(
     message: &TransportMessage,
 ) -> Result<OpenSearchRetentionLeaseResponseWire, TransportActionWireError> {
     if message.status.is_request() {
@@ -17118,6 +17201,97 @@ impl OpenSearchRenewRetentionLeaseRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRemoveRetentionLeaseRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub internal_shard_id: Option<OpenSearchShardIdWire>,
+    pub index: Option<String>,
+    pub shard_id: OpenSearchShardIdWire,
+    pub lease_id: String,
+}
+
+impl Default for OpenSearchRemoveRetentionLeaseRequestWire {
+    fn default() -> Self {
+        let shard_id = OpenSearchShardIdWire::default();
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            internal_shard_id: None,
+            index: Some(shard_id.index_name.clone()),
+            shard_id,
+            lease_id: "steelsearch-retention-lease".to_string(),
+        }
+    }
+}
+
+impl OpenSearchRemoveRetentionLeaseRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_optional_shard_id(output, self.internal_shard_id.as_ref());
+        output.write_optional_string(self.index.as_deref());
+        self.shard_id.write(output);
+        output.write_string(&self.lease_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let internal_shard_id = read_optional_shard_id(&mut input)?;
+        let index = input.read_optional_string()?;
+        let shard_id = OpenSearchShardIdWire::read(&mut input)?;
+        let lease_id = input.read_string()?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            internal_shard_id,
+            index,
+            shard_id,
+            lease_id,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.shard_id
+            .validate_supported_shape("remove retention lease shard id")?;
+        if let Some(internal_shard_id) = &self.internal_shard_id {
+            internal_shard_id
+                .validate_supported_shape("remove retention lease internal shard id")?;
+        }
+        if let Some(index) = &self.index {
+            if index != &self.shard_id.index_name {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "remove retention lease index mismatch",
+                    reason:
+                        "SingleShardRequest index must match the retention lease shard id index",
+                });
+            }
+        } else {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease missing index",
+                reason: "OpenSearch remove-retention-lease requests require a single target index",
+            });
+        }
+        if self.lease_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease missing lease id",
+                reason: "OpenSearch remove-retention-lease requests require a lease id",
+            });
+        }
+        if self.lease_id.len() > 256 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease id length",
+                reason: "OpenSearch remove-retention-lease ids are bounded to 256 bytes by the Rust boundary",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "remove retention lease execution",
+            reason: "remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OpenSearchRetentionLeaseResponseWire;
 
@@ -25405,6 +25579,15 @@ mod tests {
                     next_step: "map shard routing, primary operation permit acquisition, retention lease renewal, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:admin/seq_no/remove_retention_lease",
+                    action_type: "RetentionLeaseActions.Remove",
+                    transport_action: "RetentionLeaseActions.Remove.TransportAction",
+                    request_wire_type: "RetentionLeaseActions.RemoveRequest",
+                    response_wire_type: "RetentionLeaseActions.Response",
+                    adapter_stage: "retention-lease-admin",
+                    next_step: "map shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -26133,6 +26316,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -41468,6 +41652,134 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_renew_retention_lease_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_remove_retention_lease_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = OpenSearchRemoveRetentionLeaseRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(18),
+            internal_shard_id: Some(OpenSearchShardIdWire {
+                index_name: "steelsearch-index".to_string(),
+                index_uuid: "uuid-1".to_string(),
+                shard_id: 0,
+            }),
+            shard_id: OpenSearchShardIdWire {
+                index_name: "steelsearch-index".to_string(),
+                index_uuid: "uuid-1".to_string(),
+                shard_id: 0,
+            },
+            lease_id: "lease-a".to_string(),
+            ..OpenSearchRemoveRetentionLeaseRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchRemoveRetentionLeaseRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_remove_retention_lease_request_rejects_unsupported_shapes() {
+        let index_mismatch = OpenSearchRemoveRetentionLeaseRequestWire {
+            index: Some("other-index".to_string()),
+            ..OpenSearchRemoveRetentionLeaseRequestWire::default()
+        };
+        assert!(matches!(
+            index_mismatch.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease index mismatch",
+                ..
+            })
+        ));
+
+        let missing_id = OpenSearchRemoveRetentionLeaseRequestWire {
+            lease_id: " ".to_string(),
+            ..OpenSearchRemoveRetentionLeaseRequestWire::default()
+        };
+        assert!(matches!(
+            missing_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease missing lease id",
+                ..
+            })
+        ));
+
+        let oversized_id = OpenSearchRemoveRetentionLeaseRequestWire {
+            lease_id: "x".repeat(257),
+            ..OpenSearchRemoveRetentionLeaseRequestWire::default()
+        };
+        assert!(matches!(
+            oversized_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease id length",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        OpenSearchRemoveRetentionLeaseRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            OpenSearchRemoveRetentionLeaseRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn opensearch_remove_retention_lease_transport_messages_bind_rejected_action_frame_and_empty_response(
+    ) {
+        let request = OpenSearchRemoveRetentionLeaseRequestWire::default();
+        let mut frame = build_opensearch_remove_retention_lease_request_message(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remove retention lease request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_remove_retention_lease_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_remove_retention_lease_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove retention lease execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchRetentionLeaseResponseWire;
+        let mut frame = build_opensearch_remove_retention_lease_response_message(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remove retention lease response message");
+        };
+        assert_eq!(
+            read_opensearch_remove_retention_lease_response_message(&message).unwrap(),
             response
         );
     }

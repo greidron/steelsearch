@@ -450,6 +450,10 @@ name = "renew-retention-lease-reject-wire-benchmark"
 path = "benchmarks/renew_retention_lease_reject_wire.rs"
 
 [[bin]]
+name = "remove-retention-lease-reject-wire-benchmark"
+path = "benchmarks/remove_retention_lease_reject_wire.rs"
+
+[[bin]]
 name = "search-reject-wire-benchmark"
 path = "benchmarks/search_reject_wire.rs"
 

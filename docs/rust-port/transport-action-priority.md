@@ -247,6 +247,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/persistent/remove` (rejected fail-closed)
 - `indices:admin/seq_no/add_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
+- `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
@@ -1613,6 +1614,21 @@ The renew-retention-lease boundary covers:
 - explicit rejection for shard/index mismatches, missing or oversized lease
   ids, invalid retaining sequence numbers, missing sources,
   renew-retention-lease execution, and non-empty retention lease responses.
+
+The remove-retention-lease boundary covers:
+
+- OpenSearch `RetentionLeaseActions.RemoveRequest` parent task, optional
+  `SingleShardRequest` internal shard id, optional concrete index, explicit
+  `ShardId`, and lease id at the wire decode/build layer;
+- OpenSearch `RetentionLeaseActions.Response` decode/build as an empty
+  `ActionResponse` body;
+- explicit fail-closed classification for
+  `indices:admin/seq_no/remove_retention_lease` until shard routing, primary
+  operation permit acquisition, retention lease removal, sync, and response
+  rendering are implemented;
+- explicit rejection for shard/index mismatches, missing or oversized lease
+  ids, remove-retention-lease execution, and non-empty retention lease
+  responses.
 
 The search boundary covers:
 
@@ -3742,6 +3758,25 @@ as add-retention-lease, then performs shard/index and lease-shape checks before
 rejecting at admission. At roughly 592K ops/s in the latest local release run,
 future performance-sensitive work is shard routing, primary operation permit
 acquisition, retention lease renewal, and response rendering.
+
+Current remove-retention-lease reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin remove-retention-lease-reject-wire-benchmark
+remove_retention_lease_reject_request_encode iterations=400000 elapsed_ms=805.514 ops_per_second=496577.62 nanos_per_op=2013.78
+remove_retention_lease_reject_request_decode iterations=400000 elapsed_ms=980.501 ops_per_second=407954.79 nanos_per_op=2451.25
+remove_retention_lease_reject_validation iterations=400000 elapsed_ms=781.708 ops_per_second=511699.96 nanos_per_op=1954.27
+remove_retention_lease_empty_response_decode iterations=400000 elapsed_ms=40.883 ops_per_second=9784041.98 nanos_per_op=102.21
+remove_retention_lease_reject_wire_bottleneck_ops_per_second=407954.79
+```
+
+The current remove-retention-lease fail-closed boundary bottleneck is request
+decode. This path carries the `SingleShardRequest` envelope, explicit
+`ShardId`, and lease id before rejecting at admission. At roughly 408K ops/s in
+the latest local release run, it is currently slower than add/renew in this
+microbenchmark despite the smaller payload; future performance-sensitive work
+is shard routing, primary operation permit acquisition, retention lease
+removal, sync, and response rendering.
 
 Current search reject wire microbenchmark:
 
