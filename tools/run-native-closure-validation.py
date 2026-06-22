@@ -2064,6 +2064,22 @@ LOAD_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+LOAD_COMPARISON_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "load_comparison_evidence_runs_steelsearch_opensearch_http_baseline",
+        "load-comparison-evidence-current",
+        (
+            "python3",
+            "tools/generate-load-comparison-evidence.py",
+            "--output",
+            "target/release-load-comparison/http-load-comparison.json",
+            "--query-mix",
+            "write=25,lexical=25,ranking=20,facet=15,sort_filter=10,refresh=5",
+        ),
+        timeout_seconds=420,
+    ),
+)
+
 ROLLING_UPGRADE_EVIDENCE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "rolling_upgrade_evidence_runs_ordered_transcript_fixture",
@@ -2125,6 +2141,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "packaging-evidence-current": PACKAGING_EVIDENCE_CURRENT_BATCH,
     "benchmark-evidence-current": BENCHMARK_EVIDENCE_CURRENT_BATCH,
     "load-evidence-current": LOAD_EVIDENCE_CURRENT_BATCH,
+    "load-comparison-evidence-current": LOAD_COMPARISON_EVIDENCE_CURRENT_BATCH,
     "rolling-upgrade-evidence-current": ROLLING_UPGRADE_EVIDENCE_CURRENT_BATCH,
     "chaos-evidence-current": CHAOS_EVIDENCE_CURRENT_BATCH,
     "runtime-throttle": RUNTIME_THROTTLE_BATCH,

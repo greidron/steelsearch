@@ -18,8 +18,7 @@ STARTUP_ITEMS = {
     },
     "load_test_coverage": {
         "artifact_kind": "load JSON",
-        "patterns": ("**/*load*.json",),
-        "exclude_name_parts": ("comparison",),
+        "patterns": ("**/*load-baseline*.json", "**/*load*baseline*.json"),
         "attach_argument": "--load-report",
     },
     "chaos_test_coverage": {

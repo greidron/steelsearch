@@ -38,7 +38,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 os.utime(path, (now, now))
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
-            self.write_valid_load(temp_dir / "final-load.json", now)
+            self.write_valid_load(temp_dir / "final-load-baseline.json", now)
             self.write_valid_load_comparison(temp_dir / "final-load-comparison.json", now)
             self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
@@ -69,7 +69,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 os.utime(path, (now, now))
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
-            self.write_valid_load(temp_dir / "final-load.json", now)
+            self.write_valid_load(temp_dir / "final-load-baseline.json", now)
             self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
             report = self.inventory.build_inventory(
@@ -92,7 +92,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
             now = 1_000_000.0
-            load = temp_dir / "final-load.json"
+            load = temp_dir / "final-load-baseline.json"
             load.write_text(
                 json.dumps({"summary": {"error_count": 1, "operation_count": 10}}),
                 encoding="utf-8",
@@ -169,6 +169,31 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertEqual(item["candidate_count"], 0)
             self.assertFalse(item["ready"])
             self.assertIn("artifact candidate is missing", item["blockers"])
+
+    def test_inventory_ignores_load_server_log_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            log = temp_dir / "opensearch-release-load_server.json"
+            log.write_text(
+                json.dumps({"type": "server", "message": "started"}) + "\n"
+                + json.dumps({"type": "server", "message": "stopped"}) + "\n",
+                encoding="utf-8",
+            )
+            os.utime(log, (now, now))
+            self.write_valid_load(temp_dir / "http-load-baseline.json", now - 1)
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["load_test_coverage"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["candidate_count"], 1)
+            self.assertTrue(item["latest_artifact_path"].endswith("http-load-baseline.json"))
 
     def test_cli_returns_nonzero_when_complete_inventory_is_required(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
