@@ -81,6 +81,7 @@ pub const REMOVE_MODEL_FROM_CACHE_ACTION_NAME: &str =
 pub const SEARCH_MODEL_ACTION_NAME: &str = "cluster:admin/knn_search_model_action";
 pub const UPDATE_MODEL_GRAVEYARD_ACTION_NAME: &str =
     "cluster:admin/knn_update_model_graveyard_action";
+pub const CLEAR_CACHE_ACTION_NAME: &str = "cluster:admin/clear_cache_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -628,6 +629,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "UpdateModelGraveyardTransportAction",
         request_wire_type: "UpdateModelGraveyardRequest",
         response_wire_type: "AcknowledgedResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: CLEAR_CACHE_ACTION_NAME,
+        action_type: "ClearCacheAction",
+        transport_action: "ClearCacheTransportAction",
+        request_wire_type: "ClearCacheRequest",
+        response_wire_type: "ClearCacheResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1927,6 +1935,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering",
+        },
+        CLEAR_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7036,6 +7049,73 @@ pub fn read_update_model_graveyard_response_message(
         });
     }
     AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_clear_cache_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClearCacheRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLEAR_CACHE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_clear_cache_request_message(
+    message: &TransportMessage,
+) -> Result<ClearCacheRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLEAR_CACHE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLEAR_CACHE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClearCacheRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_clear_cache_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClearCacheResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_clear_cache_response_message(
+    message: &TransportMessage,
+) -> Result<ClearCacheResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    ClearCacheResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -15524,6 +15604,141 @@ impl UpdateModelGraveyardRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "update model graveyard execution",
             reason: "update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClearCacheRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub indices: Option<Vec<String>>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl Default for ClearCacheRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            indices: Some(vec!["logs-000001".to_string()]),
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+        }
+    }
+}
+
+impl ClearCacheRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_nullable_string_array(output, self.indices.as_deref());
+        self.indices_options.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            indices: read_nullable_string_array(&mut input)?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self
+            .indices
+            .as_ref()
+            .map_or(true, |indices| indices.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache missing indices",
+                reason: "ClearCacheRequest requires index selectors",
+            });
+        }
+        if self
+            .indices
+            .as_ref()
+            .is_some_and(|indices| indices.iter().any(|index| index.trim().is_empty()))
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache blank index",
+                reason: "blank clear-cache index selectors require OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache indices options",
+                reason: "custom clear-cache index resolution options require OpenSearch index expression resolution semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "clear cache execution",
+            reason: "clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct ClearCacheResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+}
+
+impl ClearCacheResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+            shard_failure_count: input.read_vint()?,
+        };
+        if response.total_shards < 0 || response.successful_shards < 0 || response.failed_shards < 0
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache response shard counters",
+                reason: "ClearCacheResponse shard counters must be non-negative",
+            });
+        }
+        if response.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache response failure count",
+                reason: "ClearCacheResponse shard failure count must be non-negative",
+            });
+        }
+        if response.shard_failure_count > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache shard failures",
+                reason: "ClearCacheResponse shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache response failures",
+                reason: "clear-cache shard failure rendering is not implemented",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "clear cache response rendering",
+            reason: "ClearCacheResponse rendering requires broadcast shard execution and shard result aggregation",
         })
     }
 }
@@ -31364,6 +31579,13 @@ mod tests {
                     response_wire_type: "AcknowledgedResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/clear_cache_action",
+                    action_type: "ClearCacheAction",
+                    transport_action: "ClearCacheTransportAction",
+                    request_wire_type: "ClearCacheRequest",
+                    response_wire_type: "ClearCacheResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -42516,6 +42738,140 @@ mod tests {
         };
         assert_eq!(
             read_update_model_graveyard_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn clear_cache_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = ClearCacheRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(62),
+            indices: Some(vec!["knn-index".to_string()]),
+            ..ClearCacheRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClearCacheRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache execution",
+                ..
+            })
+        ));
+
+        let missing_indices = ClearCacheRequestWire {
+            indices: Some(Vec::new()),
+            ..ClearCacheRequestWire::default()
+        };
+        assert!(matches!(
+            missing_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache missing indices",
+                ..
+            })
+        ));
+
+        let blank_index = ClearCacheRequestWire {
+            indices: Some(vec![" ".to_string()]),
+            ..ClearCacheRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache blank index",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn clear_cache_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = ClearCacheResponseWire {
+            total_shards: 2,
+            successful_shards: 2,
+            failed_shards: 0,
+            shard_failure_count: 0,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = ClearCacheResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache response rendering",
+                ..
+            })
+        ));
+
+        let mut failure_count = StreamOutput::new();
+        failure_count.write_vint(1);
+        failure_count.write_vint(0);
+        failure_count.write_vint(1);
+        failure_count.write_vint(1);
+        assert!(matches!(
+            ClearCacheResponseWire::read(failure_count.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache shard failures",
+                ..
+            })
+        ));
+
+        let failed_response = ClearCacheResponseWire {
+            failed_shards: 1,
+            ..ClearCacheResponseWire::default()
+        };
+        assert!(matches!(
+            failed_response.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache response failures",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn clear_cache_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = ClearCacheRequestWire::default();
+        let mut frame =
+            build_clear_cache_request_message(62, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear cache request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(read_clear_cache_request_message(&message).unwrap(), request);
+        assert!(matches!(
+            read_clear_cache_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear cache execution",
+                ..
+            })
+        ));
+        assert!(matches!(
+            read_knn_warmup_request_message(&message),
+            Err(TransportActionWireError::UnexpectedAction { .. })
+        ));
+
+        let response = ClearCacheResponseWire::default();
+        let mut frame =
+            build_clear_cache_response_message(62, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear cache response message");
+        };
+        assert_eq!(
+            read_clear_cache_response_message(&message).unwrap(),
             response
         );
     }

@@ -1022,6 +1022,20 @@ The update-model-graveyard boundary covers:
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
   timeout, blank model ids, and update-model-graveyard execution.
 
+The clear-cache boundary covers:
+
+- OpenSearch k-NN `ClearCacheRequest` parent task, index selectors, and index
+  resolution options at the wire decode/build layer;
+- OpenSearch k-NN `ClearCacheResponse` total, successful, failed shard
+  counters, and empty shard failure list at the wire decode/build layer;
+- explicit fail-closed classification for `cluster:admin/clear_cache_action`
+  until index resolution, KNN index validation, broadcast shard selection,
+  per-shard KNN cache eviction, shard failure aggregation, and response
+  rendering are implemented;
+- explicit rejection for missing indices, blank indices, custom index
+  resolution options, non-empty shard failures, response failure rendering, and
+  clear-cache execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3377,6 +3391,25 @@ wire paths; the first performance-sensitive work is cluster-manager state update
 submission, model graveyard metadata mutation, model usage mapping scan,
 delete-model conflict handling, cluster-state publication, and acknowledgement
 rendering.
+
+Current clear-cache reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin clear-cache-reject-wire-benchmark
+clear_cache_reject_request_encode iterations=400000 elapsed_ms=306.273 ops_per_second=1306026.33 nanos_per_op=765.68
+clear_cache_reject_request_decode iterations=400000 elapsed_ms=292.863 ops_per_second=1365826.29 nanos_per_op=732.16
+clear_cache_reject_validation iterations=400000 elapsed_ms=347.126 ops_per_second=1152317.86 nanos_per_op=867.82
+clear_cache_response_decode iterations=400000 elapsed_ms=59.785 ops_per_second=6690591.66 nanos_per_op=149.46
+clear_cache_reject_wire_bottleneck_ops_per_second=1152317.86
+```
+
+The current clear-cache fail-closed boundary bottleneck is validation including
+request decode. The payload includes the broadcast request index selectors and
+index resolution options before admission rejects execution. At roughly 1.15M
+ops/s in the latest local release run, this boundary is lighter than the
+training request wire paths; the first performance-sensitive work is index
+resolution, KNN index validation, broadcast shard selection, per-shard KNN cache
+eviction, shard failure aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

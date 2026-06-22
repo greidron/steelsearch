@@ -214,6 +214,10 @@ name = "update-model-graveyard-reject-wire-benchmark"
 path = "benchmarks/update_model_graveyard_reject_wire.rs"
 
 [[bin]]
+name = "clear-cache-reject-wire-benchmark"
+path = "benchmarks/clear_cache_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 
