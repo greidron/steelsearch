@@ -194,7 +194,7 @@ Current k-NN reject-wire bottlenecks from the retained local release runs:
 
 | Action family | Bottleneck | Throughput |
 | --- | --- | ---: |
-| kNN stats | validation/decode | 129,737 ops/s |
+| kNN stats | request body encode/decode | 133,599 ops/s |
 | kNN warmup | request encode | 1,253,890 ops/s |
 | update model metadata | request encode | 1,241,681 ops/s |
 | training job route decision info | request encode | 1,336,729 ops/s |
@@ -207,12 +207,13 @@ Current k-NN reject-wire bottlenecks from the retained local release runs:
 | update model graveyard | request encode | 1,197,542 ops/s |
 | clear cache | validation/decode | 1,152,318 ops/s |
 
-The current k-NN boundary hotspot is `KNNStatsAction`: it validates and
-allocates the stat-name set even on the fail-closed path. The two training
-actions are the next wire-level hotspot because their request boundary carries
-an opaque training payload stand-in. These are still admission-path costs; the
-first real execution bottlenecks to measure after implementation are expected
-to be:
+The current k-NN boundary hotspot is `KNNStatsAction`: its request body carries
+the full valid stat-name set even on the fail-closed path. Stage-level
+instrumentation shows pure validation is not the hotspot; request body
+encode/decode of the stat-name payload is. The two training actions are the
+next wire-level hotspot because their request boundary carries an opaque
+training payload stand-in. These are still admission-path costs; the first real
+execution bottlenecks to measure after implementation are expected to be:
 
 - BaseNodes fanout and per-node response aggregation for stats, route-decision,
   and remove-model-cache actions;
@@ -3235,21 +3236,27 @@ Current knn-stats reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin knn-stats-reject-wire-benchmark
-knn_stats_reject_request_encode iterations=400000 elapsed_ms=3033.249 ops_per_second=131871.81 nanos_per_op=7583.12
-knn_stats_reject_request_decode iterations=400000 elapsed_ms=2992.545 ops_per_second=133665.50 nanos_per_op=7481.36
-knn_stats_reject_validation iterations=400000 elapsed_ms=3083.152 ops_per_second=129737.36 nanos_per_op=7707.88
-knn_stats_response_decode iterations=400000 elapsed_ms=98.807 ops_per_second=4048277.57 nanos_per_op=247.02
-knn_stats_reject_wire_bottleneck_ops_per_second=129737.36
+knn_stats_request_wire_shape valid_stats=41 requested_stats=0 body_bytes=854
+knn_stats_request_body_encode iterations=400000 elapsed_ms=2755.680 ops_per_second=145154.72 nanos_per_op=6889.20
+knn_stats_reject_request_encode iterations=400000 elapsed_ms=2954.765 ops_per_second=135374.57 nanos_per_op=7386.91
+knn_stats_frame_decode iterations=400000 elapsed_ms=63.502 ops_per_second=6299026.21 nanos_per_op=158.75
+knn_stats_request_body_decode iterations=400000 elapsed_ms=2738.454 ops_per_second=146067.81 nanos_per_op=6846.14
+knn_stats_reject_request_decode iterations=400000 elapsed_ms=2860.372 ops_per_second=139841.94 nanos_per_op=7150.93
+knn_stats_validation_only iterations=400000 elapsed_ms=111.873 ops_per_second=3575497.74 nanos_per_op=279.68
+knn_stats_reject_validation iterations=400000 elapsed_ms=2994.045 ops_per_second=133598.51 nanos_per_op=7485.11
+knn_stats_response_decode iterations=400000 elapsed_ms=98.614 ops_per_second=4056222.08 nanos_per_op=246.53
+knn_stats_reject_wire_bottleneck_ops_per_second=133598.51
+knn_stats_diagnosed_stage_bottleneck_ops_per_second=145154.72
 ```
 
-The current knn-stats fail-closed boundary bottleneck is request validation
-including frame/request decode. The payload includes the BaseNodes envelope plus
-the full k-NN valid stat-name set, so string allocation and stat-set validation
-dominate this boundary at roughly 130k ops/s in the latest local release run.
-This is still fail-closed admission work, but it is a real performance hotspot
-to keep in view when implementing execution; the first semantic work is
-BaseNodes fanout, node-level KNN stat collection, cluster-level stat
-aggregation, failure aggregation, and response rendering.
+The current knn-stats fail-closed boundary bottleneck is request body
+encode/decode of the 854-byte payload carrying 41 valid stat names. Frame
+decode is roughly 6.30M ops/s and validation-only is roughly 3.58M ops/s, so
+validation is not the material hotspot. The next meaningful optimization would
+need to avoid repeated stat-name payload allocation/copying in the wire path or
+move beyond fail-closed admission into real BaseNodes execution. The first
+semantic work remains BaseNodes fanout, node-level KNN stat collection,
+cluster-level stat aggregation, failure aggregation, and response rendering.
 
 Current knn-warmup reject wire microbenchmark:
 
