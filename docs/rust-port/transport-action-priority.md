@@ -912,6 +912,21 @@ The update-model-metadata boundary covers:
   timeout, blank model ids, add requests without metadata, model metadata body
   parsing/rendering, and update-model-metadata execution.
 
+The training-job-route-decision-info boundary covers:
+
+- OpenSearch k-NN `TrainingJobRouteDecisionInfoRequest` BaseNodes parent task,
+  nullable node id selector, concrete-node marker rejection, and optional
+  timeout at the wire decode/build layer;
+- OpenSearch k-NN `TrainingJobRouteDecisionInfoResponse` cluster name and empty
+  BaseNodes nodes/failures lists at the wire decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/knn_training_job_route_decision_info_action` until BaseNodes
+  fanout, node-level training job count collection, failure aggregation, and
+  response rendering are implemented;
+- explicit rejection for concrete node payloads, node filters, timeouts, node
+  response payloads, node failures, blank cluster names, response rendering,
+  and training-job-route-decision-info execution.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -3112,6 +3127,25 @@ ops/s in the latest local release run, this boundary is not a material
 transport bottleneck; the first performance-sensitive work is model metadata
 validation, model system-index custom metadata mutation, cluster-state
 publication, and acknowledgement rendering.
+
+Current training-job-route-decision-info reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin training-job-route-decision-info-reject-wire-benchmark
+training_job_route_decision_info_reject_request_encode iterations=400000 elapsed_ms=299.238 ops_per_second=1336729.20 nanos_per_op=748.09
+training_job_route_decision_info_reject_request_decode iterations=400000 elapsed_ms=254.428 ops_per_second=1572154.75 nanos_per_op=636.07
+training_job_route_decision_info_reject_validation iterations=400000 elapsed_ms=254.592 ops_per_second=1571141.76 nanos_per_op=636.48
+training_job_route_decision_info_response_decode iterations=400000 elapsed_ms=97.933 ops_per_second=4084440.96 nanos_per_op=244.83
+training_job_route_decision_info_reject_wire_bottleneck_ops_per_second=1336729.20
+```
+
+The current training-job-route-decision-info fail-closed boundary bottleneck is
+request encode. The payload includes the BaseNodes parent task, nullable node id
+selector, concrete-node marker, and optional timeout before admission rejects
+execution. At roughly 1.34M ops/s in the latest local release run, this boundary
+is not a material transport bottleneck; the first performance-sensitive work is
+BaseNodes fanout, node-level training job count collection, failure
+aggregation, and response rendering.
 
 Current snapshots-status reject wire microbenchmark:
 

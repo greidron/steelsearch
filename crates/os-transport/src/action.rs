@@ -70,6 +70,8 @@ pub const KNN_STATS_ACTION_NAME: &str = "cluster:admin/knn_stats_action";
 pub const KNN_WARMUP_ACTION_NAME: &str = "cluster:admin/knn_warmup_action";
 pub const UPDATE_MODEL_METADATA_ACTION_NAME: &str =
     "cluster:admin/knn_update_model_metadata_action";
+pub const TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME: &str =
+    "cluster:admin/knn_training_job_route_decision_info_action";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -561,6 +563,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "UpdateModelMetadataTransportAction",
         request_wire_type: "UpdateModelMetadataRequest",
         response_wire_type: "AcknowledgedResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME,
+        action_type: "TrainingJobRouteDecisionInfoAction",
+        transport_action: "TrainingJobRouteDecisionInfoTransportAction",
+        request_wire_type: "TrainingJobRouteDecisionInfoRequest",
+        response_wire_type: "TrainingJobRouteDecisionInfoResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1820,6 +1829,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering",
+        },
+        TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6393,6 +6407,73 @@ pub fn read_update_model_metadata_response_message(
         });
     }
     AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_training_job_route_decision_info_request_message(
+    request_id: i64,
+    version: Version,
+    request: &TrainingJobRouteDecisionInfoRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_training_job_route_decision_info_request_message(
+    message: &TransportMessage,
+) -> Result<TrainingJobRouteDecisionInfoRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    TrainingJobRouteDecisionInfoRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_training_job_route_decision_info_response_message(
+    request_id: i64,
+    version: Version,
+    response: &TrainingJobRouteDecisionInfoResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_training_job_route_decision_info_response_message(
+    message: &TransportMessage,
+) -> Result<TrainingJobRouteDecisionInfoResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    TrainingJobRouteDecisionInfoResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -14108,6 +14189,142 @@ impl UpdateModelMetadataRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "update model metadata execution",
             reason: "update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrainingJobRouteDecisionInfoRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub node_ids: Option<Vec<String>>,
+    pub timeout: Option<TimeValueWire>,
+}
+
+impl Default for TrainingJobRouteDecisionInfoRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            node_ids: None,
+            timeout: None,
+        }
+    }
+}
+
+impl TrainingJobRouteDecisionInfoRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        write_nullable_string_array(output, self.node_ids.as_deref());
+        output.write_bool(false);
+        write_optional_time_value(output, self.timeout.as_ref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let node_ids = read_nullable_string_array(&mut input)?;
+        let concrete_nodes_present = input.read_bool()?;
+        if concrete_nodes_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info concrete nodes",
+                reason: "TrainingJobRouteDecisionInfoRequest concrete DiscoveryNode payloads are not decoded by this adapter",
+            });
+        }
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            node_ids,
+            timeout: read_optional_time_value(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if matches!(self.node_ids.as_ref(), Some(node_ids) if !node_ids.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info node filter",
+                reason: "training job route decision info node-scoped routing requires BaseNodes fanout mapping",
+            });
+        }
+        if self.timeout.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info timeout",
+                reason: "training job route decision info timeout semantics require BaseNodes fanout mapping",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "training job route decision info execution",
+            reason: "training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrainingJobRouteDecisionInfoResponseWire {
+    pub cluster_name: String,
+}
+
+impl Default for TrainingJobRouteDecisionInfoResponseWire {
+    fn default() -> Self {
+        Self {
+            cluster_name: "steelsearch".to_string(),
+        }
+    }
+}
+
+impl TrainingJobRouteDecisionInfoResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.cluster_name);
+        output.write_vint(0);
+        output.write_vint(0);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let nodes_count = input.read_vint()?;
+        if nodes_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info response nodes count",
+                reason: "TrainingJobRouteDecisionInfoResponse nodes count must be non-negative",
+            });
+        }
+        if nodes_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info node responses",
+                reason: "TrainingJobRouteDecisionInfoResponse node responses require DiscoveryNode and training job count decoding",
+            });
+        }
+        let failures_count = input.read_vint()?;
+        if failures_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info response failures count",
+                reason: "TrainingJobRouteDecisionInfoResponse failures count must be non-negative",
+            });
+        }
+        if failures_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info node failures",
+                reason: "TrainingJobRouteDecisionInfoResponse node failures require FailedNodeException decoding",
+            });
+        }
+        let response = Self { cluster_name };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info response cluster name",
+                reason: "TrainingJobRouteDecisionInfoResponse requires a cluster name",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "training job route decision info response rendering",
+            reason: "TrainingJobRouteDecisionInfoResponse rendering requires node aggregation, failure aggregation, and training job count rendering",
         })
     }
 }
@@ -29892,6 +30109,13 @@ mod tests {
                     response_wire_type: "AcknowledgedResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/knn_training_job_route_decision_info_action",
+                    action_type: "TrainingJobRouteDecisionInfoAction",
+                    transport_action: "TrainingJobRouteDecisionInfoTransportAction",
+                    request_wire_type: "TrainingJobRouteDecisionInfoRequest",
+                    response_wire_type: "TrainingJobRouteDecisionInfoResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -40101,6 +40325,176 @@ mod tests {
         };
         assert_eq!(
             read_update_model_metadata_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn training_job_route_decision_info_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = TrainingJobRouteDecisionInfoRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(54),
+            ..TrainingJobRouteDecisionInfoRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = TrainingJobRouteDecisionInfoRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn training_job_route_decision_info_request_rejects_unsupported_shapes() {
+        let node_filter = TrainingJobRouteDecisionInfoRequestWire {
+            node_ids: Some(vec!["node-a".to_string()]),
+            ..TrainingJobRouteDecisionInfoRequestWire::default()
+        };
+        assert!(matches!(
+            node_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info node filter",
+                ..
+            })
+        ));
+
+        let timeout = TrainingJobRouteDecisionInfoRequestWire {
+            timeout: Some(TimeValueWire::seconds(10)),
+            ..TrainingJobRouteDecisionInfoRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info timeout",
+                ..
+            })
+        ));
+
+        let mut concrete_nodes = StreamOutput::new();
+        write_parent_task_id(&mut concrete_nodes, "", None);
+        write_nullable_string_array(&mut concrete_nodes, None);
+        concrete_nodes.write_bool(true);
+        assert!(matches!(
+            TrainingJobRouteDecisionInfoRequestWire::read(concrete_nodes.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info concrete nodes",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        TrainingJobRouteDecisionInfoRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            TrainingJobRouteDecisionInfoRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn training_job_route_decision_info_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = TrainingJobRouteDecisionInfoResponseWire {
+            cluster_name: "steel-dev".to_string(),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = TrainingJobRouteDecisionInfoResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(matches!(
+            decoded.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info response rendering",
+                ..
+            })
+        ));
+
+        let blank_cluster_name = TrainingJobRouteDecisionInfoResponseWire {
+            cluster_name: String::new(),
+        };
+        assert!(matches!(
+            blank_cluster_name.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info response cluster name",
+                ..
+            })
+        ));
+
+        let mut node_payload = StreamOutput::new();
+        node_payload.write_string("steel-dev");
+        node_payload.write_vint(1);
+        assert!(matches!(
+            TrainingJobRouteDecisionInfoResponseWire::read(node_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info node responses",
+                ..
+            })
+        ));
+
+        let mut failure_payload = StreamOutput::new();
+        failure_payload.write_string("steel-dev");
+        failure_payload.write_vint(0);
+        failure_payload.write_vint(1);
+        assert!(matches!(
+            TrainingJobRouteDecisionInfoResponseWire::read(failure_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info node failures",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn training_job_route_decision_info_transport_messages_bind_rejected_action_frame_and_response()
+    {
+        let request = TrainingJobRouteDecisionInfoRequestWire::default();
+        let mut frame = build_training_job_route_decision_info_request_message(
+            54,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected training job route decision info request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_training_job_route_decision_info_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_training_job_route_decision_info_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info execution",
+                ..
+            })
+        ));
+
+        let response = TrainingJobRouteDecisionInfoResponseWire::default();
+        let mut frame = build_training_job_route_decision_info_response_message(
+            54,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected training job route decision info response message");
+        };
+        assert_eq!(
+            read_training_job_route_decision_info_response_message(&message).unwrap(),
             response
         );
     }

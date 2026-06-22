@@ -182,6 +182,10 @@ name = "update-model-metadata-reject-wire-benchmark"
 path = "benchmarks/update_model_metadata_reject_wire.rs"
 
 [[bin]]
+name = "training-job-route-decision-info-reject-wire-benchmark"
+path = "benchmarks/training_job_route_decision_info_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 
