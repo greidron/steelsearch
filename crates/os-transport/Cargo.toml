@@ -138,6 +138,10 @@ name = "put-search-pipeline-reject-wire-benchmark"
 path = "benchmarks/put_search_pipeline_reject_wire.rs"
 
 [[bin]]
+name = "get-search-pipeline-reject-wire-benchmark"
+path = "benchmarks/get_search_pipeline_reject_wire.rs"
+
+[[bin]]
 name = "snapshots-status-reject-wire-benchmark"
 path = "benchmarks/snapshots_status_reject_wire.rs"
 

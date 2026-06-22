@@ -58,6 +58,7 @@ pub const GET_DECOMMISSION_STATE_ACTION_NAME: &str = "cluster:admin/decommission
 pub const DELETE_DECOMMISSION_STATE_ACTION_NAME: &str =
     "cluster:admin/decommission/awareness/delete";
 pub const PUT_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/put";
+pub const GET_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipeline/get";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -472,6 +473,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "PutSearchPipelineTransportAction",
         request_wire_type: "PutSearchPipelineRequest",
         response_wire_type: "AcknowledgedResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: GET_SEARCH_PIPELINE_ACTION_NAME,
+        action_type: "GetSearchPipelineAction",
+        transport_action: "GetSearchPipelineTransportAction",
+        request_wire_type: "GetSearchPipelineRequest",
+        response_wire_type: "GetSearchPipelineResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1676,6 +1684,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering",
+        },
+        GET_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5512,6 +5525,73 @@ pub fn read_put_search_pipeline_response_message(
         });
     }
     AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_search_pipeline_request_message(
+    request_id: i64,
+    version: Version,
+    request: &GetSearchPipelineRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(GET_SEARCH_PIPELINE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_search_pipeline_request_message(
+    message: &TransportMessage,
+) -> Result<GetSearchPipelineRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != GET_SEARCH_PIPELINE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: GET_SEARCH_PIPELINE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    GetSearchPipelineRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_search_pipeline_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetSearchPipelineResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_search_pipeline_response_message(
+    message: &TransportMessage,
+) -> Result<GetSearchPipelineResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    GetSearchPipelineResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -11157,6 +11237,162 @@ impl PutSearchPipelineRequestWire {
             shape: "put search pipeline execution",
             reason: "put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetSearchPipelineRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub local: bool,
+    pub ids: Vec<String>,
+}
+
+impl Default for GetSearchPipelineRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            local: false,
+            ids: vec!["pipeline-1".to_string()],
+        }
+    }
+}
+
+impl GetSearchPipelineRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_bool(self.local);
+        output.write_string_array(&self.ids);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout: TimeValueWire::read(&mut input)?,
+            local: input.read_bool()?,
+            ids: input.read_string_array()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout requires search pipeline metadata lookup semantics",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline local flag",
+                reason:
+                    "local cluster-state reads are not mapped for search pipeline metadata lookup",
+            });
+        }
+        if self.ids.iter().any(|id| id.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline blank id",
+                reason: "blank id selector handling belongs to search pipeline id resolution",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get search pipeline execution",
+            reason: "get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchPipelineConfigurationWire {
+    pub id: String,
+    pub config: Bytes,
+    pub media_type: OpenSearchXContentTypeWire,
+}
+
+impl Default for SearchPipelineConfigurationWire {
+    fn default() -> Self {
+        Self {
+            id: "pipeline-1".to_string(),
+            config: Bytes::from_static(b"{\"request_processors\":[],\"response_processors\":[]}"),
+            media_type: OpenSearchXContentTypeWire::Json,
+        }
+    }
+}
+
+impl SearchPipelineConfigurationWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.id);
+        output.write_bytes_reference(&self.config);
+        self.media_type.write(output);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            id: input.read_string()?,
+            config: input.read_bytes_reference()?,
+            media_type: match input.read_string()?.as_str() {
+                "application/json" | "application/json; charset=UTF-8" => {
+                    OpenSearchXContentTypeWire::Json
+                }
+                "application/smile" => OpenSearchXContentTypeWire::Smile,
+                "application/yaml" => OpenSearchXContentTypeWire::Yaml,
+                "application/cbor" => OpenSearchXContentTypeWire::Cbor,
+                _ => {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "get search pipeline media type",
+                        reason: "unknown OpenSearch search pipeline XContent media type string",
+                    });
+                }
+            },
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetSearchPipelineResponseWire {
+    pub pipelines: Vec<SearchPipelineConfigurationWire>,
+}
+
+impl Default for GetSearchPipelineResponseWire {
+    fn default() -> Self {
+        Self {
+            pipelines: vec![SearchPipelineConfigurationWire::default()],
+        }
+    }
+}
+
+impl GetSearchPipelineResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.pipelines.len() as i32);
+        for pipeline in &self.pipelines {
+            pipeline.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let count = input.read_vint()?;
+        if count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline response pipeline count",
+                reason: "OpenSearch get-search-pipeline response pipeline count cannot be negative",
+            });
+        }
+        let mut pipelines = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            pipelines.push(SearchPipelineConfigurationWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { pipelines })
     }
 }
 
@@ -26781,6 +27017,13 @@ mod tests {
                     response_wire_type: "AcknowledgedResponse",
                 },
                 SourceTransportActionSpec {
+                    action_name: "cluster:admin/search/pipeline/get",
+                    action_type: "GetSearchPipelineAction",
+                    transport_action: "GetSearchPipelineTransportAction",
+                    request_wire_type: "GetSearchPipelineRequest",
+                    response_wire_type: "GetSearchPipelineResponse",
+                },
+                SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
                     action_type: "ClusterAddWeightedRoutingAction",
                     transport_action: "TransportAddWeightedRoutingAction",
@@ -34745,6 +34988,171 @@ mod tests {
         };
         assert_eq!(
             read_put_search_pipeline_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn get_search_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = GetSearchPipelineRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(43),
+            ids: vec!["pipeline-a".to_string(), "pipeline-b".to_string()],
+            ..GetSearchPipelineRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = GetSearchPipelineRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline execution",
+                ..
+            })
+        ));
+
+        let all_pipelines = GetSearchPipelineRequestWire {
+            ids: Vec::new(),
+            ..GetSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            all_pipelines.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_search_pipeline_request_rejects_unsupported_shapes() {
+        let cluster_manager_timeout = GetSearchPipelineRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..GetSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            cluster_manager_timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = GetSearchPipelineRequestWire {
+            local: true,
+            ..GetSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline local flag",
+                ..
+            })
+        ));
+
+        let blank_id = GetSearchPipelineRequestWire {
+            ids: vec!["".to_string()],
+            ..GetSearchPipelineRequestWire::default()
+        };
+        assert!(matches!(
+            blank_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline blank id",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        GetSearchPipelineRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            GetSearchPipelineRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn get_search_pipeline_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = GetSearchPipelineResponseWire::default();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = GetSearchPipelineResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert_eq!(decoded.pipelines[0].id, "pipeline-1");
+        assert_eq!(
+            decoded.pipelines[0].config,
+            Bytes::from_static(b"{\"request_processors\":[],\"response_processors\":[]}")
+        );
+        assert_eq!(
+            decoded.pipelines[0].media_type,
+            OpenSearchXContentTypeWire::Json
+        );
+
+        let mut output = StreamOutput::new();
+        output.write_vint(-1);
+        assert!(matches!(
+            GetSearchPipelineResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline response pipeline count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        output.write_string("pipeline-a");
+        output.write_bytes_reference(b"{\"request_processors\":[]}");
+        output.write_string("application/x-unknown");
+        assert!(matches!(
+            GetSearchPipelineResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline media type",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn get_search_pipeline_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = GetSearchPipelineRequestWire::default();
+        let mut frame =
+            build_get_search_pipeline_request_message(43, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get search pipeline request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_get_search_pipeline_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_get_search_pipeline_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get search pipeline execution",
+                ..
+            })
+        ));
+
+        let response = GetSearchPipelineResponseWire::default();
+        let mut frame =
+            build_get_search_pipeline_response_message(43, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get search pipeline response message");
+        };
+        assert_eq!(
+            read_get_search_pipeline_response_message(&message).unwrap(),
             response
         );
     }

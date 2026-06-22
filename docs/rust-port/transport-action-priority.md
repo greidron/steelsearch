@@ -724,6 +724,21 @@ The put-search-pipeline boundary covers:
   source, unsupported media types, put-search-pipeline execution, and
   acknowledgement response rendering.
 
+The get-search-pipeline boundary covers:
+
+- OpenSearch `GetSearchPipelineRequest` parent task, cluster-manager timeout,
+  local flag, and pipeline ids at the wire decode/build layer;
+- OpenSearch `GetSearchPipelineResponse` pipeline count and repeated search
+  `PipelineConfiguration` id, config bytes, and media type at the wire
+  decode/build layer;
+- explicit fail-closed classification for
+  `cluster:admin/search/pipeline/get` until search pipeline metadata lookup,
+  id/wildcard resolution, local read semantics, and response rendering are
+  implemented;
+- explicit rejection for custom cluster-manager timeout, local cluster-state
+  reads, blank pipeline id selectors, get-search-pipeline execution, unknown
+  response media types, and negative response pipeline counts.
+
 The snapshots-status boundary covers:
 
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
@@ -2711,6 +2726,25 @@ release run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is search pipeline source parsing and validation,
 node search pipeline capability lookup, cluster-state publication, and
 acknowledgement rendering.
+
+Current get-search-pipeline reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin get-search-pipeline-reject-wire-benchmark
+get_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=277.449 ops_per_second=1441705.91 nanos_per_op=693.62
+get_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=256.314 ops_per_second=1560587.96 nanos_per_op=640.78
+get_search_pipeline_reject_validation iterations=400000 elapsed_ms=257.732 ops_per_second=1551996.95 nanos_per_op=644.33
+get_search_pipeline_response_decode iterations=400000 elapsed_ms=225.717 ops_per_second=1772131.53 nanos_per_op=564.29
+get_search_pipeline_reject_wire_bottleneck_ops_per_second=1441705.91
+```
+
+The current get-search-pipeline fail-closed boundary bottleneck is request
+encode. The payload includes the cluster-manager read request envelope, local
+flag, and pipeline id selectors before admission rejects execution. At roughly
+1.44M ops/s in the latest local release run, this boundary is not a material
+transport bottleneck; the first performance-sensitive work is search pipeline
+metadata lookup, id/wildcard resolution, local read semantics, and response
+rendering.
 
 Current snapshots-status reject wire microbenchmark:
 
