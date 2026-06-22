@@ -286,3 +286,16 @@ compatibility workstream should keep moving skipped cases into implemented or
 explicitly out-of-scope evidence one suite at a time, starting from the existing
 `case_gaps` lists and preserving the source-inventory coverage report as the
 coverage counter.
+
+The long OpenSearch comparison harness can enforce the same source-coverage
+floor when unified E2E reporting is enabled:
+
+```bash
+RUN_OPENSEARCH_COMPARISON=1 \
+RUN_UNIFIED_E2E_REPORT=1 \
+RUN_REST_API_SOURCE_COVERAGE=1 \
+tools/run-opensearch-compare.sh
+```
+
+`REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT` defaults to `15` and
+can be raised as new required live suites are promoted.

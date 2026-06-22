@@ -9,6 +9,8 @@ NATIVE_ROUTE_COVERAGE_REPORT="${NATIVE_ROUTE_COVERAGE_REPORT:-${COMPARE_DIR}/nat
 NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT="${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT:-${COMPARE_DIR}/native-route-fixture-coverage-report.json}"
 UNIFIED_E2E_REPORT_DIR="${UNIFIED_E2E_REPORT_DIR:-${COMPARE_DIR}/unified-e2e}"
 UNIFIED_E2E_MAX_REPORT_AGE_SECONDS="${UNIFIED_E2E_MAX_REPORT_AGE_SECONDS:-86400}"
+REST_API_COVERAGE_REPORT="${REST_API_COVERAGE_REPORT:-${COMPARE_DIR}/rest-api-coverage-report.json}"
+REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT="${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT:-15}"
 
 usage() {
   cat <<'USAGE'
@@ -46,6 +48,14 @@ Environment:
   UNIFIED_E2E_MAX_REPORT_AGE_SECONDS
                                     Ignore unified suite reports older than
                                     this many seconds. Default: 86400.
+  RUN_REST_API_SOURCE_COVERAGE=1     Generate source-inventory REST coverage
+                                    from the unified E2E report and fail if
+                                    live-required route coverage regresses.
+  REST_API_COVERAGE_REPORT           REST API source coverage report path.
+                                    Default: COMPARE_DIR/rest-api-coverage-report.json.
+  REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT
+                                    Minimum source route rows matched by
+                                    live-required unified suites. Default: 15.
 USAGE
 }
 
@@ -120,6 +130,18 @@ if [[ "${RUN_UNIFIED_E2E_REPORT:-0}" == "1" ]]; then
     --allow-missing
 fi
 
+if [[ "${RUN_REST_API_SOURCE_COVERAGE:-0}" == "1" ]]; then
+  if [[ "${RUN_UNIFIED_E2E_REPORT:-0}" != "1" ]]; then
+    echo "RUN_REST_API_SOURCE_COVERAGE=1 requires RUN_UNIFIED_E2E_REPORT=1" >&2
+    exit 2
+  fi
+  python3 "${ROOT}/tools/report-rest-api-coverage.py" \
+    --unified-report "${UNIFIED_E2E_REPORT_DIR}/unified-opensearch-e2e-report.json" \
+    --require-live-required-suites \
+    --min-live-required-matched-source-route-count "${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT}" \
+    --output "${REST_API_COVERAGE_REPORT}"
+fi
+
 echo "OpenSearch comparison completed"
 echo "search compatibility report: ${REPORT_PATH}"
 if [[ "${RUN_HTTP_LOAD_COMPARISON:-0}" == "1" ]]; then
@@ -134,4 +156,7 @@ if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
 fi
 if [[ "${RUN_UNIFIED_E2E_REPORT:-0}" == "1" ]]; then
   echo "unified E2E report: ${UNIFIED_E2E_REPORT_DIR}/unified-opensearch-e2e-report.json"
+fi
+if [[ "${RUN_REST_API_SOURCE_COVERAGE:-0}" == "1" ]]; then
+  echo "REST API source coverage report: ${REST_API_COVERAGE_REPORT}"
 fi
