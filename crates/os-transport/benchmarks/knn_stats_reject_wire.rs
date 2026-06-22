@@ -80,6 +80,13 @@ fn main() {
     });
 
     let response = KnnStatsResponseWire::default();
+    let response_encode = measure("knn_stats_response_encode", ITERATIONS, || {
+        let frame =
+            build_knn_stats_response_message(51, OPENSEARCH_3_7_0_TRANSPORT, black_box(&response))
+                .expect("knn-stats response encode should succeed");
+        black_box(frame);
+    });
+
     let response_frame =
         build_knn_stats_response_message(51, OPENSEARCH_3_7_0_TRANSPORT, &response)
             .expect("knn-stats response encode should succeed");
@@ -102,6 +109,7 @@ fn main() {
         .min(frame_decode.ops_per_second)
         .min(request_body_decode.ops_per_second)
         .min(validation_only.ops_per_second)
+        .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
     println!("knn_stats_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
     println!("knn_stats_diagnosed_stage_bottleneck_ops_per_second={diagnosed_ops_per_second:.2}");

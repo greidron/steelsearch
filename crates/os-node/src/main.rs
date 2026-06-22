@@ -992,6 +992,29 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("cluster:admin/knn_stats_action") {
+        let response = build_empty_knn_stats_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_stats_action[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/info") {
         let response = build_nodes_info_response(
             request_id,
@@ -2910,6 +2933,16 @@ fn build_empty_nodes_stats_response(
     build_empty_transport_response(request_id, header_version_id)
 }
 
+fn build_empty_knn_stats_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_knn_stats_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::KnnStatsResponseWire::default(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_nodes_info_response(
     request_id: i64,
     header_version_id: u32,
@@ -3668,6 +3701,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
+        Some("cluster:admin/knn_stats_action") => {
+            Some(build_empty_knn_stats_response(request_id, header_version_id))
+        }
         Some("cluster:monitor/nodes/info") => Some(build_nodes_info_response(
             request_id,
             header_version_id,
@@ -7666,6 +7702,26 @@ mod tests {
         assert_eq!(gate.snapshot().rejected, 1);
         active.join().unwrap().unwrap();
         assert_eq!(gate.snapshot().completed, 1);
+    }
+
+    #[test]
+    fn knn_stats_transport_route_builds_opensearch_shaped_empty_response() {
+        let response =
+            build_empty_knn_stats_response(77, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected knn stats response message");
+        };
+
+        assert_eq!(message.request_id, 77);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_knn_stats_response_message(&message).unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::KnnStatsResponseWire::default()
+        );
     }
 
     #[test]

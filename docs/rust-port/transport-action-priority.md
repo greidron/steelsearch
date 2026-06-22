@@ -194,7 +194,7 @@ Current k-NN reject-wire bottlenecks from the retained local release runs:
 
 | Action family | Bottleneck | Throughput |
 | --- | --- | ---: |
-| kNN stats | request body encode/decode | 133,599 ops/s |
+| kNN stats | request body encode/decode | 129,255 ops/s |
 | kNN warmup | request encode | 1,253,890 ops/s |
 | update model metadata | request encode | 1,241,681 ops/s |
 | training job route decision info | request encode | 1,336,729 ops/s |
@@ -3237,26 +3237,31 @@ Current knn-stats reject wire microbenchmark:
 ```text
 cargo run -p os-transport --release --bin knn-stats-reject-wire-benchmark
 knn_stats_request_wire_shape valid_stats=41 requested_stats=0 body_bytes=854
-knn_stats_request_body_encode iterations=400000 elapsed_ms=2755.680 ops_per_second=145154.72 nanos_per_op=6889.20
-knn_stats_reject_request_encode iterations=400000 elapsed_ms=2954.765 ops_per_second=135374.57 nanos_per_op=7386.91
-knn_stats_frame_decode iterations=400000 elapsed_ms=63.502 ops_per_second=6299026.21 nanos_per_op=158.75
-knn_stats_request_body_decode iterations=400000 elapsed_ms=2738.454 ops_per_second=146067.81 nanos_per_op=6846.14
-knn_stats_reject_request_decode iterations=400000 elapsed_ms=2860.372 ops_per_second=139841.94 nanos_per_op=7150.93
-knn_stats_validation_only iterations=400000 elapsed_ms=111.873 ops_per_second=3575497.74 nanos_per_op=279.68
-knn_stats_reject_validation iterations=400000 elapsed_ms=2994.045 ops_per_second=133598.51 nanos_per_op=7485.11
-knn_stats_response_decode iterations=400000 elapsed_ms=98.614 ops_per_second=4056222.08 nanos_per_op=246.53
-knn_stats_reject_wire_bottleneck_ops_per_second=133598.51
-knn_stats_diagnosed_stage_bottleneck_ops_per_second=145154.72
+knn_stats_request_body_encode iterations=400000 elapsed_ms=2827.204 ops_per_second=141482.52 nanos_per_op=7068.01
+knn_stats_reject_request_encode iterations=400000 elapsed_ms=2974.828 ops_per_second=134461.54 nanos_per_op=7437.07
+knn_stats_frame_decode iterations=400000 elapsed_ms=65.373 ops_per_second=6118705.95 nanos_per_op=163.43
+knn_stats_request_body_decode iterations=400000 elapsed_ms=2767.834 ops_per_second=144517.36 nanos_per_op=6919.58
+knn_stats_reject_request_decode iterations=400000 elapsed_ms=2983.762 ops_per_second=134058.94 nanos_per_op=7459.41
+knn_stats_validation_only iterations=400000 elapsed_ms=112.184 ops_per_second=3565577.65 nanos_per_op=280.46
+knn_stats_reject_validation iterations=400000 elapsed_ms=3094.655 ops_per_second=129255.10 nanos_per_op=7736.64
+knn_stats_response_encode iterations=400000 elapsed_ms=91.554 ops_per_second=4369001.02 nanos_per_op=228.89
+knn_stats_response_decode iterations=400000 elapsed_ms=98.825 ops_per_second=4047567.91 nanos_per_op=247.06
+knn_stats_reject_wire_bottleneck_ops_per_second=129255.10
+knn_stats_diagnosed_stage_bottleneck_ops_per_second=141482.52
 ```
 
 The current knn-stats fail-closed boundary bottleneck is request body
 encode/decode of the 854-byte payload carrying 41 valid stat names. Frame
-decode is roughly 6.30M ops/s and validation-only is roughly 3.58M ops/s, so
-validation is not the material hotspot. The next meaningful optimization would
+decode is roughly 6.12M ops/s, response encode/decode is roughly 4.37M/4.05M
+ops/s, and validation-only is roughly 3.57M ops/s, so validation and empty
+response rendering are not the material hotspots. The node transport receiver
+now has an OpenSearch-shaped empty response path for
+`cluster:admin/knn_stats_action`, which is enough to avoid a generic empty
+transport response at this boundary. The next meaningful optimization would
 need to avoid repeated stat-name payload allocation/copying in the wire path or
-move beyond fail-closed admission into real BaseNodes execution. The first
-semantic work remains BaseNodes fanout, node-level KNN stat collection,
-cluster-level stat aggregation, failure aggregation, and response rendering.
+move beyond admission into real BaseNodes execution. The first semantic work
+remains BaseNodes fanout, node-level KNN stat collection, cluster-level stat
+aggregation, failure aggregation, and response rendering.
 
 Current knn-warmup reject wire microbenchmark:
 
