@@ -63,6 +63,7 @@ pub const DELETE_SEARCH_PIPELINE_ACTION_NAME: &str = "cluster:admin/search/pipel
 pub const PAUSE_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/pause";
 pub const RESUME_INGESTION_ACTION_NAME: &str = "indices:admin/ingestion/resume";
 pub const GET_INGESTION_STATE_ACTION_NAME: &str = "indices:monitor/ingestion/state";
+pub const UPDATE_INGESTION_STATE_ACTION_NAME: &str = "indices:admin/ingestion/updateState";
 pub const CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME: &str =
     "cluster:admin/routing/awareness/weights/put";
 pub const CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME: &str =
@@ -512,6 +513,13 @@ pub const SOURCE_DERIVED_CLUSTER_ACTIONS: &[SourceTransportActionSpec] = &[
         transport_action: "TransportGetIngestionStateAction",
         request_wire_type: "GetIngestionStateRequest",
         response_wire_type: "GetIngestionStateResponse",
+    },
+    SourceTransportActionSpec {
+        action_name: UPDATE_INGESTION_STATE_ACTION_NAME,
+        action_type: "UpdateIngestionStateAction",
+        transport_action: "TransportUpdateIngestionStateAction",
+        request_wire_type: "UpdateIngestionStateRequest",
+        response_wire_type: "UpdateIngestionStateResponse",
     },
     SourceTransportActionSpec {
         action_name: CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME,
@@ -1741,6 +1749,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
             reason: "get-ingestion-state transport execution requires broadcast shard selection, optional pagination, shard ingestion-state collection, shard failure aggregation, and response rendering",
+        },
+        UPDATE_INGESTION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5912,6 +5925,73 @@ pub fn read_get_ingestion_state_response_message(
         });
     }
     GetIngestionStateResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_update_ingestion_state_request_message(
+    request_id: i64,
+    version: Version,
+    request: &UpdateIngestionStateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(UPDATE_INGESTION_STATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_update_ingestion_state_request_message(
+    message: &TransportMessage,
+) -> Result<UpdateIngestionStateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != UPDATE_INGESTION_STATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: UPDATE_INGESTION_STATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    UpdateIngestionStateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_update_ingestion_state_response_message(
+    request_id: i64,
+    version: Version,
+    response: &UpdateIngestionStateResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_update_ingestion_state_response_message(
+    message: &TransportMessage,
+) -> Result<UpdateIngestionStateResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    UpdateIngestionStateResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_snapshots_status_request_message(
@@ -11899,6 +11979,9 @@ impl IngestionStateShardFailureWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: match action_label {
                     "resume ingestion" => "resume ingestion response shard failure shard",
+                    "update ingestion state" => {
+                        "update ingestion state response shard failure shard"
+                    }
                     _ => "pause ingestion response shard failure shard",
                 },
                 reason: "OpenSearch ingestion shard failure shard id cannot be negative",
@@ -12572,6 +12655,259 @@ impl GetIngestionStateResponseWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get ingestion state response next token",
                 reason: "get-ingestion-state next page token rendering requires pagination response semantics",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateIngestionStateRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub broadcast_indices: Vec<String>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+    pub indices: Vec<String>,
+    pub shards: Vec<i32>,
+    pub ingestion_paused: Option<bool>,
+    pub reset_settings: Option<Vec<ResumeIngestionResetSettingsWire>>,
+}
+
+impl Default for UpdateIngestionStateRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            broadcast_indices: vec!["logs-000001".to_string()],
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
+            indices: vec!["logs-000001".to_string()],
+            shards: Vec::new(),
+            ingestion_paused: Some(true),
+            reset_settings: None,
+        }
+    }
+}
+
+impl UpdateIngestionStateRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string_array(&self.broadcast_indices);
+        self.indices_options.write(output);
+        output.write_string_array(&self.indices);
+        write_vint_array(output, &self.shards);
+        write_optional_bool(output, self.ingestion_paused);
+        write_optional_reset_settings_array(output, self.reset_settings.as_deref());
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let broadcast_indices = input.read_string_array()?;
+        let indices_options = OpenSearchIndicesOptionsWire::read(&mut input)?;
+        let indices = input.read_string_array()?;
+        let shards = read_vint_array(&mut input, "update ingestion state shard count")?;
+        if shards.iter().any(|shard| *shard < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state shard",
+                reason: "OpenSearch update-ingestion-state shard ids cannot be negative",
+            });
+        }
+        let ingestion_paused = read_optional_bool(&mut input)?;
+        let reset_settings = read_optional_reset_settings_array(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            broadcast_indices,
+            indices_options,
+            indices,
+            shards,
+            ingestion_paused,
+            reset_settings,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(request)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.broadcast_indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state missing broadcast indices",
+                reason:
+                    "OpenSearch update-ingestion-state broadcast request requires index selectors",
+            });
+        }
+        if self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state missing indices",
+                reason: "OpenSearch update-ingestion-state request requires target indices",
+            });
+        }
+        if self
+            .broadcast_indices
+            .iter()
+            .chain(self.indices.iter())
+            .any(|index| index.trim().is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state blank index",
+                reason: "blank index selectors belong to OpenSearch index resolution semantics",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state indices options",
+                reason: "custom index resolution options require OpenSearch index expression resolution semantics",
+            });
+        }
+        if self.shards.iter().any(|shard| *shard < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state shard",
+                reason: "OpenSearch update-ingestion-state shard ids cannot be negative",
+            });
+        }
+        if self.ingestion_paused.is_none()
+            && self.reset_settings.as_deref().unwrap_or(&[]).is_empty()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state missing mutation",
+                reason: "update-ingestion-state execution requires either paused-state mutation or reset settings",
+            });
+        }
+        if self
+            .reset_settings
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|setting| setting.value.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state reset value",
+                reason: "OpenSearch update-ingestion-state reset settings require a value",
+            });
+        }
+        if self
+            .reset_settings
+            .as_deref()
+            .is_some_and(|settings| !settings.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state reset execution",
+                reason: "update-ingestion-state reset execution requires shard pointer mutation semantics",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update ingestion state execution",
+            reason: "update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, ingestion paused-state mutation, shard failure aggregation, and response rendering",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateIngestionStateResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub broadcast_shard_failure_count: i32,
+    pub acknowledged: bool,
+    pub error_message: String,
+    pub shard_failures: Vec<IngestionStateShardFailureWire>,
+}
+
+impl Default for UpdateIngestionStateResponseWire {
+    fn default() -> Self {
+        Self {
+            total_shards: 0,
+            successful_shards: 0,
+            failed_shards: 0,
+            broadcast_shard_failure_count: 0,
+            acknowledged: true,
+            error_message: String::new(),
+            shard_failures: Vec::new(),
+        }
+    }
+}
+
+impl UpdateIngestionStateResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.broadcast_shard_failure_count);
+        output.write_bool(self.acknowledged);
+        output.write_string(&self.error_message);
+        output.write_vint(self.shard_failures.len() as i32);
+        for failure in &self.shard_failures {
+            failure.write(output);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let total_shards = input.read_vint()?;
+        let successful_shards = input.read_vint()?;
+        let failed_shards = input.read_vint()?;
+        let broadcast_shard_failure_count = input.read_vint()?;
+        if broadcast_shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response broadcast failure count",
+                reason:
+                    "OpenSearch update-ingestion-state broadcast failure count cannot be negative",
+            });
+        }
+        if broadcast_shard_failure_count > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response broadcast failures",
+                reason: "update-ingestion-state broadcast shard failure exception rendering is not implemented",
+            });
+        }
+        let acknowledged = input.read_bool()?;
+        let error_message = input.read_string()?;
+        let shard_failure_count = input.read_vint()?;
+        if shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response shard failure count",
+                reason: "OpenSearch update-ingestion-state response shard failure count cannot be negative",
+            });
+        }
+        let mut shard_failures = Vec::with_capacity(shard_failure_count as usize);
+        for _ in 0..shard_failure_count {
+            shard_failures.push(IngestionStateShardFailureWire::read_for(
+                &mut input,
+                "update ingestion state",
+            )?);
+        }
+        let response = Self {
+            total_shards,
+            successful_shards,
+            failed_shards,
+            broadcast_shard_failure_count,
+            acknowledged,
+            error_message,
+            shard_failures,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        if self.broadcast_shard_failure_count != 0 || self.failed_shards != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response broadcast failures",
+                reason: "update-ingestion-state broadcast shard failure exception rendering is not implemented",
+            });
+        }
+        if !self.error_message.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response error",
+                reason: "update-ingestion-state error rendering is not implemented",
+            });
+        }
+        if !self.shard_failures.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response shard failures",
+                reason:
+                    "update-ingestion-state ingestion shard failure rendering is not implemented",
             });
         }
         Ok(())
@@ -27488,6 +27824,41 @@ fn read_optional_page_params(
     }
 }
 
+fn write_optional_reset_settings_array(
+    output: &mut StreamOutput,
+    reset_settings: Option<&[ResumeIngestionResetSettingsWire]>,
+) {
+    if let Some(reset_settings) = reset_settings {
+        output.write_bool(true);
+        output.write_vint(reset_settings.len() as i32);
+        for reset_setting in reset_settings {
+            reset_setting.write(output);
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_reset_settings_array(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<ResumeIngestionResetSettingsWire>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let count = input.read_vint()?;
+    if count < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update ingestion state reset settings count",
+            reason: "OpenSearch update-ingestion-state reset settings count cannot be negative",
+        });
+    }
+    let mut reset_settings = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        reset_settings.push(ResumeIngestionResetSettingsWire::read(input)?);
+    }
+    Ok(Some(reset_settings))
+}
+
 fn write_string_collection(output: &mut StreamOutput, values: &[String]) {
     output.write_vint(values.len() as i32);
     for value in values {
@@ -28279,6 +28650,13 @@ mod tests {
                     transport_action: "TransportGetIngestionStateAction",
                     request_wire_type: "GetIngestionStateRequest",
                     response_wire_type: "GetIngestionStateResponse",
+                },
+                SourceTransportActionSpec {
+                    action_name: "indices:admin/ingestion/updateState",
+                    action_type: "UpdateIngestionStateAction",
+                    transport_action: "TransportUpdateIngestionStateAction",
+                    request_wire_type: "UpdateIngestionStateRequest",
+                    response_wire_type: "UpdateIngestionStateResponse",
                 },
                 SourceTransportActionSpec {
                     action_name: "cluster:admin/routing/awareness/weights/put",
@@ -37346,6 +37724,313 @@ mod tests {
         };
         assert_eq!(
             read_get_ingestion_state_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn update_ingestion_state_request_wire_round_trips_and_rejects_execution_boundary() {
+        let request = UpdateIngestionStateRequestWire {
+            parent_task_node: "cluster-manager".to_string(),
+            parent_task_id: Some(48),
+            broadcast_indices: vec!["logs-000001".to_string(), "logs-000002".to_string()],
+            indices: vec!["logs-000001".to_string(), "logs-000002".to_string()],
+            shards: vec![0, 1],
+            ingestion_paused: Some(false),
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = UpdateIngestionStateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state execution",
+                ..
+            })
+        ));
+
+        let reset_request = UpdateIngestionStateRequestWire {
+            ingestion_paused: None,
+            reset_settings: Some(vec![ResumeIngestionResetSettingsWire {
+                shard: 0,
+                mode: ResumeIngestionResetModeWire::Offset,
+                value: "42".to_string(),
+            }]),
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            reset_request.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state reset execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_ingestion_state_request_rejects_unsupported_shapes() {
+        let missing_broadcast_indices = UpdateIngestionStateRequestWire {
+            broadcast_indices: Vec::new(),
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_broadcast_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state missing broadcast indices",
+                ..
+            })
+        ));
+
+        let missing_indices = UpdateIngestionStateRequestWire {
+            indices: Vec::new(),
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_indices.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state missing indices",
+                ..
+            })
+        ));
+
+        let blank_index = UpdateIngestionStateRequestWire {
+            indices: vec![" ".to_string()],
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            blank_index.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state blank index",
+                ..
+            })
+        ));
+
+        let custom_indices_options = UpdateIngestionStateRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            custom_indices_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state indices options",
+                ..
+            })
+        ));
+
+        let missing_mutation = UpdateIngestionStateRequestWire {
+            ingestion_paused: None,
+            reset_settings: None,
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_mutation.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state missing mutation",
+                ..
+            })
+        ));
+
+        let missing_reset_value = UpdateIngestionStateRequestWire {
+            ingestion_paused: None,
+            reset_settings: Some(vec![ResumeIngestionResetSettingsWire {
+                shard: 0,
+                mode: ResumeIngestionResetModeWire::Timestamp,
+                value: String::new(),
+            }]),
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            missing_reset_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state reset value",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        UpdateIngestionStateRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            UpdateIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed().write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        output.write_vint(-1);
+        assert!(matches!(
+            UpdateIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state shard count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed().write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        output.write_vint(1);
+        output.write_vint(-1);
+        write_optional_bool(&mut output, Some(true));
+        write_optional_reset_settings_array(&mut output, None);
+        assert!(matches!(
+            UpdateIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state shard",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        write_parent_task_id(&mut output, "", None);
+        output.write_string_array(&["logs-000001".to_string()]);
+        OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed().write(&mut output);
+        output.write_string_array(&["logs-000001".to_string()]);
+        output.write_vint(0);
+        output.write_byte(9);
+        write_optional_reset_settings_array(&mut output, None);
+        assert!(matches!(
+            UpdateIngestionStateRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "optional boolean",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_ingestion_state_response_wire_round_trips_and_rejects_unsupported_shapes() {
+        let response = UpdateIngestionStateResponseWire::default();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = UpdateIngestionStateResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert!(decoded.reject_unsupported_rendering().is_ok());
+
+        let with_error = UpdateIngestionStateResponseWire {
+            error_message: "update failed".to_string(),
+            ..UpdateIngestionStateResponseWire::default()
+        };
+        assert!(matches!(
+            with_error.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response error",
+                ..
+            })
+        ));
+
+        let with_failure = UpdateIngestionStateResponseWire {
+            shard_failures: vec![IngestionStateShardFailureWire {
+                index: "logs-000001".to_string(),
+                shard: 0,
+                error_message: "poller missing".to_string(),
+            }],
+            ..UpdateIngestionStateResponseWire::default()
+        };
+        assert!(matches!(
+            with_failure.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response shard failures",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(-1);
+        assert!(matches!(
+            UpdateIngestionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response broadcast failure count",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(1);
+        assert!(matches!(
+            UpdateIngestionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response broadcast failures",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_bool(true);
+        output.write_string("");
+        output.write_vint(-1);
+        assert!(matches!(
+            UpdateIngestionStateResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state response shard failure count",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_ingestion_state_transport_messages_bind_rejected_action_frame_and_response() {
+        let request = UpdateIngestionStateRequestWire::default();
+        let mut frame =
+            build_update_ingestion_state_request_message(48, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update ingestion state request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_update_ingestion_state_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_update_ingestion_state_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state execution",
+                ..
+            })
+        ));
+
+        let response = UpdateIngestionStateResponseWire::default();
+        let mut frame = build_update_ingestion_state_response_message(
+            48,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update ingestion state response message");
+        };
+        assert_eq!(
+            read_update_ingestion_state_response_message(&message).unwrap(),
             response
         );
     }
