@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 import tempfile
 import time
@@ -312,6 +313,73 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertEqual(source, "output-dir")
             self.assertIsNone(unusable)
             self.assertEqual(report["summary"]["failed"], 0)
+
+    def test_load_best_report_rejects_stale_complete_report_when_age_gate_is_set(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_stale_report")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "fixture.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "case-a" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            stale_report = output_dir / "synthetic-report.json"
+            stale_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            stale_mtime = time.time() - 120.0
+            os.utime(stale_report, (stale_mtime, stale_mtime))
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                path, source, report, unusable = runner.load_best_report(
+                    "synthetic-report.json",
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                    max_report_age_seconds=60.0,
+                )
+                result = runner.collect_suite(
+                    runner.Suite(
+                        "synthetic",
+                        "search",
+                        "semantic_parity",
+                        None,
+                        str(fixture_path),
+                        "synthetic-report.json",
+                    ),
+                    output_dir,
+                    max_report_age_seconds=60.0,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(path, stale_report)
+            self.assertIsNone(source)
+            self.assertIsNone(report)
+            self.assertIsNone(unusable)
+            self.assertEqual(result["status"], "missing")
+            self.assertEqual(result["report_source"], "missing")
+            self.assertIn("max_report_age_seconds=60", result["note"])
 
 
 if __name__ == "__main__":

@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--case", action="append", help="case name to run; may be repeated")
     parser.add_argument("--allow-missing", action="store_true", help="exit 0 even if required suite reports are missing")
     parser.add_argument(
+        "--max-report-age-seconds",
+        type=float,
+        help="ignore collected suite reports older than this many seconds",
+    )
+    parser.add_argument(
         "--no-recursive-target-scan",
         action="store_true",
         help="only collect reports from output-dir and target/<report>, not target/**/<report>",
@@ -93,7 +98,14 @@ def main() -> int:
             suite_results.append(run_or_collect_suite(suite, output_dir, args))
     else:
         for suite in suites:
-            suite_results.append(collect_suite(suite, output_dir, recursive_target_scan=not args.no_recursive_target_scan))
+            suite_results.append(
+                collect_suite(
+                    suite,
+                    output_dir,
+                    recursive_target_scan=not args.no_recursive_target_scan,
+                    max_report_age_seconds=args.max_report_age_seconds,
+                )
+            )
 
     report = build_report(args.profile, suite_results)
     report_path = output_dir / "unified-opensearch-e2e-report.json"
@@ -128,6 +140,7 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
             output_dir,
             recursive_target_scan=not args.no_recursive_target_scan,
             exclude_paths={report_path.resolve()},
+            max_report_age_seconds=args.max_report_age_seconds,
         )
     command = [
         sys.executable,
@@ -155,7 +168,12 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
         partial_report = load_json(report_path)
         merged_report = merge_case_reports(baseline_report, partial_report)
         report_path.write_text(json.dumps(merged_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    result = collect_suite(suite, output_dir)
+    result = collect_suite(
+        suite,
+        output_dir,
+        recursive_target_scan=not args.no_recursive_target_scan,
+        max_report_age_seconds=args.max_report_age_seconds,
+    )
     result["run"] = {
         "command": command,
         "duration_seconds": time.time() - started,
@@ -173,6 +191,7 @@ def collect_suite(
     output_dir: Path,
     note: str | None = None,
     recursive_target_scan: bool = True,
+    max_report_age_seconds: float | None = None,
 ) -> dict[str, Any]:
     fixture_path = ROOT / suite.fixture
     fixture = load_json(fixture_path)
@@ -181,6 +200,7 @@ def collect_suite(
         fixture_path,
         output_dir,
         recursive_target_scan,
+        max_report_age_seconds=max_report_age_seconds,
     )
     result = summarize_suite(suite, fixture, report)
     result["fixture_path"] = str(fixture_path)
@@ -189,6 +209,8 @@ def collect_suite(
     result["rerun"] = suite_rerun_commands(suite, output_dir, result.get("case_gaps", {}))
     if report is None and unusable_path is not None:
         result["note"] = f"ignored existing report because every recorded target request failed before receiving an HTTP status: {unusable_path}"
+    if report is None and max_report_age_seconds is not None and unusable_path is None:
+        result["note"] = f"no suite report satisfied max_report_age_seconds={max_report_age_seconds:g}"
     if note:
         result["note"] = note
     return result
@@ -200,6 +222,7 @@ def load_best_report(
     output_dir: Path,
     recursive_target_scan: bool,
     exclude_paths: set[Path] | None = None,
+    max_report_age_seconds: float | None = None,
 ) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
     candidates: list[tuple[Path, str]] = []
     output_report = output_dir / report_name
@@ -231,7 +254,16 @@ def load_best_report(
     fixture = load_json(fixture_path)
     unusable_path = None
     usable_candidates: list[tuple[tuple[int, int, int, int, float], Path, str, dict[str, Any]]] = []
+    newest_stale_path = None
+    newest_stale_mtime = 0.0
+    now = time.time()
     for path, source in unique_candidates:
+        mtime = path.stat().st_mtime
+        if max_report_age_seconds is not None and now - mtime > max_report_age_seconds:
+            if mtime > newest_stale_mtime:
+                newest_stale_path = path
+                newest_stale_mtime = mtime
+            continue
         report = load_json(path)
         if report_fixture_mismatch(report, fixture_path):
             continue
@@ -242,6 +274,8 @@ def load_best_report(
     if usable_candidates:
         _, path, source, report = max(usable_candidates, key=lambda item: item[0])
         return path, source, report, unusable_path
+    if newest_stale_path is not None and unusable_path is None:
+        return newest_stale_path, None, None, None
     return unusable_path, None, None, unusable_path
 
 

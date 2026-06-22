@@ -212,15 +212,18 @@ As of the current audit command:
 ```bash
 python3 tools/run-unified-opensearch-e2e.py \
   --output-dir target/unified-opensearch-e2e-audit \
+  --max-report-age-seconds 86400 \
   --allow-missing
 python3 tools/check-unified-opensearch-e2e-report.py \
   target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json
 ```
 
 the checker fails closed without `--allow-missing` when required suite evidence
-does not cover every fixture case. The current collected required-suite reports
-show zero failed and zero missing cases. The search semantic suite now reports
-49 passed, 0 failed, and 0 skipped cases, including root and targeted
+does not cover every fixture case. The collector can also fail closed on stale
+suite reports through `--max-report-age-seconds`, so a previous successful run
+is not silently reused as current evidence. The current collected
+required-suite reports show zero failed and zero missing cases. The search
+semantic suite now reports 49 passed, 0 failed, and 0 skipped cases, including root and targeted
 `_validate/query` range-query parity, native root multi-index shard accounting
 for term, search-template, sorted, thresholded, ignored-unavailable, and
 `_msearch` sub-response status queries, plus OpenSearch-matched error-shape
