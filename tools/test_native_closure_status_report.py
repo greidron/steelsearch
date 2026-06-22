@@ -170,7 +170,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             manifest = temp_dir / "release-readiness.json"
             artifacts = {
                 "benchmark_coverage": "benchmark.jsonl",
-                "load_test_coverage": "load.json",
+                "load_test_coverage": "load-baseline.json",
                 "chaos_test_coverage": "chaos.json",
                 "packaging_verified": "packaging.json",
                 "rolling_upgrade_coverage": "rolling.json",
@@ -208,7 +208,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             readiness = temp_dir / "readiness.json"
             artifacts = {
                 "benchmark_coverage": "benchmark.jsonl",
-                "load_test_coverage": "load.json",
+                "load_test_coverage": "load-baseline.json",
                 "chaos_test_coverage": "chaos.json",
                 "packaging_verified": "packaging.json",
                 "rolling_upgrade_coverage": "rolling.json",

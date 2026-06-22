@@ -190,7 +190,7 @@ Current transport coverage evidence:
 | Java OpenSearch data-node replacement inside an existing Java cluster | Not supported. |
 | OpenSearch Security plugin replacement | Not supported. |
 
-Current 0.2.3 mixed-cluster coverage evidence:
+Current 0.2.4 mixed-cluster coverage evidence:
 
 - `tools/report-mixed-cluster-coverage.py --require-passed` aggregates the
   retained phase-C join, recovery, failure, write-replication, publication,
