@@ -1662,6 +1662,20 @@ The import-dangling-index boundary covers:
   timeouts, missing or oversized index UUIDs, `acceptDataLoss=false`,
   import-dangling-index execution, and acknowledgement rendering.
 
+The delete-dangling-index boundary covers:
+
+- OpenSearch `DeleteDanglingIndexRequest` parent task, cluster-manager
+  timeout, acknowledgement timeout, index UUID, and `acceptDataLoss` flag at
+  the wire decode/build layer;
+- OpenSearch `AcknowledgedResponse` decode/build for the acknowledgement flag;
+- explicit fail-closed classification for
+  `cluster:admin/indices/dangling/delete` until dangling index lookup,
+  accept-data-loss validation, index graveyard mutation, cluster metadata
+  publication, and acknowledgement rendering are implemented;
+- explicit rejection for custom cluster-manager timeouts, custom ack
+  timeouts, missing or oversized index UUIDs, `acceptDataLoss=false`,
+  delete-dangling-index execution, and acknowledgement rendering.
+
 The search boundary covers:
 
 - OpenSearch `SearchRequest` parent task, search type, indices array, routing,
@@ -3845,6 +3859,24 @@ ack timeout, index UUID, and `acceptDataLoss` flag before rejecting at
 admission. At roughly 540K ops/s in the latest local release run, future
 performance-sensitive work is dangling index lookup, allocation, cluster
 metadata mutation, and acknowledgement rendering.
+
+Current delete-dangling-index reject wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin delete-dangling-index-reject-wire-benchmark
+delete_dangling_index_reject_request_encode iterations=400000 elapsed_ms=345.658 ops_per_second=1157213.56 nanos_per_op=864.14
+delete_dangling_index_reject_request_decode iterations=400000 elapsed_ms=310.493 ops_per_second=1288275.70 nanos_per_op=776.23
+delete_dangling_index_reject_validation iterations=400000 elapsed_ms=315.616 ops_per_second=1267362.73 nanos_per_op=789.04
+delete_dangling_index_ack_response_decode iterations=400000 elapsed_ms=54.123 ops_per_second=7390549.56 nanos_per_op=135.31
+delete_dangling_index_reject_wire_bottleneck_ops_per_second=1157213.56
+```
+
+The current delete-dangling-index fail-closed boundary bottleneck is request
+encode. This path carries the `AcknowledgedRequest` cluster-manager timeout,
+ack timeout, index UUID, and `acceptDataLoss` flag before rejecting at
+admission. At roughly 1.16M ops/s in the latest local release run, future
+performance-sensitive work is dangling index lookup, index graveyard mutation,
+cluster metadata publication, and acknowledgement rendering.
 
 Current search reject wire microbenchmark:
 

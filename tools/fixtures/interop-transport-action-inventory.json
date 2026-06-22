@@ -985,6 +985,15 @@
       "reason": "Import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering before Steelsearch can serve OpenSearch dangling index import semantics."
     },
     {
+      "action_name": "cluster:admin/indices/dangling/delete",
+      "action_type": "DeleteDanglingIndexAction",
+      "transport_action": "TransportDeleteDanglingIndexAction",
+      "request_wire_type": "DeleteDanglingIndexRequest",
+      "response_wire_type": "AcknowledgedResponse",
+      "disposition": "rejected",
+      "reason": "Delete-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, index graveyard mutation, cluster metadata publication, and acknowledgement rendering before Steelsearch can serve OpenSearch dangling index delete semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",
