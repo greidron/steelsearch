@@ -922,6 +922,15 @@
       "reason": "Update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering before Steelsearch can serve OpenSearch persistent task status semantics."
     },
     {
+      "action_name": "cluster:admin/persistent/completion",
+      "action_type": "CompletionPersistentTaskAction",
+      "transport_action": "CompletionPersistentTaskAction.TransportAction",
+      "request_wire_type": "CompletionPersistentTaskAction.Request",
+      "response_wire_type": "PersistentTaskResponse",
+      "disposition": "rejected",
+      "reason": "Completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering before Steelsearch can serve OpenSearch persistent task completion semantics."
+    },
+    {
       "action_name": "indices:data/read/search",
       "action_type": "SearchAction",
       "transport_action": "TransportSearchAction",

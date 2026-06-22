@@ -149,6 +149,8 @@ pub const OPENSEARCH_SEARCH_VIEW_ACTION_NAME: &str = "views:data/read/search";
 pub const OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME: &str = "cluster:admin/persistent/start";
 pub const OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME: &str =
     "cluster:admin/persistent/update_status";
+pub const OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME: &str =
+    "cluster:admin/persistent/completion";
 pub const OPENSEARCH_GET_ACTION_NAME: &str = "indices:data/read/get";
 pub const OPENSEARCH_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/tv";
 pub const OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME: &str = "indices:data/read/mtv";
@@ -1158,6 +1160,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "map persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME,
+        action_type: "CompletionPersistentTaskAction",
+        transport_action: "CompletionPersistentTaskAction.TransportAction",
+        request_wire_type: "CompletionPersistentTaskAction.Request",
+        response_wire_type: "PersistentTaskResponse",
+        adapter_stage: "persistent-task-admin",
+        next_step: "map completion exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ACTION_NAME,
         action_type: "GetAction",
         transport_action: "TransportGetAction",
@@ -1867,6 +1878,11 @@ pub fn classify_opensearch_transport_action(
                 reason: "update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering",
             }
         }
+        OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+        },
         OPENSEARCH_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
@@ -7783,6 +7799,74 @@ pub fn build_opensearch_update_persistent_task_status_response_message(
 }
 
 pub fn read_opensearch_update_persistent_task_status_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchPersistentTaskResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchPersistentTaskResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_completion_persistent_task_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchCompletionPersistentTaskRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME)
+                .to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_completion_persistent_task_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCompletionPersistentTaskRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchCompletionPersistentTaskRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_completion_persistent_task_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchPersistentTaskResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_completion_persistent_task_response_message(
     message: &TransportMessage,
 ) -> Result<OpenSearchPersistentTaskResponseWire, TransportActionWireError> {
     if message.status.is_request() {
@@ -16349,6 +16433,100 @@ impl OpenSearchUpdatePersistentTaskStatusRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCompletionPersistentTaskRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub cluster_manager_timeout: TimeValueWire,
+    pub task_id: String,
+    pub allocation_id: i64,
+    pub has_exception: bool,
+}
+
+impl Default for OpenSearchCompletionPersistentTaskRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            cluster_manager_timeout: TimeValueWire::seconds(30),
+            task_id: "persistent-task-1".to_string(),
+            allocation_id: 1,
+            has_exception: false,
+        }
+    }
+}
+
+impl OpenSearchCompletionPersistentTaskRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.cluster_manager_timeout.write(output);
+        output.write_string(&self.task_id);
+        output.write_i64(self.allocation_id);
+        output.write_bool(self.has_exception);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
+        let task_id = input.read_string()?;
+        let allocation_id = input.read_i64()?;
+        let has_exception = input.read_bool()?;
+        if has_exception {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task exception payload",
+                reason: "OpenSearch exception payloads are not mapped by the completion-persistent-task adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+            cluster_manager_timeout,
+            task_id,
+            allocation_id,
+            has_exception,
+        })
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task cluster-manager timeout",
+                reason: "custom cluster-manager timeout is not mapped by the completion-persistent-task adapter yet",
+            });
+        }
+        if self.task_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task missing task id",
+                reason: "OpenSearch completion-persistent-task requests require a task id",
+            });
+        }
+        if self.task_id.len() > 128 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task id length",
+                reason: "OpenSearch completion-persistent-task ids are bounded to 128 bytes by the Rust boundary",
+            });
+        }
+        if self.allocation_id < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task missing allocation id",
+                reason: "OpenSearch completion-persistent-task requests require a non-negative allocation id",
+            });
+        }
+        if self.has_exception {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task exception payload",
+                reason: "OpenSearch exception payloads are not mapped by the completion-persistent-task adapter yet",
+            });
+        }
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "completion persistent task execution",
+            reason: "completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OpenSearchPersistentTaskResponseWire {
     pub has_task: bool,
@@ -24568,6 +24746,15 @@ mod tests {
                     next_step: "map persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "cluster:admin/persistent/completion",
+                    action_type: "CompletionPersistentTaskAction",
+                    transport_action: "CompletionPersistentTaskAction.TransportAction",
+                    request_wire_type: "CompletionPersistentTaskAction.Request",
+                    response_wire_type: "PersistentTaskResponse",
+                    adapter_stage: "persistent-task-admin",
+                    next_step: "map completion exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/get",
                     action_type: "GetAction",
                     transport_action: "TransportGetAction",
@@ -25185,6 +25372,11 @@ mod tests {
             .disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
     }
 
     #[test]
@@ -25277,6 +25469,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -40062,6 +40255,147 @@ mod tests {
         };
         assert_eq!(
             read_opensearch_update_persistent_task_status_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_completion_persistent_task_request_wire_round_trips_and_rejects_execution_boundary(
+    ) {
+        let request = OpenSearchCompletionPersistentTaskRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(14),
+            task_id: "task-a".to_string(),
+            allocation_id: 8,
+            ..OpenSearchCompletionPersistentTaskRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = OpenSearchCompletionPersistentTaskRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_completion_persistent_task_request_rejects_unsupported_shapes() {
+        let timeout = OpenSearchCompletionPersistentTaskRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..OpenSearchCompletionPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let missing_id = OpenSearchCompletionPersistentTaskRequestWire {
+            task_id: " ".to_string(),
+            ..OpenSearchCompletionPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            missing_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task missing task id",
+                ..
+            })
+        ));
+
+        let missing_allocation_id = OpenSearchCompletionPersistentTaskRequestWire {
+            allocation_id: -1,
+            ..OpenSearchCompletionPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            missing_allocation_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task missing allocation id",
+                ..
+            })
+        ));
+
+        let exception = OpenSearchCompletionPersistentTaskRequestWire {
+            has_exception: true,
+            ..OpenSearchCompletionPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            exception.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task exception payload",
+                ..
+            })
+        ));
+        let mut output = StreamOutput::new();
+        exception.write(&mut output);
+        assert!(matches!(
+            OpenSearchCompletionPersistentTaskRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task exception payload",
+                ..
+            })
+        ));
+
+        let mut output = StreamOutput::new();
+        OpenSearchCompletionPersistentTaskRequestWire::default().write(&mut output);
+        output.write_byte(0);
+        assert!(matches!(
+            OpenSearchCompletionPersistentTaskRequestWire::read(output.freeze()),
+            Err(TransportActionWireError::TrailingBytes(1))
+        ));
+    }
+
+    #[test]
+    fn opensearch_completion_persistent_task_transport_messages_bind_rejected_action_frame_and_empty_response(
+    ) {
+        let request = OpenSearchCompletionPersistentTaskRequestWire::default();
+        let mut frame = build_opensearch_completion_persistent_task_request_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected completion persistent task request message");
+        };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            read_opensearch_completion_persistent_task_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_completion_persistent_task_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "completion persistent task execution",
+                ..
+            })
+        ));
+
+        let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+        let mut frame = build_opensearch_completion_persistent_task_response_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected completion persistent task response message");
+        };
+        assert_eq!(
+            read_opensearch_completion_persistent_task_response_message(&message).unwrap(),
             response
         );
     }
