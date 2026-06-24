@@ -8863,6 +8863,9 @@ impl SteelNode {
         if body.get("query").is_some() {
             body["query"] = rewritten_query;
         }
+        if let Some(response) = apply_search_source_query_params(&mut body, &request.query_params) {
+            return response;
+        }
         if let Some(response) = validate_search_request_body(&body) {
             return response;
         }
@@ -18622,6 +18625,47 @@ fn validate_search_request_body(body: &Value) -> Option<RestResponse> {
         }
     }
     validate_search_query_body(&body["query"])
+}
+
+fn apply_search_source_query_params(
+    body: &mut Value,
+    query_params: &BTreeMap<String, String>,
+) -> Option<RestResponse> {
+    for field in ["from", "size"] {
+        let Some(raw) = query_params.get(field) else {
+            continue;
+        };
+        let Some(value) = parse_non_negative_search_int(raw) else {
+            return Some(search_query_param_parse_error(field, raw));
+        };
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert(field.to_string(), Value::from(value));
+    }
+    None
+}
+
+fn parse_non_negative_search_int(raw: &str) -> Option<u64> {
+    if raw.starts_with('-') {
+        return None;
+    }
+    raw.parse::<u64>().ok()
+}
+
+fn search_query_param_parse_error(param: &str, value: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!("Failed to parse value [{value}] for [{param}] as a non-negative integer")
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
@@ -38051,6 +38095,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(sorted_window.body["hits"]["total"]["value"], 3);
         assert_eq!(sorted_window.body["hits"]["hits"].as_array().map(Vec::len), Some(1));
         assert_eq!(sorted_window.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let query_param_window = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?from=2&size=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "from": 0,
+                "size": 3
+            })),
+        );
+        assert_eq!(query_param_window.status, 200);
+        assert_eq!(query_param_window.body["hits"]["total"]["value"], 3);
+        assert_eq!(query_param_window.body["hits"]["hits"].as_array().map(Vec::len), Some(1));
+        assert_eq!(query_param_window.body["hits"]["hits"][0]["_id"], "doc-3");
+
+        let invalid_query_param_from = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?from=-1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_query_param_from.status, 400);
+        assert_eq!(
+            invalid_query_param_from.body["error"]["type"],
+            "illegal_argument_exception"
+        );
 
         let total_hits_threshold = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({

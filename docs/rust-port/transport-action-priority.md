@@ -2174,6 +2174,8 @@ The search boundary covers:
 - REST search responses honor `rest_total_hits_as_int=true` for accurate total
   hits and reject the OpenSearch-disallowed numeric `track_total_hits`
   threshold combination.
+- REST search source parsing applies `from` and `size` query parameters over
+  request-body values, with non-negative integer validation.
 
 The stream-search boundary covers:
 
