@@ -329,6 +329,7 @@ Required semantic cases:
 - `exists_query_search`
 - `validate_query_empty_search`
 - `validate_query_target_rewrite_search`
+- `match_query_scoring_order_total_hits`
 - `prefix_query_search`
 - `query_string_search`
 - `query_string_url_q_overrides_body_search`
@@ -368,6 +369,8 @@ Required semantic cases:
 - `phrase_suggest_search`
 - `term_suggest_search`
 - `highlight_search`
+- `metric_aggregations`
+- `filter_aggregations`
 - `terms_aggregation`
 - `composite_aggregation`
 - `geo_bounds_aggregation`
