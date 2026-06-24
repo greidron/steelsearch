@@ -2389,6 +2389,10 @@ pub struct ScrollContext {
 #[derive(Clone, Debug)]
 pub struct PitContext {
     pub indices: Vec<String>,
+    pub documents: BTreeMap<String, StoredDocument>,
+    pub keep_alive_millis: u64,
+    pub expires_at_millis: u128,
+    pub creation_time_millis: u128,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -8801,16 +8805,44 @@ impl SteelNode {
         if let Some(response) = validate_search_request_body(&body) {
             return response;
         }
-        let resolved_indices = if let Some(pit_id) = body
+        let pit_context = if let Some(pit_id) = body
             .get("pit")
             .and_then(Value::as_object)
             .and_then(|pit| pit.get("id"))
             .and_then(Value::as_str)
         {
-            match self.resolve_pit_indices(pit_id) {
-                Ok(indices) => indices,
+            let keep_alive = body
+                .get("pit")
+                .and_then(Value::as_object)
+                .and_then(|pit| pit.get("keep_alive"))
+                .and_then(Value::as_str);
+            let keep_alive_millis = match keep_alive {
+                Some(keep_alive) => match parse_time_value_millis(keep_alive) {
+                    Some(millis) => Some(millis),
+                    None => {
+                        return RestResponse::json(
+                            400,
+                            serde_json::json!({
+                                "error": {
+                                    "type": "illegal_argument_exception",
+                                    "reason": format!("failed to parse setting [keep_alive] with value [{keep_alive}] as a time value")
+                                },
+                                "status": 400
+                            }),
+                        );
+                    }
+                },
+                None => None,
+            };
+            match self.resolve_pit_context(pit_id, keep_alive_millis) {
+                Ok(context) => Some(context),
                 Err(response) => return response,
             }
+        } else {
+            None
+        };
+        let resolved_indices = if let Some(context) = pit_context.as_ref() {
+            context.indices.clone()
         } else {
             let ignore_unavailable = request
                 .query_params
@@ -8906,7 +8938,8 @@ impl SteelNode {
         } else {
             std::collections::BTreeSet::new()
         };
-        if !resolved_indices.is_empty()
+        if pit_context.is_none()
+            && !resolved_indices.is_empty()
             && failed_indices.is_empty()
             && standalone_search_body_allows_native_engine(&body)
         {
@@ -8919,10 +8952,16 @@ impl SteelNode {
         }
         let needs_suggest_snapshot = body.get("suggest").is_some();
         let (candidate_documents, docs_snapshot_for_suggest) = {
-            let docs = self
-                .documents_state
-                .lock()
-                .expect("documents state lock poisoned");
+            let live_docs;
+            let docs = if let Some(context) = pit_context.as_ref() {
+                &context.documents
+            } else {
+                live_docs = self
+                    .documents_state
+                    .lock()
+                    .expect("documents state lock poisoned");
+                &*live_docs
+            };
             let docs_snapshot_for_suggest = needs_suggest_snapshot.then(|| docs.clone());
             let candidate_documents = docs
                 .iter()
@@ -9539,13 +9578,21 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
-        let contexts = self
+        let now_millis = current_epoch_millis();
+        let mut contexts = self
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
+        contexts.retain(|_, context| context.expires_at_millis > now_millis);
         let pits = contexts
-            .keys()
-            .map(|id| serde_json::json!({ "id": id }))
+            .iter()
+            .map(|(id, context)| {
+                serde_json::json!({
+                    "id": id,
+                    "pit_id": id,
+                    "creation_time": context.creation_time_millis
+                })
+            })
             .collect::<Vec<_>>();
         RestResponse::json(200, serde_json::json!({ "pits": pits }))
     }
@@ -9580,10 +9627,38 @@ impl SteelNode {
             .get("keep_alive")
             .map(String::as_str)
             .unwrap_or("1m");
+        let Some(keep_alive_millis) = parse_time_value_millis(keep_alive) else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": format!("failed to parse setting [keep_alive] with value [{keep_alive}] as a time value")
+                    },
+                    "status": 400
+                }),
+            );
+        };
         let resolved_indices = match self.resolve_search_targets(index, false, false, "open") {
             Ok(indices) => indices,
             Err(response) => return response,
         };
+        let documents = {
+            let docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            docs.iter()
+                .filter_map(|(key, record)| {
+                    let (doc_index, _, _) = split_document_key(key)?;
+                    resolved_indices
+                        .iter()
+                        .any(|candidate| candidate == doc_index)
+                        .then(|| (key.clone(), record.clone()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let creation_time_millis = current_epoch_millis();
         let mut next_id = self
             .next_pit_id
             .lock()
@@ -9597,23 +9672,46 @@ impl SteelNode {
                 pit_id.clone(),
                 PitContext {
                     indices: resolved_indices,
+                    documents,
+                    keep_alive_millis,
+                    expires_at_millis: creation_time_millis + u128::from(keep_alive_millis),
+                    creation_time_millis,
                 },
             );
         RestResponse::json(
             200,
             serde_json::json!({
                 "id": pit_id,
-                "keep_alive": keep_alive
+                "pit_id": pit_id,
+                "keep_alive": keep_alive,
+                "creation_time": creation_time_millis,
+                "_shards": {
+                    "total": 1,
+                    "successful": 1,
+                    "skipped": 0,
+                    "failed": 0
+                }
             }),
         )
     }
 
-    fn resolve_pit_indices(&self, pit_id: &str) -> Result<Vec<String>, RestResponse> {
-        let contexts = self
+    fn resolve_pit_context(
+        &self,
+        pit_id: &str,
+        keep_alive_millis: Option<u64>,
+    ) -> Result<PitContext, RestResponse> {
+        let now_millis = current_epoch_millis();
+        let mut contexts = self
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        let Some(context) = contexts.get(pit_id) else {
+        if contexts
+            .get(pit_id)
+            .is_some_and(|context| context.expires_at_millis <= now_millis)
+        {
+            contexts.remove(pit_id);
+        }
+        let Some(context) = contexts.get_mut(pit_id) else {
             return Err(RestResponse::json(
                 404,
                 serde_json::json!({
@@ -9625,7 +9723,11 @@ impl SteelNode {
                 }),
             ));
         };
-        Ok(context.indices.clone())
+        if let Some(keep_alive_millis) = keep_alive_millis {
+            context.keep_alive_millis = keep_alive_millis;
+            context.expires_at_millis = now_millis + u128::from(keep_alive_millis);
+        }
+        Ok(context.clone())
     }
 
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
@@ -19378,6 +19480,40 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
 fn split_document_key(key: &str) -> Option<(&str, &str, &str)> {
     let mut parts = key.splitn(3, ':');
     Some((parts.next()?, parts.next()?, parts.next()?))
+}
+
+fn current_epoch_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time before unix epoch")
+        .as_millis()
+}
+
+fn parse_time_value_millis(value: &str) -> Option<u64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let units = [
+        ("micros", 1_u64),
+        ("nanos", 0_u64),
+        ("ms", 1_u64),
+        ("s", 1_000_u64),
+        ("m", 60_000_u64),
+        ("h", 3_600_000_u64),
+        ("d", 86_400_000_u64),
+    ];
+    let (number, multiplier) = units
+        .iter()
+        .find_map(|(suffix, multiplier)| trimmed.strip_suffix(suffix).map(|number| (number, *multiplier)))?;
+    let amount = number.parse::<u64>().ok()?;
+    if amount == 0 {
+        return None;
+    }
+    if multiplier == 0 {
+        return Some(1);
+    }
+    amount.checked_mul(multiplier)
 }
 
 fn extract_knn_field_name(query: &Value) -> Option<&str> {
@@ -34519,6 +34655,60 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(second_open_pit.status, 200);
         assert_eq!(second_open_pit.body["id"], "pit-2");
+        assert_eq!(second_open_pit.body["pit_id"], "pit-2");
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-session-000001/_doc/doc-3")
+                    .with_json_body(serde_json::json!({ "message": "doc-3" })),
+            )
+            .status,
+            201
+        );
+
+        let live_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "profile": true,
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(live_search.status, 200);
+        assert_eq!(live_search.body["hits"]["total"]["value"], 3);
+
+        let pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["hits"]["total"]["value"], 2);
+        assert!(pit_search.body["hits"]["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|hit| hit["_id"] != "doc-3"));
+
+        let invalid_pit_keep_alive = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "not-a-duration"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(invalid_pit_keep_alive.status, 400);
+        assert_eq!(
+            invalid_pit_keep_alive.body["error"]["type"],
+            "illegal_argument_exception"
+        );
 
         let list_pits =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
@@ -34529,6 +34719,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let search_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
                 .with_json_body(serde_json::json!({
+                    "profile": true,
                     "size": 1,
                     "query": { "match_all": {} }
                 })),
@@ -34567,6 +34758,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let second_search_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
                 .with_json_body(serde_json::json!({
+                    "profile": true,
                     "size": 1,
                     "query": { "match_all": {} }
                 })),
