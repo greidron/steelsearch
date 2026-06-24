@@ -7876,6 +7876,8 @@ impl SteelNode {
         for (header_key, query_key) in [
             ("routing", "routing"),
             ("preference", "preference"),
+            ("search_type", "search_type"),
+            ("searchType", "search_type"),
             ("ignore_unavailable", "ignore_unavailable"),
             ("ignoreUnavailable", "ignore_unavailable"),
             ("allow_no_indices", "allow_no_indices"),
@@ -40223,6 +40225,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted_header_override.body["responses"][0]["status"], 200);
         assert_eq!(targeted_header_override.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(targeted_header_override.body["responses"][0]["hits"]["hits"][0]["_id"], "doc-2");
+
+        let search_type_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"search_type\":\"dfs_query_then_fetch\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(search_type_metadata.status, 200);
+        assert_eq!(search_type_metadata.body["responses"][0]["status"], 200);
+
+        let search_type_alias_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"searchType\":\"query_then_fetch\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(search_type_alias_metadata.status, 200);
+        assert_eq!(search_type_alias_metadata.body["responses"][0]["status"], 200);
+
+        let unsupported_search_type_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"searchType\":\"scan\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(unsupported_search_type_metadata.status, 200);
+        assert_eq!(unsupported_search_type_metadata.body["responses"][0]["status"], 400);
+        assert_eq!(
+            unsupported_search_type_metadata.body["responses"][0]["error"]["reason"],
+            "unsupported search_type"
+        );
     }
 
     #[test]
