@@ -618,8 +618,8 @@ name = "get-task-wire-benchmark"
 path = "benchmarks/get_task_wire.rs"
 
 [[bin]]
-name = "segment-replication-stats-reject-wire-benchmark"
-path = "benchmarks/segment_replication_stats_reject_wire.rs"
+name = "segment-replication-stats-wire-benchmark"
+path = "benchmarks/segment_replication_stats_wire.rs"
 
 [[bin]]
 name = "cancel-tasks-wire-benchmark"

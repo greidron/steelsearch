@@ -483,7 +483,7 @@ transport_action	planned	action	MultiSearchAction.INSTANCE	TransportMultiSearchA
 transport_action	planned	action	ExplainAction.INSTANCE	TransportExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	761
 transport_action	implemented	action	ClearScrollAction.INSTANCE	TransportClearScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	762
 transport_action	implemented	action	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
-transport_action	planned	action	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
+transport_action	implemented	action	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
 transport_action	planned	action	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
 transport_action	planned	action	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766
 transport_action	planned	action	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769

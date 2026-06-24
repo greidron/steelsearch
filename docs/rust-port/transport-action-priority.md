@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 40 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 120 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 41 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 119 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -280,14 +280,14 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/shards/search_shards` (rejected fail-closed)
 - `indices:data/read/field_caps` (rejected fail-closed)
 - `indices:monitor/recovery` (implemented local empty-recovery subset)
-- `indices:monitor/segment_replication` (rejected fail-closed)
-- `indices:monitor/segments` (rejected fail-closed)
+- `indices:monitor/segment_replication` (implemented local empty segment-replication-stats subset)
+- `indices:monitor/segments` (implemented local empty-segments subset)
 - `indices:monitor/point_in_time/segments` (implemented `_all` empty PIT-segments subset)
-- `indices:monitor/shard_stores` (rejected fail-closed)
+- `indices:monitor/shard_stores` (implemented local empty-shard-stores subset)
 - `indices:admin/data_stream/create` (rejected fail-closed)
 - `indices:admin/data_stream/delete` (rejected fail-closed)
-- `indices:admin/data_stream/get` (rejected fail-closed)
-- `indices:monitor/data_stream/stats` (rejected fail-closed)
+- `indices:admin/data_stream/get` (implemented empty data-stream list subset)
+- `indices:monitor/data_stream/stats` (implemented empty data-stream-stats subset)
 - `indices:admin/resolve/index` (rejected fail-closed)
 - `cluster:admin/views/create` (rejected fail-closed)
 - `cluster:admin/views/delete` (rejected fail-closed)
@@ -1813,13 +1813,12 @@ The segment-replication-stats boundary covers:
 - OpenSearch `SegmentReplicationStatsRequest` parent task, broadcast indices
   array, `IndicesOptions.strictExpandOpenAndForbidClosed()`, `detailed`, and
   `activeOnly` at the wire decode/build layer;
-- explicit fail-closed classification for
-  `indices:monitor/segment_replication` until shard routing, segment
-  replication pressure-service stats, target-service state, primary/replica
-  grouping, and response rendering are implemented;
+- empty `SegmentReplicationStatsResponse` rendering for the default all-index,
+  non-detailed, non-active-only request, backed by daemon transport routing when
+  the decoded request validates as the supported empty subset;
 - explicit rejection for index filters, custom indices options, detailed stage
-  timing output, active-only filtering, and segment-replication-stats
-  execution.
+  timing output, active-only filtering, shard failures, and non-empty
+  per-index replication stats.
 
 The indices-segments boundary covers:
 
@@ -4487,24 +4486,26 @@ is populating non-empty shard recovery metadata and rendering detailed recovery
 responses. At roughly 1.11M ops/s in the latest local run, this path does not
 introduce a new transport admission hotspot.
 
-Current segment-replication-stats reject wire microbenchmark:
+Current segment-replication-stats wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin segment-replication-stats-reject-wire-benchmark
-segment_replication_stats_reject_request_encode iterations=500000 elapsed_ms=318.914 ops_per_second=1567823.14 nanos_per_op=637.83
-segment_replication_stats_reject_request_decode iterations=500000 elapsed_ms=313.560 ops_per_second=1594593.43 nanos_per_op=627.12
-segment_replication_stats_reject_validation iterations=500000 elapsed_ms=329.745 ops_per_second=1516321.82 nanos_per_op=659.49
-segment_replication_stats_reject_wire_bottleneck_ops_per_second=1516321.82
+cargo run -p os-transport --release --bin segment-replication-stats-wire-benchmark
+segment_replication_stats_request_encode iterations=500000 elapsed_ms=350.463 ops_per_second=1426685.51 nanos_per_op=700.93
+segment_replication_stats_request_decode iterations=500000 elapsed_ms=307.034 ops_per_second=1628483.87 nanos_per_op=614.07
+segment_replication_stats_request_validate iterations=500000 elapsed_ms=306.842 ops_per_second=1629504.99 nanos_per_op=613.68
+segment_replication_stats_response_encode iterations=500000 elapsed_ms=71.826 ops_per_second=6961244.54 nanos_per_op=143.65
+segment_replication_stats_response_decode iterations=500000 elapsed_ms=81.379 ops_per_second=6144102.85 nanos_per_op=162.76
+segment_replication_stats_wire_bottleneck_ops_per_second=1426685.51
 ```
 
-The current segment-replication-stats fail-closed boundary bottleneck is
-validation. This path carries the BroadcastRequest parent task, empty index
+The current segment-replication-stats supported-subset boundary bottleneck is
+request encode. This path carries the BroadcastRequest parent task, empty index
 array, strict open forbid-closed index options, detailed flag, and active-only
-flag before rejecting at admission. At roughly 1.52M ops/s in the latest local
-release run, the boundary itself is lightweight; the expected performance
-pressure for a future implementation is shard routing, pressure-service stats
-collection, target-service live state lookup, primary/replica grouping, and
-response rendering.
+flag before accepting the empty response subset. At roughly 1.43M ops/s, the
+boundary itself is lightweight; response encode/decode stays above 6.1M ops/s.
+The first performance point to inspect before expanding execution is shard
+routing, pressure-service stats collection, target-service live state lookup,
+primary/replica grouping, and non-empty response rendering.
 
 Current indices-segments wire microbenchmark:
 

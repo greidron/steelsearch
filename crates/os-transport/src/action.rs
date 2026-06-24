@@ -2221,8 +2221,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "segment-replication-stats transport execution requires shard routing, segment-replication pressure/target state, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "segment-replication-stats transport adapter returns an OpenSearch-shaped empty stats response for the default all-indices request",
         },
         OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10060,6 +10060,35 @@ pub fn read_opensearch_segment_replication_stats_request_message(
         });
     }
     OpenSearchSegmentReplicationStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_segment_replication_stats_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchSegmentReplicationStatsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_segment_replication_stats_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSegmentReplicationStatsResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchSegmentReplicationStatsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_indices_segments_request_message(
@@ -22645,7 +22674,7 @@ impl OpenSearchSegmentReplicationStatsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "segment replication stats index filter",
@@ -22674,10 +22703,90 @@ impl OpenSearchSegmentReplicationStatsRequestWire {
                     "active-only segment-replication filtering requires live target-service state",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "segment replication stats execution",
-            reason: "segment-replication-stats execution requires shard routing, pressure-service stats, target-service state, and response rendering",
+            reason:
+                "use validate_supported_subset for the implemented empty segment-replication-stats adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct OpenSearchSegmentReplicationStatsResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub replication_stats_index_count: i32,
+}
+
+impl OpenSearchSegmentReplicationStatsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_vint(self.replication_stats_index_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+            shard_failure_count: input.read_vint()?,
+            replication_stats_index_count: input.read_vint()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response shard counters",
+                reason: "SegmentReplicationStatsResponse shard counters must be non-negative",
+            });
+        }
+        if self.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response failure count",
+                reason: "SegmentReplicationStatsResponse shard failure count must be non-negative",
+            });
+        }
+        if self.replication_stats_index_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response index count",
+                reason: "SegmentReplicationStatsResponse stats map count must be non-negative",
+            });
+        }
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response shard failures",
+                reason: "segment-replication-stats shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        if self.replication_stats_index_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response index stats",
+                reason:
+                    "non-empty segment-replication stats require per-index group stats decoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -35569,7 +35678,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME)
@@ -35713,6 +35822,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
@@ -35781,7 +35891,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
-                || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
@@ -53132,14 +53241,15 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_segment_replication_stats_request_wire_round_trips_and_rejects_execution_boundary(
-    ) {
+    fn opensearch_segment_replication_stats_request_wire_round_trips_and_validates_default_subset()
+    {
         let request = OpenSearchSegmentReplicationStatsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchSegmentReplicationStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53204,7 +53314,48 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_segment_replication_stats_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_segment_replication_stats_response_wire_round_trips_empty_response() {
+        let response = OpenSearchSegmentReplicationStatsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchSegmentReplicationStatsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_segment_replication_stats_response_rejects_non_empty_sections() {
+        let failures = OpenSearchSegmentReplicationStatsResponseWire {
+            failed_shards: 1,
+            shard_failure_count: 1,
+            ..OpenSearchSegmentReplicationStatsResponseWire::empty()
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            failures.write(&mut output),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response shard failures",
+                ..
+            })
+        ));
+
+        let mut stats = StreamOutput::new();
+        stats.write_vint(0);
+        stats.write_vint(0);
+        stats.write_vint(0);
+        stats.write_vint(0);
+        stats.write_vint(1);
+        assert!(matches!(
+            OpenSearchSegmentReplicationStatsResponseWire::read(stats.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "segment replication stats response index stats",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_segment_replication_stats_transport_messages_bind_action_frames() {
         let request = OpenSearchSegmentReplicationStatsRequestWire::default();
         let mut frame = build_opensearch_segment_replication_stats_request_message(
             41,
@@ -53219,14 +53370,31 @@ mod tests {
             read_opensearch_segment_replication_stats_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_segment_replication_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchSegmentReplicationStatsResponseWire::empty();
+        let mut frame = build_opensearch_segment_replication_stats_response_message(
+            41,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected segment replication stats response message");
+        };
+        assert_eq!(
+            read_opensearch_segment_replication_stats_response_message(&message).unwrap(),
+            response
+        );
         assert!(matches!(
-            read_opensearch_segment_replication_stats_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "segment replication stats execution",
+            read_opensearch_segment_replication_stats_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
                 ..
-            })
+            }
         ));
     }
 
