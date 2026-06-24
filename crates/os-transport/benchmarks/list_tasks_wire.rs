@@ -2,7 +2,7 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_list_tasks_request_message, build_list_tasks_response_message,
     read_list_tasks_request_message, read_list_tasks_response_message, ListTaskInfoWire,
-    ListTasksRequestWire, ListTasksResponseWire, TaskIdWire,
+    ListTasksRequestWire, ListTasksResponseWire, TaskIdWire, TimeValueWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::collections::BTreeMap;
@@ -24,6 +24,7 @@ fn main() {
         },
         nodes: vec!["node-a".to_string()],
         actions: vec!["cluster:admin/*".to_string()],
+        timeout: Some(TimeValueWire::seconds(30)),
         detailed: true,
         ..ListTasksRequestWire::default()
     };

@@ -2,7 +2,7 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_cancel_tasks_request_message, build_cancel_tasks_response_message,
     read_cancel_tasks_request_message, read_cancel_tasks_response_message, CancelTasksRequestWire,
-    CancelTasksResponseWire, ListTaskInfoWire, TaskIdWire,
+    CancelTasksResponseWire, ListTaskInfoWire, TaskIdWire, TimeValueWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::collections::BTreeMap;
@@ -26,6 +26,8 @@ fn main() {
         },
         nodes: vec!["node-a".to_string()],
         actions: vec!["cluster:admin/*".to_string()],
+        timeout: Some(TimeValueWire::seconds(30)),
+        reason: "maintenance".to_string(),
         ..CancelTasksRequestWire::default()
     };
     let response = CancelTasksResponseWire {

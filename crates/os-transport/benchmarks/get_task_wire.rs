@@ -2,6 +2,7 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_get_task_request_message, build_get_task_response_message, read_get_task_request_message,
     read_get_task_response_message, GetTaskRequestWire, GetTaskResponseWire, ListTaskInfoWire,
+    TimeValueWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::collections::BTreeMap;
@@ -11,7 +12,10 @@ use std::time::Instant;
 const ITERATIONS: usize = 400_000;
 
 fn main() {
-    let request = GetTaskRequestWire::new("node-a".to_string(), 7);
+    let request = GetTaskRequestWire {
+        timeout: Some(TimeValueWire::seconds(30)),
+        ..GetTaskRequestWire::new("node-a".to_string(), 7)
+    };
     let response = GetTaskResponseWire::running(ListTaskInfoWire {
         node_id: "node-a".to_string(),
         task_id: 7,

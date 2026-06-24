@@ -25220,12 +25220,6 @@ impl ListTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.timeout.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks timeout",
-                reason: "list-tasks timeout is not mapped by the list-tasks adapter yet",
-            });
-        }
         if self.wait_for_completion {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks wait for completion",
@@ -25571,12 +25565,6 @@ impl GetTaskRequestWire {
                 reason: "OpenSearch get-task requires an explicit task id",
             });
         }
-        if self.timeout.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get task timeout",
-                reason: "get-task timeout requires runtime task result lifecycle mapping",
-            });
-        }
         if self.wait_for_completion {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get task wait for completion",
@@ -25730,18 +25718,6 @@ impl CancelTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.timeout.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks timeout",
-                reason: "cancel-tasks timeout is not mapped by this adapter yet",
-            });
-        }
-        if self.reason != "by user request" {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks reason",
-                reason: "custom cancellation reason is not mapped by this adapter yet",
-            });
-        }
         if self.wait_for_completion {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cancel tasks wait for completion",
@@ -54578,6 +54554,7 @@ mod tests {
             },
             nodes: vec!["node-a".to_string()],
             actions: vec!["cluster:admin/*".to_string()],
+            timeout: Some(TimeValueWire::seconds(30)),
             detailed: true,
             ..ListTasksRequestWire::default()
         };
@@ -54718,7 +54695,10 @@ mod tests {
 
     #[test]
     fn get_task_request_wire_round_trips_and_rejects_execution_boundary() {
-        let request = GetTaskRequestWire::new("node-a".to_string(), 7);
+        let request = GetTaskRequestWire {
+            timeout: Some(TimeValueWire::seconds(30)),
+            ..GetTaskRequestWire::new("node-a".to_string(), 7)
+        };
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
@@ -54728,7 +54708,7 @@ mod tests {
     }
 
     #[test]
-    fn get_task_request_rejects_missing_task_id_timeout_and_wait_shapes() {
+    fn get_task_request_rejects_missing_task_id_and_wait_shapes() {
         let missing = GetTaskRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
@@ -54740,18 +54720,6 @@ mod tests {
             missing.validate_supported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get task missing task id",
-                ..
-            })
-        ));
-
-        let with_timeout = GetTaskRequestWire {
-            timeout: Some(TimeValueWire::seconds(1)),
-            ..GetTaskRequestWire::new("node-a".to_string(), 7)
-        };
-        assert!(matches!(
-            with_timeout.validate_supported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get task timeout",
                 ..
             })
         ));
@@ -54898,6 +54866,8 @@ mod tests {
             },
             nodes: vec!["node-a".to_string()],
             actions: vec!["cluster:admin/*".to_string()],
+            timeout: Some(TimeValueWire::seconds(30)),
+            reason: "maintenance".to_string(),
             ..CancelTasksRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -54910,31 +54880,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_tasks_request_rejects_custom_reason_timeout_and_wait_shapes() {
-        let timeout = CancelTasksRequestWire {
-            timeout: Some(TimeValueWire::seconds(30)),
-            ..CancelTasksRequestWire::default()
-        };
-        assert!(matches!(
-            timeout.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks timeout",
-                ..
-            })
-        ));
-
-        let custom_reason = CancelTasksRequestWire {
-            reason: "maintenance".to_string(),
-            ..CancelTasksRequestWire::default()
-        };
-        assert!(matches!(
-            custom_reason.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks reason",
-                ..
-            })
-        ));
-
+    fn cancel_tasks_request_rejects_wait_shape() {
         let wait = CancelTasksRequestWire {
             wait_for_completion: true,
             ..CancelTasksRequestWire::default()

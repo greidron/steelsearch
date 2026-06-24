@@ -8618,6 +8618,7 @@ mod tests {
             },
             nodes: vec!["remote-node-id".to_string()],
             actions: vec!["cluster:admin/voting_config/*".to_string()],
+            timeout: Some(os_transport::action::TimeValueWire::seconds(30)),
             detailed: true,
             ..os_transport::action::ListTasksRequestWire::default()
         };
@@ -8696,7 +8697,10 @@ mod tests {
         let request_frame = os_transport::action::build_get_task_request_message(
             82,
             OPENSEARCH_3_7_0_TRANSPORT,
-            &os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 41),
+            &os_transport::action::GetTaskRequestWire {
+                timeout: Some(os_transport::action::TimeValueWire::seconds(30)),
+                ..os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 41)
+            },
         )
         .unwrap();
         let request_body = request_frame[6..].to_vec();
@@ -8738,7 +8742,10 @@ mod tests {
         let request_frame = os_transport::action::build_get_task_request_message(
             83,
             OPENSEARCH_3_7_0_TRANSPORT,
-            &os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 42),
+            &os_transport::action::GetTaskRequestWire {
+                timeout: Some(os_transport::action::TimeValueWire::seconds(30)),
+                ..os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 42)
+            },
         )
         .unwrap();
         let request_body = request_frame[6..].to_vec();
@@ -9014,6 +9021,8 @@ mod tests {
             },
             nodes: vec!["remote-node-id".to_string()],
             actions: vec!["cluster:admin/voting_config/*".to_string()],
+            timeout: Some(os_transport::action::TimeValueWire::seconds(30)),
+            reason: "maintenance".to_string(),
             ..os_transport::action::CancelTasksRequestWire::default()
         };
         let request_frame = os_transport::action::build_cancel_tasks_request_message(
