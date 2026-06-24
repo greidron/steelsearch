@@ -26297,18 +26297,6 @@ impl OpenSearchCreatePitRequestWire {
                 reason: "OpenSearch create-PIT keep-alive uses an unknown time unit",
             });
         }
-        if self.preference.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit preference",
-                reason: "preference-aware PIT creation requires shard iterator ordering semantics",
-            });
-        }
-        if self.allow_partial_pit_creation.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit partial creation",
-                reason: "partial PIT creation requires shard failure aggregation semantics",
-            });
-        }
         Ok(())
     }
 
@@ -57633,17 +57621,27 @@ mod tests {
         };
         custom_indices_options.validate_supported_subset().unwrap();
 
-        let partial_creation = OpenSearchCreatePitRequestWire {
+        let preference = OpenSearchCreatePitRequestWire {
+            preference: Some("_local".to_string()),
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        preference.validate_supported_subset().unwrap();
+
+        let partial_creation_enabled = OpenSearchCreatePitRequestWire {
             allow_partial_pit_creation: Some(true),
             ..OpenSearchCreatePitRequestWire::default()
         };
-        assert!(matches!(
-            partial_creation.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit partial creation",
-                ..
-            })
-        ));
+        partial_creation_enabled
+            .validate_supported_subset()
+            .unwrap();
+
+        let partial_creation_disabled = OpenSearchCreatePitRequestWire {
+            allow_partial_pit_creation: Some(false),
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        partial_creation_disabled
+            .validate_supported_subset()
+            .unwrap();
     }
 
     #[test]

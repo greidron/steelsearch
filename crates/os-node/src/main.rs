@@ -10910,6 +10910,8 @@ mod tests {
         let routed_create_request = os_transport::action::OpenSearchCreatePitRequestWire {
             indices: vec!["logs-routed*".to_string()],
             routing: Some("tenant-a".to_string()),
+            preference: Some("_local".to_string()),
+            allow_partial_pit_creation: Some(false),
             ..os_transport::action::OpenSearchCreatePitRequestWire::default()
         };
         let routed_create_frame =
