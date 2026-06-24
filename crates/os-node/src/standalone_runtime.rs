@@ -20780,7 +20780,7 @@ fn validate_search_after_sort_values_against_mappings(
 ) -> Option<RestResponse> {
     let sort_fields = body.get("sort").and_then(search_sort_fields)?;
     let search_after = body.get("search_after").and_then(Value::as_array)?;
-    for (sort_field, after_value) in sort_fields.into_iter().zip(search_after.iter()) {
+    for (sort_field, after_value) in sort_fields.iter().zip(search_after.iter()) {
         let Some(field_name) = sort_field_name(sort_field) else {
             continue;
         };
@@ -20809,7 +20809,7 @@ fn validate_search_sort_modes_against_mappings(
     index_mappings: &std::collections::HashMap<String, Value>,
 ) -> Option<RestResponse> {
     let sort_fields = body.get("sort").and_then(search_sort_fields)?;
-    for sort_field in sort_fields {
+    for sort_field in &sort_fields {
         let Some(mode) = sort_field_mode(sort_field) else {
             continue;
         };
@@ -20843,7 +20843,7 @@ fn validate_search_sort_unmapped_fields_against_mappings(
     index_mappings: &std::collections::HashMap<String, Value>,
 ) -> Option<RestResponse> {
     let sort_fields = body.get("sort").and_then(search_sort_fields)?;
-    for sort_field in sort_fields {
+    for sort_field in &sort_fields {
         let Some(field_name) = sort_field_name(sort_field) else {
             continue;
         };
@@ -21898,10 +21898,39 @@ fn find_mapping_property_by_leaf<'a>(properties: &'a Value, field: &str) -> Opti
         .find_map(|nested_properties| find_mapping_property_by_leaf(nested_properties, field))
 }
 
-fn search_sort_fields(sort: &Value) -> Option<Vec<&Value>> {
+fn search_sort_fields(sort: &Value) -> Option<Vec<Value>> {
     match sort {
-        Value::Array(sort_fields) => Some(sort_fields.iter().collect()),
-        Value::String(_) | Value::Object(_) => Some(vec![sort]),
+        Value::Array(sort_fields) => {
+            let mut expanded_fields = Vec::new();
+            for sort_field in sort_fields {
+                expand_search_sort_field(sort_field, &mut expanded_fields)?;
+            }
+            Some(expanded_fields)
+        }
+        Value::String(_) => Some(vec![sort.clone()]),
+        Value::Object(_) => {
+            let mut expanded_fields = Vec::new();
+            expand_search_sort_field(sort, &mut expanded_fields)?;
+            Some(expanded_fields)
+        }
+        _ => None,
+    }
+}
+
+fn expand_search_sort_field(sort_field: &Value, expanded_fields: &mut Vec<Value>) -> Option<()> {
+    match sort_field {
+        Value::String(_) => {
+            expanded_fields.push(sort_field.clone());
+            Some(())
+        }
+        Value::Object(object) => {
+            for (field_name, options) in object {
+                let mut field_spec = serde_json::Map::new();
+                field_spec.insert(field_name.clone(), options.clone());
+                expanded_fields.push(Value::Object(field_spec));
+            }
+            Some(())
+        }
         _ => None,
     }
 }
@@ -21914,7 +21943,7 @@ fn apply_search_sort(hits: &mut [Value], sort: &Value) {
         return;
     }
     hits.sort_by(|left, right| {
-        for field_spec in sort_fields.iter().copied() {
+        for field_spec in &sort_fields {
             let Some(field_name) = sort_field_name(field_spec) else {
                 continue;
             };
@@ -21945,7 +21974,7 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
     }
     hits.into_iter()
         .filter(|hit| {
-            for (sort_field, after_value) in sort_fields.iter().copied().zip(search_after.iter()) {
+            for (sort_field, after_value) in sort_fields.iter().zip(search_after.iter()) {
                 let Some(field_name) = sort_field_name(sort_field) else {
                     continue;
                 };
@@ -21976,7 +22005,6 @@ fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
     for hit in hits {
         let sort_values = sort_fields
             .iter()
-            .copied()
             .filter_map(|sort_field| {
                 let field_name = sort_field_name(sort_field)?;
                 Some(extract_rendered_sort_value(hit, sort_field, field_name))
@@ -21996,7 +22024,7 @@ fn search_response_should_render_scores(body: &Value) -> bool {
         return true;
     }
     sort_fields
-        .into_iter()
+        .iter()
         .filter_map(sort_field_name)
         .any(|field_name| field_name == "_score")
 }
@@ -42081,6 +42109,113 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_unmapped_type_sort.body["error"]["reason"],
             "malformed sort format, unmapped_type must be a non-empty string"
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-sort-object-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-sort-object-000001/_mappings")
+                    .with_json_body(serde_json::json!({
+                        "properties": {
+                            "tenant": { "type": "keyword" },
+                            "a_tenant": { "type": "keyword" },
+                            "b_priority": { "type": "keyword" }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        for (id, body) in [
+            (
+                "doc-a",
+                serde_json::json!({
+                    "tenant": "tenant-object-a",
+                    "a_tenant": "tenant-a",
+                    "b_priority": "a"
+                }),
+            ),
+            (
+                "doc-b",
+                serde_json::json!({
+                    "tenant": "tenant-object-b",
+                    "a_tenant": "tenant-a",
+                    "b_priority": "z"
+                }),
+            ),
+            (
+                "doc-c",
+                serde_json::json!({
+                    "tenant": "tenant-object-c",
+                    "a_tenant": "tenant-b",
+                    "b_priority": "a"
+                }),
+            ),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-sort-object-000001/_doc/{id}"),
+                    )
+                    .with_json_body(body),
+                )
+                .status,
+                201
+            );
+        }
+
+        let top_level_object_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-object-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": {
+                        "a_tenant": "asc",
+                        "b_priority": "desc"
+                    },
+                    "size": 3
+                })),
+        );
+        assert_eq!(top_level_object_sort.status, 200);
+        assert_eq!(
+            top_level_object_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (
+                    hit["_id"].as_str().unwrap(),
+                    hit["sort"].as_array().unwrap().clone()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-b", vec![serde_json::json!("tenant-a"), serde_json::json!("z")]),
+                ("doc-a", vec![serde_json::json!("tenant-a"), serde_json::json!("a")]),
+                ("doc-c", vec![serde_json::json!("tenant-b"), serde_json::json!("a")])
+            ]
+        );
+
+        let array_object_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-object-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "a_tenant": "asc", "b_priority": "desc" }],
+                    "search_after": ["tenant-a", "z"],
+                    "size": 2
+                })),
+        );
+        assert_eq!(array_object_sort.status, 200);
+        assert_eq!(
+            array_object_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| hit["_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-a", "doc-c"]
         );
 
         assert_eq!(
