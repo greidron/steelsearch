@@ -2404,6 +2404,13 @@ struct ParsedMsearchRequest {
     query_params: BTreeMap<String, String>,
 }
 
+#[derive(Clone, Debug)]
+struct ParsedSearchSlice {
+    field: String,
+    id: u64,
+    max: u64,
+}
+
 #[derive(Clone, Debug, Default)]
 struct RuntimeThreadPoolCounters {
     active: u64,
@@ -9226,7 +9233,13 @@ impl SteelNode {
             (candidate_documents, docs_snapshot_for_suggest)
         };
         let mut hits = Vec::new();
+        let parsed_slice = parse_search_slice(body.get("slice"));
         for (doc_index, doc_id, source, version, seq_no, primary_term) in candidate_documents {
+            if let Some(slice) = parsed_slice.as_ref() {
+                if !document_matches_search_slice(&doc_id, &source, slice) {
+                    continue;
+                }
+            }
             let effective_source = apply_request_scoped_fields_to_source(&source, &body);
             if let Some((matched, score)) = evaluate_search_query_source_with_mappings(
                 &effective_source,
@@ -18599,6 +18612,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "search_after",
         "seq_no_primary_term",
         "script_fields",
+        "slice",
         "stored_fields",
         "suggest",
         "terminate_after",
@@ -19139,6 +19153,13 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             body.get("from").and_then(Value::as_u64).unwrap_or(0),
             scroll,
         ) {
+            return Some(response);
+        }
+    }
+    if let Some(slice) = body.get("slice") {
+        if let Some(response) =
+            validate_slice_request_body(slice, scroll, body.get("pit").is_some())
+        {
             return Some(response);
         }
     }
@@ -20416,6 +20437,115 @@ fn validate_search_after_request_body(
         )));
     }
     None
+}
+
+fn validate_slice_request_body(
+    slice: &Value,
+    scroll: bool,
+    point_in_time: bool,
+) -> Option<RestResponse> {
+    let Some(object) = slice.as_object() else {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [slice]",
+        ));
+    };
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "field" | "id" | "max"))
+    {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [slice]",
+        ));
+    }
+    if object
+        .get("field")
+        .is_some_and(|field| !field.as_str().is_some_and(|value| !value.is_empty()))
+    {
+        return Some(slice_illegal_argument("field name is null or empty"));
+    }
+    let Some(id) = object.get("id").and_then(Value::as_i64) else {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [slice]",
+        ));
+    };
+    if id < 0 {
+        return Some(slice_illegal_argument("id must be greater than or equal to 0"));
+    }
+    let Some(max) = object.get("max").and_then(Value::as_i64) else {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [slice]",
+        ));
+    };
+    if max <= 1 {
+        return Some(slice_illegal_argument("max must be greater than 1"));
+    }
+    if id >= max {
+        return Some(slice_illegal_argument("max must be greater than id"));
+    }
+    if !scroll && !point_in_time {
+        return Some(search_phase_illegal_argument(
+            "`slice` cannot be used outside of a scroll context or PIT context",
+        ));
+    }
+    None
+}
+
+fn slice_illegal_argument(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn parse_search_slice(slice: Option<&Value>) -> Option<ParsedSearchSlice> {
+    let object = slice?.as_object()?;
+    let field = object
+        .get("field")
+        .and_then(Value::as_str)
+        .unwrap_or("_id")
+        .to_string();
+    let id = object.get("id").and_then(Value::as_u64)?;
+    let max = object.get("max").and_then(Value::as_u64)?;
+    Some(ParsedSearchSlice { field, id, max })
+}
+
+fn document_matches_search_slice(doc_id: &str, source: &Value, slice: &ParsedSearchSlice) -> bool {
+    if slice.max <= 1 {
+        return true;
+    }
+    let key = if slice.field == "_id" {
+        doc_id.to_string()
+    } else {
+        extract_source_path_value(source, &slice.field)
+            .map(|value| search_slice_value_key(&value))
+            .unwrap_or_default()
+    };
+    stable_search_slice_hash(&key) % slice.max == slice.id
+}
+
+fn search_slice_value_key(value: &Value) -> String {
+    match value {
+        Value::String(value) => format!("s:{value}"),
+        Value::Number(value) => format!("n:{value}"),
+        Value::Bool(value) => format!("b:{value}"),
+        Value::Null => "null".to_string(),
+        _ => value.to_string(),
+    }
+}
+
+fn stable_search_slice_hash(value: &str) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 fn search_after_validation_error(reason: impl Into<String>) -> RestResponse {
@@ -41230,6 +41360,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             sorted_window.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["tenant-b"])
         );
+
+        let sliced_without_scroll_or_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "slice": { "id": 0, "max": 2 }
+                })),
+        );
+        assert_eq!(sliced_without_scroll_or_pit.status, 400);
+        assert_eq!(
+            sliced_without_scroll_or_pit.body["error"]["root_cause"][0]["reason"],
+            "`slice` cannot be used outside of a scroll context or PIT context"
+        );
+
+        let invalid_slice_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "slice": { "id": 2, "max": 2 }
+                })),
+        );
+        assert_eq!(invalid_slice_body.status, 400);
+        assert_eq!(
+            invalid_slice_body.body["error"]["reason"],
+            "max must be greater than id"
+        );
+
+        let open_search_params_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-search-params-a/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_search_params_pit.status, 200);
+        let search_params_pit_id = open_search_params_pit.body["pit_id"].as_str().unwrap();
+        let sliced_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": { "id": search_params_pit_id, "keep_alive": "1m" },
+                    "query": { "match_all": {} },
+                    "slice": { "id": 0, "max": 2 },
+                    "sort": [{ "rank": "asc" }]
+                })),
+        );
+        assert_eq!(sliced_pit.status, 200);
+        assert_eq!(sliced_pit.body["hits"]["total"]["value"], 1);
+        assert_eq!(sliced_pit.body["hits"]["hits"][0]["_id"], "doc-2");
 
         let query_string_query_param_overrides_body = node.handle_rest_request(
             RestRequest::new(
