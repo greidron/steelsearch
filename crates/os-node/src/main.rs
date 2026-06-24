@@ -1529,6 +1529,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/scroll/clear")
+        && clear_scroll_request_supports_empty_all_subset(&body)
+    {
+        let response = build_empty_clear_scroll_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/scroll/clear"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/readall")
     {
         let response =
@@ -3531,6 +3557,29 @@ fn decode_delete_pit_request_from_transport_body(
     os_transport::action::read_opensearch_delete_pit_request_message(&message).ok()
 }
 
+fn build_empty_clear_scroll_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_opensearch_clear_scroll_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchClearScrollResponseWire::empty_all(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn clear_scroll_request_supports_empty_all_subset(body: &[u8]) -> bool {
+    decode_clear_scroll_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_clear_scroll_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchClearScrollRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_clear_scroll_request_message(&message).ok()
+}
+
 fn build_empty_get_all_pits_response(
     request_id: i64,
     header_version_id: u32,
@@ -5343,6 +5392,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if delete_pit_request_supports_empty_all_subset(body) =>
         {
             Some(build_empty_delete_pit_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("indices:data/read/scroll/clear")
+            if clear_scroll_request_supports_empty_all_subset(body) =>
+        {
+            Some(build_empty_clear_scroll_response(
                 request_id,
                 header_version_id,
             ))
@@ -9950,6 +10007,54 @@ mod tests {
         )
         .unwrap();
         assert!(!delete_pit_request_supports_empty_all_subset(&frame[6..]));
+    }
+
+    #[test]
+    fn clear_scroll_transport_route_builds_opensearch_shaped_empty_all_response() {
+        let request = os_transport::action::OpenSearchClearScrollRequestWire::default();
+        let frame = os_transport::action::build_opensearch_clear_scroll_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let body = &frame[6..];
+        assert!(clear_scroll_request_supports_empty_all_subset(body));
+
+        let response =
+            build_empty_clear_scroll_response(95, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected clear-scroll response message");
+        };
+
+        assert_eq!(message.request_id, 95);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_clear_scroll_response_message(&message).unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::OpenSearchClearScrollResponseWire::empty_all()
+        );
+    }
+
+    #[test]
+    fn clear_scroll_transport_route_rejects_explicit_id_subset() {
+        let request = os_transport::action::OpenSearchClearScrollRequestWire {
+            scroll_ids: vec!["scroll-context".to_string()],
+            ..os_transport::action::OpenSearchClearScrollRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_clear_scroll_request_message(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!clear_scroll_request_supports_empty_all_subset(&frame[6..]));
     }
 
     #[test]

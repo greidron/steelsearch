@@ -2373,8 +2373,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "clear-scroll transport execution requires scroll context lifecycle mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "clear-scroll transport adapter returns an OpenSearch-shaped succeeded zero-freed response for the _all request when no scroll contexts are present",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11844,6 +11844,35 @@ pub fn read_opensearch_clear_scroll_request_message(
         });
     }
     OpenSearchClearScrollRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_clear_scroll_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchClearScrollResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_clear_scroll_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchClearScrollResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchClearScrollResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_explain_request_message(
@@ -25790,7 +25819,7 @@ impl Default for OpenSearchClearScrollRequestWire {
         Self {
             parent_task_node: String::new(),
             parent_task_id: None,
-            scroll_ids: vec!["scroll-context".to_string()],
+            scroll_ids: vec!["_all".to_string()],
         }
     }
 }
@@ -25813,7 +25842,7 @@ impl OpenSearchClearScrollRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.scroll_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clear scroll empty ids",
@@ -25826,10 +25855,79 @@ impl OpenSearchClearScrollRequestWire {
                 reason: "OpenSearch clear-scroll requests require non-empty scroll ids",
             });
         }
+        if self.scroll_ids.len() != 1 || self.scroll_ids[0] != "_all" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll explicit ids",
+                reason:
+                    "explicit clear-scroll ids require scroll id parsing and context invalidation",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "clear scroll execution",
-            reason: "clear-scroll transport execution requires scroll context lifecycle mapping",
+            reason:
+                "use validate_supported_subset for the implemented empty clear-scroll _all adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchClearScrollResponseWire {
+    pub succeeded: bool,
+    pub num_freed: i32,
+}
+
+impl Default for OpenSearchClearScrollResponseWire {
+    fn default() -> Self {
+        Self::empty_all()
+    }
+}
+
+impl OpenSearchClearScrollResponseWire {
+    pub fn empty_all() -> Self {
+        Self {
+            succeeded: true,
+            num_freed: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_bool(self.succeeded);
+        output.write_vint(self.num_freed);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            succeeded: input.read_bool()?,
+            num_freed: input.read_vint()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if !self.succeeded {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll response failure",
+                reason:
+                    "clear-scroll failure responses require scroll context fanout failure mapping",
+            });
+        }
+        if self.num_freed != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll freed contexts",
+                reason: "the implemented clear-scroll subset only renders zero freed contexts",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -35151,7 +35249,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLEAR_SCROLL_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
@@ -35599,6 +35697,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -35679,7 +35778,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
             {
@@ -56719,13 +56817,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_clear_scroll_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_clear_scroll_request_wire_round_trips_and_validates_all_subset() {
         let request = OpenSearchClearScrollRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchClearScrollRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -56760,10 +56859,59 @@ mod tests {
                 ..
             })
         ));
+
+        let explicit_id = OpenSearchClearScrollRequestWire {
+            scroll_ids: vec!["scroll-context".to_string()],
+            ..OpenSearchClearScrollRequestWire::default()
+        };
+        assert!(matches!(
+            explicit_id.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll explicit ids",
+                ..
+            })
+        ));
     }
 
     #[test]
-    fn opensearch_clear_scroll_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_clear_scroll_response_wire_round_trips_empty_all_subset() {
+        let response = OpenSearchClearScrollResponseWire::empty_all();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchClearScrollResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_clear_scroll_response_rejects_failures_or_freed_contexts() {
+        assert!(matches!(
+            OpenSearchClearScrollResponseWire {
+                succeeded: false,
+                num_freed: 0
+            }
+            .validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll response failure",
+                ..
+            })
+        ));
+        assert!(matches!(
+            OpenSearchClearScrollResponseWire {
+                succeeded: true,
+                num_freed: 1
+            }
+            .validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clear scroll freed contexts",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_clear_scroll_transport_messages_bind_action_frames() {
         let request = OpenSearchClearScrollRequestWire::default();
         let mut frame =
             build_opensearch_clear_scroll_request_message(51, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -56775,14 +56923,31 @@ mod tests {
             read_opensearch_clear_scroll_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_clear_scroll_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchClearScrollResponseWire::empty_all();
+        let mut frame = build_opensearch_clear_scroll_response_message(
+            51,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear-scroll response message");
+        };
+        assert_eq!(
+            read_opensearch_clear_scroll_response_message(&message).unwrap(),
+            response
+        );
         assert!(matches!(
-            read_opensearch_clear_scroll_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear scroll execution",
+            read_opensearch_clear_scroll_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
                 ..
-            })
+            }
         ));
     }
 

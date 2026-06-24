@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 38 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 122 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 39 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 121 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -308,7 +308,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search/stream` (rejected fail-closed)
 - `indices:data/read/msearch` (rejected fail-closed)
 - `indices:data/read/scroll` (rejected fail-closed)
-- `indices:data/read/scroll/clear` (rejected fail-closed)
+- `indices:data/read/scroll/clear` (implemented `_all` empty clear-scroll subset)
 - `indices:data/read/explain` (rejected fail-closed)
 - `indices:data/read/point_in_time/create` (rejected fail-closed)
 - `indices:data/read/point_in_time/delete` (implemented `_all` empty PIT-delete subset)
@@ -2203,11 +2203,13 @@ The clear-scroll boundary covers:
 
 - OpenSearch `ClearScrollRequest` parent task and scroll id array at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:data/read/scroll/clear`
-  until scroll context invalidation and clear-scroll response rendering are
-  mapped;
+- OpenSearch `ClearScrollResponse` succeeded/zero-freed rendering for the
+  `_all` request when no scroll contexts are present;
+- positive transport route response generation only when the decoded request
+  validates as the `_all` subset;
 - explicit rejection for empty scroll id arrays, empty scroll id entries, and
-  clear-scroll execution.
+  explicit scroll ids until scroll id parsing and context invalidation are
+  mapped.
 
 The explain boundary covers:
 
@@ -5022,22 +5024,23 @@ latest local release run, it remains a lightweight scroll control boundary; the
 first performance point to inspect before accepting execution is scroll context
 lookup/update and search response rendering.
 
-Current clear-scroll reject wire microbenchmark:
+Current clear-scroll wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin clear-scroll-reject-wire-benchmark
-clear_scroll_reject_request_encode iterations=400000 elapsed_ms=275.865 ops_per_second=1449983.00 nanos_per_op=689.66
-clear_scroll_reject_request_decode iterations=400000 elapsed_ms=258.081 ops_per_second=1549900.89 nanos_per_op=645.20
-clear_scroll_reject_validation iterations=400000 elapsed_ms=260.069 ops_per_second=1538050.78 nanos_per_op=650.17
-clear_scroll_reject_wire_bottleneck_ops_per_second=1449983.00
+cargo run -p os-transport --release --bin clear-scroll-wire-benchmark
+clear_scroll_request_encode iterations=400000 elapsed_ms=240.974 ops_per_second=1659933.10 nanos_per_op=602.43
+clear_scroll_request_decode iterations=400000 elapsed_ms=228.345 ops_per_second=1751735.57 nanos_per_op=570.86
+clear_scroll_request_validate iterations=400000 elapsed_ms=230.099 ops_per_second=1738379.28 nanos_per_op=575.25
+clear_scroll_response_encode iterations=400000 elapsed_ms=48.438 ops_per_second=8258064.52 nanos_per_op=121.09
+clear_scroll_response_decode iterations=400000 elapsed_ms=57.521 ops_per_second=6954027.24 nanos_per_op=143.80
+clear_scroll_wire_bottleneck_ops_per_second=1659933.10
 ```
 
-The current clear-scroll fail-closed boundary bottleneck is request encode. The
-path carries only the ActionRequest parent task and scroll id array before
-rejecting execution. At roughly 1.45M ops/s in the latest local release run,
-the boundary itself is lightweight; the first performance point to inspect
-before accepting execution is scroll context invalidation and clear-scroll
-response rendering.
+The current clear-scroll implemented subset bottleneck is request encode. The
+empty response encode/decode path runs above 6.9M ops/s in the latest local
+release run, so response rendering is not the first bottleneck. The first
+performance point to inspect before expanding this subset is explicit scroll id
+parsing plus context invalidation.
 
 Current explain reject wire microbenchmark:
 

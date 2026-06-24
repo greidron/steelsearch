@@ -481,7 +481,7 @@ transport_action	planned	action	StreamSearchAction.INSTANCE	StreamTransportSearc
 transport_action	planned	action	SearchScrollAction.INSTANCE	TransportSearchScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	759
 transport_action	planned	action	MultiSearchAction.INSTANCE	TransportMultiSearchAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	760
 transport_action	planned	action	ExplainAction.INSTANCE	TransportExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	761
-transport_action	planned	action	ClearScrollAction.INSTANCE	TransportClearScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	762
+transport_action	implemented	action	ClearScrollAction.INSTANCE	TransportClearScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	762
 transport_action	implemented	action	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
 transport_action	planned	action	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
 transport_action	planned	action	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
