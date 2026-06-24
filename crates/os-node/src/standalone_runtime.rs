@@ -18645,7 +18645,39 @@ fn apply_search_source_query_params(
         };
         object.insert(field.to_string(), Value::from(value));
     }
+    if let Some(raw_sort) = query_params.get("sort") {
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        let mut sort_values = object
+            .remove("sort")
+            .and_then(|sort| sort.as_array().cloned())
+            .unwrap_or_default();
+        sort_values.extend(parse_rest_search_sort_values(raw_sort));
+        object.insert("sort".to_string(), Value::Array(sort_values));
+    }
     None
+}
+
+fn parse_rest_search_sort_values(raw: &str) -> Vec<Value> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|sort| !sort.is_empty())
+        .map(|sort| {
+            if let Some((field, order)) = sort.rsplit_once(':') {
+                if matches!(order, "asc" | "desc") {
+                    return serde_json::json!({ field: { "order": order } });
+                }
+            }
+            if sort == "_score" {
+                Value::String(sort.to_string())
+            } else {
+                serde_json::json!({ sort: { "order": "asc" } })
+            }
+        })
+        .collect()
 }
 
 fn parse_non_negative_search_int(raw: &str) -> Option<u64> {
@@ -38095,6 +38127,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(sorted_window.body["hits"]["total"]["value"], 3);
         assert_eq!(sorted_window.body["hits"]["hits"].as_array().map(Vec::len), Some(1));
         assert_eq!(sorted_window.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let query_param_sort = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?sort=tenant:desc&size=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(query_param_sort.status, 200);
+        assert_eq!(query_param_sort.body["hits"]["hits"][0]["_id"], "doc-3");
+
+        let appended_query_param_sort = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?sort=message:asc&size=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }]
+            })),
+        );
+        assert_eq!(appended_query_param_sort.status, 200);
+        assert_eq!(appended_query_param_sort.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let query_param_window = node.handle_rest_request(
             RestRequest::new(

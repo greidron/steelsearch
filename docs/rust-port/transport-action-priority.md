@@ -2176,6 +2176,8 @@ The search boundary covers:
   threshold combination.
 - REST search source parsing applies `from` and `size` query parameters over
   request-body values, with non-negative integer validation.
+- REST search source parsing appends comma-separated `sort` query parameters
+  using OpenSearch `field[:asc|desc]` syntax.
 
 The stream-search boundary covers:
 
