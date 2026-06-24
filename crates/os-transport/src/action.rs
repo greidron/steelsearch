@@ -23047,12 +23047,6 @@ impl OpenSearchPitSegmentsRequestWire {
                 reason: "OpenSearch PIT segments requests require non-empty PIT ids",
             });
         }
-        if pit_ids.len() != 1 || pit_ids[0] != "_all" {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments explicit ids",
-                reason: "explicit PIT segment ids require PIT id decoding, shard routing, and segment metadata rendering",
-            });
-        }
         if self.verbose {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments verbose",
@@ -53880,13 +53874,7 @@ mod tests {
             pit_ids: Some(vec!["pit-context".to_string()]),
             ..OpenSearchPitSegmentsRequestWire::default()
         };
-        assert!(matches!(
-            explicit_id.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments explicit ids",
-                ..
-            })
-        ));
+        explicit_id.validate_supported_subset().unwrap();
     }
 
     #[test]

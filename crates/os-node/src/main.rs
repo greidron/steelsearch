@@ -1831,12 +1831,13 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:monitor/point_in_time/segments")
-        && pit_segments_request_supports_empty_all_subset(&body)
+        && pit_segments_request_supports_local_subset(&body)
     {
-        let response = build_empty_indices_segments_node_response(
+        let response = build_local_pit_segments_node_response(
             request_id,
             header_version_id,
             transport_identity,
+            &body,
         );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -4053,10 +4054,41 @@ fn decode_clear_scroll_request_from_transport_body(
     os_transport::action::read_opensearch_clear_scroll_request_message(&message).ok()
 }
 
-fn pit_segments_request_supports_empty_all_subset(body: &[u8]) -> bool {
+fn pit_segments_request_supports_local_subset(body: &[u8]) -> bool {
     decode_pit_segments_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
+}
+
+fn build_local_pit_segments_node_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_pit_segments_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() || !transport_pit_segment_ids_exist(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_empty_indices_segments_node_response(request_id, header_version_id, transport_identity)
+}
+
+fn transport_pit_segment_ids_exist(
+    request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
+) -> bool {
+    let Some(pit_ids) = &request.pit_ids else {
+        return false;
+    };
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    pit_ids
+        .iter()
+        .all(|pit_id| pit_id == "_all" || contexts.contains_key(pit_id))
 }
 
 fn segment_replication_stats_request_supports_empty_subset(body: &[u8]) -> bool {
@@ -6018,12 +6050,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
         )),
         Some("indices:monitor/point_in_time/segments")
-            if pit_segments_request_supports_empty_all_subset(body) =>
+            if pit_segments_request_supports_local_subset(body) =>
         {
-            Some(build_empty_indices_segments_node_response(
+            Some(build_local_pit_segments_node_response(
                 request_id,
                 header_version_id,
                 transport_identity,
+                body,
             ))
         }
         Some("indices:data/read/search[phase/query]") => {
@@ -11201,12 +11234,13 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(pit_segments_request_supports_empty_all_subset(&frame[6..]));
+        assert!(pit_segments_request_supports_local_subset(&frame[6..]));
 
-        let response = build_empty_indices_segments_node_response(
+        let response = build_local_pit_segments_node_response(
             97,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,
+            &frame[6..],
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
@@ -11228,9 +11262,38 @@ mod tests {
     }
 
     #[test]
-    fn pit_segments_transport_route_rejects_explicit_id_subset() {
+    fn pit_segments_transport_route_accepts_existing_explicit_id_subset() {
+        let pit_id = "pit-segments-explicit-context";
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-segments-000001".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
         let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec!["pit-context".to_string()]),
+            pit_ids: Some(vec![pit_id.to_string()]),
             ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_pit_segments_request_message(
@@ -11239,7 +11302,62 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!pit_segments_request_supports_empty_all_subset(&frame[6..]));
+        assert!(pit_segments_request_supports_local_subset(&frame[6..]));
+
+        let response = build_local_pit_segments_node_response(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected explicit PIT segments node response message");
+        };
+        assert_eq!(message.request_id, 98);
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.remaining(), 0);
+
+        let unknown_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: Some(vec!["missing-pit-context".to_string()]),
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let unknown_frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            99,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &unknown_request,
+        )
+        .unwrap();
+        let unknown_response = build_local_pit_segments_node_response(
+            99,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &unknown_frame[6..],
+        );
+        let mut frame = BytesMut::from(&unknown_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected unknown PIT segments fallback response message");
+        };
+        assert_eq!(message.request_id, 99);
+        assert_eq!(message.body.len(), 0);
+
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .remove(pit_id);
     }
 
     #[test]
