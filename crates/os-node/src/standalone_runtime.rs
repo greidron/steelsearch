@@ -35356,11 +35356,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .status,
             200
         );
-        for id in ["doc-1", "doc-2"] {
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-session-000001/_mappings")
+                    .with_json_body(serde_json::json!({
+                        "properties": {
+                            "rank": { "type": "long" }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        for (id, rank) in [("doc-1", 0), ("doc-2", 100)] {
             assert_eq!(
                 node.handle_rest_request(
                     RestRequest::new(RestMethod::Put, &format!("/logs-session-000001/_doc/{id}"))
-                        .with_json_body(serde_json::json!({ "message": id })),
+                        .with_json_body(serde_json::json!({ "message": id, "rank": rank })),
                 )
                 .status,
                 201
@@ -35430,7 +35442,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-session-000001/_doc/doc-3")
-                    .with_json_body(serde_json::json!({ "message": "doc-3" })),
+                    .with_json_body(serde_json::json!({ "message": "doc-3", "rank": 101 })),
             )
             .status,
             201
@@ -35464,6 +35476,48 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .iter()
             .all(|hit| hit["_id"] != "doc-3"));
+
+        let pit_field_search_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "sort": [{ "rank": "asc" }],
+                    "search_after": [0],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(pit_field_search_after.status, 200);
+        assert_eq!(
+            pit_field_search_after.body["hits"]["hits"].as_array().map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(pit_field_search_after.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(
+            pit_field_search_after.body["hits"]["hits"][0]["sort"],
+            serde_json::json!([100])
+        );
+
+        let live_field_search_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "sort": [{ "rank": "asc" }],
+                    "search_after": [0],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(live_field_search_after.status, 200);
+        assert_eq!(
+            live_field_search_after.body["hits"]["hits"].as_array().map(Vec::len),
+            Some(2)
+        );
+        assert!(live_field_search_after.body["hits"]["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|hit| hit["_id"] == "doc-3"));
 
         let pit_shard_doc_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")

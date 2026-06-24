@@ -2283,6 +2283,8 @@ The create-PIT boundary covers:
   scroll rejection, and duplicate `_shard_doc` sort entries;
 - PIT searches render `_shard_doc` sort values and accept them through
   `search_after` for stable local snapshot pagination;
+- PIT searches apply field-sort `search_after` against the stored PIT snapshot,
+  preserving divergence from live searches after later writes;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;
