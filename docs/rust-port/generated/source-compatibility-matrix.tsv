@@ -466,7 +466,7 @@ transport_action	planned	action	UpgradeAction.INSTANCE	TransportUpgradeAction.cl
 transport_action	planned	action	UpgradeStatusAction.INSTANCE	TransportUpgradeStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	737
 transport_action	planned	action	UpgradeSettingsAction.INSTANCE	TransportUpgradeSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	738
 transport_action	planned	action	ClearIndicesCacheAction.INSTANCE	TransportClearIndicesCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	739
-transport_action	planned	action	GetAliasesAction.INSTANCE	TransportGetAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	740
+transport_action	implemented	action	GetAliasesAction.INSTANCE	TransportGetAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	740
 transport_action	planned	action	GetSettingsAction.INSTANCE	TransportGetSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	741
 transport_action	planned	action	IndexAction.INSTANCE	TransportIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	743
 transport_action	planned	action	GetAction.INSTANCE	TransportGetAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	744

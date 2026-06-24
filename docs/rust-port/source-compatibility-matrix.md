@@ -147,7 +147,7 @@ Interpretation note for the table above:
 | Transport error response decode | Partial | Partial | Known remote errors convert to OpenSearch-shaped errors; complete exception registry is missing. |
 | Cluster-state request/response read path | Partial | Partial | Decode-first scaffold and version-gated custom payload coverage exist; full diff apply and named writeable coverage are incomplete. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
-| Core `ActionModule` transport actions | Partial | Partial | 24 core action rows are implemented and the remaining 124 core rows have explicit fail-closed transport boundaries; most server-side execution semantics remain partial. |
+| Core `ActionModule` transport actions | Partial | Partial | 25 core action rows are implemented and the remaining 123 core rows have explicit fail-closed transport boundaries; most server-side execution semantics remain partial. |
 | k-NN transport actions | Partial | Partial | All 12 k-NN transport action rows have source-derived fail-closed request/response boundaries; model, cache, warmup, stats, and training execution semantics remain partial. |
 | Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
 
@@ -156,8 +156,8 @@ Current transport coverage evidence:
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence. The current inventory has 160 transport
-  actions: 24 `implemented`, 136 `partial`, and 0 `planned`.
-- The 136 `partial` rows mean Steelsearch has explicit source-derived
+  actions: 25 `implemented`, 135 `partial`, and 0 `planned`.
+- The 135 `partial` rows mean Steelsearch has explicit source-derived
   fail-closed action classification plus request/response wire boundary
   coverage where applicable. They do not mean Steelsearch can execute every
   action server-side yet.

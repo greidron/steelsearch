@@ -2196,8 +2196,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-aliases transport execution requires alias metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-aliases transport adapter returns an OpenSearch-shaped empty alias metadata response for the default all-aliases request",
         },
         OPENSEARCH_GET_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9760,6 +9760,36 @@ pub fn read_opensearch_get_aliases_request_message(
         });
     }
     OpenSearchGetAliasesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_aliases_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetAliasesResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_aliases_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetAliasesResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetAliasesResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_settings_request_message(
@@ -21559,6 +21589,14 @@ impl OpenSearchGetAliasesRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get aliases execution",
+            reason: "use validate_supported_subset for the implemented default get-aliases adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get aliases cluster-manager timeout",
@@ -21597,10 +21635,64 @@ impl OpenSearchGetAliasesRequestWire {
                 reason: "original alias filters require alias post-processing response semantics",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get aliases execution",
-            reason: "get-aliases transport execution requires alias metadata response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetAliasesResponseWire {
+    pub empty_alias_indices: Vec<String>,
+}
+
+impl OpenSearchGetAliasesResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            empty_alias_indices: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.empty_alias_indices.len() as i32);
+        for index in &self.empty_alias_indices {
+            output.write_string(index);
+            output.write_vint(0);
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let index_count = read_len(&mut input)?;
+        let mut empty_alias_indices = Vec::with_capacity(index_count);
+        for _ in 0..index_count {
+            let index = input.read_string()?;
+            let alias_count = read_len(&mut input)?;
+            if alias_count != 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get aliases alias metadata",
+                    reason: "non-empty AliasMetadata lists are not decoded by this adapter yet",
+                });
+            }
+            empty_alias_indices.push(index);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            empty_alias_indices,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        for index in &self.empty_alias_indices {
+            if index.trim().is_empty() {
+                return Err(TransportActionWireError::MissingRequiredField {
+                    field: "get aliases response index name",
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -34261,7 +34353,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_SETTINGS_ACTION_NAME).disposition,
@@ -34425,6 +34517,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -34481,7 +34574,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
@@ -51172,20 +51264,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_aliases_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_aliases_request_wire_round_trips_and_validates_default_all_aliases() {
         let request = OpenSearchGetAliasesRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetAliasesRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get aliases execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -51267,7 +51353,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_aliases_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_aliases_transport_messages_bind_supported_action_frame_and_empty_response() {
         let request = OpenSearchGetAliasesRequestWire::default();
         let mut frame =
             build_opensearch_get_aliases_request_message(37, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -51279,12 +51365,51 @@ mod tests {
             read_opensearch_get_aliases_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_get_aliases_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchGetAliasesResponseWire::empty();
+        let mut frame = build_opensearch_get_aliases_response_message(
+            37,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get aliases response message");
+        };
+        assert_eq!(
+            read_opensearch_get_aliases_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_aliases_response_wire_round_trips_empty_alias_lists() {
+        let response = OpenSearchGetAliasesResponseWire {
+            empty_alias_indices: vec!["logs-000001".to_string(), "metrics-000001".to_string()],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchGetAliasesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_get_aliases_response_rejects_non_empty_alias_metadata_lists() {
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        output.write_string("logs-000001");
+        output.write_vint(1);
+        output.write_string("logs-read");
+
         assert!(matches!(
-            read_opensearch_get_aliases_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
+            OpenSearchGetAliasesResponseWire::read(output.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get aliases execution",
+                shape: "get aliases alias metadata",
                 ..
             })
         ));

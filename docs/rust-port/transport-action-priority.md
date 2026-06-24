@@ -1762,12 +1762,11 @@ The get-aliases boundary covers:
 - OpenSearch `GetAliasesRequest` parent task, cluster-manager timeout, indices
   array, `local` flag, aliases array, `IndicesOptions.strictExpandHidden()`,
   and original aliases array at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/aliases/get` until
-  alias metadata response rendering and alias post-processing semantics are
-  implemented;
+- implemented classification for `indices:admin/aliases/get` default
+  all-indices/all-aliases requests, returning an OpenSearch-shaped empty alias
+  metadata map response;
 - explicit rejection for custom cluster-manager timeout, index filters, local
-  reads, alias filters, custom indices options, original alias filters, and
-  get-aliases execution.
+  reads, alias filters, custom indices options, and original alias filters.
 
 The get-settings boundary covers:
 
@@ -4405,22 +4404,22 @@ query marker, and optional timestamp before rejecting execution. At roughly
 lightweight; the first performance point to inspect before accepting execution
 is mapping/type metadata aggregation and field-capabilities response rendering.
 
-Current get-aliases reject wire microbenchmark:
+Current get-aliases implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-aliases-reject-wire-benchmark
-get_aliases_reject_request_encode iterations=400000 elapsed_ms=232.046 ops_per_second=1723796.12 nanos_per_op=580.12
-get_aliases_reject_request_decode iterations=400000 elapsed_ms=245.551 ops_per_second=1628988.89 nanos_per_op=613.88
-get_aliases_reject_validation iterations=400000 elapsed_ms=251.572 ops_per_second=1590004.67 nanos_per_op=628.93
-get_aliases_reject_wire_bottleneck_ops_per_second=1590004.67
+cargo run -p os-transport --release --bin get-aliases-wire-benchmark
+get_aliases_request_encode iterations=400000 elapsed_ms=231.794 ops_per_second=1725672.04 nanos_per_op=579.48
+get_aliases_request_decode iterations=400000 elapsed_ms=244.722 ops_per_second=1634509.62 nanos_per_op=611.80
+get_aliases_request_validate iterations=400000 elapsed_ms=248.192 ops_per_second=1611656.09 nanos_per_op=620.48
+get_aliases_response_encode iterations=400000 elapsed_ms=86.409 ops_per_second=4629157.18 nanos_per_op=216.02
+get_aliases_response_decode iterations=400000 elapsed_ms=92.952 ops_per_second=4303298.18 nanos_per_op=232.38
+get_aliases_wire_bottleneck_ops_per_second=1611656.09
 ```
 
-The current get-aliases fail-closed boundary bottleneck is validation after
-decode. This path checks cluster-manager timeout, local execution, index
-filters, alias filters, hidden wildcard indices options, and original-alias
-post-processing state after reading the OpenSearch request body. At roughly
-1.59M ops/s in the latest local release run, it remains in the lightweight
-admin transport range.
+The current get-aliases implemented-path bottleneck is request validation after
+decode. Response encode/decode is substantially faster for the empty alias map
+case, and the full default transport path remains at roughly 1.61M ops/s in the
+latest local release run.
 
 Current get-settings reject wire microbenchmark:
 
@@ -6280,10 +6279,8 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `NodesInfoAction.INSTANCE`
 - `GetMappingsAction.INSTANCE`
 - `GetFieldMappingsAction.INSTANCE`
-- `GetAliasesAction.INSTANCE`
 - `GetSettingsAction.INSTANCE`
 - `ClusterSearchShardsAction.INSTANCE`
 - `RecoveryAction.INSTANCE`
