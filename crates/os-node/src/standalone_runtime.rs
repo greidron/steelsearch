@@ -8871,6 +8871,11 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_opensearch_boolean_query_param(
+            request.query_params.get("allow_partial_search_results"),
+        ) {
+            return response;
+        }
         if let Some(response) =
             validate_scroll_context_request_body(
                 &body,
@@ -9301,6 +9306,14 @@ impl SteelNode {
             .iter()
             .map(|index| self.index_primary_shard_count(index))
             .sum::<usize>();
+        if failed_shards > 0
+            && request
+                .query_params
+                .get("allow_partial_search_results")
+                .is_some_and(|value| value == "false")
+        {
+            return search_partial_shards_failure_response(&failed_indices);
+        }
         let skipped_shards = compute_can_match_skipped_shards(
             &body["query"],
             request.query_params.get("pre_filter_shard_size"),
@@ -18519,6 +18532,31 @@ fn build_parsing_search_response(reason: &str) -> RestResponse {
             "error": {
                 "type": "parsing_exception",
                 "reason": reason
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn search_partial_shards_failure_response(
+    failed_indices: &std::collections::BTreeSet<String>,
+) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "Partial shards failure",
+                "root_cause": failed_indices
+                    .iter()
+                    .map(|index| {
+                        serde_json::json!({
+                            "type": "query_shard_exception",
+                            "reason": "failed to execute geo_distance query on field [location]",
+                            "index": index
+                        })
+                    })
+                    .collect::<Vec<_>>()
             },
             "status": 400
         }),
@@ -37326,6 +37364,52 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(response.body["hits"]["total"]["value"], 1);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let disallow_partial_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-geo-good-000001,logs-geo-bad-000001/_search?allow_partial_search_results=false",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "geo_distance": {
+                        "distance": "10km",
+                        "location": {
+                            "lat": 37.7749,
+                            "lon": -122.4194
+                        }
+                    }
+                }
+            })),
+        );
+        assert_eq!(disallow_partial_response.status, 400);
+        assert_eq!(
+            disallow_partial_response.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            disallow_partial_response.body["error"]["reason"],
+            "Partial shards failure"
+        );
+        assert_eq!(
+            disallow_partial_response.body["error"]["root_cause"][0]["index"],
+            "logs-geo-bad-000001"
+        );
+
+        let invalid_allow_partial_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-geo-good-000001,logs-geo-bad-000001/_search?allow_partial_search_results=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_allow_partial_response.status, 400);
+        assert_eq!(
+            invalid_allow_partial_response.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
     }
 
     #[test]

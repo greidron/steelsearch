@@ -131,6 +131,9 @@ development-only staging surface.
 - Current partial-failure reading rule:
   - a bounded `hits` / `aggregations` response may still need `_shards.failed`
     accounting preserved when execution is only partially successful
+  - `allow_partial_search_results=false` must convert the currently modeled
+    partial shard failure subset into an explicit search-phase failure instead
+    of returning a `200` partial response
   - the current Phase A contract does not yet imply full OpenSearch parity for
     shard-level reason text, remote-shard attribution, or mixed-cluster phase
     failure propagation
