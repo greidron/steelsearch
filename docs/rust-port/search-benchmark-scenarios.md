@@ -141,7 +141,7 @@ Benchmark-critical routes are dual-written or routed through that engine:
 
 The native fast path intentionally falls back for request features that are
 still route-specific: `collapse`, `profile`, `rescore`, `runtime_mappings`,
-`search_after`, `suggest`, and `terminate_after`.
+`derived`, `search_after`, `suggest`, and `terminate_after`.
 
 Quick validation on `quick-minilm-knn`, corpus `1000`, duration `8s`,
 Steelsearch 1-node:

@@ -38,6 +38,7 @@ span:
 - search templates
 - search templates
 - broader mixed-cluster shard-phase semantics
+- broader request-body `derived` script semantics beyond the bounded passthrough subset
 - request-body `runtime_mappings` as OpenSearch parity
 
 ## Replacement Gap

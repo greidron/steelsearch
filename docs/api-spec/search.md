@@ -39,7 +39,7 @@
 | Response shaping | Highlight | Partial | Live on the standalone route for the documented field/tag contract. |
 | Response shaping | Suggest | Partial | Live on the standalone route for term/completion/phrase suggesters. |
 | Response shaping | Explain / profile / rescore / collapse | Partial | Live on the standalone route for the documented request and response shapes. |
-| Response shaping | Stored fields / docvalue fields / runtime fields | Partial | Stored fields and docvalue fields are live; request-body `runtime_mappings` remains a Steelsearch-only extension rather than an OpenSearch parity surface. |
+| Response shaping | Stored fields / docvalue fields / derived fields | Partial | Stored fields, docvalue fields, and bounded request-body `derived` fields are live; request-body `runtime_mappings` remains a Steelsearch-only extension rather than an OpenSearch parity surface. |
 | Search session / traversal | Scroll | Partial | Live on the standalone route for open/follow-up/clear traversal. |
 | Search session / traversal | PIT | Partial | Live on the standalone route for open/search/list/close traversal plus cat PIT segment readback. |
 
@@ -114,7 +114,7 @@ OpenSearch search compatibility also requires:
 - slicing;
 - timeout and terminate-after;
 - track-total-hits parity;
-- stored fields, docvalue fields, runtime fields;
+- stored fields, docvalue fields, derived fields;
 - shard failure reporting.
 
 Steelsearch now serves these advanced controls on the live standalone route.
@@ -224,7 +224,7 @@ part of the OpenSearch parity target.
 | Scroll | Stateful paginated search traversal. | Initial scroll search, follow-up page retrieval, and clear-scroll are live and covered by strict compare. | Partial |
 | Suggest | Completion/term/phrase suggestion families. | Term/completion/phrase suggesters are live and covered by strict compare for the documented standalone contract. | Partial |
 | Search execution mode | `query_then_fetch`, `dfs_query_then_fetch`, pre-filter/can-match shaping knobs. | `query_then_fetch` / `dfs_query_then_fetch` are accepted; `pre_filter_shard_size` is accepted as a no-op in the current single-shard standalone profile. | Partial |
-| Highlight, rescore, collapse, profile, explain, stored fields, docvalue fields | Advanced request/response controls. | Field highlight plus bounded explain/profile/rescore/collapse/stored-fields/docvalue-fields subsets are live. Steelsearch also exposes a bounded `runtime_mappings` passthrough subset, but it is treated as a Steelsearch-only extension rather than an OpenSearch parity surface. | Partial |
+| Highlight, rescore, collapse, profile, explain, stored fields, docvalue fields, derived fields | Advanced request/response controls. | Field highlight plus bounded explain/profile/rescore/collapse/stored-fields/docvalue-fields/request-scoped-derived-field subsets are live. Steelsearch also exposes a bounded `runtime_mappings` passthrough subset, but it is treated as a Steelsearch-only extension rather than an OpenSearch parity surface. | Partial |
 
 ### Advanced Search Option Reading Rule
 
@@ -239,6 +239,9 @@ part of the OpenSearch parity target.
   - Steelsearch implements a bounded `emit(doc['field'].value)` passthrough subset
   - current OpenSearch evidence across the local source tree plus representative `1.x`/`2.x`/`3.x` builds does not show request-body `runtime_mappings` parity support
   - therefore this surface is excluded from Phase A-1 OpenSearch fullset closure and treated as a Steelsearch-only extension
+- `derived` note:
+  - OpenSearch request-scoped derived fields are supported for the bounded `emit(doc["field"].value)` and `emit(params._source["field"])` passthrough subset
+  - derived fields participate in query matching and `fields` response extraction in the standalone route
 - The current live partial response-shaping/suggestion families are:
   - `highlight`
     - top-level `fields`

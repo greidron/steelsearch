@@ -38,6 +38,7 @@
         "rescore_search",
         "completion_suggest_search",
         "highlight_search",
+        "derived_field_request_search",
         "terms_aggregation",
         "composite_aggregation",
         "geo_bounds_aggregation",

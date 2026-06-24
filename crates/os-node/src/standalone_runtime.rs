@@ -9196,7 +9196,7 @@ impl SteelNode {
         };
         let mut hits = Vec::new();
         for (doc_index, doc_id, source, version, seq_no, primary_term) in candidate_documents {
-            let effective_source = apply_runtime_mappings_to_source(&source, body.get("runtime_mappings"));
+            let effective_source = apply_request_scoped_fields_to_source(&source, &body);
             if let Some((matched, score)) = evaluate_search_query_source_with_mappings(
                 &effective_source,
                 &doc_id,
@@ -9246,7 +9246,7 @@ impl SteelNode {
                 let Some(doc_id) = hit.get("_id").and_then(Value::as_str) else {
                     return false;
                 };
-                let effective_source = apply_runtime_mappings_to_source(source, body.get("runtime_mappings"));
+                let effective_source = apply_request_scoped_fields_to_source(source, &body);
                 evaluate_search_query_source_with_mappings(
                     &effective_source,
                     doc_id,
@@ -18528,6 +18528,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     !query_contains_nested_knn(body.get("query").unwrap_or(&Value::Null))
         && ![
         "collapse",
+        "derived",
         "explain",
         "fields",
         "min_score",
@@ -18972,6 +18973,11 @@ fn value_contains_key(value: &Value, key: &str) -> bool {
 }
 
 fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+    if let Some(derived) = body.get("derived") {
+        if let Some(response) = validate_derived_request_body(derived) {
+            return Some(response);
+        }
+    }
     if let Some(runtime_mappings) = body.get("runtime_mappings") {
         if let Some(response) = validate_runtime_mappings_request_body(runtime_mappings) {
             return Some(response);
@@ -19877,46 +19883,44 @@ fn validate_collapse_request_body(collapse: &Value) -> Option<RestResponse> {
 }
 
 fn validate_runtime_mappings_request_body(runtime_mappings: &Value) -> Option<RestResponse> {
-    let Some(mappings) = runtime_mappings.as_object() else {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [runtime_mappings]",
-        ));
+    validate_request_scoped_field_definitions(runtime_mappings, "runtime_mappings")
+}
+
+fn validate_derived_request_body(derived: &Value) -> Option<RestResponse> {
+    validate_request_scoped_field_definitions(derived, "derived")
+}
+
+fn validate_request_scoped_field_definitions(
+    definitions: &Value,
+    option: &str,
+) -> Option<RestResponse> {
+    let unsupported = || {
+        build_unsupported_search_response(&format!("unsupported search option [{option}]"))
+    };
+    let Some(mappings) = definitions.as_object() else {
+        return Some(unsupported());
     };
     for definition in mappings.values() {
         let Some(definition_object) = definition.as_object() else {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         };
         if definition_object.keys().any(|key| key != "type" && key != "script") {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         }
         if definition_object.get("type").and_then(Value::as_str).is_none() {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         }
         let Some(script) = definition_object.get("script").and_then(Value::as_object) else {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         };
         if script.keys().any(|key| key != "source") {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         }
         let Some(source) = script.get("source").and_then(Value::as_str) else {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         };
         if parse_runtime_mapping_script_source(source).is_none() {
-            return Some(build_unsupported_search_response(
-                "unsupported search option [runtime_mappings]",
-            ));
+            return Some(unsupported());
         }
     }
     None
@@ -21265,20 +21269,33 @@ fn sort_field_descending(sort_field: &Value) -> bool {
 }
 
 fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
-    let field_expr = source.strip_prefix("emit(doc['")?;
-    let (field_name, suffix) = field_expr.split_once("'].value)")?;
-    if !suffix.is_empty() || field_name.is_empty() {
-        return None;
+    for (prefix, suffix_marker) in [
+        ("emit(doc['", "'].value)"),
+        ("emit(doc[\"", "\"].value)"),
+        ("emit(params._source['", "'])"),
+        ("emit(params._source[\"", "\"])"),
+    ] {
+        if let Some(field_expr) = source.trim().strip_prefix(prefix) {
+            let (field_name, suffix) = field_expr.split_once(suffix_marker)?;
+            if suffix.is_empty() && !field_name.is_empty() {
+                return Some(field_name.to_string());
+            }
+        }
     }
-    Some(field_name.to_string())
+    None
 }
 
-fn apply_runtime_mappings_to_source(source: &Value, runtime_mappings: Option<&Value>) -> Value {
+fn apply_request_scoped_fields_to_source(source: &Value, body: &Value) -> Value {
+    let effective = apply_request_scoped_field_definitions_to_source(source, body.get("runtime_mappings"));
+    apply_request_scoped_field_definitions_to_source(&effective, body.get("derived"))
+}
+
+fn apply_request_scoped_field_definitions_to_source(source: &Value, definitions: Option<&Value>) -> Value {
     let Some(source_object) = source.as_object() else {
         return source.clone();
     };
     let mut effective = source_object.clone();
-    let Some(mappings) = runtime_mappings.and_then(Value::as_object) else {
+    let Some(mappings) = definitions.and_then(Value::as_object) else {
         return Value::Object(effective);
     };
     for (runtime_field, definition) in mappings {
@@ -37831,6 +37848,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+
+        let derived_field_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "derived": {
+                        "derived_service": {
+                            "type": "keyword",
+                            "script": {
+                                "source": "emit(doc[\"service\"].value)"
+                            }
+                        }
+                    },
+                    "query": {
+                        "term": {
+                            "derived_service": "catalog"
+                        }
+                    },
+                    "fields": ["derived_service"]
+                })),
+        );
+        assert_eq!(derived_field_search.status, 200);
+        assert_eq!(derived_field_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            derived_field_search.body["hits"]["hits"][0]["_id"],
+            "doc-3"
+        );
+        assert_eq!(
+            derived_field_search.body["hits"]["hits"][0]["fields"]["derived_service"],
+            serde_json::json!(["catalog"])
+        );
 
         let search_after = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
