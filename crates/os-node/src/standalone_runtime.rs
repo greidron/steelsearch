@@ -18308,8 +18308,8 @@ impl SteelNode {
             .expect("metadata manifest state lock poisoned");
         let properties = manifest["indices"][index]["mappings"]["properties"].as_object()?;
 
-        if let Some(stored_fields) = body.get("stored_fields").and_then(Value::as_array) {
-            for field in stored_fields.iter().filter_map(Value::as_str) {
+        if let Some(stored_fields) = body.get("stored_fields") {
+            for field in stored_field_names(stored_fields) {
                 let Some(mapping) = properties.get(field).and_then(Value::as_object) else {
                     continue;
                 };
@@ -18571,6 +18571,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && ![
         "collapse",
         "derived",
+        "docvalue_fields",
         "explain",
         "fields",
         "min_score",
@@ -18580,6 +18581,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "runtime_mappings",
         "search_after",
         "seq_no_primary_term",
+        "stored_fields",
         "suggest",
         "terminate_after",
         "version",
@@ -19039,6 +19041,9 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         if let Some(response) = validate_fetch_fields_request_body(fetch_fields) {
             return Some(response);
         }
+    }
+    if let Some(response) = validate_stored_fields_fetch_interactions(body) {
+        return Some(response);
     }
     if let Some(source_filter) = body.get("_source") {
         if let Some(response) = validate_source_filter_request_body(source_filter) {
@@ -20031,17 +20036,126 @@ fn validate_request_scoped_field_definitions(
 }
 
 fn validate_stored_fields_request_body(stored_fields: &Value) -> Option<RestResponse> {
-    let Some(fields) = stored_fields.as_array() else {
-        return Some(build_unsupported_search_response(
+    match stored_fields {
+        Value::String(field) if !field.is_empty() => None,
+        Value::Array(fields) => {
+            if fields.iter().any(|field| field.as_str().is_none()) {
+                return Some(build_unsupported_search_response(
+                    "unsupported search option [stored_fields]",
+                ));
+            }
+            if fields
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|field| field == "_none_")
+                && !(fields.len() == 1 && fields.first().and_then(Value::as_str) == Some("_none_"))
+            {
+                return Some(stored_fields_illegal_argument(
+                    "cannot combine _none_ with other fields",
+                ));
+            }
+            None
+        }
+        _ => Some(build_unsupported_search_response(
             "unsupported search option [stored_fields]",
+        )),
+    }
+}
+
+fn validate_stored_fields_fetch_interactions(body: &Value) -> Option<RestResponse> {
+    if !stored_fields_fetch_disabled(body.get("stored_fields")) {
+        return None;
+    }
+    if body.get("fields").is_some() {
+        return Some(search_phase_illegal_argument(
+            "[stored_fields] cannot be disabled when using the [fields] option",
         ));
-    };
-    if fields.iter().any(|field| field.as_str().is_none()) {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [stored_fields]",
+    }
+    if source_fetch_explicitly_requested(body) {
+        return Some(search_phase_illegal_argument(
+            "[stored_fields] cannot be disabled if [_source] is requested",
         ));
     }
     None
+}
+
+fn stored_fields_illegal_argument(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn search_phase_illegal_argument(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_argument_exception",
+                    "reason": reason
+                }
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn stored_fields_fetch_disabled(stored_fields: Option<&Value>) -> bool {
+    matches!(stored_fields, Some(Value::String(field)) if field == "_none_")
+        || matches!(
+            stored_fields,
+            Some(Value::Array(fields))
+                if fields.len() == 1 && fields.first().and_then(Value::as_str) == Some("_none_")
+        )
+}
+
+fn stored_fields_empty_selection(stored_fields: Option<&Value>) -> bool {
+    matches!(stored_fields, Some(Value::Array(fields)) if fields.is_empty())
+}
+
+fn stored_fields_should_suppress_default_source(body: &Value) -> bool {
+    body.get("_source").is_none()
+        && (stored_fields_fetch_disabled(body.get("stored_fields"))
+            || (stored_fields_empty_selection(body.get("stored_fields"))
+                && !source_fetch_explicitly_requested(body)))
+}
+
+fn source_fetch_explicitly_requested(body: &Value) -> bool {
+    if matches!(body.get("_source"), Some(Value::Bool(false))) {
+        return false;
+    }
+    body.get("_source").is_some()
+        || body.get("_source_includes").is_some()
+        || body.get("_source_include").is_some()
+        || body.get("_source_excludes").is_some()
+        || body.get("_source_exclude").is_some()
+}
+
+fn stored_field_names(stored_fields: &Value) -> Vec<&str> {
+    match stored_fields {
+        Value::String(field) if field != "_none_" => vec![field.as_str()],
+        Value::Array(fields) => fields
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|field| *field != "_none_")
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn validate_docvalue_fields_request_body(docvalue_fields: &Value) -> Option<RestResponse> {
@@ -24172,6 +24286,9 @@ fn search_source_projection(source: &Value, body: &Value) -> Option<Value> {
         }
         Some(_) => source.clone(),
     };
+    if stored_fields_should_suppress_default_source(body) {
+        return None;
+    }
     if let Some(includes) = body
         .get("_source_includes")
         .or_else(|| body.get("_source_include"))
@@ -40904,7 +41021,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     RestRequest::new(RestMethod::Put, &format!("/{index}/_mappings"))
                         .with_json_body(serde_json::json!({
                             "properties": {
-                                "rank": { "type": "long" }
+                                "rank": { "type": "long" },
+                                "tenant": { "type": "keyword", "store": true }
                             }
                         })),
                 )
@@ -41486,6 +41604,121 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             nested_fields_body.body["hits"]["hits"][0]["fields"]["comments.author"],
             serde_json::json!(["ann", "bob"])
+        );
+
+        let stored_field_string_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": "tenant",
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(stored_field_string_body.status, 200);
+        assert_eq!(
+            stored_field_string_body.body["hits"]["hits"][0]["fields"]["tenant"],
+            serde_json::json!(["tenant-a"])
+        );
+        assert!(
+            stored_field_string_body.body["hits"]["hits"][0]
+                .get("_source")
+                .is_some()
+        );
+
+        let stored_fields_none_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": "_none_",
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(stored_fields_none_body.status, 200);
+        assert!(
+            stored_fields_none_body.body["hits"]["hits"][0]
+                .get("_source")
+                .is_none()
+        );
+        assert!(
+            stored_fields_none_body.body["hits"]["hits"][0]
+                .get("fields")
+                .is_none()
+        );
+
+        let empty_stored_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": [],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(empty_stored_fields_body.status, 200);
+        assert!(
+            empty_stored_fields_body.body["hits"]["hits"][0]
+                .get("_source")
+                .is_none()
+        );
+
+        let stored_fields_none_with_source_false = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": "_none_",
+                    "_source": false,
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(stored_fields_none_with_source_false.status, 200);
+        assert!(
+            stored_fields_none_with_source_false.body["hits"]["hits"][0]
+                .get("_source")
+                .is_none()
+        );
+
+        let stored_fields_none_with_source = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": "_none_",
+                    "_source": true
+                })),
+        );
+        assert_eq!(stored_fields_none_with_source.status, 400);
+        assert_eq!(
+            stored_fields_none_with_source.body["error"]["root_cause"][0]["reason"],
+            "[stored_fields] cannot be disabled if [_source] is requested"
+        );
+
+        let stored_fields_none_with_fields = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": "_none_",
+                    "fields": ["tenant"]
+                })),
+        );
+        assert_eq!(stored_fields_none_with_fields.status, 400);
+        assert_eq!(
+            stored_fields_none_with_fields.body["error"]["root_cause"][0]["reason"],
+            "[stored_fields] cannot be disabled when using the [fields] option"
+        );
+
+        let stored_fields_none_combined = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": ["_none_", "tenant"]
+                })),
+        );
+        assert_eq!(stored_fields_none_combined.status, 400);
+        assert_eq!(
+            stored_fields_none_combined.body["error"]["reason"],
+            "cannot combine _none_ with other fields"
         );
 
         let invalid_fields_body = node.handle_rest_request(
