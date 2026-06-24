@@ -55334,7 +55334,7 @@ mod tests {
     }
 
     #[test]
-    fn get_task_transport_messages_bind_rejected_action_frame() {
+    fn get_task_transport_messages_bind_supported_action_frame_and_response() {
         let request = GetTaskRequestWire::new("node-a".to_string(), 7);
         let mut frame =
             build_get_task_request_message(21, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
