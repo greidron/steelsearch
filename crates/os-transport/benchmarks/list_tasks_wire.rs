@@ -18,6 +18,10 @@ fn main() {
             node_id: "node-a".to_string(),
             id: Some(7),
         },
+        parent_task_filter: TaskIdWire {
+            node_id: "parent-node".to_string(),
+            id: Some(99),
+        },
         nodes: vec!["node-a".to_string()],
         actions: vec!["cluster:admin/*".to_string()],
         ..ListTasksRequestWire::default()

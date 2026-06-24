@@ -2861,6 +2861,11 @@ fn list_tasks_record_matches_request(
     {
         return false;
     }
+    if request.parent_task_filter.is_set()
+        && !record_parent_task_matches_filter(record, &request.parent_task_filter)
+    {
+        return false;
+    }
     if !request.actions.is_empty() {
         let action = task_action_for_kind(&record.task.kind);
         if !request
@@ -2872,6 +2877,29 @@ fn list_tasks_record_matches_request(
         }
     }
     true
+}
+
+fn record_parent_task_matches_filter(
+    record: &ClusterManagerTaskRecord,
+    filter: &os_transport::action::TaskIdWire,
+) -> bool {
+    let Some((node_id, task_id)) = record
+        .parent_task_id
+        .as_deref()
+        .and_then(parse_transport_task_id_text)
+    else {
+        return false;
+    };
+    filter.node_id == node_id && filter.id == Some(task_id)
+}
+
+fn parse_transport_task_id_text(task_id: &str) -> Option<(String, i64)> {
+    let (node_id, id) = task_id.rsplit_once(':')?;
+    if node_id.is_empty() {
+        return None;
+    }
+    let id = id.parse().ok()?;
+    Some((node_id.to_string(), id))
 }
 
 fn list_task_info_wire_from_record(
@@ -2886,6 +2914,12 @@ fn list_task_info_wire_from_record_with_cancel_state(
     transport_identity: &DevTransportIdentity,
     cancelled: bool,
 ) -> os_transport::action::ListTaskInfoWire {
+    let (parent_task_node, parent_task_id) = record
+        .parent_task_id
+        .as_deref()
+        .and_then(parse_transport_task_id_text)
+        .map(|(node_id, id)| (node_id, Some(id)))
+        .unwrap_or_else(|| (String::new(), None));
     os_transport::action::ListTaskInfoWire {
         node_id: queue_task_node_id(record, transport_identity),
         task_id: record.task_id as i64,
@@ -2900,8 +2934,8 @@ fn list_task_info_wire_from_record_with_cancel_state(
         running_time_nanos: 1,
         cancellable: record.state == ClusterManagerTaskState::Queued,
         cancelled,
-        parent_task_node: String::new(),
-        parent_task_id: None,
+        parent_task_node,
+        parent_task_id,
         headers: record.headers.clone(),
         cancellation_start_time_millis: None,
     }
@@ -8466,7 +8500,7 @@ mod tests {
     }
 
     #[test]
-    fn list_tasks_transport_route_filters_by_task_node_and_action() {
+    fn list_tasks_transport_route_filters_by_task_node_action_and_parent() {
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -8501,7 +8535,20 @@ mod tests {
                             },
                         },
                         state: ClusterManagerTaskState::Queued,
-                        parent_task_id: None,
+                        parent_task_id: Some("parent-node:99".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 23,
+                        task: os_node::ClusterManagerTask {
+                            source: "remove-node [node-c]".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                                node_id: "node-c".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("parent-node:100".to_string()),
                         headers: BTreeMap::new(),
                         failure_reason: None,
                     },
@@ -8509,14 +8556,15 @@ mod tests {
                 task_node_ids: BTreeMap::from([
                     (21, "steel-node-id".to_string()),
                     (22, "remote-node-id".to_string()),
+                    (23, "remote-node-id".to_string()),
                 ]),
                 ..PersistedClusterManagerTaskQueueState::default()
             }),
         };
         let request = os_transport::action::ListTasksRequestWire {
-            task_id: os_transport::action::TaskIdWire {
-                node_id: "remote-node-id".to_string(),
-                id: Some(22),
+            parent_task_filter: os_transport::action::TaskIdWire {
+                node_id: "parent-node".to_string(),
+                id: Some(99),
             },
             nodes: vec!["remote-node-id".to_string()],
             actions: vec!["cluster:admin/voting_config/*".to_string()],
@@ -8548,6 +8596,8 @@ mod tests {
         assert_eq!(task.node_id, "remote-node-id");
         assert_eq!(task.task_id, 22);
         assert_eq!(task.action, "cluster:admin/voting_config/clear_exclusions");
+        assert_eq!(task.parent_task_node, "parent-node");
+        assert_eq!(task.parent_task_id, Some(99));
     }
 
     #[test]

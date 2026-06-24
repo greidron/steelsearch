@@ -25220,12 +25220,6 @@ impl ListTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.parent_task_filter.is_set() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks parent task filter",
-                reason: "parent task filtering is not mapped by the list-tasks adapter yet",
-            });
-        }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks timeout",
@@ -54593,6 +54587,10 @@ mod tests {
             task_id: TaskIdWire {
                 node_id: "node-a".to_string(),
                 id: Some(7),
+            },
+            parent_task_filter: TaskIdWire {
+                node_id: "parent-node".to_string(),
+                id: Some(99),
             },
             nodes: vec!["node-a".to_string()],
             actions: vec!["cluster:admin/*".to_string()],
