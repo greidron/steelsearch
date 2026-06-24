@@ -1,8 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_list_tasks_request_message, build_list_tasks_response_message,
-    read_list_tasks_request_message, read_list_tasks_response_message, ListTasksRequestWire,
-    ListTaskInfoWire, ListTasksResponseWire,
+    read_list_tasks_request_message, read_list_tasks_response_message, ListTaskInfoWire,
+    ListTasksRequestWire, ListTasksResponseWire, TaskIdWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::collections::BTreeMap;
@@ -13,6 +13,15 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = ListTasksRequestWire::default();
+    let filtered_request = ListTasksRequestWire {
+        task_id: TaskIdWire {
+            node_id: "node-a".to_string(),
+            id: Some(7),
+        },
+        nodes: vec!["node-a".to_string()],
+        actions: vec!["cluster:admin/*".to_string()],
+        ..ListTasksRequestWire::default()
+    };
     let response = ListTasksResponseWire {
         task_failure_count: 0,
         node_failures: Vec::new(),
@@ -39,6 +48,15 @@ fn main() {
                 .expect("list tasks request encode should succeed");
         black_box(frame);
     });
+    let filtered_request_encode = measure("list_tasks_filtered_request_encode", ITERATIONS, || {
+        let frame = build_list_tasks_request_message(
+            12,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&filtered_request),
+        )
+        .expect("filtered list tasks request encode should succeed");
+        black_box(frame);
+    });
     let response_encode = measure("list_tasks_response_encode", ITERATIONS, || {
         let frame =
             build_list_tasks_response_message(12, OPENSEARCH_3_7_0_TRANSPORT, black_box(&response))
@@ -48,6 +66,9 @@ fn main() {
 
     let request_frame = build_list_tasks_request_message(12, OPENSEARCH_3_7_0_TRANSPORT, &request)
         .expect("list tasks request encode should succeed");
+    let filtered_request_frame =
+        build_list_tasks_request_message(12, OPENSEARCH_3_7_0_TRANSPORT, &filtered_request)
+            .expect("filtered list tasks request encode should succeed");
     let response_frame =
         build_list_tasks_response_message(12, OPENSEARCH_3_7_0_TRANSPORT, &response)
             .expect("list tasks response encode should succeed");
@@ -57,6 +78,13 @@ fn main() {
         let message = decode_message(&mut frame);
         let decoded = read_list_tasks_request_message(black_box(&message))
             .expect("list tasks request decode");
+        black_box(decoded);
+    });
+    let filtered_request_decode = measure("list_tasks_filtered_request_decode", ITERATIONS, || {
+        let mut frame = black_box(filtered_request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_list_tasks_request_message(black_box(&message))
+            .expect("filtered list tasks request decode");
         black_box(decoded);
     });
     let response_decode = measure("list_tasks_response_decode", ITERATIONS, || {
@@ -69,8 +97,10 @@ fn main() {
 
     let combined_ops_per_second = request_encode
         .ops_per_second
+        .min(filtered_request_encode.ops_per_second)
         .min(response_encode.ops_per_second)
         .min(request_decode.ops_per_second)
+        .min(filtered_request_decode.ops_per_second)
         .min(response_decode.ops_per_second);
     println!("list_tasks_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }

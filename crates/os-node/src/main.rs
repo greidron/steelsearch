@@ -973,7 +973,12 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/tasks/lists") {
-        let response = build_list_tasks_response(request_id, header_version_id, transport_identity);
+        let response = build_list_tasks_response_for_request(
+            request_id,
+            header_version_id,
+            transport_identity,
+            Some(&body),
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:monitor/tasks/lists[n]"),
@@ -2792,10 +2797,19 @@ fn build_list_tasks_response(
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
+    build_list_tasks_response_for_request(request_id, header_version_id, transport_identity, None)
+}
+
+fn build_list_tasks_response_for_request(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    request_body: Option<&[u8]>,
+) -> Vec<u8> {
     os_transport::action::build_list_tasks_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &list_tasks_response_from_identity(transport_identity),
+        &list_tasks_response_from_identity(transport_identity, request_body),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -2803,7 +2817,11 @@ fn build_list_tasks_response(
 
 fn list_tasks_response_from_identity(
     transport_identity: &DevTransportIdentity,
+    request_body: Option<&[u8]>,
 ) -> os_transport::action::ListTasksResponseWire {
+    let request = request_body
+        .and_then(decode_list_tasks_request_from_transport_body)
+        .unwrap_or_default();
     let Some(queue) = transport_identity.task_queue_state.as_ref() else {
         return os_transport::action::ListTasksResponseWire::empty();
     };
@@ -2811,9 +2829,49 @@ fn list_tasks_response_from_identity(
         task_failure_count: 0,
         node_failures: Vec::new(),
         tasks: pending_cluster_task_records_from_queue(queue)
+            .filter(|record| {
+                list_tasks_record_matches_request(record, transport_identity, &request)
+            })
             .map(|record| list_task_info_wire_from_record(record, transport_identity))
             .collect(),
     }
+}
+
+fn decode_list_tasks_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ListTasksRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_list_tasks_request_message(&message).ok()
+}
+
+fn list_tasks_record_matches_request(
+    record: &ClusterManagerTaskRecord,
+    transport_identity: &DevTransportIdentity,
+    request: &os_transport::action::ListTasksRequestWire,
+) -> bool {
+    let node_id = queue_task_node_id(record, transport_identity);
+    if request.task_id.is_set()
+        && (request.task_id.id != Some(record.task_id as i64)
+            || request.task_id.node_id != node_id)
+    {
+        return false;
+    }
+    if !request.nodes.is_empty()
+        && !request.nodes.iter().any(|requested_node| requested_node == &node_id)
+    {
+        return false;
+    }
+    if !request.actions.is_empty() {
+        let action = task_action_for_kind(&record.task.kind);
+        if !request
+            .actions
+            .iter()
+            .any(|pattern| transport_action_pattern_matches(pattern, &action))
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn list_task_info_wire_from_record(
@@ -2868,6 +2926,36 @@ fn task_action_for_kind(kind: &os_node::ClusterManagerTaskKind) -> String {
         }
         os_node::ClusterManagerTaskKind::BackgroundWorker { action, .. } => action.clone(),
     }
+}
+
+fn transport_action_pattern_matches(pattern: &str, action: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    if !pattern.contains('*') {
+        return pattern == action;
+    }
+    let mut remaining = action;
+    let mut first = true;
+    for part in pattern.split('*') {
+        if part.is_empty() {
+            first = false;
+            continue;
+        }
+        if first && !pattern.starts_with('*') {
+            let Some(stripped) = remaining.strip_prefix(part) else {
+                return false;
+            };
+            remaining = stripped;
+        } else {
+            let Some(index) = remaining.find(part) else {
+                return false;
+            };
+            remaining = &remaining[index + part.len()..];
+        }
+        first = false;
+    }
+    pattern.ends_with('*') || remaining.is_empty()
 }
 
 fn task_state_label(state: &ClusterManagerTaskState) -> &'static str {
@@ -4141,13 +4229,12 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
-        Some("cluster:monitor/tasks/lists") => {
-            Some(build_list_tasks_response(
-                request_id,
-                header_version_id,
-                transport_identity,
-            ))
-        }
+        Some("cluster:monitor/tasks/lists") => Some(build_list_tasks_response_for_request(
+            request_id,
+            header_version_id,
+            transport_identity,
+            Some(body),
+        )),
         Some("cluster:monitor/task/get") => Some(build_get_task_response(
             request_id,
             header_version_id,
@@ -8376,6 +8463,91 @@ mod tests {
         assert!(task.cancellable);
         assert!(!task.cancelled);
         assert_eq!(task.headers.get("x-opaque-id").map(String::as_str), Some("request-1"));
+    }
+
+    #[test]
+    fn list_tasks_transport_route_filters_by_task_node_and_action() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![
+                    ClusterManagerTaskRecord {
+                        task_id: 21,
+                        task: os_node::ClusterManagerTask {
+                            source: "reroute shards".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 22,
+                        task: os_node::ClusterManagerTask {
+                            source: "remove-node [node-b]".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                                node_id: "node-b".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                ],
+                task_node_ids: BTreeMap::from([
+                    (21, "steel-node-id".to_string()),
+                    (22, "remote-node-id".to_string()),
+                ]),
+                ..PersistedClusterManagerTaskQueueState::default()
+            }),
+        };
+        let request = os_transport::action::ListTasksRequestWire {
+            task_id: os_transport::action::TaskIdWire {
+                node_id: "remote-node-id".to_string(),
+                id: Some(22),
+            },
+            nodes: vec!["remote-node-id".to_string()],
+            actions: vec!["cluster:admin/voting_config/*".to_string()],
+            ..os_transport::action::ListTasksRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_list_tasks_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        let response = build_list_tasks_response_for_request(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            Some(&request_body),
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected list tasks response message");
+        };
+
+        let response = os_transport::action::read_list_tasks_response_message(&message).unwrap();
+        assert_eq!(response.tasks.len(), 1);
+        let task = &response.tasks[0];
+        assert_eq!(task.node_id, "remote-node-id");
+        assert_eq!(task.task_id, 22);
+        assert_eq!(task.action, "cluster:admin/voting_config/clear_exclusions");
     }
 
     #[test]

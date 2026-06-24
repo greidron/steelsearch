@@ -25220,28 +25220,10 @@ impl ListTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.task_id.is_set() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks task id filter",
-                reason: "point task lookup belongs to the get-task adapter and is not mapped here",
-            });
-        }
         if self.parent_task_filter.is_set() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks parent task filter",
                 reason: "parent task filtering is not mapped by the list-tasks adapter yet",
-            });
-        }
-        if !self.nodes.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks node filter",
-                reason: "node-scoped task listing is not mapped by the list-tasks adapter yet",
-            });
-        }
-        if !self.actions.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks action filter",
-                reason: "action-scoped task listing is not mapped by the list-tasks adapter yet",
             });
         }
         if self.timeout.is_some() {
@@ -54606,34 +54588,27 @@ mod tests {
     }
 
     #[test]
-    fn list_tasks_request_rejects_filters_detail_and_wait_shapes() {
-        let by_task = ListTasksRequestWire {
+    fn list_tasks_request_wire_round_trips_supported_filter_subset() {
+        let request = ListTasksRequestWire {
             task_id: TaskIdWire {
                 node_id: "node-a".to_string(),
                 id: Some(7),
             },
+            nodes: vec!["node-a".to_string()],
+            actions: vec!["cluster:admin/*".to_string()],
             ..ListTasksRequestWire::default()
         };
-        assert!(matches!(
-            by_task.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks task id filter",
-                ..
-            })
-        ));
+        let mut output = StreamOutput::new();
+        request.write(&mut output).unwrap();
 
-        let by_action = ListTasksRequestWire {
-            actions: vec!["indices:data/read/search".to_string()],
-            ..ListTasksRequestWire::default()
-        };
-        assert!(matches!(
-            by_action.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks action filter",
-                ..
-            })
-        ));
+        assert_eq!(
+            ListTasksRequestWire::read(output.freeze()).unwrap(),
+            request
+        );
+    }
 
+    #[test]
+    fn list_tasks_request_rejects_detail_and_wait_shapes() {
         let detailed = ListTasksRequestWire {
             detailed: true,
             ..ListTasksRequestWire::default()
