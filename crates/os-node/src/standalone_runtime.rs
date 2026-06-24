@@ -7721,17 +7721,24 @@ impl SteelNode {
                     .into_iter()
                     .map(|parsed| {
                         let effective_target = parsed.target.as_deref().or(target);
+                        if !search_template_payload_has_script(&parsed.body) {
+                            return Err(search_template_malformed_response());
+                        }
                         match self.search_template_payload_body(
                             effective_target,
                             &parsed.body,
                             &request.headers,
                             None,
                         ) {
-                            Ok(body) => msearch_response_with_status(RestResponse::json(200, body)),
-                            Err(response) => msearch_response_with_status(response),
+                            Ok(body) => Ok(msearch_response_with_status(RestResponse::json(200, body))),
+                            Err(response) => Ok(msearch_response_with_status(response)),
                         }
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>, _>>();
+                let responses = match responses {
+                    Ok(responses) => responses,
+                    Err(response) => return response,
+                };
                 return RestResponse::json(200, serde_json::json!({ "responses": responses }));
             }
             Ok(None) => {}
@@ -19313,6 +19320,29 @@ fn parse_non_negative_search_int(raw: &str) -> Option<u64> {
         return None;
     }
     raw.parse::<u64>().ok()
+}
+
+fn search_template_payload_has_script(payload: &Value) -> bool {
+    payload
+        .as_object()
+        .is_some_and(|object| {
+            ["id", "source", "inline", "template"]
+                .iter()
+                .any(|field| object.contains_key(*field))
+        })
+}
+
+fn search_template_malformed_response() -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": "Malformed search template"
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn search_query_param_parse_error(param: &str, value: &str) -> RestResponse {
@@ -34119,6 +34149,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             targeted_msearch_template.body["responses"][0]["hits"]["total"]["value"],
             1
+        );
+
+        let malformed_msearch_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch/template").with_body(
+                b"{}\n{}\n".to_vec(),
+            ),
+        );
+        assert_eq!(malformed_msearch_template.status, 400);
+        assert_eq!(
+            malformed_msearch_template.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            malformed_msearch_template.body["error"]["reason"],
+            "Malformed search template"
         );
 
         let render_template = node.handle_rest_request(

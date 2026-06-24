@@ -33,7 +33,7 @@
 | Query DSL | `function_score`, `script_score` | Partial | Live standalone subset now supports bounded query-wrapping with constant weight or constant script score; broader function catalogs, scripts, and score-mode parity remain narrower than OpenSearch. |
 | Query DSL | `span_term`, `span_or`, `span_near`, `span_multi`, `field_masking_span`, `more_like_this` | Partial | Live standalone subset now supports bounded positional term/combinator and like-text forms; broader span options and term-vector semantics remain narrower than OpenSearch. |
 | Query DSL | `intervals` | Partial | Live standalone subset now supports bounded `match` and ordered `all_of` interval forms; broader filter/any_of/max_gaps semantics remain narrower than OpenSearch. |
-| Query DSL | Search templates | Planned | Present in OpenSearch inventory, not exposed by Steelsearch today. |
+| Query DSL | Search templates | Partial | Root and targeted search-template, msearch-template, render-template, stored-template lookup, and bounded params substitution are live; full Mustache semantics remain narrower than OpenSearch. |
 | Response shaping | sort / pagination / `from` / `size` | Partial | Live and covered by strict compare for the documented standalone contract. |
 | Response shaping | aggregations | Partial | Live and clean-pass in the strict lexical search fixture for the documented aggregation families. |
 | Response shaping | Highlight | Partial | Live on the standalone route for the documented field/tag contract. |
@@ -219,7 +219,7 @@ part of the OpenSearch parity target.
 
 | API family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| Search templates | Mustache-backed templated search requests. | Present in OpenSearch source inventory, not implemented in Steelsearch replacement surface. | Planned |
+| Search templates | Mustache-backed templated search requests. | Root and targeted `_search/template`, `_msearch/template`, `_render/template`, stored-template lookup, and bounded params substitution are live. | Partial |
 | PIT | Point-in-time snapshots for paginated or repeatable search. | PIT open/search/close is live and covered by strict compare for the documented standalone contract. | Partial |
 | Scroll | Stateful paginated search traversal. | Initial scroll search, follow-up page retrieval, and clear-scroll are live and covered by strict compare. | Partial |
 | Suggest | Completion/term/phrase suggestion families. | Term/completion/phrase suggesters are live and covered by strict compare for the documented standalone contract. | Partial |
@@ -303,8 +303,8 @@ part of the OpenSearch parity target.
   - if one of these option families appears on the active `_search` surface,
     read it according to the documented family-specific contract rather than
     implying full OpenSearch parity
-- Search templates remain a separate `Planned` surface, not a live `_search`
-  option family inside the current Phase A route contract.
+- Search templates are a bounded live surface, not a full Mustache
+  completeness claim.
 
 ## Notes
 
