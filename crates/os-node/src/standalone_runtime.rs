@@ -8555,45 +8555,173 @@ impl SteelNode {
             }
         };
         let requested_target = target.unwrap_or("_all");
-        let query = payload
+        let requests = payload
             .get("requests")
             .and_then(Value::as_array)
-            .and_then(|requests| requests.first())
-            .and_then(|request| request.get("request"))
-            .and_then(|request| request.get("query"))
-            .or_else(|| payload.get("query"));
+            .cloned()
+            .unwrap_or_default();
+        let precision_metric = payload
+            .get("metric")
+            .and_then(|metric| metric.get("precision"))
+            .and_then(Value::as_object);
+        let relevant_rating_threshold = precision_metric
+            .and_then(|metric| metric.get("relevant_rating_threshold"))
+            .and_then(Value::as_i64)
+            .unwrap_or(1);
+        let ignore_unlabeled = precision_metric
+            .and_then(|metric| metric.get("ignore_unlabeled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let precision_k = precision_metric
+            .and_then(|metric| metric.get("k"))
+            .and_then(Value::as_u64)
+            .unwrap_or(10) as usize;
         let docs = self.documents_state.lock().expect("documents state lock poisoned");
-        let matched = docs
-            .iter()
-            .filter(|(key, record)| {
-                let mut parts = key.splitn(3, ':');
-                let Some(index) = parts.next() else {
-                    return false;
+        let mut details = serde_json::Map::new();
+        let mut scores = Vec::new();
+        for request in &requests {
+            let request_id = request
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("rank_eval_request");
+            let query = request
+                .get("request")
+                .and_then(|request| request.get("query"))
+                .or_else(|| payload.get("query"));
+            let sort = request
+                .get("request")
+                .and_then(|request| request.get("sort"))
+                .unwrap_or(&Value::Null);
+            let ratings = request
+                .get("ratings")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let mut ratings_by_key = BTreeMap::new();
+            for rating in ratings {
+                let Some(index) = rating.get("_index").and_then(Value::as_str) else {
+                    continue;
                 };
-                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
-                    return false;
+                let Some(id) = rating.get("_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(score) = rating.get("rating").and_then(Value::as_i64) else {
+                    continue;
+                };
+                ratings_by_key.insert((index.to_string(), id.to_string()), score);
+            }
+            let mut hits = docs
+                .iter()
+                .filter_map(|(key, record)| {
+                    let (index, id, _) = split_document_key(key)?;
+                    if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                        return None;
+                    }
+                    if !matches_query_body(&record.source, query) {
+                        return None;
+                    }
+                    Some(serde_json::json!({
+                        "_index": index,
+                        "_id": id,
+                        "_source": record.source.clone(),
+                        "_score": 1.0,
+                        "_seq_no": record.seq_no
+                    }))
+                })
+                .collect::<Vec<_>>();
+            apply_search_sort(&mut hits, sort);
+            if sort.is_null() {
+                hits.sort_by(|left, right| {
+                    right["_score"]
+                        .as_f64()
+                        .unwrap_or(0.0)
+                        .partial_cmp(&left["_score"].as_f64().unwrap_or(0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| {
+                            left["_seq_no"]
+                                .as_i64()
+                                .unwrap_or_default()
+                                .cmp(&right["_seq_no"].as_i64().unwrap_or_default())
+                        })
+                });
+            }
+            hits.truncate(precision_k);
+            append_search_hit_sort_values(&mut hits, request.get("request").and_then(|request| request.get("sort")));
+            let mut relevant_docs_retrieved = 0;
+            let mut docs_retrieved = 0;
+            let mut rated_hits = Vec::new();
+            let mut unrated_docs = Vec::new();
+            for mut hit in hits {
+                let index = hit
+                    .get("_index")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let id = hit
+                    .get("_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let rating = ratings_by_key.get(&(index.to_string(), id.to_string())).copied();
+                if let Some(rating) = rating {
+                    docs_retrieved += 1;
+                    if rating >= relevant_rating_threshold {
+                        relevant_docs_retrieved += 1;
+                    }
+                } else {
+                    unrated_docs.push(serde_json::json!({
+                        "_index": index,
+                        "_id": id
+                    }));
+                    if !ignore_unlabeled {
+                        docs_retrieved += 1;
+                    }
                 }
-                matches_query_body(&record.source, query)
-            })
-            .count();
-        let evaluated = docs
-            .keys()
-            .filter(|key| {
-                let Some(index) = key.split(':').next() else {
-                    return false;
-                };
-                requested_target == "_all" || matches_index_selector(requested_target, index)
-            })
-            .count();
+                if let Some(hit_object) = hit.as_object_mut() {
+                    hit_object.remove("_source");
+                    hit_object.remove("_seq_no");
+                    if !sort.is_null() {
+                        hit_object.insert("_score".to_string(), Value::Null);
+                    }
+                }
+                let mut rated_hit = serde_json::Map::new();
+                rated_hit.insert("hit".to_string(), hit);
+                if let Some(rating) = rating {
+                    rated_hit.insert("rating".to_string(), Value::from(rating));
+                }
+                rated_hits.push(Value::Object(rated_hit));
+            }
+            let metric_score = if docs_retrieved > 0 {
+                relevant_docs_retrieved as f64 / docs_retrieved as f64
+            } else {
+                0.0
+            };
+            scores.push(metric_score);
+            details.insert(
+                request_id.to_string(),
+                serde_json::json!({
+                    "metric_score": metric_score,
+                    "unrated_docs": unrated_docs,
+                    "hits": rated_hits,
+                    "metric_details": {
+                        "precision": {
+                            "relevant_docs_retrieved": relevant_docs_retrieved,
+                            "docs_retrieved": docs_retrieved
+                        }
+                    }
+                }),
+            );
+        }
+        let metric_score = if scores.is_empty() {
+            0.0
+        } else {
+            scores.iter().sum::<f64>() / scores.len() as f64
+        };
         RestResponse::json(
             200,
             serde_json::json!({
-                "metric_score": if matched > 0 { 1.0 } else { 0.0 },
-                "details": {
-                    "evaluated_docs": evaluated,
-                    "matched_docs": matched,
-                    "target": requested_target
-                },
+                "metric_score": metric_score,
+                "details": Value::Object(details),
                 "failures": {}
             }),
         )
@@ -36616,13 +36744,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "query": {
                             "match_all": {}
                         }
+                    },
+                    "ratings": [
+                        { "_index": "logs-rank-eval-000001", "_id": "doc-1", "rating": 1 },
+                        { "_index": "metrics-rank-eval-000001", "_id": "doc-2", "rating": 1 }
+                    ]
+                }],
+                "metric": {
+                    "precision": {
+                        "ignore_unlabeled": true,
+                        "k": 10
                     }
-                }]
+                }
             })),
         );
         assert_eq!(root_rank_eval.status, 200);
         assert_eq!(root_rank_eval.body["metric_score"], 1.0);
-        assert_eq!(root_rank_eval.body["details"]["evaluated_docs"], 2);
+        assert_eq!(
+            root_rank_eval.body["details"]["root-request"]["metric_details"]["precision"]
+                ["docs_retrieved"],
+            2
+        );
 
         let targeted_rank_eval = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-rank-eval-*/_rank_eval").with_json_body(
@@ -36633,15 +36775,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "query": {
                                 "term": { "tenant": "tenant-a" }
                             }
+                        },
+                        "ratings": [
+                            { "_index": "logs-rank-eval-000001", "_id": "doc-1", "rating": 1 }
+                        ]
+                    }],
+                    "metric": {
+                        "precision": {
+                            "ignore_unlabeled": true,
+                            "k": 10
                         }
-                    }]
+                    }
                 }),
             ),
         );
         assert_eq!(targeted_rank_eval.status, 200);
         assert_eq!(targeted_rank_eval.body["metric_score"], 1.0);
-        assert_eq!(targeted_rank_eval.body["details"]["matched_docs"], 1);
-        assert_eq!(targeted_rank_eval.body["details"]["target"], "logs-rank-eval-*");
+        assert_eq!(
+            targeted_rank_eval.body["details"]["target-request"]["metric_details"]["precision"]
+                ["relevant_docs_retrieved"],
+            1
+        );
     }
 
     #[test]

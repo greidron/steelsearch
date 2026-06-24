@@ -340,6 +340,7 @@ Required semantic cases:
 - `terms_set_query_search`
 - `wildcard_query_search`
 - `nested_query_search`
+- `rank_eval_precision_search`
 - `pit_open_search`
 - `pit_list_search`
 - `pit_clear_all_search`

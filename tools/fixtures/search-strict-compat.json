@@ -1805,6 +1805,73 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "rank_eval_precision_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "catalog_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "catalog"
+                }
+              }
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-3",
+                "rating": 1
+              }
+            ]
+          },
+          {
+            "id": "checkout_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "checkout"
+                }
+              },
+              "sort": [
+                {
+                  "bytes": {
+                    "order": "asc"
+                  }
+                }
+              ]
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-1",
+                "rating": 1
+              },
+              {
+                "_index": "logs-compat",
+                "_id": "log-2",
+                "rating": 0
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true,
+            "k": 3,
+            "relevant_rating_threshold": 1
+          }
+        }
+      },
+      "extract": "rank_eval_precision",
+      "family": "lexical",
+      "description": "[lexical] rank_eval precision search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_clear_search",
       "area": "search",
       "extract": "pit_clear",

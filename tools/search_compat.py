@@ -1688,6 +1688,39 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 for hit in hits
             ),
         }
+    if kind == "rank_eval_precision":
+        details = body.get("details") if isinstance(body, dict) else {}
+        normalized_details: dict[str, Any] = {}
+        if isinstance(details, dict):
+            for request_id, detail in sorted(details.items()):
+                if not isinstance(detail, dict):
+                    continue
+                precision = ((detail.get("metric_details") or {}).get("precision") or {})
+                unrated_docs = detail.get("unrated_docs") or []
+                normalized_details[request_id] = {
+                    "metric_score": detail.get("metric_score"),
+                    "precision": {
+                        "relevant_docs_retrieved": precision.get("relevant_docs_retrieved")
+                        if isinstance(precision, dict)
+                        else None,
+                        "docs_retrieved": precision.get("docs_retrieved")
+                        if isinstance(precision, dict)
+                        else None,
+                    },
+                    "unrated_ids": sorted(
+                        doc.get("_id")
+                        for doc in unrated_docs
+                        if isinstance(doc, dict) and doc.get("_id") is not None
+                    ),
+                }
+        return {
+            "status": response["status"],
+            "metric_score": body.get("metric_score") if isinstance(body, dict) else None,
+            "details": normalized_details,
+            "failures_empty": isinstance(body.get("failures"), dict) and not body.get("failures")
+            if isinstance(body, dict)
+            else False,
+        }
     if kind == "explain_doc":
         explanation = body.get("explanation") if isinstance(body, dict) else None
         get = body.get("get") if isinstance(body, dict) else None
