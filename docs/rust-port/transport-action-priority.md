@@ -2279,8 +2279,8 @@ The create-PIT boundary covers:
   OpenSearch default `point_in_time.max_keep_alive` of `24h`;
 - PIT search rejects `scroll` query parameters with the OpenSearch validation
   error used for point-in-time requests in scroll contexts, including
-  aggregated scroll validation when PIT, `_shard_doc`, `from`, and `size=0`
-  are combined;
+  aggregated scroll validation when PIT, `_shard_doc`, `from`, `size=0`,
+  and `request_cache=true` are combined;
 - REST search validates `_shard_doc` sort usage for PIT-only admission,
   scroll rejection, and duplicate `_shard_doc` sort entries;
 - PIT searches render `_shard_doc` sort values and accept ASC/DESC

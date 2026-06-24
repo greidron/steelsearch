@@ -8867,7 +8867,16 @@ impl SteelNode {
             return response;
         }
         if let Some(response) =
-            validate_scroll_context_request_body(&body, request.query_params.contains_key("scroll"))
+            validate_opensearch_boolean_query_param(request.query_params.get("request_cache"))
+        {
+            return response;
+        }
+        if let Some(response) =
+            validate_scroll_context_request_body(
+                &body,
+                request.query_params.contains_key("scroll"),
+                query_param_is_true(request.query_params.get("request_cache")),
+            )
         {
             return response;
         }
@@ -18670,7 +18679,11 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
     validate_search_query_body(&body["query"])
 }
 
-fn validate_scroll_context_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+fn validate_scroll_context_request_body(
+    body: &Value,
+    scroll: bool,
+    request_cache: bool,
+) -> Option<RestResponse> {
     if !scroll {
         return None;
     }
@@ -18692,6 +18705,9 @@ fn validate_scroll_context_request_body(body: &Value, scroll: bool) -> Option<Re
     }
     if body.get("rescore").is_some() {
         validation_errors.push("using [rescore] is not allowed in a scroll context");
+    }
+    if request_cache {
+        validation_errors.push("[request_cache] cannot be used in a scroll context");
     }
     if body.get("pit").is_some() {
         validation_errors.push("using [point in time] is not allowed in a scroll context");
@@ -35681,7 +35697,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .contains("using [point in time] is not allowed in a scroll context"));
 
         let multi_error_scrolled_pit_search = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_search?scroll=1m")
+            RestRequest::new(RestMethod::Post, "/_search?scroll=1m&request_cache=true")
                 .with_json_body(serde_json::json!({
                     "pit": {
                         "id": second_open_pit.body["pit_id"].as_str().unwrap(),
@@ -35701,6 +35717,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(multi_error_scrolled_pit_reason.contains("_shard_doc cannot be used with scroll. Use PIT + search_after instead."));
         assert!(multi_error_scrolled_pit_reason.contains("using [from] is not allowed in a scroll context"));
         assert!(multi_error_scrolled_pit_reason.contains("[size] cannot be [0] in a scroll context"));
+        assert!(multi_error_scrolled_pit_reason.contains("[request_cache] cannot be used in a scroll context"));
+
+        let invalid_request_cache_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?request_cache=maybe")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(invalid_request_cache_search.status, 400);
+        assert_eq!(
+            invalid_request_cache_search.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
 
         let default_indices_options_pit_search = node.handle_rest_request(
             RestRequest::new(
