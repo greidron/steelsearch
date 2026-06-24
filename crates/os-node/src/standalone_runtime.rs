@@ -8440,6 +8440,11 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        for param in ["q", "df", "analyzer"] {
+            if request.query_params.contains_key(param) {
+                return unrecognized_count_parameter_response(&request.path, param);
+            }
+        }
         let mut payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -8718,7 +8723,13 @@ impl SteelNode {
                 "matched": matched,
                 "explanation": {
                     "value": if matched { 1.0 } else { 0.0 },
-                    "description": if matched { "query matched document" } else { "query did not match document" }
+                    "description": if matched {
+                        opensearch_like_query_explanation(query)
+                            .unwrap_or_else(|| "query matched document".to_string())
+                    } else {
+                        opensearch_like_query_explanation(query)
+                            .unwrap_or_else(|| "query did not match document".to_string())
+                    }
                 },
                 "get": {
                     "found": true,
@@ -23396,6 +23407,10 @@ fn collect_term_suggest_candidates(
         let Some(value) = lookup_query_field_value(&record.source, field).and_then(Value::as_str) else {
             continue;
         };
+        let normalized_value = value.trim().to_ascii_lowercase();
+        if !normalized_value.is_empty() {
+            *frequencies.entry(normalized_value).or_insert(0) += 1;
+        }
         for token in tokenize_search_text(value) {
             *frequencies.entry(token).or_insert(0) += 1;
         }
@@ -25459,6 +25474,19 @@ fn validate_query_payload(query: Option<&Value>) -> (bool, String) {
     validate_query_payload_with_options(query, false)
 }
 
+fn unrecognized_count_parameter_response(path: &str, param: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!("request [{path}] contains unrecognized parameter: [{param}]")
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn validate_query_payload_for_validate_route(query: Option<&Value>) -> (bool, String) {
     validate_query_payload_with_options(query, true)
 }
@@ -25472,7 +25500,15 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
     }
     if let Some(term) = query.get("term") {
         if term.as_object().is_some_and(|object| !object.is_empty()) {
-            return (true, format!("term query fields: {}", term.as_object().map(|object| object.len()).unwrap_or(0)));
+            return (
+                true,
+                opensearch_like_term_explanation(term).unwrap_or_else(|| {
+                    format!(
+                        "term query fields: {}",
+                        term.as_object().map(|object| object.len()).unwrap_or(0)
+                    )
+                }),
+            );
         }
         return (false, "term query requires at least one field".to_string());
     }
@@ -25485,7 +25521,11 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
     if allow_range {
         if let Some(range) = query.get("range") {
             if range.as_object().is_some_and(|object| !object.is_empty()) {
-                return (true, "range query".to_string());
+                return (
+                    true,
+                    opensearch_like_range_explanation(range)
+                        .unwrap_or_else(|| "range query".to_string()),
+                );
             }
             return (false, "range query requires at least one field".to_string());
         }
@@ -25509,6 +25549,52 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
         return (false, "query object must not be empty".to_string());
     }
     (false, "unsupported query type".to_string())
+}
+
+fn opensearch_like_query_explanation(query: &Value) -> Option<String> {
+    if query.get("match_all").is_some() {
+        return Some("*:*".to_string());
+    }
+    if let Some(term) = query.get("term") {
+        return opensearch_like_term_explanation(term);
+    }
+    if let Some(range) = query.get("range") {
+        return opensearch_like_range_explanation(range);
+    }
+    None
+}
+
+fn opensearch_like_term_explanation(term: &Value) -> Option<String> {
+    let object = term.as_object()?;
+    let (field, value) = object.iter().next()?;
+    let rendered_value = match value {
+        Value::String(value) => value.clone(),
+        Value::Object(spec) => spec
+            .get("value")
+            .or_else(|| spec.get("term"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| value.to_string()),
+        _ => value.to_string(),
+    };
+    Some(format!("ConstantScore({field}:{rendered_value})"))
+}
+
+fn opensearch_like_range_explanation(range: &Value) -> Option<String> {
+    let object = range.as_object()?;
+    let (field, bounds) = object.iter().next()?;
+    let bounds = bounds.as_object()?;
+    let lower = bounds
+        .get("gte")
+        .or_else(|| bounds.get("gt"))
+        .and_then(Value::as_str)
+        .unwrap_or("*");
+    let upper = bounds
+        .get("lte")
+        .or_else(|| bounds.get("lt"))
+        .and_then(Value::as_str)
+        .unwrap_or("*");
+    Some(format!("ConstantScore({field}:[{lower} TO {upper}])"))
 }
 
 fn substitute_template_params(
@@ -36222,8 +36308,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count.status, 200);
-        assert_eq!(q_count.body["count"], 1);
+        assert_eq!(q_count.status, 400);
+        assert_eq!(q_count.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            q_count.body["error"]["reason"],
+            "request [/_count] contains unrecognized parameter: [q]"
+        );
 
         let q_count_with_df = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_count?q=tenantb&df=tenant").with_json_body(
@@ -36234,8 +36324,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count_with_df.status, 200);
-        assert_eq!(q_count_with_df.body["count"], 1);
+        assert_eq!(q_count_with_df.status, 400);
+        assert_eq!(
+            q_count_with_df.body["error"]["reason"],
+            "request [/_count] contains unrecognized parameter: [q]"
+        );
 
         let unsupported_q_count_analyzer = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_count?q=tenanta&analyzer=standard"),
@@ -36243,7 +36336,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unsupported_q_count_analyzer.status, 400);
         assert_eq!(
             unsupported_q_count_analyzer.body["error"]["reason"],
-            "unsupported search option [analyzer]"
+            "request [/_count] contains unrecognized parameter: [q]"
         );
 
         let empty_wildcard_count = node.handle_rest_request(
@@ -41534,7 +41627,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unmatched.body["get"]["found"], true);
         assert_eq!(
             unmatched.body["explanation"]["description"],
-            "query did not match document"
+            "ConstantScore(tenant:tenantb)"
         );
 
         let missing = node.handle_rest_request(

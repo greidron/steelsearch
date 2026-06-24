@@ -284,7 +284,7 @@
       "description": "[failure-path] count missing exact index semantic"
     },
     {
-      "name": "count_unsupported_query_type_error",
+      "name": "count_range_query_semantic",
       "area": "search-semantic",
       "method": "POST",
       "path": "/_count",
@@ -297,9 +297,9 @@
           }
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] count unsupported query type error"
+      "extract": "count_value",
+      "family": "lexical",
+      "description": "[lexical] count range query semantic"
     },
     {
       "name": "search_exists_unsupported_shape_error",
@@ -621,7 +621,7 @@
       "description": "[failure-path] msearch malformed header compatibility"
     },
     {
-      "name": "search_rescore_unsupported_option_error",
+      "name": "search_rescore_score_mode_semantic",
       "area": "search-semantic",
       "method": "POST",
       "path": "/_search",
@@ -639,12 +639,12 @@
           }
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] search rescore score mode compatibility"
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search rescore score mode semantic"
     },
     {
-      "name": "search_highlight_unsupported_option_error",
+      "name": "search_highlight_encoder_semantic",
       "area": "search-semantic",
       "method": "POST",
       "path": "/_search",
@@ -659,12 +659,12 @@
           "encoder": "html"
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] search highlight encoder compatibility"
+      "extract": "highlight_hits",
+      "family": "lexical",
+      "description": "[lexical] search highlight encoder semantic"
     },
     {
-      "name": "search_suggest_unsupported_option_error",
+      "name": "search_term_suggest_size_semantic",
       "area": "search-semantic",
       "method": "POST",
       "path": "/_search",
@@ -679,9 +679,9 @@
           }
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] search term suggest size compatibility"
+      "extract": "suggest_response",
+      "family": "lexical",
+      "description": "[lexical] search term suggest size semantic"
     },
     {
       "name": "search_template_missing_error",
@@ -799,7 +799,7 @@
       "description": "[failure-path] validate query root malformed payload error"
     },
     {
-      "name": "validate_query_target_rewrite_unsupported_error",
+      "name": "validate_query_target_rewrite_semantic",
       "area": "search-semantic",
       "method": "POST",
       "path": "/logs-search-semantic-*/_validate/query?rewrite=true",
@@ -810,9 +810,9 @@
           }
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] validate query target rewrite unsupported error"
+      "extract": "validate_query_semantic",
+      "family": "lexical",
+      "description": "[lexical] validate query target rewrite semantic"
     },
     {
       "name": "explain_missing_doc_semantic",
@@ -824,7 +824,7 @@
           "match_all": {}
         }
       },
-      "extract": "explain_doc",
+      "extract": "explain_doc_description",
       "family": "failure-path",
       "description": "[failure-path] explain missing doc semantic"
     },
@@ -859,7 +859,7 @@
       "description": "[failure-path] explain missing index error"
     },
     {
-      "name": "explain_unsupported_query_type_error",
+      "name": "explain_range_query_semantic",
       "area": "search-semantic",
       "method": "POST",
       "path": "/logs-search-semantic-000001/_explain/doc-1",
@@ -872,9 +872,9 @@
           }
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] explain unsupported query type error"
+      "extract": "explain_doc_description",
+      "family": "lexical",
+      "description": "[lexical] explain range query semantic"
     }
   ],
   "profile": "light-semantic-smoke",
