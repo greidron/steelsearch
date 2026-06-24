@@ -84,8 +84,8 @@ parity. The goal is to answer a narrower question:
 
 | Family | Surface | Implemented | Strict compared | Semantic probed | Fail closed | Evidence | Code path / missing path | Notes / missing work |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| metric aggregations | `/_search`, `/{index}/_search` | partial | partial | no | partial | `tools/fixtures/search-compat.json` | aggregation builder at [standalone_runtime.rs:15117](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs:15117). | Broad compare exists; strict/semantic classification still needs to be split by aggregation family. |
-| filter aggregations | `/_search`, `/{index}/_search` | partial | partial | no | partial | `tools/fixtures/search-compat.json` | aggregation builder at [standalone_runtime.rs:15117](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs:15117). | Broad compare exists; more explicit family-level matrix is pending. |
+| metric aggregations | `/_search`, `/{index}/_search` | partial | partial | yes | partial | `tools/fixtures/search-compat.json`, `tools/fixtures/search-semantic-compat.json` | aggregation builder at [standalone_runtime.rs:15117](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs:15117). | Semantic matrix now pins bounded `min`, `max`, `sum`, `avg`, and `value_count` over numeric fields; broader metric families remain partial. |
+| filter aggregations | `/_search`, `/{index}/_search` | partial | partial | yes | partial | `tools/fixtures/search-compat.json`, `tools/fixtures/search-semantic-compat.json` | aggregation builder at [standalone_runtime.rs:15117](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs:15117). | Semantic matrix now pins bounded single `filter` and keyed `filters` aggregations; broader filter variants remain partial. |
 
 ## Template Search Families
 

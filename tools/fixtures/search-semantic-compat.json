@@ -1184,6 +1184,228 @@
       "description": "[lexical] search completion suggest semantic"
     },
     {
+      "name": "metric_aggregations_semantic",
+      "area": "search-semantic",
+      "extract": "aggregations",
+      "steps": [
+        {
+          "name": "create-aggregation-index",
+          "method": "PUT",
+          "path": "/agg-search-semantic-000001",
+          "body": {
+            "mappings": {
+              "properties": {
+                "bytes": {
+                  "type": "long"
+                },
+                "service": {
+                  "type": "keyword"
+                },
+                "level": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-aggregation-doc-1",
+          "method": "PUT",
+          "path": "/agg-search-semantic-000001/_doc/agg-1",
+          "body": {
+            "bytes": 100,
+            "service": "checkout",
+            "level": "info"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-aggregation-doc-2",
+          "method": "PUT",
+          "path": "/agg-search-semantic-000001/_doc/agg-2",
+          "body": {
+            "bytes": 300,
+            "service": "checkout",
+            "level": "warn"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-aggregation-doc-3",
+          "method": "PUT",
+          "path": "/agg-search-semantic-000001/_doc/agg-3",
+          "body": {
+            "bytes": 50,
+            "service": "billing",
+            "level": "info"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-aggregation-index",
+          "method": "POST",
+          "path": "/agg-search-semantic-000001/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "metric-aggregations",
+          "method": "POST",
+          "path": "/agg-search-semantic-000001/_search",
+          "body": {
+            "size": 0,
+            "aggs": {
+              "min_bytes": {
+                "min": {
+                  "field": "bytes"
+                }
+              },
+              "max_bytes": {
+                "max": {
+                  "field": "bytes"
+                }
+              },
+              "sum_bytes": {
+                "sum": {
+                  "field": "bytes"
+                }
+              },
+              "avg_bytes": {
+                "avg": {
+                  "field": "bytes"
+                }
+              },
+              "count_bytes": {
+                "value_count": {
+                  "field": "bytes"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "aggregations"
+        }
+      ],
+      "family": "aggregation",
+      "description": "[aggregation] metric aggregations semantic"
+    },
+    {
+      "name": "filter_aggregations_semantic",
+      "area": "search-semantic",
+      "extract": "aggregations",
+      "steps": [
+        {
+          "name": "create-filter-aggregation-index",
+          "method": "PUT",
+          "path": "/filter-agg-search-semantic-000001",
+          "body": {
+            "mappings": {
+              "properties": {
+                "bytes": {
+                  "type": "long"
+                },
+                "service": {
+                  "type": "keyword"
+                },
+                "level": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-filter-aggregation-doc-1",
+          "method": "PUT",
+          "path": "/filter-agg-search-semantic-000001/_doc/filter-agg-1",
+          "body": {
+            "bytes": 100,
+            "service": "checkout",
+            "level": "info"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-filter-aggregation-doc-2",
+          "method": "PUT",
+          "path": "/filter-agg-search-semantic-000001/_doc/filter-agg-2",
+          "body": {
+            "bytes": 300,
+            "service": "checkout",
+            "level": "warn"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-filter-aggregation-doc-3",
+          "method": "PUT",
+          "path": "/filter-agg-search-semantic-000001/_doc/filter-agg-3",
+          "body": {
+            "bytes": 50,
+            "service": "billing",
+            "level": "info"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-filter-aggregation-index",
+          "method": "POST",
+          "path": "/filter-agg-search-semantic-000001/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "filter-aggregations",
+          "method": "POST",
+          "path": "/filter-agg-search-semantic-000001/_search",
+          "body": {
+            "size": 0,
+            "aggs": {
+              "checkout_only": {
+                "filter": {
+                  "term": {
+                    "service": "checkout"
+                  }
+                }
+              },
+              "by_level": {
+                "filters": {
+                  "filters": {
+                    "infos": {
+                      "term": {
+                        "level": "info"
+                      }
+                    },
+                    "warnings": {
+                      "term": {
+                        "level": "warn"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "aggregations"
+        }
+      ],
+      "family": "aggregation",
+      "description": "[aggregation] filter aggregations semantic"
+    },
+    {
       "name": "search_template_missing_error",
       "area": "search-semantic",
       "method": "POST",
