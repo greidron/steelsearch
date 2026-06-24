@@ -18212,6 +18212,23 @@ fn build_json_parse_search_response(reason: String) -> RestResponse {
     )
 }
 
+fn search_timeout_parse_error(timeout: &Value) -> RestResponse {
+    let rendered = timeout
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| timeout.to_string());
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!("failed to parse setting [timeout] with value [{rendered}] as a time value")
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     !query_contains_nested_knn(body.get("query").unwrap_or(&Value::Null))
         && ![
@@ -18655,6 +18672,14 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             ));
         }
     }
+    if let Some(timeout) = body.get("timeout") {
+        let Some(raw_timeout) = timeout.as_str() else {
+            return Some(search_timeout_parse_error(timeout));
+        };
+        if parse_time_value_millis(raw_timeout).is_none() {
+            return Some(search_timeout_parse_error(timeout));
+        }
+    }
     if body.get("min_score").is_some_and(|value| !value.is_number()) {
         return Some(build_unsupported_search_response(
             "unsupported search option [min_score]",
@@ -18816,6 +18841,17 @@ fn apply_search_source_query_params(
             ));
         };
         object.insert("track_total_hits".to_string(), track_total_hits);
+    }
+    if let Some(raw_timeout) = query_params.get("timeout") {
+        if parse_time_value_millis(raw_timeout).is_none() {
+            return Some(search_timeout_parse_error(&Value::String(raw_timeout.clone())));
+        }
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert("timeout".to_string(), Value::String(raw_timeout.clone()));
     }
     for field in ["version", "seq_no_primary_term", "explain"] {
         let Some(raw) = query_params.get(field) else {
@@ -38841,6 +38877,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_profile_body.body["error"]["reason"],
             "unsupported search option [profile]"
+        );
+
+        let body_timeout = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "timeout": "1s"
+                })),
+        );
+        assert_eq!(body_timeout.status, 200);
+        assert_eq!(body_timeout.body["timed_out"], false);
+
+        let query_param_timeout = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?timeout=1s")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(query_param_timeout.status, 200);
+        assert_eq!(query_param_timeout.body["timed_out"], false);
+
+        let invalid_timeout_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "timeout": "soon"
+                })),
+        );
+        assert_eq!(invalid_timeout_body.status, 400);
+        assert_eq!(
+            invalid_timeout_body.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [soon] as a time value"
+        );
+
+        let invalid_timeout_query_param = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?timeout=soon")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(invalid_timeout_query_param.status, 400);
+        assert_eq!(
+            invalid_timeout_query_param.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [soon] as a time value"
         );
 
         let min_score_filters_low_scoring_hits = node.handle_rest_request(

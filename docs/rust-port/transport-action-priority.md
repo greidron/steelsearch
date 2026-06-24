@@ -2188,6 +2188,8 @@ The search boundary covers:
   booleans, and renders requested hit metadata/profile data.
 - REST search applies top-level `min_score` filtering and bounded
   `post_filter` hit filtering while preserving aggregation input.
+- REST search parses and validates body/query `timeout` time values before
+  admitting the bounded standalone search path.
 - REST search validates `search_after` scroll/from/sort-count and sort-value
   type constraints with OpenSearch-shaped shard failure errors and renders
   requested hit `sort` values for reuse by follow-up pages.
