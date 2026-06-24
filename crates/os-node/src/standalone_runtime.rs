@@ -7665,6 +7665,7 @@ impl SteelNode {
                             RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
                                 .with_json_body(body);
                         search_request.headers = request.headers.clone();
+                        search_request.query_params = request.query_params.clone();
                         msearch_response_with_status(
                             self.handle_index_search_route(effective_target, &search_request),
                         )
@@ -7685,6 +7686,7 @@ impl SteelNode {
                             "query": { "match_all": {} }
                         }));
                 search_request.headers = request.headers.clone();
+                search_request.query_params = request.query_params.clone();
                 serde_json::json!({
                     "responses": [msearch_response_with_status(
                         self.handle_index_search_route(effective_target, &search_request)
@@ -36970,6 +36972,74 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted_multi.body["responses"][1]["status"], 200);
         assert_eq!(targeted_multi.body["responses"][0]["hits"]["total"]["value"], 1);
         assert_eq!(targeted_multi.body["responses"][1]["hits"]["total"]["value"], 0);
+    }
+
+    #[test]
+    fn msearch_routes_apply_rest_query_params_to_pit_searches() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-msearch-pit-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-msearch-pit-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "tenant": "tenanta" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-msearch-pit-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap();
+        let pit_search_body = format!(
+            "{{}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+
+        let valid_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(pit_search_body.as_bytes().to_vec()),
+        );
+        assert_eq!(valid_msearch.status, 200);
+        assert_eq!(valid_msearch.body["responses"][0]["status"], 200);
+        assert_eq!(valid_msearch.body["responses"][0]["pit_id"], pit_id);
+        assert_eq!(
+            valid_msearch.body["responses"][0]["hits"]["total"]["value"],
+            1
+        );
+
+        let invalid_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch?ccs_minimize_roundtrips=true")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(pit_search_body.into_bytes()),
+        );
+        assert_eq!(invalid_msearch.status, 200);
+        assert_eq!(invalid_msearch.body["responses"][0]["status"], 400);
+        assert_eq!(
+            invalid_msearch.body["responses"][0]["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(
+            invalid_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        );
     }
 
     #[test]
