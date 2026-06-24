@@ -8385,12 +8385,7 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
-        if request.query_params.contains_key("q") {
-            return build_unsupported_search_response(
-                "request [/_count] contains unrecognized parameter: [q]",
-            );
-        }
-        let payload = if request.body.is_empty() {
+        let mut payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
             match serde_json::from_slice::<Value>(&request.body) {
@@ -8409,6 +8404,11 @@ impl SteelNode {
                 }
             }
         };
+        if let Some(response) =
+            apply_url_query_string_search_params(&mut payload, &request.query_params)
+        {
+            return response;
+        }
         let default_query = serde_json::json!({ "match_all": {} });
         let query = payload.get("query").unwrap_or(&default_query);
         let (valid, explanation) = validate_query_payload_for_validate_route(payload.get("query"));
@@ -19069,11 +19069,25 @@ fn apply_url_query_string_search_params(
         }
     }
     let mut query_string = serde_json::Map::new();
-    query_string.insert("query".to_string(), Value::String(raw_query.clone()));
-    if let Some(default_field) = query_params.get("df") {
+    let mut query_text = raw_query.clone();
+    let mut inferred_field = None;
+    if !query_params.contains_key("df") {
+        if let Some((field, value)) = raw_query.split_once(':') {
+            if !field.is_empty()
+                && !value.is_empty()
+                && !field.chars().any(char::is_whitespace)
+                && !value.chars().any(char::is_whitespace)
+            {
+                inferred_field = Some(field.to_string());
+                query_text = value.to_string();
+            }
+        }
+    }
+    query_string.insert("query".to_string(), Value::String(query_text));
+    if let Some(default_field) = query_params.get("df").cloned().or(inferred_field) {
         query_string.insert(
             "fields".to_string(),
-            Value::Array(vec![Value::String(default_field.clone())]),
+            Value::Array(vec![Value::String(default_field)]),
         );
     }
     if let Some(default_operator) = query_params.get("default_operator") {
@@ -24005,6 +24019,12 @@ fn matches_query_body(source: &Value, query: Option<&Value>) -> bool {
         };
         return value_matches_range(source.get(field), bounds);
     }
+    if let Some(query_string) = query.get("query_string").and_then(Value::as_object) {
+        return evaluate_text_query_spec(source, query_string, false).0;
+    }
+    if let Some(simple_query_string) = query.get("simple_query_string").and_then(Value::as_object) {
+        return evaluate_text_query_spec(source, simple_query_string, true).0;
+    }
     false
 }
 
@@ -24041,6 +24061,21 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
                 return (true, "range query".to_string());
             }
             return (false, "range query requires at least one field".to_string());
+        }
+    }
+    for query_name in ["query_string", "simple_query_string"] {
+        if let Some(spec) = query.get(query_name) {
+            let Some(object) = spec.as_object() else {
+                return (false, format!("{query_name} query requires an object"));
+            };
+            if object
+                .get("query")
+                .and_then(Value::as_str)
+                .is_some_and(|query| !query.is_empty())
+            {
+                return (true, format!("{query_name} query"));
+            }
+            return (false, format!("{query_name} query requires query text"));
         }
     }
     if query.as_object().is_some_and(|object| object.is_empty()) {
@@ -34254,15 +34289,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count.status, 400);
-        assert_eq!(q_count.body["status"], 400);
-        assert_eq!(
-            q_count.body["error"]["type"],
-            "illegal_argument_exception"
+        assert_eq!(q_count.status, 200);
+        assert_eq!(q_count.body["count"], 1);
+
+        let q_count_with_df = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_count?q=tenantb&df=tenant").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": { "tenant": "tenanta" }
+                    }
+                }),
+            ),
         );
+        assert_eq!(q_count_with_df.status, 200);
+        assert_eq!(q_count_with_df.body["count"], 1);
+
+        let unsupported_q_count_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_count?q=tenanta&analyzer=standard"),
+        );
+        assert_eq!(unsupported_q_count_analyzer.status, 400);
         assert_eq!(
-            q_count.body["error"]["reason"],
-            "request [/_count] contains unrecognized parameter: [q]"
+            unsupported_q_count_analyzer.body["error"]["reason"],
+            "unsupported search option [analyzer]"
         );
 
         let empty_wildcard_count = node.handle_rest_request(

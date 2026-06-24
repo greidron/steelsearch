@@ -226,7 +226,7 @@
       "description": "[lexical] count target term semantic"
     },
     {
-      "name": "count_query_string_q_unsupported_error",
+      "name": "count_query_string_q_semantic",
       "area": "search-semantic",
       "method": "GET",
       "path": "/_count?q=tenant:tenant-a",
@@ -237,9 +237,9 @@
           }
         }
       },
-      "extract": "search_error",
-      "family": "failure-path",
-      "description": "[failure-path] count query-string q unsupported error"
+      "extract": "count_value",
+      "family": "lexical",
+      "description": "[lexical] count query-string q semantic"
     },
     {
       "name": "count_wildcard_empty_match_semantic",
