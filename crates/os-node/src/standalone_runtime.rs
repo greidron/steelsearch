@@ -8811,6 +8811,9 @@ impl SteelNode {
             .and_then(|pit| pit.get("id"))
             .and_then(Value::as_str)
         {
+            if let Some(response) = validate_point_in_time_search_request(index, request) {
+                return response;
+            }
             let keep_alive = body
                 .get("pit")
                 .and_then(Value::as_object)
@@ -18484,6 +18487,54 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         ));
     }
     None
+}
+
+fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> Option<RestResponse> {
+    let mut validation_errors = Vec::new();
+    if index != "_all" {
+        validation_errors.push("[indices] cannot be used with point in time");
+    }
+    if request.query_params.contains_key("ignore_unavailable")
+        || request.query_params.contains_key("allow_no_indices")
+        || request.query_params.contains_key("expand_wildcards")
+        || request.query_params.contains_key("ignore_throttled")
+    {
+        validation_errors.push("[indicesOptions] cannot be used with point in time");
+    }
+    if request.query_params.contains_key("routing") {
+        validation_errors.push("[routing] cannot be used with point in time");
+    }
+    if request.query_params.contains_key("preference") {
+        validation_errors.push("[preference] cannot be used with point in time");
+    }
+    if request
+        .query_params
+        .get("ccs_minimize_roundtrips")
+        .is_some_and(|value| value == "true")
+    {
+        validation_errors.push("[ccs_minimize_roundtrips] cannot be used with point in time");
+    }
+    if validation_errors.is_empty() {
+        return None;
+    }
+    Some(RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "action_request_validation_exception",
+                "reason": format!(
+                    "Validation Failed: {}",
+                    validation_errors
+                    .iter()
+                    .enumerate()
+                    .map(|(index, error)| format!("{}: {};", index + 1, error))
+                    .collect::<Vec<_>>()
+                    .join("")
+                )
+            },
+            "status": 400
+        }),
+    ))
 }
 
 fn validate_rescore_request_body(rescore: &Value) -> Option<RestResponse> {
@@ -34693,6 +34744,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .iter()
             .all(|hit| hit["_id"] != "doc-3"));
+
+        let indexed_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(indexed_pit_search.status, 400);
+        assert_eq!(
+            indexed_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(indexed_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indices] cannot be used with point in time"));
+
+        let routed_pit_search = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_search?routing=tenant-a&preference=_local&ignore_unavailable=true&ccs_minimize_roundtrips=true",
+            )
+            .with_json_body(serde_json::json!({
+                "pit": {
+                    "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                    "keep_alive": "1m"
+                },
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(routed_pit_search.status, 400);
+        let routed_pit_reason = routed_pit_search.body["error"]["reason"].as_str().unwrap();
+        assert!(routed_pit_reason.contains("[indicesOptions] cannot be used with point in time"));
+        assert!(routed_pit_reason.contains("[routing] cannot be used with point in time"));
+        assert!(routed_pit_reason.contains("[preference] cannot be used with point in time"));
+        assert!(routed_pit_reason.contains("[ccs_minimize_roundtrips] cannot be used with point in time"));
 
         let invalid_pit_keep_alive = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")
