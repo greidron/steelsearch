@@ -27,6 +27,21 @@ fn main() {
         headers: BTreeMap::new(),
         cancellation_start_time_millis: None,
     });
+    let completed_response = GetTaskResponseWire::completed(ListTaskInfoWire {
+        node_id: "node-a".to_string(),
+        task_id: 8,
+        task_type: "transport".to_string(),
+        action: "cluster:admin/voting_config/clear_exclusions".to_string(),
+        description: Some("remove-node [node-b] [acknowledged]".to_string()),
+        start_time_millis: 1,
+        running_time_nanos: 1,
+        cancellable: false,
+        cancelled: false,
+        parent_task_node: "parent-node".to_string(),
+        parent_task_id: Some(99),
+        headers: BTreeMap::new(),
+        cancellation_start_time_millis: None,
+    });
 
     let request_encode = measure("get_task_request_encode", ITERATIONS, || {
         let frame =
@@ -62,9 +77,24 @@ fn main() {
                 .expect("get task response encode should succeed");
         black_box(frame);
     });
+    let completed_response_encode = measure("get_task_completed_response_encode", ITERATIONS, || {
+        let frame = build_get_task_response_message(
+            14,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&completed_response),
+        )
+        .expect("get task completed response encode should succeed");
+        black_box(frame);
+    });
 
     let response_frame = build_get_task_response_message(14, OPENSEARCH_3_7_0_TRANSPORT, &response)
         .expect("get task response encode should succeed");
+    let completed_response_frame = build_get_task_response_message(
+        14,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &completed_response,
+    )
+    .expect("get task completed response encode should succeed");
 
     let response_decode = measure("get_task_response_decode", ITERATIONS, || {
         let mut frame = black_box(response_frame.clone());
@@ -73,13 +103,22 @@ fn main() {
             read_get_task_response_message(black_box(&message)).expect("get task response decode");
         black_box(decoded);
     });
+    let completed_response_decode = measure("get_task_completed_response_decode", ITERATIONS, || {
+        let mut frame = black_box(completed_response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_get_task_response_message(black_box(&message))
+            .expect("get task completed response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
         .min(request_validate.ops_per_second)
         .min(response_encode.ops_per_second)
-        .min(response_decode.ops_per_second);
+        .min(completed_response_encode.ops_per_second)
+        .min(response_decode.ops_per_second)
+        .min(completed_response_decode.ops_per_second);
     println!("get_task_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 

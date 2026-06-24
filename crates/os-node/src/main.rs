@@ -2780,6 +2780,17 @@ fn pending_cluster_task_records_from_queue(
     queue.pending.iter().chain(queue.in_flight.iter())
 }
 
+fn cluster_task_records_from_queue(
+    queue: &PersistedClusterManagerTaskQueueState,
+) -> impl Iterator<Item = &ClusterManagerTaskRecord> {
+    queue
+        .pending
+        .iter()
+        .chain(queue.in_flight.iter())
+        .chain(queue.acknowledged.iter())
+        .chain(queue.failed.iter())
+}
+
 fn pending_cluster_task_wire_from_record(
     record: &ClusterManagerTaskRecord,
 ) -> os_transport::action::PendingClusterTaskWire {
@@ -3173,16 +3184,21 @@ fn get_task_response_from_identity(
     let Some(queue) = transport_identity.task_queue_state.as_ref() else {
         return os_transport::action::GetTaskResponseWire::empty();
     };
-    let matching_task = pending_cluster_task_records_from_queue(queue).find(|record| {
+    let matching_task = cluster_task_records_from_queue(queue).find(|record| {
         record.task_id as i64 == request_task_id
             && queue_task_node_id(record, transport_identity) == request.task_id.node_id
     });
     matching_task
         .map(|record| {
-            os_transport::action::GetTaskResponseWire::running(list_task_info_wire_from_record(
-                record,
-                transport_identity,
-            ))
+            let task = list_task_info_wire_from_record(record, transport_identity);
+            match record.state {
+                ClusterManagerTaskState::Queued | ClusterManagerTaskState::InFlight => {
+                    os_transport::action::GetTaskResponseWire::running(task)
+                }
+                ClusterManagerTaskState::Acknowledged | ClusterManagerTaskState::Failed => {
+                    os_transport::action::GetTaskResponseWire::completed(task)
+                }
+            }
         })
         .unwrap_or_else(os_transport::action::GetTaskResponseWire::empty)
 }
@@ -8660,6 +8676,19 @@ mod tests {
                     headers: BTreeMap::new(),
                     failure_reason: None,
                 }],
+                acknowledged: vec![ClusterManagerTaskRecord {
+                    task_id: 42,
+                    task: os_node::ClusterManagerTask {
+                        source: "remove-node [node-b]".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                            node_id: "node-b".to_string(),
+                        },
+                    },
+                    state: ClusterManagerTaskState::Acknowledged,
+                    parent_task_id: Some("parent-node:99".to_string()),
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
                 ..PersistedClusterManagerTaskQueueState::default()
             }),
         };
@@ -8704,6 +8733,37 @@ mod tests {
             task.description.as_deref(),
             Some("reroute shards [queued]")
         );
+
+        let request_frame = os_transport::action::build_get_task_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 42),
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        let response = build_get_task_response(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected get task response message");
+        };
+
+        let response = os_transport::action::read_get_task_response_message(&message).unwrap();
+        assert!(response.task_result_present);
+        assert!(response.completed);
+        let task = response.task.expect("expected completed task info");
+        assert_eq!(task.node_id, "steel-node-id");
+        assert_eq!(task.task_id, 42);
+        assert_eq!(task.action, "cluster:admin/voting_config/clear_exclusions");
+        assert!(!task.cancellable);
+        assert_eq!(task.parent_task_node, "parent-node");
+        assert_eq!(task.parent_task_id, Some(99));
     }
 
     #[test]

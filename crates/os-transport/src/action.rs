@@ -25617,6 +25617,14 @@ impl GetTaskResponseWire {
         }
     }
 
+    pub fn completed(task: ListTaskInfoWire) -> Self {
+        Self {
+            task_result_present: true,
+            completed: true,
+            task: Some(task),
+        }
+    }
+
     pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
         output.write_bool(self.task_result_present);
         if !self.task_result_present {
@@ -54779,8 +54787,8 @@ mod tests {
     }
 
     #[test]
-    fn get_task_response_wire_round_trips_running_task_result_subset() {
-        let response = GetTaskResponseWire::running(ListTaskInfoWire {
+    fn get_task_response_wire_round_trips_task_result_subset() {
+        let task = ListTaskInfoWire {
             node_id: "node-a".to_string(),
             task_id: 7,
             task_type: "transport".to_string(),
@@ -54794,15 +54802,25 @@ mod tests {
             parent_task_id: None,
             headers: BTreeMap::new(),
             cancellation_start_time_millis: None,
-        });
+        };
+        let response = GetTaskResponseWire::running(task.clone());
+        let completed = GetTaskResponseWire::completed(task);
         let mut output = StreamOutput::new();
         response.write(&mut output).unwrap();
 
         assert_eq!(GetTaskResponseWire::read(output.freeze()).unwrap(), response);
+
+        let mut output = StreamOutput::new();
+        completed.write(&mut output).unwrap();
+
+        assert_eq!(
+            GetTaskResponseWire::read(output.freeze()).unwrap(),
+            completed
+        );
     }
 
     #[test]
-    fn get_task_response_rejects_completed_payloads_until_lifecycle_is_mapped() {
+    fn get_task_response_rejects_completed_error_or_response_payloads() {
         let mut output = StreamOutput::new();
         output.write_bool(true);
         output.write_bool(true);
