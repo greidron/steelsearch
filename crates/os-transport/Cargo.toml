@@ -614,8 +614,8 @@ name = "pending-cluster-tasks-wire-benchmark"
 path = "benchmarks/pending_cluster_tasks_wire.rs"
 
 [[bin]]
-name = "get-task-reject-wire-benchmark"
-path = "benchmarks/get_task_reject_wire.rs"
+name = "get-task-wire-benchmark"
+path = "benchmarks/get_task_wire.rs"
 
 [[bin]]
 name = "segment-replication-stats-reject-wire-benchmark"

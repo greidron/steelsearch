@@ -1748,8 +1748,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-task transport execution requires runtime task result lifecycle mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-task transport adapter is available for the tracked running task result subset",
         },
         CANCEL_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -25465,7 +25465,7 @@ impl GetTaskRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution(&self) -> Result<(), TransportActionWireError> {
         if !self.task_id.is_set() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get task missing task id",
@@ -25484,31 +25484,78 @@ impl GetTaskRequestWire {
                 reason: "wait-for-completion requires runtime task result lifecycle mapping",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get task execution",
-            reason: "point task lookup requires runtime task result lifecycle mapping",
-        })
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GetTaskResponseWire {
     pub task_result_present: bool,
+    pub completed: bool,
+    pub task: Option<ListTaskInfoWire>,
 }
 
 impl GetTaskResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            task_result_present: false,
+            completed: false,
+            task: None,
+        }
+    }
+
+    pub fn running(task: ListTaskInfoWire) -> Self {
+        Self {
+            task_result_present: true,
+            completed: false,
+            task: Some(task),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_bool(self.task_result_present);
+        if !self.task_result_present {
+            return Ok(());
+        }
+        output.write_bool(self.completed);
+        let Some(task) = self.task.as_ref() else {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task result",
+                reason: "present task result requires a task info payload",
+            });
+        };
+        task.write(output);
+        output.write_bool(false);
+        output.write_bool(false);
+        Ok(())
+    }
+
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let task_result_present = input.read_bool()?;
-        if task_result_present {
+        if !task_result_present {
+            require_no_trailing_bytes(&input)?;
+            return Ok(Self::empty());
+        }
+        let completed = input.read_bool()?;
+        let task = ListTaskInfoWire::read(&mut input)?;
+        if input.read_bool()? {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get task result",
-                reason: "task result payloads are not decoded by this adapter yet",
+                shape: "get task error payload",
+                reason: "completed task error payloads are not decoded by this adapter yet",
+            });
+        }
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get task response payload",
+                reason: "completed task response payloads are not decoded by this adapter yet",
             });
         }
         require_no_trailing_bytes(&input)?;
         Ok(Self {
             task_result_present,
+            completed,
+            task: Some(task),
         })
     }
 }
@@ -25796,6 +25843,23 @@ pub fn read_get_task_request_message(
         });
     }
     GetTaskRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_task_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetTaskResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
 }
 
 pub fn read_get_task_response_message(
@@ -32816,7 +32880,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_TASK_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CANCEL_TASKS_ACTION_NAME).disposition,
@@ -54589,13 +54653,7 @@ mod tests {
 
         let decoded = GetTaskRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get task execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution().unwrap();
     }
 
     #[test]
@@ -54608,7 +54666,7 @@ mod tests {
             wait_for_completion: false,
         };
         assert!(matches!(
-            missing.reject_unsupported_execution(),
+            missing.validate_supported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get task missing task id",
                 ..
@@ -54620,7 +54678,7 @@ mod tests {
             ..GetTaskRequestWire::new("node-a".to_string(), 7)
         };
         assert!(matches!(
-            with_timeout.reject_unsupported_execution(),
+            with_timeout.validate_supported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get task timeout",
                 ..
@@ -54632,7 +54690,7 @@ mod tests {
             ..GetTaskRequestWire::new("node-a".to_string(), 7)
         };
         assert!(matches!(
-            wait.reject_unsupported_execution(),
+            wait.validate_supported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get task wait for completion",
                 ..
@@ -54641,14 +54699,54 @@ mod tests {
     }
 
     #[test]
-    fn get_task_response_rejects_task_result_payloads_until_lifecycle_is_mapped() {
+    fn get_task_response_wire_round_trips_running_task_result_subset() {
+        let response = GetTaskResponseWire::running(ListTaskInfoWire {
+            node_id: "node-a".to_string(),
+            task_id: 7,
+            task_type: "transport".to_string(),
+            action: "cluster:admin/reroute".to_string(),
+            description: Some("reroute shards [queued]".to_string()),
+            start_time_millis: 1,
+            running_time_nanos: 1,
+            cancellable: true,
+            cancelled: false,
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            cancellation_start_time_millis: None,
+        });
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(GetTaskResponseWire::read(output.freeze()).unwrap(), response);
+    }
+
+    #[test]
+    fn get_task_response_rejects_completed_payloads_until_lifecycle_is_mapped() {
         let mut output = StreamOutput::new();
         output.write_bool(true);
-
+        output.write_bool(true);
+        ListTaskInfoWire {
+            node_id: "node-a".to_string(),
+            task_id: 7,
+            task_type: "transport".to_string(),
+            action: "cluster:admin/reroute".to_string(),
+            description: Some("reroute shards [queued]".to_string()),
+            start_time_millis: 1,
+            running_time_nanos: 1,
+            cancellable: true,
+            cancelled: false,
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            cancellation_start_time_millis: None,
+        }
+        .write(&mut output);
+        output.write_bool(true);
         assert!(matches!(
             GetTaskResponseWire::read(output.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get task result",
+                shape: "get task error payload",
                 ..
             })
         ));
@@ -54663,28 +54761,34 @@ mod tests {
             panic!("expected get task request message");
         };
         assert_eq!(read_get_task_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_get_task_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get task execution",
-                ..
-            })
-        ));
+        read_get_task_request_message(&message)
+            .unwrap()
+            .validate_supported_execution()
+            .unwrap();
 
-        let message = TransportMessage {
-            request_id: 21,
-            status: TransportStatus::response(),
-            version: OPENSEARCH_3_7_0_TRANSPORT,
-            variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
-            body: BytesMut::from(&[0_u8][..]),
+        let response = GetTaskResponseWire::running(ListTaskInfoWire {
+            node_id: "node-a".to_string(),
+            task_id: 7,
+            task_type: "transport".to_string(),
+            action: "cluster:admin/reroute".to_string(),
+            description: Some("reroute shards [queued]".to_string()),
+            start_time_millis: 1,
+            running_time_nanos: 1,
+            cancellable: true,
+            cancelled: false,
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            cancellation_start_time_millis: None,
+        });
+        let mut frame =
+            build_get_task_response_message(21, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get task response message");
         };
         assert_eq!(
             read_get_task_response_message(&message).unwrap(),
-            GetTaskResponseWire {
-                task_result_present: false
-            }
+            response
         );
     }
 

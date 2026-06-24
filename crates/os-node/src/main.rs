@@ -995,6 +995,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/task/get") {
+        let response =
+            build_get_task_response(request_id, header_version_id, transport_identity, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/task/get[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/tasks/cancel") {
         let response = build_cancel_tasks_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -2884,6 +2908,70 @@ fn cancel_tasks_response_from_identity(
     }
 }
 
+fn build_get_task_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    request_body: &[u8],
+) -> Vec<u8> {
+    os_transport::action::build_get_task_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &get_task_response_from_identity(transport_identity, request_body),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_task_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+    request_body: &[u8],
+) -> os_transport::action::GetTaskResponseWire {
+    let Some(request) = decode_get_task_request_from_transport_body(request_body) else {
+        return os_transport::action::GetTaskResponseWire::empty();
+    };
+    if request.validate_supported_execution().is_err() {
+        return os_transport::action::GetTaskResponseWire::empty();
+    }
+    let Some(request_task_id) = request.task_id.id else {
+        return os_transport::action::GetTaskResponseWire::empty();
+    };
+    let Some(queue) = transport_identity.task_queue_state.as_ref() else {
+        return os_transport::action::GetTaskResponseWire::empty();
+    };
+    let matching_task = pending_cluster_task_records_from_queue(queue).find(|record| {
+        record.task_id as i64 == request_task_id
+            && queue_task_node_id(record, transport_identity) == request.task_id.node_id
+    });
+    matching_task
+        .map(|record| {
+            os_transport::action::GetTaskResponseWire::running(list_task_info_wire_from_record(
+                record,
+                transport_identity,
+            ))
+        })
+        .unwrap_or_else(os_transport::action::GetTaskResponseWire::empty)
+}
+
+fn decode_get_task_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetTaskRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_task_request_message(&message).ok()
+}
+
+fn decode_transport_message_from_body(body: &[u8]) -> Option<os_transport::TransportMessage> {
+    let len = i32::try_from(body.len()).ok()?;
+    let mut frame = BytesMut::with_capacity(body.len() + 6);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&len.to_be_bytes());
+    frame.extend_from_slice(body);
+    match os_transport::frame::decode_frame(&mut frame).ok().flatten()? {
+        os_transport::frame::DecodedFrame::Message(message) => Some(message),
+        os_transport::frame::DecodedFrame::Ping => None,
+    }
+}
+
 fn build_recovery_translog_operations_response(
     request_id: i64,
     header_version_id: u32,
@@ -3982,6 +4070,12 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:monitor/task/get") => Some(build_get_task_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+            body,
+        )),
         Some("cluster:admin/tasks/cancel") => {
             Some(build_cancel_tasks_response(
                 request_id,
@@ -8203,6 +8297,78 @@ mod tests {
         assert!(task.cancellable);
         assert!(!task.cancelled);
         assert_eq!(task.headers.get("x-opaque-id").map(String::as_str), Some("request-1"));
+    }
+
+    #[test]
+    fn get_task_transport_route_builds_opensearch_shaped_response_from_queue() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![ClusterManagerTaskRecord {
+                    task_id: 41,
+                    task: os_node::ClusterManagerTask {
+                        source: "reroute shards".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                ..PersistedClusterManagerTaskQueueState::default()
+            }),
+        };
+        let request_frame = os_transport::action::build_get_task_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 41),
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        let mut request_frame = request_frame;
+        let os_transport::frame::DecodedFrame::Message(request_message) =
+            os_transport::frame::decode_frame(&mut request_frame).unwrap().unwrap()
+        else {
+            panic!("expected get task request message");
+        };
+        assert_eq!(request_message.request_id, 82);
+
+        let response = build_get_task_response(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected get task response message");
+        };
+
+        assert_eq!(message.request_id, 82);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_get_task_response_message(&message).unwrap();
+        assert!(response.task_result_present);
+        assert!(!response.completed);
+        let task = response.task.expect("expected running task info");
+        assert_eq!(task.node_id, "steel-node-id");
+        assert_eq!(task.task_id, 41);
+        assert_eq!(task.action, "cluster:admin/reroute");
+        assert_eq!(
+            task.description.as_deref(),
+            Some("reroute shards [queued]")
+        );
     }
 
     #[test]

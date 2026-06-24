@@ -1,8 +1,10 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_get_task_request_message, read_get_task_request_message, GetTaskRequestWire,
+    build_get_task_request_message, build_get_task_response_message, read_get_task_request_message,
+    read_get_task_response_message, GetTaskRequestWire, GetTaskResponseWire, ListTaskInfoWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
+use std::collections::BTreeMap;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -10,8 +12,23 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = GetTaskRequestWire::new("node-a".to_string(), 7);
+    let response = GetTaskResponseWire::running(ListTaskInfoWire {
+        node_id: "node-a".to_string(),
+        task_id: 7,
+        task_type: "transport".to_string(),
+        action: "cluster:admin/reroute".to_string(),
+        description: Some("reroute shards [queued]".to_string()),
+        start_time_millis: 1,
+        running_time_nanos: 1,
+        cancellable: true,
+        cancelled: false,
+        parent_task_node: String::new(),
+        parent_task_id: None,
+        headers: BTreeMap::new(),
+        cancellation_start_time_millis: None,
+    });
 
-    let request_encode = measure("get_task_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("get_task_request_encode", ITERATIONS, || {
         let frame =
             build_get_task_request_message(14, OPENSEARCH_3_7_0_TRANSPORT, black_box(&request))
                 .expect("get task request encode should succeed");
@@ -21,29 +38,49 @@ fn main() {
     let request_frame = build_get_task_request_message(14, OPENSEARCH_3_7_0_TRANSPORT, &request)
         .expect("get task request encode should succeed");
 
-    let request_decode = measure("get_task_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("get_task_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded =
             read_get_task_request_message(black_box(&message)).expect("get task request decode");
         black_box(decoded);
     });
-    let reject_validate = measure("get_task_reject_validation", ITERATIONS, || {
+    let request_validate = measure("get_task_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded =
             read_get_task_request_message(black_box(&message)).expect("get task request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("get task execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_execution()
+            .expect("get task request should be supported");
+        black_box(decoded);
+    });
+
+    let response_encode = measure("get_task_response_encode", ITERATIONS, || {
+        let frame =
+            build_get_task_response_message(14, OPENSEARCH_3_7_0_TRANSPORT, black_box(&response))
+                .expect("get task response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame = build_get_task_response_message(14, OPENSEARCH_3_7_0_TRANSPORT, &response)
+        .expect("get task response encode should succeed");
+
+    let response_decode = measure("get_task_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded =
+            read_get_task_response_message(black_box(&message)).expect("get task response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("get_task_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("get_task_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

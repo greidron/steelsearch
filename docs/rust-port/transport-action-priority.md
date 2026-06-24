@@ -315,7 +315,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/point_in_time/readall` (rejected fail-closed)
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
-- `cluster:monitor/task/get` (rejected fail-closed)
+- `cluster:monitor/task/get` (implemented tracked running task result subset)
 - `cluster:admin/tasks/cancel` (implemented cancellable queued task info subset)
 - `indices:data/read/get`
 - `indices:data/read/mget`
@@ -2290,10 +2290,14 @@ The get-task boundary covers:
 
 - OpenSearch `GetTaskRequest` parent task, explicit task id, optional timeout,
   and wait-for-completion fields at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/task/get` until
-  runtime task result lifecycle and unknown-task error semantics are mapped;
-- explicit rejection for missing task id, timeout, wait-for-completion, point
-  lookup execution, and task-result response payloads.
+- OpenSearch `GetTaskResponse` running `TaskResult` payloads with task info for
+  tracked pending/in-flight cluster-manager tasks;
+- daemon transport first-request and follow-up routes render the OpenSearch
+  shaped response from the current task queue snapshot for explicit task ids;
+- empty get-task responses for unknown tracked task ids in the current subset;
+- explicit rejection for missing task id, timeout, wait-for-completion, and
+  completed task error/response payloads until those lifecycle semantics are
+  mapped.
 
 The cancel-tasks adapter covers:
 
@@ -5151,22 +5155,24 @@ single cancelled queued task info entry. The latest local release run is just
 under 1.0M ops/s, so task info string encoding remains the next transport-wire
 cost to watch while broader cancellation lifecycle semantics are added.
 
-Current get-task reject wire microbenchmark:
+Current get-task wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-task-reject-wire-benchmark
-get_task_reject_request_encode ops_per_second=1691104.07 nanos_per_op=591.33
-get_task_reject_request_decode ops_per_second=1833500.78 nanos_per_op=545.40
-get_task_reject_validation ops_per_second=1829225.54 nanos_per_op=546.68
-get_task_reject_wire_bottleneck_ops_per_second=1691104.07
+cargo run -p os-transport --release --bin get-task-wire-benchmark
+get_task_request_encode iterations=400000 elapsed_ms=234.590 ops_per_second=1705099.41 nanos_per_op=586.48
+get_task_request_decode iterations=400000 elapsed_ms=225.763 ops_per_second=1771771.83 nanos_per_op=564.41
+get_task_request_validate iterations=400000 elapsed_ms=225.438 ops_per_second=1774322.34 nanos_per_op=563.60
+get_task_response_encode iterations=400000 elapsed_ms=342.966 ops_per_second=1166296.71 nanos_per_op=857.41
+get_task_response_decode iterations=400000 elapsed_ms=338.342 ops_per_second=1182236.52 nanos_per_op=845.85
+get_task_wire_bottleneck_ops_per_second=1166296.71
 ```
 
-The current get-task fail-closed boundary bottleneck is request encode. The
-validation path is effectively the same cost as decode plus a small unsupported
-execution check, so the rejection boundary itself does not introduce a new
-performance bottleneck. At roughly 1.69M ops/s in the latest local release run,
-this path is in the same range as the other lightweight admin transport
-adapters.
+The current get-task wire bottleneck is running response encode for a single
+task info entry. Request validation remains decode-adjacent at roughly 1.77M
+ops/s, while the response path is roughly 1.17M ops/s because it carries the
+task info strings. This is in the same range as the list/cancel task response
+paths, so the new point lookup subset does not introduce a separate transport
+wire bottleneck.
 
 Current get wire microbenchmark:
 

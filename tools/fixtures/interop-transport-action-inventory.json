@@ -1341,8 +1341,8 @@
       "transport_action": "TransportGetTaskAction",
       "request_wire_type": "GetTaskRequest",
       "response_wire_type": "GetTaskResponse",
-      "disposition": "rejected",
-      "reason": "Point task lookup requires runtime task result lifecycle mapping before Steelsearch can serve OpenSearch get-task semantics."
+      "disposition": "implemented",
+      "reason": "Get-task transport adapter serves tracked running task result payloads for explicit task ids."
     },
     {
       "action_name": "cluster:admin/tasks/cancel",
