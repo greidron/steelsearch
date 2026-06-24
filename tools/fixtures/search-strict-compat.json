@@ -3080,6 +3080,29 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "track_scores_field_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_scores=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] track scores field sort search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",

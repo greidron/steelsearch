@@ -96,6 +96,7 @@ def main() -> int:
             "rescore_search",
             "search_coordinator_knobs_search",
             "allow_partial_search_results_true_search",
+            "track_scores_field_sort_search",
             "completion_suggest_search",
             "highlight_search",
             "terms_aggregation",

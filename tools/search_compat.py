@@ -1618,6 +1618,19 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 "failed": shards.get("failed"),
             },
         }
+    if kind == "search_score_rendering":
+        hits_section = body.get("hits") or {}
+        hits = hits_section.get("hits") or []
+        return {
+            "status": response["status"],
+            "max_score_is_number": isinstance(hits_section.get("max_score"), (int, float)),
+            "scores_are_numbers": [
+                isinstance(hit.get("_score"), (int, float))
+                for hit in hits
+                if isinstance(hit, dict)
+            ],
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+        }
     if kind == "search_result_semantic":
         hits = ((body.get("hits") or {}).get("hits") or [])
         total = (body.get("hits") or {}).get("total")
