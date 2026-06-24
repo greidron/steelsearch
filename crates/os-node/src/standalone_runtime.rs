@@ -7666,6 +7666,10 @@ impl SteelNode {
                                 .with_json_body(body);
                         search_request.headers = request.headers.clone();
                         search_request.query_params = request.query_params.clone();
+                        search_request.query_params.insert(
+                            "__steelsearch_indices_explicit".to_string(),
+                            (header_target.is_some() || target.is_some()).to_string(),
+                        );
                         msearch_response_with_status(
                             self.handle_index_search_route(effective_target, &search_request),
                         )
@@ -7687,6 +7691,10 @@ impl SteelNode {
                         }));
                 search_request.headers = request.headers.clone();
                 search_request.query_params = request.query_params.clone();
+                search_request.query_params.insert(
+                    "__steelsearch_indices_explicit".to_string(),
+                    target.is_some().to_string(),
+                );
                 serde_json::json!({
                     "responses": [msearch_response_with_status(
                         self.handle_index_search_route(effective_target, &search_request)
@@ -18558,7 +18566,7 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
 
 fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> Option<RestResponse> {
     let mut validation_errors = Vec::new();
-    if index != "_all" {
+    if pit_search_uses_explicit_indices(index, request) {
         validation_errors.push("[indices] cannot be used with point in time");
     }
     if pit_search_uses_non_default_indices_options(&request.query_params) {
@@ -18598,6 +18606,13 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
             "status": 400
         }),
     ))
+}
+
+fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool {
+    if let Some(value) = request.query_params.get("__steelsearch_indices_explicit") {
+        return value == "true";
+    }
+    index != "_all" || request.path != "/_search"
 }
 
 fn pit_search_uses_non_default_indices_options(query_params: &BTreeMap<String, String>) -> bool {
@@ -35009,6 +35024,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .contains("[indices] cannot be used with point in time"));
 
+        let explicit_all_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_all/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(explicit_all_pit_search.status, 400);
+        assert_eq!(
+            explicit_all_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(explicit_all_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indices] cannot be used with point in time"));
+
         let routed_pit_search = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -37074,6 +37109,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .as_str()
                 .unwrap()
                 .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        );
+
+        let targeted_pit_body = format!(
+            "{{}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let targeted_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-msearch-pit-000001/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(targeted_pit_body.into_bytes()),
+        );
+        assert_eq!(targeted_msearch.status, 200);
+        assert_eq!(targeted_msearch.body["responses"][0]["status"], 400);
+        assert!(
+            targeted_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[indices] cannot be used with point in time")
+        );
+
+        let explicit_header_pit_body = format!(
+            "{{\"index\":\"_all\"}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let explicit_header_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(explicit_header_pit_body.into_bytes()),
+        );
+        assert_eq!(explicit_header_msearch.status, 200);
+        assert_eq!(explicit_header_msearch.body["responses"][0]["status"], 400);
+        assert!(
+            explicit_header_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[indices] cannot be used with point in time")
         );
     }
 
