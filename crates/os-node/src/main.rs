@@ -7,6 +7,7 @@ use os_cluster_state::{
     ShardRoutingStatePrefix,
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
+use os_node::standalone_runtime::{PitContext, StoredDocument};
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
     bind_rest_http_listener, collect_live_publication_acknowledgement_details,
@@ -21,7 +22,6 @@ use os_node::{
     ProductionMembershipState, ReleaseReadinessChecklist, RestServerConfig, RestTlsConfig,
     SecurityBoundaryPolicy, SteelNode,
 };
-use os_node::standalone_runtime::PitContext;
 use os_node_rest_core::{
     parse_authentication_users_json, AuthenticationUsersFile, SecurityBoundaryState,
 };
@@ -29,6 +29,7 @@ use os_stream::StreamInput;
 use os_transport::compression::decompress_deflate_body;
 use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
 use os_transport::internal_transport::{InternalTransportError, RemoteTransportQueueGate};
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -100,20 +101,35 @@ struct DevTransportCoordinationState {
 struct DevTransportPitBindings {
     contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
     next_id: Arc<Mutex<u64>>,
+    created_indices: Arc<Mutex<BTreeSet<String>>>,
+    documents: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
+    metadata_manifest: Arc<Mutex<Value>>,
 }
 
 fn dev_transport_pit_bindings() -> &'static DevTransportPitBindings {
     DEV_TRANSPORT_PIT_BINDINGS.get_or_init(|| DevTransportPitBindings {
         contexts: Arc::new(Mutex::new(BTreeMap::new())),
         next_id: Arc::new(Mutex::new(0)),
+        created_indices: Arc::new(Mutex::new(BTreeSet::new())),
+        documents: Arc::new(Mutex::new(BTreeMap::new())),
+        metadata_manifest: Arc::new(Mutex::new(serde_json::json!({ "indices": {} }))),
     })
 }
 
 fn bind_dev_transport_pit_store(
     contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
     next_id: Arc<Mutex<u64>>,
+    created_indices: Arc<Mutex<BTreeSet<String>>>,
+    documents: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
+    metadata_manifest: Arc<Mutex<Value>>,
 ) {
-    let _ = DEV_TRANSPORT_PIT_BINDINGS.set(DevTransportPitBindings { contexts, next_id });
+    let _ = DEV_TRANSPORT_PIT_BINDINGS.set(DevTransportPitBindings {
+        contexts,
+        next_id,
+        created_indices,
+        documents,
+        metadata_manifest,
+    });
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -357,7 +373,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.register_default_dev_endpoints(config.cluster_name.clone(), cluster_uuid);
     node.register_development_cluster_endpoints(cluster_view);
     node.start_rest();
-    bind_dev_transport_pit_store(Arc::clone(&node.pit_contexts), Arc::clone(&node.next_pit_id));
+    bind_dev_transport_pit_store(
+        Arc::clone(&node.pit_contexts),
+        Arc::clone(&node.next_pit_id),
+        Arc::clone(&node.created_indices_state),
+        Arc::clone(&node.documents_state),
+        Arc::clone(&node.metadata_manifest_state),
+    );
     let transport_capture_path = config.data_path.join("transport-seed-capture.json");
     let transport_identity = DevTransportIdentity {
         cluster_name: config.cluster_name.clone(),
@@ -3668,8 +3690,11 @@ fn build_local_create_pit_response(
     let creation_time_millis = now_millis as i64;
     let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
     let keep_alive_millis_u64 = keep_alive_millis.max(1) as u64;
+    let bindings = dev_transport_pit_bindings();
+    let resolved_indices = transport_default_pit_indices(bindings);
+    let documents = transport_pit_document_snapshot(bindings, &resolved_indices);
+    let total_shards = transport_pit_total_primary_shards(bindings, &resolved_indices);
     let pit_id = {
-        let bindings = dev_transport_pit_bindings();
         let mut next_id = bindings
             .next_id
             .lock()
@@ -3683,8 +3708,8 @@ fn build_local_create_pit_response(
             .insert(
                 pit_id.clone(),
                 PitContext {
-                    indices: Vec::new(),
-                    documents: BTreeMap::new(),
+                    indices: resolved_indices,
+                    documents,
                     keep_alive_millis: keep_alive_millis_u64,
                     expires_at_millis: now_millis + u128::from(keep_alive_millis_u64),
                     creation_time_millis: now_millis,
@@ -3698,11 +3723,68 @@ fn build_local_create_pit_response(
         &os_transport::action::OpenSearchCreatePitResponseWire::success(
             pit_id,
             creation_time_millis,
-            0,
+            usize_to_i32_saturating(total_shards),
         ),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn transport_default_pit_indices(bindings: &DevTransportPitBindings) -> Vec<String> {
+    let mut indices = bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    indices.sort();
+    indices
+}
+
+fn transport_pit_document_snapshot(
+    bindings: &DevTransportPitBindings,
+    resolved_indices: &[String],
+) -> BTreeMap<String, StoredDocument> {
+    bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned")
+        .iter()
+        .filter_map(|(key, record)| {
+            let (doc_index, _, _) = split_transport_document_key(key)?;
+            resolved_indices
+                .iter()
+                .any(|candidate| candidate == doc_index)
+                .then(|| (key.clone(), record.clone()))
+        })
+        .collect()
+}
+
+fn transport_pit_total_primary_shards(
+    bindings: &DevTransportPitBindings,
+    resolved_indices: &[String],
+) -> usize {
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    resolved_indices
+        .iter()
+        .map(|index| {
+            let settings = &manifest["indices"][index]["settings"];
+            settings["index"]["number_of_shards"]
+                .as_str()
+                .or_else(|| settings["number_of_shards"].as_str())
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(1)
+        })
+        .sum()
+}
+
+fn split_transport_document_key(key: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = key.splitn(3, ':');
+    Some((parts.next()?, parts.next()?, parts.next()?))
 }
 
 fn time_value_wire_to_millis(time_value: &os_transport::action::TimeValueWire) -> i64 {
@@ -3724,6 +3806,10 @@ fn u128_to_i64_saturating(value: u128) -> i64 {
 
 fn u64_to_i64_saturating(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+fn usize_to_i32_saturating(value: usize) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
@@ -3836,10 +3922,7 @@ fn build_local_get_all_pits_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn prune_expired_transport_pits(
-    contexts: &mut BTreeMap<String, PitContext>,
-    now_millis: u128,
-) {
+fn prune_expired_transport_pits(contexts: &mut BTreeMap<String, PitContext>, now_millis: u128) {
     contexts.retain(|_, context| context.expires_at_millis > now_millis);
 }
 
@@ -3893,10 +3976,12 @@ fn get_all_transport_pits_response(
     } else {
         os_transport::action::OpenSearchGetAllPitsResponseWire::with_nodes(
             transport_identity.cluster_name.clone(),
-            vec![os_transport::action::OpenSearchGetAllPitsNodeResponseWire::new(
-                discovery_node_wire_from_identity(transport_identity),
-                pit_infos,
-            )],
+            vec![
+                os_transport::action::OpenSearchGetAllPitsNodeResponseWire::new(
+                    discovery_node_wire_from_identity(transport_identity),
+                    pit_infos,
+                ),
+            ],
         )
     }
 }
@@ -10363,6 +10448,56 @@ mod tests {
             .next_id
             .lock()
             .expect("dev transport next PIT id lock poisoned") = 0;
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {}
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-pit-000001".to_string());
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-pit-000001:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "before-pit" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "2"
+                        }
+                    }
+                }
+            }
+        });
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -10385,7 +10520,9 @@ mod tests {
         )
         .unwrap();
         let create_body = &create_frame[6..];
-        assert!(create_pit_request_supports_local_lifecycle_subset(create_body));
+        assert!(create_pit_request_supports_local_lifecycle_subset(
+            create_body
+        ));
 
         let create_response = build_local_create_pit_response(
             93,
@@ -10403,12 +10540,37 @@ mod tests {
         let create_response =
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
         assert_eq!(create_response.pit_id, "pit-1");
-        assert_eq!(create_response.total_shards, 0);
+        assert_eq!(create_response.total_shards, 2);
         assert!(dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key("pit-1"));
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-pit-000001:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "after-pit" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        let pit_context = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get("pit-1")
+            .cloned()
+            .expect("pit context should be allocated");
+        assert_eq!(pit_context.indices, vec!["logs-pit-000001".to_string()]);
+        assert!(pit_context.documents.contains_key("logs-pit-000001:doc-1:"));
+        assert!(!pit_context.documents.contains_key("logs-pit-000001:doc-2:"));
 
         let list_response = build_local_get_all_pits_response(
             94,
@@ -10496,7 +10658,9 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(delete_pit_request_supports_local_lifecycle_subset(&frame[6..]));
+        assert!(delete_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
     }
 
     #[test]
