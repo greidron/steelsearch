@@ -2,7 +2,7 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_cancel_tasks_request_message, build_cancel_tasks_response_message,
     read_cancel_tasks_request_message, read_cancel_tasks_response_message, CancelTasksRequestWire,
-    CancelTasksResponseWire, ListTaskInfoWire,
+    CancelTasksResponseWire, ListTaskInfoWire, TaskIdWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::collections::BTreeMap;
@@ -12,7 +12,13 @@ use std::time::Instant;
 const ITERATIONS: usize = 400_000;
 
 fn main() {
-    let request = CancelTasksRequestWire::default();
+    let request = CancelTasksRequestWire {
+        task_id: TaskIdWire {
+            node_id: "node-a".to_string(),
+            id: Some(7),
+        },
+        ..CancelTasksRequestWire::default()
+    };
     let response = CancelTasksResponseWire {
         task_failure_count: 0,
         node_failure_count: 0,

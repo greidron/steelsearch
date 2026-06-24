@@ -25623,12 +25623,6 @@ impl CancelTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.task_id.is_set() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks task id filter",
-                reason: "point task cancellation requires runtime task lifecycle mapping",
-            });
-        }
         if self.parent_task_filter.is_set() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cancel tasks parent task filter",
@@ -54813,13 +54807,7 @@ mod tests {
             },
             ..CancelTasksRequestWire::default()
         };
-        assert!(matches!(
-            by_task.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks task id filter",
-                ..
-            })
-        ));
+        by_task.validate_supported_subset().unwrap();
 
         let by_action = CancelTasksRequestWire {
             actions: vec!["indices:data/read/search".to_string()],
@@ -54902,7 +54890,13 @@ mod tests {
 
     #[test]
     fn cancel_tasks_transport_messages_bind_action_frames() {
-        let request = CancelTasksRequestWire::default();
+        let request = CancelTasksRequestWire {
+            task_id: TaskIdWire {
+                node_id: "node-a".to_string(),
+                id: Some(7),
+            },
+            ..CancelTasksRequestWire::default()
+        };
         let mut frame =
             build_cancel_tasks_request_message(20, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {

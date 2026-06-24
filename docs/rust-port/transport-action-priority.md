@@ -2301,18 +2301,19 @@ The get-task boundary covers:
 
 The cancel-tasks adapter covers:
 
-- OpenSearch `CancelTasksRequest` parent task, unset task id filter, unset
-  parent task filter, no node filters, no action filters, no timeout, default
-  reason `by user request`, and `wait_for_completion=false`;
+- OpenSearch `CancelTasksRequest` parent task, unset or explicit task id
+  filter, unset parent task filter, no node filters, no action filters, no
+  timeout, default reason `by user request`, and `wait_for_completion=false`;
 - OpenSearch `CancelTasksResponse` with no task failures, no node failures, and
-  cancelled task info entries for tracked queued cluster-manager tasks;
+  cancelled task info entries for all tracked queued cluster-manager tasks or
+  the requested tracked queued task id;
 - daemon transport first-request and follow-up routes render the OpenSearch
   shaped response from the current task queue snapshot for the supported subset;
-- explicit rejection for task id filters, parent task filters, node filters,
-  action filters, timeout, custom reason, wait-for-completion, non-empty task
-  failure payloads, non-empty node failure payloads, detailed task status
-  payloads, and task resource stats until broader runtime task cancellation
-  lifecycle semantics are mapped.
+- explicit rejection for parent task filters, node filters, action filters,
+  timeout, custom reason, wait-for-completion, non-empty task failure payloads,
+  non-empty node failure payloads, detailed task status payloads, and task
+  resource stats until broader runtime task cancellation lifecycle semantics
+  are mapped.
 
 The bulk adapter covers:
 
@@ -5143,17 +5144,18 @@ Current cancel-tasks wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cancel-tasks-wire-benchmark
-cancel_tasks_request_encode ops_per_second=1436563.19 nanos_per_op=696.11
-cancel_tasks_response_encode ops_per_second=995467.98 nanos_per_op=1004.55
-cancel_tasks_request_decode ops_per_second=1456663.11 nanos_per_op=686.50
-cancel_tasks_response_decode ops_per_second=1164192.91 nanos_per_op=858.96
-cancel_tasks_wire_bottleneck_ops_per_second=995467.98
+cancel_tasks_request_encode iterations=400000 elapsed_ms=309.156 ops_per_second=1293844.95 nanos_per_op=772.89
+cancel_tasks_response_encode iterations=400000 elapsed_ms=423.429 ops_per_second=944668.81 nanos_per_op=1058.57
+cancel_tasks_request_decode iterations=400000 elapsed_ms=299.690 ops_per_second=1334714.29 nanos_per_op=749.22
+cancel_tasks_response_decode iterations=400000 elapsed_ms=400.549 ops_per_second=998628.97 nanos_per_op=1001.37
+cancel_tasks_wire_bottleneck_ops_per_second=944668.81
 ```
 
 The current cancel-tasks wire bottleneck is non-empty response encode for a
-single cancelled queued task info entry. The latest local release run is just
-under 1.0M ops/s, so task info string encoding remains the next transport-wire
-cost to watch while broader cancellation lifecycle semantics are added.
+single cancelled queued task info entry. The latest local release run uses an
+explicit task id request and remains just under 1.0M ops/s, so task info string
+encoding remains the next transport-wire cost to watch while broader
+cancellation lifecycle semantics are added.
 
 Current get-task wire microbenchmark:
 

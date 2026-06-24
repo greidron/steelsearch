@@ -1020,7 +1020,12 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/tasks/cancel") {
-        let response = build_cancel_tasks_response(request_id, header_version_id, transport_identity);
+        let response = build_cancel_tasks_response_for_request(
+            request_id,
+            header_version_id,
+            transport_identity,
+            Some(&body),
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/tasks/cancel[n]"),
@@ -2879,10 +2884,19 @@ fn build_cancel_tasks_response(
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
+    build_cancel_tasks_response_for_request(request_id, header_version_id, transport_identity, None)
+}
+
+fn build_cancel_tasks_response_for_request(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    request_body: Option<&[u8]>,
+) -> Vec<u8> {
     os_transport::action::build_cancel_tasks_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &cancel_tasks_response_from_identity(transport_identity),
+        &cancel_tasks_response_from_identity(transport_identity, request_body),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -2890,22 +2904,49 @@ fn build_cancel_tasks_response(
 
 fn cancel_tasks_response_from_identity(
     transport_identity: &DevTransportIdentity,
+    request_body: Option<&[u8]>,
 ) -> os_transport::action::CancelTasksResponseWire {
+    let request = request_body
+        .and_then(decode_cancel_tasks_request_from_transport_body)
+        .unwrap_or_default();
     let Some(queue) = transport_identity.task_queue_state.as_ref() else {
         return os_transport::action::CancelTasksResponseWire::empty();
     };
-    os_transport::action::CancelTasksResponseWire {
-        task_failure_count: 0,
-        node_failure_count: 0,
-        tasks: queue
+    let tasks = if request.task_id.is_set() {
+        queue
+            .pending
+            .iter()
+            .filter(|record| {
+                Some(record.task_id as i64) == request.task_id.id
+                    && queue_task_node_id(record, transport_identity) == request.task_id.node_id
+                    && record.state == ClusterManagerTaskState::Queued
+            })
+            .map(|record| {
+                list_task_info_wire_from_record_with_cancel_state(record, transport_identity, true)
+            })
+            .collect()
+    } else {
+        queue
             .pending
             .iter()
             .filter(|record| record.state == ClusterManagerTaskState::Queued)
             .map(|record| {
                 list_task_info_wire_from_record_with_cancel_state(record, transport_identity, true)
             })
-            .collect(),
+            .collect()
+    };
+    os_transport::action::CancelTasksResponseWire {
+        task_failure_count: 0,
+        node_failure_count: 0,
+        tasks,
     }
+}
+
+fn decode_cancel_tasks_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::CancelTasksRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cancel_tasks_request_message(&message).ok()
 }
 
 fn build_get_task_response(
@@ -4077,10 +4118,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             body,
         )),
         Some("cluster:admin/tasks/cancel") => {
-            Some(build_cancel_tasks_response(
+            Some(build_cancel_tasks_response_for_request(
                 request_id,
                 header_version_id,
                 transport_identity,
+                Some(body),
             ))
         }
         Some("internal:cluster/request_pre_vote") => Some(build_pre_vote_response(
@@ -8434,6 +8476,87 @@ mod tests {
         assert_eq!(task.task_id, 31);
         assert_eq!(task.action, "cluster:admin/reroute");
         assert!(task.cancellable);
+        assert!(task.cancelled);
+    }
+
+    #[test]
+    fn cancel_tasks_transport_route_filters_by_requested_task_id() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![
+                    ClusterManagerTaskRecord {
+                        task_id: 31,
+                        task: os_node::ClusterManagerTask {
+                            source: "reroute shards".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 33,
+                        task: os_node::ClusterManagerTask {
+                            source: "background".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::BackgroundWorker {
+                                worker: "fixture-worker".to_string(),
+                                action: "cluster:admin/background".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                ],
+                ..PersistedClusterManagerTaskQueueState::default()
+            }),
+        };
+        let request = os_transport::action::CancelTasksRequestWire {
+            task_id: os_transport::action::TaskIdWire {
+                node_id: "steel-node-id".to_string(),
+                id: Some(31),
+            },
+            ..os_transport::action::CancelTasksRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_cancel_tasks_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        let response = build_cancel_tasks_response_for_request(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            Some(&request_body),
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected cancel tasks response message");
+        };
+
+        assert_eq!(message.request_id, 83);
+        let response = os_transport::action::read_cancel_tasks_response_message(&message).unwrap();
+        assert_eq!(response.tasks.len(), 1);
+        let task = &response.tasks[0];
+        assert_eq!(task.node_id, "steel-node-id");
+        assert_eq!(task.task_id, 31);
         assert!(task.cancelled);
     }
 
