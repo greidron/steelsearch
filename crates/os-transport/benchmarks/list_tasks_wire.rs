@@ -24,6 +24,7 @@ fn main() {
         },
         nodes: vec!["node-a".to_string()],
         actions: vec!["cluster:admin/*".to_string()],
+        detailed: true,
         ..ListTasksRequestWire::default()
     };
     let response = ListTasksResponseWire {

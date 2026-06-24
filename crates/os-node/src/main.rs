@@ -8618,6 +8618,7 @@ mod tests {
             },
             nodes: vec!["remote-node-id".to_string()],
             actions: vec!["cluster:admin/voting_config/*".to_string()],
+            detailed: true,
             ..os_transport::action::ListTasksRequestWire::default()
         };
         let request_frame = os_transport::action::build_list_tasks_request_message(

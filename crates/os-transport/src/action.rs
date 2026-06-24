@@ -25226,12 +25226,6 @@ impl ListTasksRequestWire {
                 reason: "list-tasks timeout is not mapped by the list-tasks adapter yet",
             });
         }
-        if self.detailed {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks detail flag",
-                reason: "detailed task status is not encoded by the list-tasks adapter yet",
-            });
-        }
         if self.wait_for_completion {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks wait for completion",
@@ -54584,6 +54578,7 @@ mod tests {
             },
             nodes: vec!["node-a".to_string()],
             actions: vec!["cluster:admin/*".to_string()],
+            detailed: true,
             ..ListTasksRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -54596,19 +54591,7 @@ mod tests {
     }
 
     #[test]
-    fn list_tasks_request_rejects_detail_and_wait_shapes() {
-        let detailed = ListTasksRequestWire {
-            detailed: true,
-            ..ListTasksRequestWire::default()
-        };
-        assert!(matches!(
-            detailed.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks detail flag",
-                ..
-            })
-        ));
-
+    fn list_tasks_request_rejects_wait_shape() {
         let wait = ListTasksRequestWire {
             wait_for_completion: true,
             ..ListTasksRequestWire::default()
