@@ -9369,6 +9369,7 @@ impl SteelNode {
         };
         let mut paged_hits: Vec<Value> = hits.iter().skip(from).take(size).cloned().collect();
         append_search_hit_sort_values(&mut paged_hits, body.get("sort"));
+        let render_scores = search_response_should_render_scores(&body);
         let scroll_id = request.query_params.get("scroll").map(|keep_alive| {
             self.store_scroll_context(remaining_hits.clone(), size, keep_alive)
         });
@@ -9404,6 +9405,13 @@ impl SteelNode {
             }
         }
         apply_search_source_projection_to_hits(&mut paged_hits, &body);
+        if !render_scores {
+            for hit in &mut paged_hits {
+                if let Some(hit_object) = hit.as_object_mut() {
+                    hit_object.insert("_score".to_string(), Value::Null);
+                }
+            }
+        }
         let mut response = serde_json::Map::new();
         if let Some(pit_id) = point_in_time_response_id {
             response.insert("pit_id".to_string(), Value::String(pit_id));
@@ -9474,15 +9482,17 @@ impl SteelNode {
                 }),
             );
         }
-        hits_body.insert(
-            "max_score".to_string(),
+        let max_score = if render_scores {
             paged_hits
                 .iter()
                 .filter_map(|hit| hit.get("_score").and_then(Value::as_f64))
                 .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
                 .map(Value::from)
-                .unwrap_or(Value::Null),
-        );
+                .unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        };
+        hits_body.insert("max_score".to_string(), max_score);
         hits_body.insert("hits".to_string(), Value::Array(paged_hits));
         response.insert("hits".to_string(), Value::Object(hits_body));
         if terminated_early {
@@ -18616,9 +18626,11 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "seq_no_primary_term",
         "script_fields",
         "slice",
+        "sort",
         "stored_fields",
         "suggest",
         "terminate_after",
+        "track_scores",
         "version",
         "_source",
         "_source_excludes",
@@ -19132,7 +19144,7 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
-    for option in ["version", "seq_no_primary_term", "explain", "profile"] {
+    for option in ["version", "seq_no_primary_term", "explain", "profile", "track_scores"] {
         if body.get(option).is_some_and(|value| !value.is_boolean()) {
             return Some(build_unsupported_search_response(&format!(
                 "unsupported search option [{option}]"
@@ -19374,7 +19386,7 @@ fn apply_search_source_query_params(
         };
         object.insert(body_key.to_string(), Value::String(raw.clone()));
     }
-    for field in ["version", "seq_no_primary_term", "explain"] {
+    for field in ["version", "seq_no_primary_term", "explain", "track_scores"] {
         let Some(raw) = query_params.get(field) else {
             continue;
         };
@@ -21748,6 +21760,19 @@ fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
             hit_object.insert("sort".to_string(), Value::Array(sort_values));
         }
     }
+}
+
+fn search_response_should_render_scores(body: &Value) -> bool {
+    let Some(sort_fields) = body.get("sort").and_then(Value::as_array) else {
+        return true;
+    };
+    if sort_fields.is_empty() || body.get("track_scores") == Some(&Value::Bool(true)) {
+        return true;
+    }
+    sort_fields
+        .iter()
+        .filter_map(sort_field_name)
+        .any(|field_name| field_name == "_score")
 }
 
 fn sort_field_name(sort_field: &Value) -> Option<&str> {
@@ -41443,6 +41468,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             sorted_window.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["tenant-b"])
         );
+        assert!(sorted_window.body["hits"]["max_score"].is_null());
+        assert!(sorted_window.body["hits"]["hits"][0]["_score"].is_null());
 
         let array_indices_boost = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
@@ -41658,6 +41685,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             boolean_execution_query_params.body["hits"]["hits"][0]["_id"],
             "doc-1"
         );
+        assert!(boolean_execution_query_params.body["hits"]["max_score"].is_number());
+        assert!(boolean_execution_query_params.body["hits"]["hits"][0]["_score"].is_number());
+
+        let body_track_scores = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }],
+                    "track_scores": true,
+                    "size": 1
+                })),
+        );
+        assert_eq!(body_track_scores.status, 200);
+        assert!(body_track_scores.body["hits"]["max_score"].is_number());
+        assert!(body_track_scores.body["hits"]["hits"][0]["_score"].is_number());
 
         let cancel_after_time_query_param = node.handle_rest_request(
             RestRequest::new(
@@ -41719,6 +41761,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_version_body.body["error"]["reason"],
             "unsupported search option [version]"
+        );
+
+        let invalid_track_scores_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "track_scores": "true"
+                })),
+        );
+        assert_eq!(invalid_track_scores_body.status, 400);
+        assert_eq!(
+            invalid_track_scores_body.body["error"]["reason"],
+            "unsupported search option [track_scores]"
         );
 
         let disabled_explain_body = node.handle_rest_request(
