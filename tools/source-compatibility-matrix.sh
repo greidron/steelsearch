@@ -67,7 +67,7 @@ route_status() {
     "GET /_cluster/health"|"PUT /{index}"|"GET /{index}"|"DELETE /{index}"|"PUT /{index}/_doc/{id}"|"GET /{index}/_doc/{id}")
       echo "stubbed"
       ;;
-    "POST /{index}/_search/point_in_time"|"DELETE /_search/point_in_time"|"DELETE /_search/point_in_time/_all"|"GET /_search/point_in_time/_all")
+    "POST /{index}/_search/point_in_time"|"DELETE /_search/point_in_time"|"DELETE /_search/point_in_time/_all"|"GET /_search/point_in_time/_all"|"GET /_cat/pit_segments"|"GET /_cat/pit_segments/_all")
       echo "implemented"
       ;;
     *)
@@ -81,16 +81,23 @@ action_status() {
   local action="$2"
 
   if [[ "${source}" == "${KNN_ROOT}"/* ]]; then
-    echo "planned"
+    case "${action}" in
+      KNNStatsAction.INSTANCE|KNNWarmupAction.INSTANCE|UpdateModelMetadataAction.INSTANCE|TrainingJobRouteDecisionInfoAction.INSTANCE|GetModelAction.INSTANCE|DeleteModelAction.INSTANCE|TrainingJobRouterAction.INSTANCE|TrainingModelAction.INSTANCE|RemoveModelFromCacheAction.INSTANCE|SearchModelAction.INSTANCE|UpdateModelGraveyardAction.INSTANCE|ClearCacheAction.INSTANCE)
+        echo "partial"
+        ;;
+      *)
+        echo "planned"
+        ;;
+    esac
     return
   fi
 
   case "${action}" in
-    CreatePitAction.INSTANCE|DeletePitAction.INSTANCE|PitSegmentsAction.INSTANCE|GetAllPitsAction.INSTANCE)
+    MainAction.INSTANCE|NodesInfoAction.INSTANCE|RemoteInfoAction.INSTANCE|NodesStatsAction.INSTANCE|WlmStatsAction.INSTANCE|NodesUsageAction.INSTANCE|NodesHotThreadsAction.INSTANCE|ListTasksAction.INSTANCE|GetTaskAction.INSTANCE|CancelTasksAction.INSTANCE|ClusterStateAction.INSTANCE|GetTermVersionAction.INSTANCE|ClusterHealthAction.INSTANCE|ClusterSearchShardsAction.INSTANCE|PendingClusterTasksAction.INSTANCE|GetRepositoriesAction.INSTANCE|IndicesStatsAction.INSTANCE|IndicesSegmentsAction.INSTANCE|IndicesShardStoresAction.INSTANCE|GetMappingsAction.INSTANCE|GetFieldMappingsAction.INSTANCE|RefreshAction.INSTANCE|GetAliasesAction.INSTANCE|GetSettingsAction.INSTANCE|IndexAction.INSTANCE|GetAction.INSTANCE|DeleteAction.INSTANCE|UpdateAction.INSTANCE|MultiGetAction.INSTANCE|BulkAction.INSTANCE|ClearScrollAction.INSTANCE|RecoveryAction.INSTANCE|SegmentReplicationStatsAction.INSTANCE|GetDataStreamAction.INSTANCE|DataStreamsStatsAction.INSTANCE|ListViewNamesAction.INSTANCE|ListDanglingIndicesAction.INSTANCE|FindDanglingIndexAction.INSTANCE|CreatePitAction.INSTANCE|DeletePitAction.INSTANCE|PitSegmentsAction.INSTANCE|GetAllPitsAction.INSTANCE)
       echo "implemented"
       ;;
-    *Recovery*|*SegmentReplication*)
-      echo "planned"
+    RemoteStoreStatsAction.INSTANCE|RemoteStoreMetadataAction.INSTANCE|AddVotingConfigExclusionsAction.INSTANCE|ClearVotingConfigExclusionsAction.INSTANCE|ClusterAllocationExplainAction.INSTANCE|ClusterStatsAction.INSTANCE|ClusterUpdateSettingsAction.INSTANCE|ClusterRerouteAction.INSTANCE|PruneFileCacheAction.INSTANCE|PutRepositoryAction.INSTANCE|DeleteRepositoryAction.INSTANCE|VerifyRepositoryAction.INSTANCE|CleanupRepositoryAction.INSTANCE|GetSnapshotsAction.INSTANCE|DeleteSnapshotAction.INSTANCE|CreateSnapshotAction.INSTANCE|CloneSnapshotAction.INSTANCE|RestoreSnapshotAction.INSTANCE|SnapshotsStatusAction.INSTANCE|ClusterAddWeightedRoutingAction.INSTANCE|ClusterGetWeightedRoutingAction.INSTANCE|ClusterDeleteWeightedRoutingAction.INSTANCE|CatShardsAction.INSTANCE|CreateIndexAction.INSTANCE|ResizeAction.INSTANCE|RolloverAction.INSTANCE|DeleteIndexAction.INSTANCE|GetIndexAction.INSTANCE|OpenIndexAction.INSTANCE|CloseIndexAction.INSTANCE|IndicesExistsAction.INSTANCE|AddIndexBlockAction.INSTANCE|PutMappingAction.INSTANCE|AutoPutMappingAction.INSTANCE|IndicesAliasesAction.INSTANCE|UpdateSettingsAction.INSTANCE|ScaleIndexAction.INSTANCE|AnalyzeAction.INSTANCE|PutIndexTemplateAction.INSTANCE|GetIndexTemplatesAction.INSTANCE|DeleteIndexTemplateAction.INSTANCE|PutComponentTemplateAction.INSTANCE|GetComponentTemplateAction.INSTANCE|DeleteComponentTemplateAction.INSTANCE|PutComposableIndexTemplateAction.INSTANCE|GetComposableIndexTemplateAction.INSTANCE|DeleteComposableIndexTemplateAction.INSTANCE|SimulateIndexTemplateAction.INSTANCE|SimulateTemplateAction.INSTANCE|ValidateQueryAction.INSTANCE|FlushAction.INSTANCE|ForceMergeAction.INSTANCE|UpgradeAction.INSTANCE|UpgradeStatusAction.INSTANCE|UpgradeSettingsAction.INSTANCE|ClearIndicesCacheAction.INSTANCE|TermVectorsAction.INSTANCE|MultiTermVectorsAction.INSTANCE|SearchAction.INSTANCE|StreamSearchAction.INSTANCE|SearchScrollAction.INSTANCE|MultiSearchAction.INSTANCE|ExplainAction.INSTANCE|NodesReloadSecureSettingsAction.INSTANCE|AutoCreateAction.INSTANCE|PutStoredScriptAction.INSTANCE|GetStoredScriptAction.INSTANCE|DeleteStoredScriptAction.INSTANCE|GetScriptContextAction.INSTANCE|GetScriptLanguageAction.INSTANCE|FieldCapabilitiesAction.INSTANCE|PutPipelineAction.INSTANCE|GetPipelineAction.INSTANCE|DeletePipelineAction.INSTANCE|SimulatePipelineAction.INSTANCE|CreateDataStreamAction.INSTANCE|DeleteDataStreamAction.INSTANCE|ResolveIndexAction.INSTANCE|CreateViewAction.INSTANCE|DeleteViewAction.INSTANCE|GetViewAction.INSTANCE|UpdateViewAction.INSTANCE|SearchViewAction.INSTANCE|StartPersistentTaskAction.INSTANCE|UpdatePersistentTaskStatusAction.INSTANCE|CompletionPersistentTaskAction.INSTANCE|RemovePersistentTaskAction.INSTANCE|RetentionLeaseActions.Add.INSTANCE|RetentionLeaseActions.Renew.INSTANCE|RetentionLeaseActions.Remove.INSTANCE|ImportDanglingIndexAction.INSTANCE|DeleteDanglingIndexAction.INSTANCE|RestoreRemoteStoreAction.INSTANCE|ExtensionProxyAction.INSTANCE|DecommissionAction.INSTANCE|GetDecommissionStateAction.INSTANCE|DeleteDecommissionStateAction.INSTANCE|PutSearchPipelineAction.INSTANCE|GetSearchPipelineAction.INSTANCE|DeleteSearchPipelineAction.INSTANCE|PauseIngestionAction.INSTANCE|ResumeIngestionAction.INSTANCE|GetIngestionStateAction.INSTANCE|UpdateIngestionStateAction.INSTANCE|ListTieringStatusAction.INSTANCE|GetTieringStatusAction.INSTANCE)
+      echo "partial"
       ;;
     *)
       echo "planned"

@@ -41,7 +41,7 @@
 | Response shaping | Explain / profile / rescore / collapse | Partial | Live on the standalone route for the documented request and response shapes. |
 | Response shaping | Stored fields / docvalue fields / runtime fields | Partial | Stored fields and docvalue fields are live; request-body `runtime_mappings` remains a Steelsearch-only extension rather than an OpenSearch parity surface. |
 | Search session / traversal | Scroll | Partial | Live on the standalone route for open/follow-up/clear traversal. |
-| Search session / traversal | PIT | Partial | Live on the standalone route for open/search/close traversal. |
+| Search session / traversal | PIT | Partial | Live on the standalone route for open/search/list/close traversal plus cat PIT segment readback. |
 
 Use `Explicit fail-closed` when Steelsearch already needs to reject that
 request-shape family as part of the current `_search` surface. Use `Planned`
@@ -220,7 +220,7 @@ part of the OpenSearch parity target.
 | API family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
 | Search templates | Mustache-backed templated search requests. | Root and targeted `_search/template`, `_msearch/template`, `_render/template`, stored-template lookup, and bounded params substitution are live. | Partial |
-| PIT | Point-in-time snapshots for paginated or repeatable search. | PIT open/search/close is live and covered by strict compare for the documented standalone contract. | Partial |
+| PIT | Point-in-time snapshots for paginated or repeatable search. | PIT open/search/list/close and cat PIT-segments readback are live and covered by strict compare for the documented standalone contract. | Partial |
 | Scroll | Stateful paginated search traversal. | Initial scroll search, follow-up page retrieval, and clear-scroll are live and covered by strict compare. | Partial |
 | Suggest | Completion/term/phrase suggestion families. | Term/completion/phrase suggesters are live and covered by strict compare for the documented standalone contract. | Partial |
 | Search execution mode | `query_then_fetch`, `dfs_query_then_fetch`, pre-filter/can-match shaping knobs. | `query_then_fetch` / `dfs_query_then_fetch` are accepted; `pre_filter_shard_size` is accepted as a no-op in the current single-shard standalone profile. | Partial |
@@ -260,7 +260,10 @@ part of the OpenSearch parity target.
     - create-PIT order-sensitive `expand_wildcards=none` admission for empty wildcard expansion
     - create-PIT `allow_partial_pit_creation=false` admission for all-success local shard creation
     - `_search` with `pit.id`
+    - `GET /_search/point_in_time/_all`
     - `DELETE /_search/point_in_time`
+    - `DELETE /_search/point_in_time/_all`
+    - `GET /_cat/pit_segments` and `GET /_cat/pit_segments/_all`
   - `search_after`
     - single sort key
     - single search-after scalar

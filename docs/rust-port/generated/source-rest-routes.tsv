@@ -285,8 +285,8 @@ planned	GET	/_cat/indices/{index}	/home/ubuntu/OpenSearch/server/src/main/java/o
 planned	GET	/_cat/nodeattrs	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestNodeAttrsAction.java	69
 planned	GET	/_cat/nodes	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestNodesAction.java	98
 planned	GET	/_cat/pending_tasks	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPendingClusterTasksAction.java	61
-planned	GET	/_cat/pit_segments	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java	49
-planned	GET	/_cat/pit_segments/_all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java	49
+implemented	GET	/_cat/pit_segments	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java	49
+implemented	GET	/_cat/pit_segments/_all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPitSegmentsAction.java	49
 planned	GET	/_cat/plugins	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestPluginsAction.java	68
 planned	GET	/_cat/repositories	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestRepositoriesAction.java	61
 planned	GET	/_cat/segments	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/cat/RestSegmentsAction.java	81
