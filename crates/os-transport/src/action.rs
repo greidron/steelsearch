@@ -26297,24 +26297,12 @@ impl OpenSearchCreatePitRequestWire {
                 reason: "OpenSearch create-PIT keep-alive uses an unknown time unit",
             });
         }
-        if !self.indices.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit index filter",
-                reason: "index-scoped PIT creation requires OpenSearch index resolution semantics",
-            });
-        }
         if self.indices_options
             != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit indices options",
                 reason: "custom PIT indices options require index resolution semantics",
-            });
-        }
-        if self.routing.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit routing",
-                reason: "routing-aware PIT creation requires operation routing semantics",
             });
         }
         if self.preference.is_some() {
@@ -26435,7 +26423,8 @@ impl OpenSearchCreatePitResponseWire {
         if self.failed_shards != 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit response failed shards",
-                reason: "CreatePitResponse failed shard metadata is not decoded by this adapter yet",
+                reason:
+                    "CreatePitResponse failed shard metadata is not decoded by this adapter yet",
             });
         }
         if self.creation_time_millis < 0 {
@@ -57638,25 +57627,13 @@ mod tests {
             indices: vec!["logs".to_string()],
             ..OpenSearchCreatePitRequestWire::default()
         };
-        assert!(matches!(
-            index_filter.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit index filter",
-                ..
-            })
-        ));
+        index_filter.validate_supported_subset().unwrap();
 
         let routing = OpenSearchCreatePitRequestWire {
             routing: Some("tenant-a".to_string()),
             ..OpenSearchCreatePitRequestWire::default()
         };
-        assert!(matches!(
-            routing.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit routing",
-                ..
-            })
-        ));
+        routing.validate_supported_subset().unwrap();
 
         let partial_creation = OpenSearchCreatePitRequestWire {
             allow_partial_pit_creation: Some(true),
@@ -57743,12 +57720,9 @@ mod tests {
 
         let response =
             OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 1);
-        let mut frame = build_opensearch_create_pit_response_message(
-            53,
-            OPENSEARCH_3_7_0_TRANSPORT,
-            &response,
-        )
-        .unwrap();
+        let mut frame =
+            build_opensearch_create_pit_response_message(53, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected create-PIT response message");
         };
@@ -57847,9 +57821,10 @@ mod tests {
             })
         ));
 
-        let response = OpenSearchDeletePitResponseWire::with_results(vec![
-            OpenSearchDeletePitInfoWire::new(true, ""),
-        ]);
+        let response =
+            OpenSearchDeletePitResponseWire::with_results(vec![OpenSearchDeletePitInfoWire::new(
+                true, "",
+            )]);
         assert!(matches!(
             response.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -57980,7 +57955,11 @@ mod tests {
             "steelsearch-dev",
             vec![OpenSearchGetAllPitsNodeResponseWire::new(
                 test_discovery_node_wire(),
-                vec![OpenSearchListPitInfoWire::new("", 1_700_000_000_000, 60_000)],
+                vec![OpenSearchListPitInfoWire::new(
+                    "",
+                    1_700_000_000_000,
+                    60_000,
+                )],
             )],
         );
         assert!(matches!(
@@ -58051,7 +58030,11 @@ mod tests {
             "steelsearch-dev",
             vec![OpenSearchGetAllPitsNodeResponseWire::new(
                 test_discovery_node_wire(),
-                vec![OpenSearchListPitInfoWire::new("pit-context", 1_700_000_000_000, 60_000)],
+                vec![OpenSearchListPitInfoWire::new(
+                    "pit-context",
+                    1_700_000_000_000,
+                    60_000,
+                )],
             )],
         );
         let mut frame = build_opensearch_get_all_pits_response_message(

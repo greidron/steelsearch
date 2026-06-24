@@ -2254,12 +2254,13 @@ The create-PIT boundary covers:
 - OpenSearch `CreatePitResponse` success rendering with PIT id, total,
   successful, failed, skipped shard counts, creation time, and an empty shard
   failure list;
-- local transport PIT context allocation for the default all-indices request
-  subset into the shared `SteelNode` PIT context store, including the current
-  created-index set, document snapshot, primary-shard count, keep-alive expiry
-  bookkeeping, and read-all/delete visibility through the same lifecycle state;
+- local transport PIT context allocation for default all-indices requests and
+  index/alias/wildcard targets with routing filters into the shared `SteelNode`
+  PIT context store, including the resolved index set, document snapshot,
+  primary-shard count, keep-alive expiry bookkeeping, and read-all/delete
+  visibility through the same lifecycle state;
 - explicit rejection for non-positive keep-alive values, unknown keep-alive
-  units, index filters, custom indices options, routing, and preference; partial creation flags and
+  units, custom indices options, and preference; partial creation flags and
   non-empty shard failure payloads remain fail-closed until shard-level failure
   aggregation is mapped.
 
@@ -5107,21 +5108,21 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-reject-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=288.526 ops_per_second=1386355.35 nanos_per_op=721.32
-create_pit_request_decode iterations=400000 elapsed_ms=272.183 ops_per_second=1469600.36 nanos_per_op=680.46
-create_pit_request_validate iterations=400000 elapsed_ms=268.669 ops_per_second=1488823.21 nanos_per_op=671.67
-create_pit_response_encode iterations=400000 elapsed_ms=124.218 ops_per_second=3220132.58 nanos_per_op=310.55
-create_pit_response_decode iterations=400000 elapsed_ms=102.234 ops_per_second=3912578.86 nanos_per_op=255.59
-create_pit_wire_bottleneck_ops_per_second=1386355.35
+create_pit_request_encode iterations=400000 elapsed_ms=277.800 ops_per_second=1439883.94 nanos_per_op=694.50
+create_pit_request_decode iterations=400000 elapsed_ms=260.829 ops_per_second=1533573.44 nanos_per_op=652.07
+create_pit_request_validate iterations=400000 elapsed_ms=263.071 ops_per_second=1520501.47 nanos_per_op=657.68
+create_pit_response_encode iterations=400000 elapsed_ms=121.465 ops_per_second=3293125.59 nanos_per_op=303.66
+create_pit_response_decode iterations=400000 elapsed_ms=102.235 ops_per_second=3912569.56 nanos_per_op=255.59
+create_pit_wire_bottleneck_ops_per_second=1439883.94
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
 carries the ActionRequest parent task, index target controls, keep-alive, and
 optional partial-creation flag before admitting the local transport PIT
-lifecycle subset. Runtime create-PIT now also captures the shared SteelNode
-created-index set and document snapshot for the default all-indices transport
-subset; the first performance point to inspect while expanding the runtime path
-is lock hold time and snapshot allocation around larger document sets.
+lifecycle subset. Runtime create-PIT now also resolves index/alias/wildcard
+targets, applies routing filters, and captures the shared SteelNode document
+snapshot; the first performance point to inspect while expanding the runtime
+path is lock hold time and snapshot allocation around larger document sets.
 
 Current PIT-segments wire microbenchmark:
 

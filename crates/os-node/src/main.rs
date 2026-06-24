@@ -3691,8 +3691,14 @@ fn build_local_create_pit_response(
     let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
     let keep_alive_millis_u64 = keep_alive_millis.max(1) as u64;
     let bindings = dev_transport_pit_bindings();
-    let resolved_indices = transport_default_pit_indices(bindings);
-    let documents = transport_pit_document_snapshot(bindings, &resolved_indices);
+    let resolved_indices = transport_pit_indices(bindings, &request);
+    let routing_values = request
+        .routing
+        .as_deref()
+        .map(parse_transport_routing_values)
+        .filter(|values| !values.is_empty());
+    let documents =
+        transport_pit_document_snapshot(bindings, &resolved_indices, routing_values.as_deref());
     let total_shards = transport_pit_total_primary_shards(bindings, &resolved_indices);
     let pit_id = {
         let mut next_id = bindings
@@ -3730,21 +3736,99 @@ fn build_local_create_pit_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn transport_default_pit_indices(bindings: &DevTransportPitBindings) -> Vec<String> {
-    let mut indices = bindings
-        .created_indices
+fn transport_pit_indices(
+    bindings: &DevTransportPitBindings,
+    request: &os_transport::action::OpenSearchCreatePitRequestWire,
+) -> Vec<String> {
+    let selectors = if request.indices.is_empty() {
+        vec!["_all".to_string()]
+    } else {
+        request.indices.clone()
+    };
+    let manifest = bindings
+        .metadata_manifest
         .lock()
-        .expect("dev transport created indices lock poisoned")
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
-    indices.sort();
-    indices
+        .expect("dev transport metadata manifest lock poisoned");
+    let mut resolved = Vec::new();
+    if let Some(indices) = manifest["indices"].as_object() {
+        for selector in selectors.iter().filter(|selector| !selector.is_empty()) {
+            let wildcard_selector =
+                selector == "_all" || selector.contains('*') || selector.contains('?');
+            let effective_selector = if selector == "_all" { "*" } else { selector };
+            for (index_name, index_body) in indices {
+                if effective_selector == index_name
+                    || wildcard_match(effective_selector, index_name)
+                {
+                    if transport_pit_index_matches_options(
+                        index_body,
+                        wildcard_selector,
+                        &request.indices_options,
+                    ) {
+                        resolved.push(index_name.clone());
+                    }
+                    continue;
+                }
+                if !request.indices_options.ignore_aliases {
+                    if let Some(aliases) = index_body["aliases"].as_object() {
+                        if aliases.contains_key(selector)
+                            || aliases
+                                .keys()
+                                .any(|alias| wildcard_match(effective_selector, alias))
+                        {
+                            if transport_pit_index_matches_options(
+                                index_body,
+                                wildcard_selector,
+                                &request.indices_options,
+                            ) {
+                                resolved.push(index_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if resolved.is_empty() && request.indices.is_empty() {
+        resolved = bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .iter()
+            .cloned()
+            .collect();
+    }
+    resolved.sort();
+    resolved.dedup();
+    resolved
+}
+
+fn transport_pit_index_matches_options(
+    index_body: &Value,
+    wildcard_selector: bool,
+    options: &os_transport::action::OpenSearchIndicesOptionsWire,
+) -> bool {
+    if !wildcard_selector {
+        return true;
+    }
+    let closed = index_body["state"]
+        .as_str()
+        .is_some_and(|state| state == "close");
+    if closed && (!options.expand_closed || options.forbid_closed_indices) {
+        return false;
+    }
+    if !closed && !options.expand_open {
+        return false;
+    }
+    if transport_index_metadata_is_hidden(index_body) && !options.expand_hidden {
+        return false;
+    }
+    true
 }
 
 fn transport_pit_document_snapshot(
     bindings: &DevTransportPitBindings,
     resolved_indices: &[String],
+    routing_values: Option<&[String]>,
 ) -> BTreeMap<String, StoredDocument> {
     bindings
         .documents
@@ -3752,11 +3836,21 @@ fn transport_pit_document_snapshot(
         .expect("dev transport documents lock poisoned")
         .iter()
         .filter_map(|(key, record)| {
-            let (doc_index, _, _) = split_transport_document_key(key)?;
+            let (doc_index, _, doc_routing) = split_transport_document_key(key)?;
             resolved_indices
                 .iter()
                 .any(|candidate| candidate == doc_index)
-                .then(|| (key.clone(), record.clone()))
+                .then_some(())?;
+            if let Some(routing_values) = routing_values {
+                let record_routing = record.routing.as_deref().unwrap_or(doc_routing);
+                if !routing_values
+                    .iter()
+                    .any(|routing| routing == record_routing)
+                {
+                    return None;
+                }
+            }
+            Some((key.clone(), record.clone()))
         })
         .collect()
 }
@@ -3785,6 +3879,48 @@ fn transport_pit_total_primary_shards(
 fn split_transport_document_key(key: &str) -> Option<(&str, &str, &str)> {
     let mut parts = key.splitn(3, ':');
     Some((parts.next()?, parts.next()?, parts.next()?))
+}
+
+fn parse_transport_routing_values(routing: &str) -> Vec<String> {
+    routing
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn transport_index_metadata_is_hidden(index_body: &Value) -> bool {
+    index_body["settings"]["index"]["hidden"]
+        .as_str()
+        .map(|value| value == "true")
+        .or_else(|| index_body["settings"]["index"]["hidden"].as_bool())
+        .unwrap_or(false)
+}
+
+fn wildcard_match(pattern: &str, candidate: &str) -> bool {
+    if !pattern.contains('*') && !pattern.contains('?') {
+        return pattern == candidate;
+    }
+    wildcard_match_inner(pattern.as_bytes(), candidate.as_bytes())
+}
+
+fn wildcard_match_inner(pattern: &[u8], candidate: &[u8]) -> bool {
+    if pattern.is_empty() {
+        return candidate.is_empty();
+    }
+    match pattern[0] {
+        b'*' => {
+            wildcard_match_inner(&pattern[1..], candidate)
+                || (!candidate.is_empty() && wildcard_match_inner(pattern, &candidate[1..]))
+        }
+        b'?' => !candidate.is_empty() && wildcard_match_inner(&pattern[1..], &candidate[1..]),
+        byte => {
+            !candidate.is_empty()
+                && candidate[0] == byte
+                && wildcard_match_inner(&pattern[1..], &candidate[1..])
+        }
+    }
 }
 
 fn time_value_wire_to_millis(time_value: &os_transport::action::TimeValueWire) -> i64 {
@@ -10644,6 +10780,131 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .is_empty());
+
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .extend([
+                "logs-routed-pit-000001".to_string(),
+                "metrics-routed-pit-000001".to_string(),
+            ]);
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-routed-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "3"
+                        }
+                    },
+                    "aliases": {
+                        "logs-routed": {}
+                    }
+                },
+                "metrics-routed-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .extend([
+                (
+                    "logs-routed-pit-000001:doc-a:tenant-a".to_string(),
+                    StoredDocument {
+                        source: serde_json::json!({ "tenant": "a" }),
+                        version: 1,
+                        seq_no: 3,
+                        primary_term: 1,
+                        routing: Some("tenant-a".to_string()),
+                        refreshed: true,
+                    },
+                ),
+                (
+                    "logs-routed-pit-000001:doc-b:tenant-b".to_string(),
+                    StoredDocument {
+                        source: serde_json::json!({ "tenant": "b" }),
+                        version: 1,
+                        seq_no: 4,
+                        primary_term: 1,
+                        routing: Some("tenant-b".to_string()),
+                        refreshed: true,
+                    },
+                ),
+                (
+                    "metrics-routed-pit-000001:doc-c:tenant-a".to_string(),
+                    StoredDocument {
+                        source: serde_json::json!({ "tenant": "metric" }),
+                        version: 1,
+                        seq_no: 5,
+                        primary_term: 1,
+                        routing: Some("tenant-a".to_string()),
+                        refreshed: true,
+                    },
+                ),
+            ]);
+        let routed_create_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-routed*".to_string()],
+            routing: Some("tenant-a".to_string()),
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let routed_create_frame =
+            os_transport::action::build_opensearch_create_pit_request_message(
+                97,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &routed_create_request,
+            )
+            .unwrap();
+        let routed_create_body = &routed_create_frame[6..];
+        assert!(create_pit_request_supports_local_lifecycle_subset(
+            routed_create_body
+        ));
+        let routed_create_response = build_local_create_pit_response(
+            97,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            routed_create_body,
+        );
+        let mut frame = BytesMut::from(&routed_create_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected routed create-PIT response message");
+        };
+        let routed_create_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(routed_create_response.pit_id, "pit-2");
+        assert_eq!(routed_create_response.total_shards, 3);
+        let routed_pit_context = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get("pit-2")
+            .cloned()
+            .expect("routed pit context should be allocated");
+        assert_eq!(
+            routed_pit_context.indices,
+            vec!["logs-routed-pit-000001".to_string()]
+        );
+        assert!(routed_pit_context
+            .documents
+            .contains_key("logs-routed-pit-000001:doc-a:tenant-a"));
+        assert!(!routed_pit_context
+            .documents
+            .contains_key("logs-routed-pit-000001:doc-b:tenant-b"));
+        assert!(!routed_pit_context
+            .documents
+            .contains_key("metrics-routed-pit-000001:doc-c:tenant-a"));
     }
 
     #[test]
