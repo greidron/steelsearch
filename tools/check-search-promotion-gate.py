@@ -111,6 +111,8 @@ def main() -> int:
             "phrase_suggest_search",
             "term_suggest_search",
             "highlight_search",
+            "fields_top_level_search",
+            "fields_dot_path_array_search",
             "metric_aggregations",
             "filter_aggregations",
             "terms_aggregation",

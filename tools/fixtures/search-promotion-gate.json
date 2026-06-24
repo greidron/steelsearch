@@ -74,6 +74,8 @@
         "derived_field_request_search",
         "derived_field_string_script_search",
         "derived_field_definition_options_search",
+        "fields_top_level_search",
+        "fields_dot_path_array_search",
         "metric_aggregations",
         "filter_aggregations",
         "terms_aggregation",
