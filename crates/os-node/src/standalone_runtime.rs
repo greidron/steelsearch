@@ -18487,12 +18487,12 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
             "unsupported search option [pit]",
         ));
     };
-    let Some(id) = object.get("id").and_then(Value::as_str) else {
+    if !object.contains_key("id") {
         return Some(build_unsupported_search_response(
-            "unsupported search option [pit]",
+            "point int time id is not provided",
         ));
-    };
-    if id.is_empty() {
+    }
+    if object.get("id").and_then(Value::as_str).is_none() {
         return Some(build_unsupported_search_response(
             "unsupported search option [pit]",
         ));
@@ -34908,6 +34908,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             numeric_pit_keep_alive.body["error"]["type"],
             "illegal_argument_exception"
+        );
+
+        let missing_pit_id_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(missing_pit_id_search.status, 400);
+        assert_eq!(
+            missing_pit_id_search.body["error"]["reason"],
+            "point int time id is not provided"
+        );
+
+        let empty_pit_id_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": "",
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(empty_pit_id_search.status, 404);
+        assert_eq!(
+            empty_pit_id_search.body["error"]["type"],
+            "search_context_missing_exception"
         );
 
         let list_pits =
