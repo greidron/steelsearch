@@ -1744,7 +1744,7 @@ pub fn classify_opensearch_transport_action(
         LIST_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "list-tasks transport adapter is available for the empty default subset",
+            reason: "list-tasks transport adapter is available for the tracked task info subset",
         },
         GET_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -25224,33 +25224,31 @@ impl ListTasksRequestWire {
         if self.parent_task_filter.is_set() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks parent task filter",
-                reason: "parent task filtering is not mapped by the empty list-tasks adapter yet",
+                reason: "parent task filtering is not mapped by the list-tasks adapter yet",
             });
         }
         if !self.nodes.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks node filter",
-                reason:
-                    "node-scoped task listing is not mapped by the empty list-tasks adapter yet",
+                reason: "node-scoped task listing is not mapped by the list-tasks adapter yet",
             });
         }
         if !self.actions.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks action filter",
-                reason:
-                    "action-scoped task listing is not mapped by the empty list-tasks adapter yet",
+                reason: "action-scoped task listing is not mapped by the list-tasks adapter yet",
             });
         }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks timeout",
-                reason: "list-tasks timeout is not mapped by the empty list-tasks adapter yet",
+                reason: "list-tasks timeout is not mapped by the list-tasks adapter yet",
             });
         }
         if self.detailed {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks detail flag",
-                reason: "detailed task info is not encoded by the empty list-tasks adapter yet",
+                reason: "detailed task status is not encoded by the list-tasks adapter yet",
             });
         }
         if self.wait_for_completion {
@@ -25267,7 +25265,103 @@ impl ListTasksRequestWire {
 pub struct ListTasksResponseWire {
     pub task_failure_count: i32,
     pub node_failure_count: i32,
-    pub task_count: i32,
+    pub tasks: Vec<ListTaskInfoWire>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListTaskInfoWire {
+    pub node_id: String,
+    pub task_id: i64,
+    pub task_type: String,
+    pub action: String,
+    pub description: Option<String>,
+    pub start_time_millis: i64,
+    pub running_time_nanos: i64,
+    pub cancellable: bool,
+    pub cancelled: bool,
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub headers: BTreeMap<String, String>,
+    pub cancellation_start_time_millis: Option<i64>,
+}
+
+impl ListTaskInfoWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        TaskIdWire {
+            node_id: self.node_id.clone(),
+            id: Some(self.task_id),
+        }
+        .write(output);
+        output.write_string(&self.task_type);
+        output.write_string(&self.action);
+        output.write_optional_string(self.description.as_deref());
+        write_optional_named_writeable_marker(output, None);
+        output.write_i64(self.start_time_millis);
+        output.write_i64(self.running_time_nanos);
+        output.write_bool(self.cancellable);
+        output.write_bool(self.cancelled);
+        TaskIdWire {
+            node_id: self.parent_task_node.clone(),
+            id: self.parent_task_id,
+        }
+        .write(output);
+        output.write_string_map(&self.headers);
+        output.write_bool(false);
+        write_optional_i64(output, self.cancellation_start_time_millis);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let task_id = TaskIdWire::read(input)?;
+        let Some(id) = task_id.id else {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task info id",
+                reason: "task info entries require concrete OpenSearch task ids",
+            });
+        };
+        let task_type = input.read_string()?;
+        let action = input.read_string()?;
+        let description = input.read_optional_string()?;
+        if read_optional_named_writeable_marker(input)?.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task status",
+                reason: "detailed task status named writeables are not decoded by this adapter yet",
+            });
+        }
+        let start_time_millis = input.read_i64()?;
+        let running_time_nanos = input.read_i64()?;
+        let cancellable = input.read_bool()?;
+        let cancelled = input.read_bool()?;
+        if !cancellable && cancelled {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks cancellation state",
+                reason: "OpenSearch task info cannot be cancelled unless it is cancellable",
+            });
+        }
+        let parent_task = TaskIdWire::read(input)?;
+        let headers = input.read_string_map()?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks resource stats",
+                reason: "task resource stats are not decoded by this adapter yet",
+            });
+        }
+        let cancellation_start_time_millis = read_optional_i64(input)?;
+        Ok(Self {
+            node_id: task_id.node_id,
+            task_id: id,
+            task_type,
+            action,
+            description,
+            start_time_millis,
+            running_time_nanos,
+            cancellable,
+            cancelled,
+            parent_task_node: parent_task.node_id,
+            parent_task_id: parent_task.id,
+            headers,
+            cancellation_start_time_millis,
+        })
+    }
 }
 
 impl ListTasksResponseWire {
@@ -25275,7 +25369,7 @@ impl ListTasksResponseWire {
         Self {
             task_failure_count: 0,
             node_failure_count: 0,
-            task_count: 0,
+            tasks: Vec::new(),
         }
     }
 
@@ -25292,45 +25386,42 @@ impl ListTasksResponseWire {
                 reason: "node failure exception payloads are not encoded by this adapter yet",
             });
         }
-        if self.task_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks task info",
-                reason: "task info payloads require runtime task lifecycle mapping",
-            });
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(self.tasks.len() as i32);
+        for task in &self.tasks {
+            task.write(output);
         }
-        output.write_vint(0);
-        output.write_vint(0);
-        output.write_vint(0);
         Ok(())
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let response = Self {
-            task_failure_count: input.read_vint()?,
-            node_failure_count: input.read_vint()?,
-            task_count: input.read_vint()?,
-        };
-        if response.task_failure_count != 0 {
+        let task_failure_count = input.read_vint()?;
+        if task_failure_count != 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks task failures",
                 reason: "task failure exception payloads are not decoded by this adapter yet",
             });
         }
-        if response.node_failure_count != 0 {
+        let node_failure_count = input.read_vint()?;
+        if node_failure_count != 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks node failures",
                 reason: "node failure exception payloads are not decoded by this adapter yet",
             });
         }
-        if response.task_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks task info",
-                reason: "task info payloads are not decoded by this adapter yet",
-            });
+        let task_count = read_len(&mut input)?;
+        let mut tasks = Vec::with_capacity(task_count);
+        for _ in 0..task_count {
+            tasks.push(ListTaskInfoWire::read(&mut input)?);
         }
         require_no_trailing_bytes(&input)?;
-        Ok(response)
+        Ok(Self {
+            task_failure_count,
+            node_failure_count,
+            tasks,
+        })
     }
 }
 
@@ -54396,16 +54487,58 @@ mod tests {
     }
 
     #[test]
-    fn list_tasks_response_rejects_non_empty_payloads_until_task_info_is_mapped() {
+    fn list_tasks_response_wire_round_trips_task_info_subset() {
+        let mut headers = BTreeMap::new();
+        headers.insert("x-opaque-id".to_string(), "request-1".to_string());
+        let response = ListTasksResponseWire {
+            task_failure_count: 0,
+            node_failure_count: 0,
+            tasks: vec![ListTaskInfoWire {
+                node_id: "node-a".to_string(),
+                task_id: 7,
+                task_type: "transport".to_string(),
+                action: "cluster:admin/reroute".to_string(),
+                description: Some("reroute shards [queued]".to_string()),
+                start_time_millis: 1,
+                running_time_nanos: 1,
+                cancellable: true,
+                cancelled: false,
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                headers,
+                cancellation_start_time_millis: None,
+            }],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            ListTasksResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn list_tasks_response_rejects_unmapped_task_info_payloads() {
         let mut output = StreamOutput::new();
         output.write_vint(0);
         output.write_vint(0);
         output.write_vint(1);
+        TaskIdWire {
+            node_id: "node-a".to_string(),
+            id: Some(7),
+        }
+        .write(&mut output);
+        output.write_string("transport");
+        output.write_string("cluster:admin/reroute");
+        output.write_optional_string(Some("reroute shards [queued]"));
+        output.write_bool(true);
+        output.write_string("unsupported-status");
 
         assert!(matches!(
             ListTasksResponseWire::read(output.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks task info",
+                shape: "list tasks task status",
                 ..
             })
         ));
@@ -54421,7 +54554,25 @@ mod tests {
         };
         assert_eq!(read_list_tasks_request_message(&message).unwrap(), request);
 
-        let response = ListTasksResponseWire::empty();
+        let response = ListTasksResponseWire {
+            task_failure_count: 0,
+            node_failure_count: 0,
+            tasks: vec![ListTaskInfoWire {
+                node_id: "node-a".to_string(),
+                task_id: 7,
+                task_type: "transport".to_string(),
+                action: "cluster:admin/reroute".to_string(),
+                description: Some("reroute shards [queued]".to_string()),
+                start_time_millis: 1,
+                running_time_nanos: 1,
+                cancellable: true,
+                cancelled: false,
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                cancellation_start_time_millis: None,
+            }],
+        };
         let mut frame =
             build_list_tasks_response_message(18, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {

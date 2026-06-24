@@ -314,7 +314,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/point_in_time/delete` (rejected fail-closed)
 - `indices:data/read/point_in_time/readall` (rejected fail-closed)
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
-- `cluster:monitor/tasks/lists` (implemented empty default subset)
+- `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
 - `cluster:monitor/task/get` (rejected fail-closed)
 - `cluster:admin/tasks/cancel` (implemented no-active-task default subset)
 - `indices:data/read/get`
@@ -2266,11 +2266,10 @@ The pending-cluster-tasks adapter covers:
   and local flag at the wire decode/build layer;
 - OpenSearch `PendingClusterTasksResponse` task entries with insert order,
   priority, source, executing flag, and time-in-queue fields;
-- daemon transport first-request and follow-up routes render the empty
-  OpenSearch-shaped response for the current no-pending-task subset;
-- runtime pending task materialization is still owned by the REST/admin route
-  path and must be mapped into the transport response before claiming non-empty
-  pending-task transport parity.
+- daemon transport first-request and follow-up routes render pending/in-flight
+  task entries from the current task queue snapshot;
+- terminal task records remain excluded from the pending-task transport
+  response, matching the active pending-task surface.
 
 The list-tasks adapter covers:
 
@@ -2278,13 +2277,14 @@ The list-tasks adapter covers:
   task filter, no node filters, no action filters, no timeout, `detailed=false`,
   and `wait_for_completion=false`;
 - OpenSearch `ListTasksResponse` with no task failures, no node failures, and
-  no task info entries, matching the current no-active-task transport contract;
-- daemon transport first-request and follow-up routes render the empty
-  OpenSearch-shaped response for the supported subset;
+  pending/in-flight task info entries for the tracked cluster-manager task
+  subset;
+- daemon transport first-request and follow-up routes render the OpenSearch
+  shaped response from the current task queue snapshot for the supported subset;
 - explicit rejection for task id filters, parent task filters, node filters,
-  action filters, timeout, detailed task info, wait-for-completion, non-empty
-  task failure payloads, non-empty node failure payloads, and non-empty task
-  info payloads until runtime task lifecycle semantics are mapped.
+  action filters, timeout, detailed task status payloads, wait-for-completion,
+  non-empty task failure payloads, non-empty node failure payloads, and task
+  resource stats until those runtime lifecycle semantics are mapped.
 
 The get-task boundary covers:
 
@@ -5122,18 +5122,18 @@ Current list-tasks wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin list-tasks-wire-benchmark
-list_tasks_request_encode ops_per_second=2014306.94 nanos_per_op=496.45
-list_tasks_response_encode ops_per_second=4549504.28 nanos_per_op=219.80
-list_tasks_request_decode ops_per_second=1845179.15 nanos_per_op=541.95
-list_tasks_response_decode ops_per_second=4262578.14 nanos_per_op=234.60
-list_tasks_wire_bottleneck_ops_per_second=1845179.15
+list_tasks_request_encode ops_per_second=2013427.53 nanos_per_op=496.67
+list_tasks_response_encode ops_per_second=1122719.13 nanos_per_op=890.69
+list_tasks_request_decode ops_per_second=1569815.67 nanos_per_op=637.02
+list_tasks_response_decode ops_per_second=1136817.18 nanos_per_op=879.65
+list_tasks_wire_bottleneck_ops_per_second=1122719.13
 ```
 
-The current list-tasks wire bottleneck is request decode. The supported subset
-is an empty task listing with only default filters, so the request path is
-mostly frame/action validation plus task-id and empty-array decoding. At roughly
-1.85M ops/s in the latest local release run, this adapter does not introduce a
-transport-wire bottleneck.
+The current list-tasks wire bottleneck is non-empty response encode for a
+single tracked task info entry. At roughly 1.12M ops/s in the latest local
+release run, this path remains above the current task transport admission
+budget; the next cost to watch is live task snapshot refresh while task state is
+mutating.
 
 Current cancel-tasks wire microbenchmark:
 
