@@ -1701,6 +1701,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_ignore_unavailable_multi_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat,missing-compat/_search/point_in_time?keep_alive=1m&ignore_unavailable=true",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open ignores unavailable multi-target search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_with_strict_partial_creation_search",
       "area": "search",
       "method": "POST",
