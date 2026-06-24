@@ -610,6 +610,10 @@ name = "list-tasks-wire-benchmark"
 path = "benchmarks/list_tasks_wire.rs"
 
 [[bin]]
+name = "pending-cluster-tasks-wire-benchmark"
+path = "benchmarks/pending_cluster_tasks_wire.rs"
+
+[[bin]]
 name = "get-task-reject-wire-benchmark"
 path = "benchmarks/get_task_reject_wire.rs"
 

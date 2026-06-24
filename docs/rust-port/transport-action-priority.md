@@ -313,7 +313,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/point_in_time/create` (rejected fail-closed)
 - `indices:data/read/point_in_time/delete` (rejected fail-closed)
 - `indices:data/read/point_in_time/readall` (rejected fail-closed)
-- `cluster:monitor/task`
+- `cluster:monitor/task` (implemented empty pending-task subset)
 - `cluster:monitor/tasks/lists` (implemented empty default subset)
 - `cluster:monitor/task/get` (rejected fail-closed)
 - `cluster:admin/tasks/cancel` (implemented no-active-task default subset)
@@ -2259,6 +2259,18 @@ The indices-stats boundary covers:
   local node identity;
 - explicit rejection for index filters, non-default indices options,
   and non-default stats flags.
+
+The pending-cluster-tasks adapter covers:
+
+- OpenSearch `PendingClusterTasksRequest` parent task, cluster-manager timeout,
+  and local flag at the wire decode/build layer;
+- OpenSearch `PendingClusterTasksResponse` task entries with insert order,
+  priority, source, executing flag, and time-in-queue fields;
+- daemon transport first-request and follow-up routes render the empty
+  OpenSearch-shaped response for the current no-pending-task subset;
+- runtime pending task materialization is still owned by the REST/admin route
+  path and must be mapped into the transport response before claiming non-empty
+  pending-task transport parity.
 
 The list-tasks adapter covers:
 
@@ -5089,6 +5101,22 @@ performance-sensitive work beyond this boundary is populating non-empty index
 stats groups and rendering full stats responses. At roughly 1.17M ops/s in the
 latest local run, this path does not introduce a new transport admission
 hotspot.
+
+Current pending-cluster-tasks wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin pending-cluster-tasks-wire-benchmark
+pending_cluster_tasks_request_encode ops_per_second=2150902.98 nanos_per_op=464.92
+pending_cluster_tasks_response_encode ops_per_second=4583061.17 nanos_per_op=218.19
+pending_cluster_tasks_request_decode ops_per_second=2295565.87 nanos_per_op=435.62
+pending_cluster_tasks_response_decode ops_per_second=4285352.77 nanos_per_op=233.35
+pending_cluster_tasks_wire_bottleneck_ops_per_second=2150902.98
+```
+
+The current pending-cluster-tasks wire bottleneck is request encode. The empty
+transport subset remains above 2.15M ops/s in the latest local release run; the
+first meaningful execution cost to watch is runtime pending task materialization
+and non-empty response rendering.
 
 Current list-tasks wire microbenchmark:
 

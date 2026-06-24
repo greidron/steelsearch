@@ -25537,6 +25537,74 @@ impl CancelTasksRequestWire {
 
 pub type CancelTasksResponseWire = ListTasksResponseWire;
 
+pub fn build_pending_cluster_tasks_request_message(
+    request_id: i64,
+    version: Version,
+    request: &PendingClusterTasksRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(PENDING_CLUSTER_TASKS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_pending_cluster_tasks_request_message(
+    message: &TransportMessage,
+) -> Result<PendingClusterTasksRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != PENDING_CLUSTER_TASKS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: PENDING_CLUSTER_TASKS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    PendingClusterTasksRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_pending_cluster_tasks_response_message(
+    request_id: i64,
+    version: Version,
+    response: &PendingClusterTasksResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_pending_cluster_tasks_response_message(
+    message: &TransportMessage,
+) -> Result<PendingClusterTasksResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    PendingClusterTasksResponseWire::read(message.body.clone().freeze())
+}
+
 pub fn build_list_tasks_request_message(
     request_id: i64,
     version: Version,
@@ -54221,6 +54289,30 @@ mod tests {
         response.write(&mut output);
         assert_eq!(
             PendingClusterTasksResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+
+        let frame =
+            build_pending_cluster_tasks_request_message(17, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let mut frame = frame;
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected pending cluster tasks request message");
+        };
+        assert_eq!(
+            read_pending_cluster_tasks_request_message(&message).unwrap(),
+            request
+        );
+
+        let frame =
+            build_pending_cluster_tasks_response_message(17, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let mut frame = frame;
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected pending cluster tasks response message");
+        };
+        assert_eq!(
+            read_pending_cluster_tasks_response_message(&message).unwrap(),
             response
         );
     }
