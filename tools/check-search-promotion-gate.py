@@ -96,6 +96,8 @@ def main() -> int:
             "scroll_follow_up_search",
             "search_after_search",
             "collapse_search",
+            "explain_search",
+            "explain_query_param_overrides_body_search",
             "profile_search",
             "rescore_search",
             "function_score_search",

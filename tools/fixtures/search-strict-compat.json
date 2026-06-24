@@ -1675,6 +1675,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "explain_query_param_overrides_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?explain=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "explain": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_explain",
+      "family": "lexical",
+      "description": "[lexical] explain query param overrides body search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "field_masking_span_query_search",
       "area": "search",
       "method": "POST",
