@@ -375,6 +375,7 @@ Required semantic cases:
 - `hit_metadata_projection_body_search`
 - `hit_metadata_query_params_override_body_search`
 - `hit_metadata_query_params_enable_body_false_search`
+- `hit_metadata_version_query_param_overrides_body_only_search`
 - `completion_suggest_search`
 - `phrase_suggest_search`
 - `term_suggest_search`
