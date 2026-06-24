@@ -7832,7 +7832,11 @@ impl SteelNode {
             let body = serde_json::from_str::<Value>(lines[index + 1])
                 .map_err(|_| build_unexpected_end_of_input_search_response())?;
             let target = header_object
-                .and_then(|header_object| header_object.get("index"))
+                .and_then(|header_object| {
+                    header_object
+                        .get("index")
+                        .or_else(|| header_object.get("indices"))
+                })
                 .and_then(|value| match value {
                     Value::String(single) => Some(single.clone()),
                     Value::Array(values) => Some(
@@ -7845,7 +7849,9 @@ impl SteelNode {
                     _ => None,
                 })
                 .filter(|target| !target.is_empty());
-            if header_object.is_some_and(|header_object| header_object.contains_key("index"))
+            if header_object.is_some_and(|header_object| {
+                header_object.contains_key("index") || header_object.contains_key("indices")
+            })
                 && target.is_none()
             {
                 return Err(build_parsing_search_response("malformed msearch header"));
@@ -40044,6 +40050,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .contains("[indices] cannot be used with point in time")
         );
 
+        let explicit_indices_header_pit_body = format!(
+            "{{\"indices\":\"_all\"}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let explicit_indices_header_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(explicit_indices_header_pit_body.into_bytes()),
+        );
+        assert_eq!(explicit_indices_header_msearch.status, 200);
+        assert_eq!(explicit_indices_header_msearch.body["responses"][0]["status"], 400);
+        assert!(
+            explicit_indices_header_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[indices] cannot be used with point in time")
+        );
+
         let metadata_pit_body = format!(
             "{{\"routing\":\"tenant-a\",\"preference\":\"_local\",\"ignore_unavailable\":true}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
         );
@@ -40115,6 +40138,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(malformed_header.status, 200);
         assert_eq!(malformed_header.body["responses"].as_array().map(Vec::len), Some(1));
         assert_eq!(malformed_header.body["responses"][0]["status"], 200);
+
+        let malformed_indices_header = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(b"{\"indices\":{\"name\":\"logs\"}}\n{\"query\":{\"match_all\":{}}}\n".to_vec()),
+        );
+        assert_eq!(malformed_indices_header.status, 400);
+        assert_eq!(
+            malformed_indices_header.body["error"]["reason"],
+            "malformed msearch header"
+        );
     }
 
     #[test]
