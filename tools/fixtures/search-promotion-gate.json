@@ -34,6 +34,7 @@
         "pit_clear_all_search",
         "pit_clear_all_body_search",
         "pit_search",
+        "pit_search_with_default_ignore_throttled",
         "scroll_initial_search",
         "scroll_follow_up_search",
         "collapse_search",

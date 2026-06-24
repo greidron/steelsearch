@@ -19691,7 +19691,9 @@ fn pit_search_uses_non_default_indices_options(query_params: &BTreeMap<String, S
         || query_params
             .get("expand_wildcards")
             .is_some_and(|value| !expand_wildcards_matches_search_default(value))
-        || query_param_is_true(query_params.get("ignore_throttled"))
+        || query_params
+            .get("ignore_throttled")
+            .is_some_and(|value| value == "false" || value == "0")
 }
 
 fn expand_wildcards_matches_search_default(value: &str) -> bool {
@@ -37437,6 +37439,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             default_indices_options_pit_search.body["hits"]["total"]["value"],
             2
         );
+
+        let default_ignore_throttled_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?ignore_throttled=true")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(default_ignore_throttled_pit_search.status, 200);
+        assert_eq!(
+            default_ignore_throttled_pit_search.body["hits"]["total"]["value"],
+            2
+        );
+
+        let non_default_ignore_throttled_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?ignore_throttled=false")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(non_default_ignore_throttled_pit_search.status, 400);
+        assert_eq!(
+            non_default_ignore_throttled_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(non_default_ignore_throttled_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indicesOptions] cannot be used with point in time"));
 
         let indexed_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-session-000001/_search")
