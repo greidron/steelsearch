@@ -240,7 +240,7 @@ part of the OpenSearch parity target.
   - current OpenSearch evidence across the local source tree plus representative `1.x`/`2.x`/`3.x` builds does not show request-body `runtime_mappings` parity support
   - therefore this surface is excluded from Phase A-1 OpenSearch fullset closure and treated as a Steelsearch-only extension
 - `derived` note:
-  - OpenSearch request-scoped derived fields are supported for the bounded `emit(doc["field"].value)` and `emit(params._source["field"])` passthrough subset
+  - OpenSearch request-scoped derived fields are supported for the bounded object-or-string script forms using `emit(doc["field"].value)` and `emit(params._source["field"])`
   - derived fields participate in query matching and `fields` response extraction in the standalone route
 - The current live partial response-shaping/suggestion families are:
   - `highlight`

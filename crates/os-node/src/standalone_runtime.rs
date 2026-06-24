@@ -19910,13 +19910,7 @@ fn validate_request_scoped_field_definitions(
         if definition_object.get("type").and_then(Value::as_str).is_none() {
             return Some(unsupported());
         }
-        let Some(script) = definition_object.get("script").and_then(Value::as_object) else {
-            return Some(unsupported());
-        };
-        if script.keys().any(|key| key != "source") {
-            return Some(unsupported());
-        }
-        let Some(source) = script.get("source").and_then(Value::as_str) else {
+        let Some(source) = request_scoped_field_script_source(definition_object) else {
             return Some(unsupported());
         };
         if parse_runtime_mapping_script_source(source).is_none() {
@@ -21302,12 +21296,7 @@ fn apply_request_scoped_field_definitions_to_source(source: &Value, definitions:
         let Some(definition_object) = definition.as_object() else {
             continue;
         };
-        let Some(script_source) = definition_object
-            .get("script")
-            .and_then(Value::as_object)
-            .and_then(|script| script.get("source"))
-            .and_then(Value::as_str)
-        else {
+        let Some(script_source) = request_scoped_field_script_source(definition_object) else {
             continue;
         };
         let Some(source_field) = parse_runtime_mapping_script_source(script_source) else {
@@ -21318,6 +21307,19 @@ fn apply_request_scoped_field_definitions_to_source(source: &Value, definitions:
         }
     }
     Value::Object(effective)
+}
+
+fn request_scoped_field_script_source(definition_object: &serde_json::Map<String, Value>) -> Option<&str> {
+    match definition_object.get("script")? {
+        Value::String(source) => Some(source.as_str()),
+        Value::Object(script) => {
+            if script.keys().any(|key| key != "source") {
+                return None;
+            }
+            script.get("source").and_then(Value::as_str)
+        }
+        _ => None,
+    }
 }
 
 fn normalize_docvalue_field_value(
@@ -37877,6 +37879,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             derived_field_search.body["hits"]["hits"][0]["fields"]["derived_service"],
             serde_json::json!(["catalog"])
+        );
+
+        let derived_string_script_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "derived": {
+                        "derived_tenant": {
+                            "type": "keyword",
+                            "script": "emit(params._source[\"tenant\"])"
+                        }
+                    },
+                    "query": {
+                        "term": {
+                            "derived_tenant": "beta"
+                        }
+                    },
+                    "fields": ["derived_tenant"]
+                })),
+        );
+        assert_eq!(derived_string_script_search.status, 200);
+        assert_eq!(
+            derived_string_script_search.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            derived_string_script_search.body["hits"]["hits"][0]["_id"],
+            "doc-3"
+        );
+        assert_eq!(
+            derived_string_script_search.body["hits"]["hits"][0]["fields"]["derived_tenant"],
+            serde_json::json!(["beta"])
         );
 
         let search_after = node.handle_rest_request(

@@ -1294,6 +1294,39 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "derived_field_string_script_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "derived": {
+          "derived_level": {
+            "type": "keyword",
+            "script": "emit(params._source[\"level\"])"
+          }
+        },
+        "query": {
+          "term": {
+            "derived_level": "warn"
+          }
+        },
+        "fields": [
+          "derived_level"
+        ],
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped derived field string script search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",
