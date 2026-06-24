@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 27 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 133 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 28 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 132 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1165,10 +1165,12 @@ The get-field-mappings boundary covers:
 - OpenSearch `GetFieldMappingsRequest` parent task, indices array,
   `IndicesOptions.strictExpandOpen()`, `local`, fields array, and
   `includeDefaults` at the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/mappings/fields/get`
-  until field mapping metadata response rendering is implemented;
+- implemented classification for `indices:admin/mappings/fields/get` default
+  all-indices/no-fields request admission and empty field-mappings response
+  rendering;
 - explicit rejection for index filters, custom indices options, local reads,
-  field filters, include-default expansion, and get-field-mappings execution.
+  field filters, include-default expansion, and non-empty field mapping
+  metadata payloads.
 
 The put-mapping boundary covers:
 
@@ -3608,14 +3610,16 @@ ClusterManagerNodeRead envelope and empty index array, so it is slightly heavier
 than get-repositories but still inside the lightweight admin transport range at
 roughly 1.70M ops/s in the latest local release run.
 
-Current get-field-mappings reject wire microbenchmark:
+Current get-field-mappings wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-field-mappings-reject-wire-benchmark
-get_field_mappings_reject_request_encode iterations=400000 elapsed_ms=258.224 ops_per_second=1549043.10 nanos_per_op=645.56
-get_field_mappings_reject_request_decode iterations=400000 elapsed_ms=241.097 ops_per_second=1659086.51 nanos_per_op=602.74
-get_field_mappings_reject_validation iterations=400000 elapsed_ms=244.342 ops_per_second=1637049.71 nanos_per_op=610.86
-get_field_mappings_reject_wire_bottleneck_ops_per_second=1549043.10
+cargo run -p os-transport --release --bin get-field-mappings-wire-benchmark
+get_field_mappings_request_encode iterations=400000 elapsed_ms=260.155 ops_per_second=1537545.72 nanos_per_op=650.39
+get_field_mappings_request_decode iterations=400000 elapsed_ms=241.861 ops_per_second=1653839.74 nanos_per_op=604.65
+get_field_mappings_request_validate iterations=400000 elapsed_ms=243.219 ops_per_second=1644606.62 nanos_per_op=608.05
+get_field_mappings_response_encode iterations=400000 elapsed_ms=86.822 ops_per_second=4607104.78 nanos_per_op=217.06
+get_field_mappings_response_decode iterations=400000 elapsed_ms=93.420 ops_per_second=4281736.19 nanos_per_op=233.55
+get_field_mappings_wire_bottleneck_ops_per_second=1537545.72
 ```
 
 The current get-field-mappings fail-closed boundary bottleneck is request
@@ -6281,7 +6285,6 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `GetFieldMappingsAction.INSTANCE`
 - `ClusterSearchShardsAction.INSTANCE`
 - `RecoveryAction.INSTANCE`
 - `IndicesSegmentsAction.INSTANCE`

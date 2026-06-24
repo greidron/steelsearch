@@ -1970,8 +1970,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-field-mappings transport adapter returns an OpenSearch-shaped empty field mappings response for the default all-indices request",
         },
         OPENSEARCH_PUT_MAPPING_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -8140,6 +8140,36 @@ pub fn read_opensearch_get_field_mappings_request_message(
     OpenSearchGetFieldMappingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_get_field_mappings_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetFieldMappingsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_field_mappings_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetFieldMappingsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetFieldMappingsResponseWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_put_mapping_request_message(
     request_id: i64,
     version: Version,
@@ -12114,7 +12144,8 @@ impl GetRepositoriesRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get repositories execution",
-            reason: "use validate_supported_subset for the implemented empty get-repositories adapter",
+            reason:
+                "use validate_supported_subset for the implemented empty get-repositories adapter",
         })
     }
 }
@@ -12157,7 +12188,8 @@ impl GetRepositoriesResponseWire {
         if self.repository_count != 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get repositories metadata",
-                reason: "repository metadata entries require repository settings and generation mapping",
+                reason:
+                    "repository metadata entries require repository settings and generation mapping",
             });
         }
         Ok(())
@@ -17055,7 +17087,8 @@ impl OpenSearchGetMappingsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get mappings execution",
-            reason: "use validate_supported_subset for the implemented default get-mappings adapter",
+            reason:
+                "use validate_supported_subset for the implemented default get-mappings adapter",
         })
     }
 
@@ -17120,7 +17153,8 @@ impl OpenSearchGetMappingsResponseWire {
             if input.read_bool()? {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "get mappings mapping metadata",
-                    reason: "non-empty MappingMetadata payloads are not decoded by this adapter yet",
+                    reason:
+                        "non-empty MappingMetadata payloads are not decoded by this adapter yet",
                 });
             }
             empty_mapping_indices.push(index);
@@ -17197,6 +17231,14 @@ impl OpenSearchGetFieldMappingsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get field mappings execution",
+            reason: "use validate_supported_subset for the implemented default get-field-mappings adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get field mappings index filter",
@@ -17228,10 +17270,64 @@ impl OpenSearchGetFieldMappingsRequestWire {
                 reason: "field-mapping default expansion is not mapped by this adapter",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get field mappings execution",
-            reason: "get-field-mappings transport execution requires field mapping metadata response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetFieldMappingsResponseWire {
+    pub empty_field_mapping_indices: Vec<String>,
+}
+
+impl OpenSearchGetFieldMappingsResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            empty_field_mapping_indices: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.empty_field_mapping_indices.len() as i32);
+        for index in &self.empty_field_mapping_indices {
+            output.write_string(index);
+            output.write_vint(0);
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let index_count = read_len(&mut input)?;
+        let mut empty_field_mapping_indices = Vec::with_capacity(index_count);
+        for _ in 0..index_count {
+            let index = input.read_string()?;
+            let field_count = read_len(&mut input)?;
+            if field_count != 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get field mappings field metadata",
+                    reason: "non-empty FieldMappingMetadata payloads are not decoded by this adapter yet",
+                });
+            }
+            empty_field_mapping_indices.push(index);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            empty_field_mapping_indices,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        for index in &self.empty_field_mapping_indices {
+            if index.trim().is_empty() {
+                return Err(TransportActionWireError::MissingRequiredField {
+                    field: "get field mappings response index name",
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -21880,7 +21976,8 @@ impl OpenSearchGetSettingsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get settings execution",
-            reason: "use validate_supported_subset for the implemented default get-settings adapter",
+            reason:
+                "use validate_supported_subset for the implemented default get-settings adapter",
         })
     }
 
@@ -34356,7 +34453,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_MAPPING_ACTION_NAME).disposition,
@@ -34727,6 +34824,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -34740,7 +34838,6 @@ mod tests {
             }
             if spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
@@ -38529,12 +38626,9 @@ mod tests {
                     .to_string(),
             ),
         );
-        let mut frame = build_nodes_hot_threads_response_message(
-            33,
-            OPENSEARCH_3_7_0_TRANSPORT,
-            &response,
-        )
-        .unwrap();
+        let mut frame =
+            build_nodes_hot_threads_response_message(33, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected nodes hot threads response message");
         };
@@ -39442,12 +39536,9 @@ mod tests {
             .unwrap();
 
         let response = GetRepositoriesResponseWire::empty();
-        let mut frame = build_get_repositories_response_message(
-            34,
-            OPENSEARCH_3_7_0_TRANSPORT,
-            &response,
-        )
-        .unwrap();
+        let mut frame =
+            build_get_repositories_response_message(34, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected get repositories response message");
         };
@@ -45265,20 +45356,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_field_mappings_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_field_mappings_request_wire_round_trips_and_validates_default_all_fields() {
         let request = OpenSearchGetFieldMappingsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetFieldMappingsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get field mappings execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -45348,7 +45433,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_field_mappings_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_field_mappings_transport_messages_bind_supported_action_frame_and_empty_response(
+    ) {
         let request = OpenSearchGetFieldMappingsRequestWire::default();
         let mut frame = build_opensearch_get_field_mappings_request_message(
             36,
@@ -45363,12 +45449,56 @@ mod tests {
             read_opensearch_get_field_mappings_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_get_field_mappings_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchGetFieldMappingsResponseWire::empty();
+        let mut frame = build_opensearch_get_field_mappings_response_message(
+            36,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get field mappings response message");
+        };
+        assert_eq!(
+            read_opensearch_get_field_mappings_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_field_mappings_response_wire_round_trips_empty_field_mapping_entries() {
+        let response = OpenSearchGetFieldMappingsResponseWire {
+            empty_field_mapping_indices: vec![
+                "logs-000001".to_string(),
+                "metrics-000001".to_string(),
+            ],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchGetFieldMappingsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_get_field_mappings_response_rejects_non_empty_field_mapping_metadata() {
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        output.write_string("logs-000001");
+        output.write_vint(1);
+        output.write_string("message");
+        output.write_string("message");
+        output.write_bytes_reference(b"{\"message\":{\"type\":\"text\"}}");
+
         assert!(matches!(
-            read_opensearch_get_field_mappings_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
+            OpenSearchGetFieldMappingsResponseWire::read(output.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get field mappings execution",
+                shape: "get field mappings field metadata",
                 ..
             })
         ));
