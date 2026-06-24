@@ -67,6 +67,9 @@ route_status() {
     "GET /_cluster/health"|"PUT /{index}"|"GET /{index}"|"DELETE /{index}"|"PUT /{index}/_doc/{id}"|"GET /{index}/_doc/{id}")
       echo "stubbed"
       ;;
+    "POST /{index}/_search/point_in_time"|"DELETE /_search/point_in_time"|"DELETE /_search/point_in_time/_all"|"GET /_search/point_in_time/_all")
+      echo "implemented"
+      ;;
     *)
       echo "planned"
       ;;
@@ -83,6 +86,9 @@ action_status() {
   fi
 
   case "${action}" in
+    CreatePitAction.INSTANCE|DeletePitAction.INSTANCE|PitSegmentsAction.INSTANCE|GetAllPitsAction.INSTANCE)
+      echo "implemented"
+      ;;
     *Recovery*|*SegmentReplication*)
       echo "planned"
       ;;

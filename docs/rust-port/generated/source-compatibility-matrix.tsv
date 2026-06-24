@@ -350,13 +350,13 @@ rest_route	planned	GET	/_count		/home/ubuntu/OpenSearch/server/src/main/java/org
 rest_route	planned	POST	/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	72
 rest_route	planned	GET	/{index}/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	73
 rest_route	planned	POST	/{index}/_count		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	74
-rest_route	planned	POST	/{index}/_search/point_in_time		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCreatePitAction.java	54
-rest_route	planned	DELETE	/_search/point_in_time		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
-rest_route	planned	DELETE	/_search/point_in_time/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
+rest_route	implemented	POST	/{index}/_search/point_in_time		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCreatePitAction.java	54
+rest_route	implemented	DELETE	/_search/point_in_time		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
+rest_route	implemented	DELETE	/_search/point_in_time/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
 rest_route	planned	DELETE	/_search/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeleteSearchPipelineAction.java	35
 rest_route	planned	GET	/{index}/_explain/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestExplainAction.java	62
 rest_route	planned	POST	/{index}/_explain/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestExplainAction.java	62
-rest_route	planned	GET	/_search/point_in_time/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetAllPitsAction.java	88
+rest_route	implemented	GET	/_search/point_in_time/_all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetAllPitsAction.java	88
 rest_route	planned	GET	/_search/pipeline		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetSearchPipelineAction.java	36
 rest_route	planned	GET	/_search/pipeline/{id}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetSearchPipelineAction.java	36
 rest_route	planned	GET	/_msearch		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java	96
@@ -518,7 +518,7 @@ transport_action	implemented	action	ListDanglingIndicesAction.INSTANCE	Transport
 transport_action	planned	action	ImportDanglingIndexAction.INSTANCE	TransportImportDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	816
 transport_action	planned	action	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	817
 transport_action	implemented	action	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818
-transport_action	planned	action	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	821
+transport_action	implemented	action	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	821
 transport_action	implemented	action	DeletePitAction.INSTANCE	TransportDeletePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	822
 transport_action	implemented	action	PitSegmentsAction.INSTANCE	TransportPitSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	823
 transport_action	implemented	action	GetAllPitsAction.INSTANCE	TransportGetAllPitsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	824

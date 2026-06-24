@@ -350,13 +350,13 @@ planned	GET	/_count	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/
 planned	POST	/_count	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	72
 planned	GET	/{index}/_count	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	73
 planned	POST	/{index}/_count	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	74
-planned	POST	/{index}/_search/point_in_time	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCreatePitAction.java	54
-planned	DELETE	/_search/point_in_time	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
-planned	DELETE	/_search/point_in_time/_all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
+implemented	POST	/{index}/_search/point_in_time	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCreatePitAction.java	54
+implemented	DELETE	/_search/point_in_time	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
+implemented	DELETE	/_search/point_in_time/_all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java	57
 planned	DELETE	/_search/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeleteSearchPipelineAction.java	35
 planned	GET	/{index}/_explain/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestExplainAction.java	62
 planned	POST	/{index}/_explain/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestExplainAction.java	62
-planned	GET	/_search/point_in_time/_all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetAllPitsAction.java	88
+implemented	GET	/_search/point_in_time/_all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetAllPitsAction.java	88
 planned	GET	/_search/pipeline	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetSearchPipelineAction.java	36
 planned	GET	/_search/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetSearchPipelineAction.java	36
 planned	GET	/_msearch	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java	96
