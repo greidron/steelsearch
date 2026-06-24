@@ -1723,6 +1723,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_expand_wildcards_none_empty_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search/point_in_time?keep_alive=1m&expand_wildcards=none&allow_no_indices=true",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open expand wildcards none empty search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_with_strict_partial_creation_search",
       "area": "search",
       "method": "POST",

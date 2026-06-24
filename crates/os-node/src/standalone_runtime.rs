@@ -23539,10 +23539,9 @@ fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool, b
                 include_closed = true;
             }
             "none" => {
-                return Err(RestResponse::opensearch_error_kind(
-                    os_rest::RestErrorKind::IllegalArgument,
-                    format!("unsupported expand_wildcards value [{expand_wildcards}]"),
-                ));
+                include_open = false;
+                include_hidden = false;
+                include_closed = false;
             }
             _ => {
                 return Err(RestResponse::opensearch_error_kind(
