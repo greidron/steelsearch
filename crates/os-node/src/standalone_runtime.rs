@@ -38995,6 +38995,141 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_search_keeps_original_snapshot_after_update_and_delete() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-snapshot-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-snapshot-000001/_mappings")
+                    .with_json_body(serde_json::json!({
+                        "properties": {
+                            "rank": { "type": "long" },
+                            "status": { "type": "keyword" }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        for (id, rank) in [("doc-1", 10), ("doc-2", 20)] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-pit-snapshot-000001/_doc/{id}"),
+                    )
+                    .with_json_body(serde_json::json!({
+                        "rank": rank,
+                        "status": "original"
+                    })),
+                )
+                .status,
+                201
+            );
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-snapshot-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap();
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-snapshot-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({
+                        "rank": 200,
+                        "status": "updated"
+                    })),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Delete,
+                "/logs-pit-snapshot-000001/_doc/doc-1",
+            ))
+            .status,
+            200
+        );
+
+        let live_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-pit-snapshot-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }]
+                })),
+        );
+        assert_eq!(live_search.status, 200);
+        assert_eq!(live_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(live_search.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(live_search.body["hits"]["hits"][0]["sort"], serde_json::json!([200]));
+        assert_eq!(
+            live_search.body["hits"]["hits"][0]["_source"]["status"],
+            "updated"
+        );
+
+        let pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": pit_id,
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }]
+                })),
+        );
+        assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["hits"]["total"]["value"], 2);
+        assert_eq!(
+            pit_search.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (
+                    hit["_id"].as_str().unwrap(),
+                    hit["sort"].clone(),
+                    hit["_source"]["status"].clone()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-1", serde_json::json!([10]), serde_json::json!("original")),
+                ("doc-2", serde_json::json!([20]), serde_json::json!("original"))
+            ]
+        );
+
+        let pit_second_page = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": pit_id,
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }],
+                    "search_after": [10]
+                })),
+        );
+        assert_eq!(pit_second_page.status, 200);
+        assert_eq!(pit_second_page.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(
+            pit_second_page.body["hits"]["hits"][0]["sort"],
+            serde_json::json!([20])
+        );
+    }
+
+    #[test]
     fn search_routes_support_search_after_collapse_profile_highlight_and_suggest_subsets() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
