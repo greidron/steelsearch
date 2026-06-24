@@ -2230,8 +2230,8 @@ The delete-PIT boundary covers:
   `DeletePitInfo` encoded as `successful` plus `pit_id`;
 - request validation for decoded non-empty PIT id arrays and response
   build/decode support for non-empty `DeletePitInfo` result lists;
-- explicit rejection for empty PIT id arrays and empty PIT id entries until
-  runtime PIT context invalidation is wired to the transport action.
+- shared `SteelNode` PIT context invalidation for explicit PIT ids and `_all`;
+- explicit rejection for empty PIT id arrays and empty PIT id entries.
 
 The get-all-PITs boundary covers:
 
@@ -2242,9 +2242,9 @@ The get-all-PITs boundary covers:
   entries encoded as `pit_id`, `creation_time`, and `keep_alive`;
 - request validation for the default all-nodes request and response
   build/decode support for non-empty PIT info node lists;
+- shared `SteelNode` PIT context listing for the local-node transport subset;
 - explicit rejection for concrete node payloads, node filters, timeout
-  semantics, invalid PIT info entries, and failed-node payloads until runtime
-  PIT listing fanout is wired to the transport action.
+  semantics, invalid PIT info entries, and failed-node payloads.
 
 The create-PIT boundary covers:
 
@@ -2255,8 +2255,9 @@ The create-PIT boundary covers:
   successful, failed, skipped shard counts, creation time, and an empty shard
   failure list;
 - local transport PIT context allocation for the default all-indices request
-  subset, including keep-alive expiry bookkeeping and read-all/delete
-  visibility through the same transport lifecycle state;
+  subset into the shared `SteelNode` PIT context store, including keep-alive
+  expiry bookkeeping and read-all/delete visibility through the same lifecycle
+  state;
 - explicit rejection for non-positive keep-alive values, unknown keep-alive
   units, index filters, custom indices options, routing, and preference; partial creation flags and
   non-empty shard failure payloads remain fail-closed until shard-level failure
@@ -5081,7 +5082,8 @@ The current delete-PIT wire subset bottleneck is request encode with explicit
 PIT ids. The non-empty response encode/decode path for two `DeletePitInfo`
 entries remains above 2.4M ops/s in the latest local release run, so response
 rendering is not the first bottleneck. The first performance point to inspect
-before accepting execution is runtime PIT context invalidation.
+while expanding execution is lock hold time and allocation in shared PIT context
+invalidation.
 
 Current get-all-PITs wire microbenchmark:
 
@@ -5098,8 +5100,8 @@ get_all_pits_wire_bottleneck_ops_per_second=536530.48
 The current get-all-PITs wire subset bottleneck is non-empty response
 encode/decode with one `DiscoveryNode` and two `ListPitInfo` entries. The first
 performance point to inspect before accepting execution is avoiding repeated
-node metadata serialization when runtime PIT listing fanout is wired to this
-transport action.
+node metadata serialization and minimizing lock hold time around shared PIT
+context listing.
 
 Current create-PIT wire microbenchmark:
 

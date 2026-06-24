@@ -21,6 +21,7 @@ use os_node::{
     ProductionMembershipState, ReleaseReadinessChecklist, RestServerConfig, RestTlsConfig,
     SecurityBoundaryPolicy, SteelNode,
 };
+use os_node::standalone_runtime::PitContext;
 use os_node_rest_core::{
     parse_authentication_users_json, AuthenticationUsersFile, SecurityBoundaryState,
 };
@@ -43,7 +44,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
-static DEV_TRANSPORT_PIT_STATE: OnceLock<Arc<Mutex<DevTransportPitState>>> = OnceLock::new();
+static DEV_TRANSPORT_PIT_BINDINGS: OnceLock<DevTransportPitBindings> = OnceLock::new();
 
 fn now_epoch_ms() -> u128 {
     SystemTime::now()
@@ -95,21 +96,24 @@ struct DevTransportCoordinationState {
     cached_match_all_total_hits: BTreeMap<String, i64>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct DevTransportPitState {
-    next_id: u64,
-    contexts: BTreeMap<String, DevTransportPitContext>,
+#[derive(Clone, Debug)]
+struct DevTransportPitBindings {
+    contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
+    next_id: Arc<Mutex<u64>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct DevTransportPitContext {
-    creation_time_millis: i64,
-    keep_alive_millis: i64,
-    expires_at_millis: u128,
+fn dev_transport_pit_bindings() -> &'static DevTransportPitBindings {
+    DEV_TRANSPORT_PIT_BINDINGS.get_or_init(|| DevTransportPitBindings {
+        contexts: Arc::new(Mutex::new(BTreeMap::new())),
+        next_id: Arc::new(Mutex::new(0)),
+    })
 }
 
-fn dev_transport_pit_state() -> &'static Arc<Mutex<DevTransportPitState>> {
-    DEV_TRANSPORT_PIT_STATE.get_or_init(|| Arc::new(Mutex::new(DevTransportPitState::default())))
+fn bind_dev_transport_pit_store(
+    contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
+    next_id: Arc<Mutex<u64>>,
+) {
+    let _ = DEV_TRANSPORT_PIT_BINDINGS.set(DevTransportPitBindings { contexts, next_id });
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -353,6 +357,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.register_default_dev_endpoints(config.cluster_name.clone(), cluster_uuid);
     node.register_development_cluster_endpoints(cluster_view);
     node.start_rest();
+    bind_dev_transport_pit_store(Arc::clone(&node.pit_contexts), Arc::clone(&node.next_pit_id));
     let transport_capture_path = config.data_path.join("transport-seed-capture.json");
     let transport_identity = DevTransportIdentity {
         cluster_name: config.cluster_name.clone(),
@@ -3662,20 +3667,29 @@ fn build_local_create_pit_response(
     let now_millis = now_epoch_ms();
     let creation_time_millis = now_millis as i64;
     let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
+    let keep_alive_millis_u64 = keep_alive_millis.max(1) as u64;
     let pit_id = {
-        let mut state = dev_transport_pit_state()
+        let bindings = dev_transport_pit_bindings();
+        let mut next_id = bindings
+            .next_id
             .lock()
-            .expect("dev transport pit state lock poisoned");
-        state.next_id += 1;
-        let pit_id = format!("pit-{}", state.next_id);
-        state.contexts.insert(
-            pit_id.clone(),
-            DevTransportPitContext {
-                creation_time_millis,
-                keep_alive_millis,
-                expires_at_millis: now_millis + keep_alive_millis as u128,
-            },
-        );
+            .expect("dev transport next PIT id lock poisoned");
+        *next_id += 1;
+        let pit_id = format!("pit-{}", *next_id);
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: Vec::new(),
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: keep_alive_millis_u64,
+                    expires_at_millis: now_millis + u128::from(keep_alive_millis_u64),
+                    creation_time_millis: now_millis,
+                },
+            );
         pit_id
     };
     os_transport::action::build_opensearch_create_pit_response_message(
@@ -3702,6 +3716,14 @@ fn time_value_wire_to_millis(time_value: &os_transport::action::TimeValueWire) -
         6 => time_value.duration.saturating_mul(86_400_000),
         _ => time_value.duration,
     }
+}
+
+fn u128_to_i64_saturating(value: u128) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+fn u64_to_i64_saturating(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
@@ -3814,28 +3836,30 @@ fn build_local_get_all_pits_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn prune_expired_transport_pits(state: &mut DevTransportPitState, now_millis: u128) {
-    state
-        .contexts
-        .retain(|_, context| context.expires_at_millis > now_millis);
+fn prune_expired_transport_pits(
+    contexts: &mut BTreeMap<String, PitContext>,
+    now_millis: u128,
+) {
+    contexts.retain(|_, context| context.expires_at_millis > now_millis);
 }
 
 fn delete_transport_pit_contexts(
     pit_ids: &[String],
 ) -> os_transport::action::OpenSearchDeletePitResponseWire {
-    let mut state = dev_transport_pit_state()
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
         .lock()
-        .expect("dev transport pit state lock poisoned");
-    prune_expired_transport_pits(&mut state, now_epoch_ms());
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
     let ids = if pit_ids.iter().any(|id| id == "_all") {
-        state.contexts.keys().cloned().collect::<Vec<_>>()
+        contexts.keys().cloned().collect::<Vec<_>>()
     } else {
         pit_ids.to_vec()
     };
     let results = ids
         .into_iter()
         .map(|id| {
-            let existed = state.contexts.remove(&id).is_some();
+            let existed = contexts.remove(&id).is_some();
             os_transport::action::OpenSearchDeletePitInfoWire::new(existed, id)
         })
         .collect();
@@ -3846,18 +3870,18 @@ fn get_all_transport_pits_response(
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::OpenSearchGetAllPitsResponseWire {
     let pit_infos = {
-        let mut state = dev_transport_pit_state()
-            .lock()
-            .expect("dev transport pit state lock poisoned");
-        prune_expired_transport_pits(&mut state, now_epoch_ms());
-        state
+        let mut contexts = dev_transport_pit_bindings()
             .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned");
+        prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+        contexts
             .iter()
             .map(|(pit_id, context)| {
                 os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
-                    context.creation_time_millis,
-                    context.keep_alive_millis,
+                    u128_to_i64_saturating(context.creation_time_millis),
+                    u64_to_i64_saturating(context.keep_alive_millis),
                 )
             })
             .collect::<Vec<_>>()
@@ -10330,15 +10354,15 @@ mod tests {
 
     #[test]
     fn create_list_and_delete_pit_transport_routes_share_local_lifecycle_state() {
-        dev_transport_pit_state()
-            .lock()
-            .expect("dev transport pit state lock poisoned")
+        dev_transport_pit_bindings()
             .contexts
-            .clear();
-        dev_transport_pit_state()
             .lock()
-            .expect("dev transport pit state lock poisoned")
-            .next_id = 0;
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 0;
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -10380,6 +10404,11 @@ mod tests {
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
         assert_eq!(create_response.pit_id, "pit-1");
         assert_eq!(create_response.total_shards, 0);
+        assert!(dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key("pit-1"));
 
         let list_response = build_local_get_all_pits_response(
             94,
@@ -10448,6 +10477,11 @@ mod tests {
             list_response,
             os_transport::action::OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev")
         );
+        assert!(dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
     }
 
     #[test]
@@ -10529,10 +10563,10 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
-        dev_transport_pit_state()
-            .lock()
-            .expect("dev transport pit state lock poisoned")
+        dev_transport_pit_bindings()
             .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
             .clear();
         let response = build_local_get_all_pits_response(
             93,
