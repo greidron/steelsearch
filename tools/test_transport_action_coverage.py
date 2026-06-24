@@ -33,15 +33,21 @@ class TransportActionCoverageTests(unittest.TestCase):
             {"status": "planned"},
             {"status": "planned"},
             {"status": "implemented"},
+            {"status": "partial"},
         ]
 
         self.assertEqual(
             self.report.status_counts(actions),
-            {"implemented": 1, "planned": 2},
+            {"implemented": 1, "partial": 1, "planned": 2},
+        )
+        self.assertEqual(
+            self.report.filter_status(actions, "planned"),
+            [{"status": "planned"}, {"status": "planned"}],
         )
 
     def test_action_coverage_claim_reflects_implemented_count(self):
         self.assertIn("no OpenSearch", self.report.action_coverage_claim(0))
+        self.assertIn("partial actions", self.report.action_coverage_claim(0, 1))
         self.assertIn("implemented adapters", self.report.action_coverage_claim(1))
 
     def test_peer_report_passed_requires_summary_passed(self):
@@ -90,6 +96,33 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["transport_action_count"], 1)
             self.assertEqual(payload["summary"]["planned_action_count"], 1)
             self.assertEqual(payload["summary"]["implemented_action_count"], 0)
+            self.assertEqual(payload["summary"]["partial_action_count"], 0)
+            self.assertEqual(len(payload["actions"]), 1)
+            self.assertEqual(len(payload["planned_actions"]), 1)
+            self.assertEqual(payload["implemented_actions"], [])
+            self.assertEqual(payload["partial_actions"], [])
+
+    def test_cli_reports_current_implemented_and_partial_inventory_counts(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            output = Path(temp_dir_value) / "transport.json"
+
+            result = self.run_cli(
+                "--source",
+                str(SOURCE_TRANSPORT_ACTIONS),
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 0)
+            self.assertEqual(payload["summary"]["transport_action_count"], 160)
+            self.assertEqual(payload["summary"]["implemented_action_count"], 42)
+            self.assertEqual(payload["summary"]["partial_action_count"], 118)
+            self.assertEqual(payload["summary"]["planned_action_count"], 0)
+            self.assertEqual(len(payload["actions"]), 160)
+            self.assertEqual(len(payload["implemented_actions"]), 42)
+            self.assertEqual(len(payload["partial_actions"]), 118)
+            self.assertEqual(payload["planned_actions"], [])
 
     def test_cli_rejects_stale_peer_backpressure_when_age_gate_is_set(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

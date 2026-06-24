@@ -59,6 +59,10 @@ def main() -> int:
 
     status = "ok" if not errors else "failed"
     implemented_count = count_status(actions, "implemented")
+    partial_count = count_status(actions, "partial")
+    planned_count = count_status(actions, "planned")
+    stubbed_count = count_status(actions, "stubbed")
+    out_of_scope_count = count_status(actions, "out-of-scope")
     report = {
         "status": status,
         "errors": errors,
@@ -67,15 +71,21 @@ def main() -> int:
             "passed": not errors,
             "transport_action_count": len(actions),
             "implemented_action_count": implemented_count,
-            "planned_action_count": count_status(actions, "planned"),
-            "stubbed_action_count": count_status(actions, "stubbed"),
-            "out_of_scope_action_count": count_status(actions, "out-of-scope"),
-            "action_coverage_claim": action_coverage_claim(implemented_count),
+            "partial_action_count": partial_count,
+            "planned_action_count": planned_count,
+            "stubbed_action_count": stubbed_count,
+            "out_of_scope_action_count": out_of_scope_count,
+            "action_coverage_claim": action_coverage_claim(implemented_count, partial_count),
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
         },
         "status_counts": status_counts(actions),
         "protocol_evidence": protocol_evidence,
-        "planned_actions": actions,
+        "actions": actions,
+        "implemented_actions": filter_status(actions, "implemented"),
+        "partial_actions": filter_status(actions, "partial"),
+        "planned_actions": filter_status(actions, "planned"),
+        "stubbed_actions": filter_status(actions, "stubbed"),
+        "out_of_scope_actions": filter_status(actions, "out-of-scope"),
     }
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -157,6 +167,10 @@ def count_status(actions: list[dict[str, str]], status: str) -> int:
     return sum(1 for action in actions if action["status"] == status)
 
 
+def filter_status(actions: list[dict[str, str]], status: str) -> list[dict[str, str]]:
+    return [action for action in actions if action["status"] == status]
+
+
 def status_counts(actions: list[dict[str, str]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for action in actions:
@@ -165,8 +179,13 @@ def status_counts(actions: list[dict[str, str]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def action_coverage_claim(implemented_count: int) -> str:
+def action_coverage_claim(implemented_count: int, partial_count: int = 0) -> str:
     if implemented_count == 0:
+        if partial_count:
+            return (
+                "OpenSearch ActionModule transport coverage has no implemented adapters yet; "
+                "partial actions have explicit fail-closed or narrower execution boundaries"
+            )
         return (
             "no OpenSearch ActionModule transport action is currently classified as implemented; "
             "current evidence covers frame/handshake/observe-only and query-phase backpressure surfaces"
