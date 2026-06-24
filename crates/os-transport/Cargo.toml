@@ -458,8 +458,8 @@ name = "get-aliases-wire-benchmark"
 path = "benchmarks/get_aliases_wire.rs"
 
 [[bin]]
-name = "get-settings-reject-wire-benchmark"
-path = "benchmarks/get_settings_reject_wire.rs"
+name = "get-settings-wire-benchmark"
+path = "benchmarks/get_settings_wire.rs"
 
 [[bin]]
 name = "cluster-search-shards-reject-wire-benchmark"

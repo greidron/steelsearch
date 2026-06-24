@@ -78,7 +78,7 @@ partial	UpgradeStatusAction.INSTANCE	TransportUpgradeStatusAction.class	/home/ub
 partial	UpgradeSettingsAction.INSTANCE	TransportUpgradeSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	738
 partial	ClearIndicesCacheAction.INSTANCE	TransportClearIndicesCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	739
 implemented	GetAliasesAction.INSTANCE	TransportGetAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	740
-partial	GetSettingsAction.INSTANCE	TransportGetSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	741
+implemented	GetSettingsAction.INSTANCE	TransportGetSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	741
 implemented	IndexAction.INSTANCE	TransportIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	743
 implemented	GetAction.INSTANCE	TransportGetAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	744
 partial	TermVectorsAction.INSTANCE	TransportTermVectorsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	745

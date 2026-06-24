@@ -2201,8 +2201,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-settings transport execution requires index settings metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-settings transport adapter returns an OpenSearch-shaped empty settings response for the default all-indices request",
         },
         OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9828,6 +9828,36 @@ pub fn read_opensearch_get_settings_request_message(
         });
     }
     OpenSearchGetSettingsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_settings_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetSettingsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_settings_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetSettingsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetSettingsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_cluster_search_shards_request_message(
@@ -21756,6 +21786,14 @@ impl OpenSearchGetSettingsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get settings execution",
+            reason: "use validate_supported_subset for the implemented default get-settings adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get settings cluster-manager timeout",
@@ -21802,10 +21840,52 @@ impl OpenSearchGetSettingsRequestWire {
                 reason: "default settings expansion is not mapped by this adapter",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get settings execution",
-            reason: "get-settings transport execution requires index settings metadata response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetSettingsResponseWire {
+    pub index_settings: BTreeMap<String, BTreeMap<String, String>>,
+    pub default_settings: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+impl OpenSearchGetSettingsResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            index_settings: BTreeMap::new(),
+            default_settings: BTreeMap::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_settings_by_index_map(output, &self.index_settings);
+        write_settings_by_index_map(output, &self.default_settings);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            index_settings: read_settings_by_index_map(&mut input, "get settings index settings")?,
+            default_settings: read_settings_by_index_map(
+                &mut input,
+                "get settings default settings",
+            )?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        validate_settings_by_index_map(&self.index_settings, "get settings response index name")?;
+        validate_settings_by_index_map(
+            &self.default_settings,
+            "get settings response default index name",
+        )?;
+        Ok(())
     }
 }
 
@@ -32191,6 +32271,44 @@ fn read_settings_string_map(
     Ok(values)
 }
 
+fn write_settings_by_index_map(
+    output: &mut StreamOutput,
+    values: &BTreeMap<String, BTreeMap<String, String>>,
+) {
+    output.write_vint(values.len() as i32);
+    for (index, settings) in values {
+        output.write_string(index);
+        write_settings_string_map(output, settings);
+    }
+}
+
+fn read_settings_by_index_map(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<BTreeMap<String, BTreeMap<String, String>>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut values = BTreeMap::new();
+    for _ in 0..len {
+        let index = input.read_string()?;
+        let settings = read_settings_string_map(input)?;
+        values.insert(index, settings);
+    }
+    validate_settings_by_index_map(&values, shape)?;
+    Ok(values)
+}
+
+fn validate_settings_by_index_map(
+    values: &BTreeMap<String, BTreeMap<String, String>>,
+    field: &'static str,
+) -> Result<(), TransportActionWireError> {
+    for index in values.keys() {
+        if index.trim().is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField { field });
+        }
+    }
+    Ok(())
+}
+
 fn write_generic_string_double_map(output: &mut StreamOutput, values: &BTreeMap<String, f64>) {
     output.write_byte(10);
     output.write_vint(values.len() as i32);
@@ -34357,7 +34475,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_SETTINGS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME)
@@ -34518,6 +34636,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -34574,7 +34693,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
@@ -51416,20 +51534,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_settings_request_wire_round_trips_and_validates_default_all_settings() {
         let request = OpenSearchGetSettingsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetSettingsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get settings execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -51523,7 +51635,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_settings_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_settings_transport_messages_bind_supported_action_frame_and_empty_response() {
         let request = OpenSearchGetSettingsRequestWire::default();
         let mut frame =
             build_opensearch_get_settings_request_message(38, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -51535,13 +51647,54 @@ mod tests {
             read_opensearch_get_settings_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_get_settings_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchGetSettingsResponseWire::empty();
+        let mut frame = build_opensearch_get_settings_response_message(
+            38,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get settings response message");
+        };
+        assert_eq!(
+            read_opensearch_get_settings_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_settings_response_wire_round_trips_index_settings_maps() {
+        let response = OpenSearchGetSettingsResponseWire {
+            index_settings: BTreeMap::from([(
+                "logs-000001".to_string(),
+                BTreeMap::from([("index.number_of_replicas".to_string(), "1".to_string())]),
+            )]),
+            default_settings: BTreeMap::from([("logs-000001".to_string(), BTreeMap::new())]),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchGetSettingsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_get_settings_response_rejects_blank_index_names() {
+        let response = OpenSearchGetSettingsResponseWire {
+            index_settings: BTreeMap::from([(" ".to_string(), BTreeMap::new())]),
+            default_settings: BTreeMap::new(),
+        };
+        let mut output = StreamOutput::new();
         assert!(matches!(
-            read_opensearch_get_settings_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get settings execution",
-                ..
+            response.write(&mut output),
+            Err(TransportActionWireError::MissingRequiredField {
+                field: "get settings response index name",
             })
         ));
     }

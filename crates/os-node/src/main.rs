@@ -1266,6 +1266,29 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("indices:monitor/settings/get") {
+        let response = build_empty_get_settings_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/settings/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/hot_threads") {
         let response =
             build_nodes_hot_threads_response(request_id, header_version_id, transport_identity);
@@ -3081,6 +3104,16 @@ fn build_empty_get_aliases_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_empty_get_settings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_opensearch_get_settings_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchGetSettingsResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_nodes_hot_threads_response(
     request_id: i64,
     header_version_id: u32,
@@ -4813,6 +4846,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         )),
         Some("indices:admin/aliases/get") => {
             Some(build_empty_get_aliases_response(request_id, header_version_id))
+        }
+        Some("indices:monitor/settings/get") => {
+            Some(build_empty_get_settings_response(request_id, header_version_id))
         }
         Some("cluster:monitor/nodes/hot_threads") => Some(build_nodes_hot_threads_response(
             request_id,
@@ -9098,6 +9134,27 @@ mod tests {
     }
 
     #[test]
+    fn get_settings_transport_route_builds_opensearch_shaped_empty_response() {
+        let response =
+            build_empty_get_settings_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get settings response message");
+        };
+
+        assert_eq!(message.request_id, 83);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_settings_response_message(&message).unwrap();
+        assert!(response.index_settings.is_empty());
+        assert!(response.default_settings.is_empty());
+    }
+
+    #[test]
     fn nodes_hot_threads_transport_route_builds_opensearch_shaped_local_response() {
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
@@ -9114,7 +9171,7 @@ mod tests {
             task_queue_state: None,
         };
         let response = build_nodes_hot_threads_response(
-            83,
+            84,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,
         );
@@ -9127,7 +9184,7 @@ mod tests {
             panic!("expected nodes hot threads response message");
         };
 
-        assert_eq!(message.request_id, 83);
+        assert_eq!(message.request_id, 84);
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_nodes_hot_threads_response_message(&message).unwrap();

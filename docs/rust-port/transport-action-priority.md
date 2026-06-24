@@ -1774,12 +1774,12 @@ The get-settings boundary covers:
   array, `local` flag, `IndicesOptions.fromOptions(false, true, true, true)`,
   names array, `humanReadable`, and `includeDefaults` at the wire decode/build
   layer;
-- explicit fail-closed classification for `indices:monitor/settings/get` until
-  index settings metadata response rendering and settings filtering semantics
-  are implemented;
+- implemented classification for `indices:monitor/settings/get` default
+  all-indices/no-name/no-default requests, returning an OpenSearch-shaped empty
+  index-settings and default-settings response;
 - explicit rejection for custom cluster-manager timeout, index filters, local
   reads, custom indices options, name filters, human-readable formatting,
-  include-default expansion, and get-settings execution.
+  and include-default expansion.
 
 The cluster-search-shards boundary covers:
 
@@ -4421,22 +4421,22 @@ decode. Response encode/decode is substantially faster for the empty alias map
 case, and the full default transport path remains at roughly 1.61M ops/s in the
 latest local release run.
 
-Current get-settings reject wire microbenchmark:
+Current get-settings implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-settings-reject-wire-benchmark
-get_settings_reject_request_encode iterations=400000 elapsed_ms=238.223 ops_per_second=1679097.16 nanos_per_op=595.56
-get_settings_reject_request_decode iterations=400000 elapsed_ms=240.210 ops_per_second=1665211.28 nanos_per_op=600.52
-get_settings_reject_validation iterations=400000 elapsed_ms=244.439 ops_per_second=1636403.30 nanos_per_op=611.10
-get_settings_reject_wire_bottleneck_ops_per_second=1636403.30
+cargo run -p os-transport --release --bin get-settings-wire-benchmark
+get_settings_request_encode iterations=400000 elapsed_ms=231.512 ops_per_second=1727768.90 nanos_per_op=578.78
+get_settings_request_decode iterations=400000 elapsed_ms=234.703 ops_per_second=1704280.46 nanos_per_op=586.76
+get_settings_request_validate iterations=400000 elapsed_ms=236.189 ops_per_second=1693556.34 nanos_per_op=590.47
+get_settings_response_encode iterations=400000 elapsed_ms=101.996 ops_per_second=3921725.77 nanos_per_op=254.99
+get_settings_response_decode iterations=400000 elapsed_ms=111.238 ops_per_second=3595884.44 nanos_per_op=278.10
+get_settings_wire_bottleneck_ops_per_second=1693556.34
 ```
 
-The current get-settings fail-closed boundary bottleneck is validation after
-decode. This path checks cluster-manager timeout, local execution, index
-filters, open/closed wildcard indices options, setting-name array,
-human-readable flag, and default expansion flag before rejecting at admission.
-At roughly 1.64M ops/s in the latest local release run, it remains in the
-lightweight admin transport range.
+The current get-settings implemented-path bottleneck is request validation after
+decode. The empty settings response encode/decode path is faster than request
+handling, and the full default transport path remains at roughly 1.69M ops/s in
+the latest local release run.
 
 Current cluster-search-shards reject wire microbenchmark:
 
@@ -6281,7 +6281,6 @@ response-shape examples.
 
 - `GetMappingsAction.INSTANCE`
 - `GetFieldMappingsAction.INSTANCE`
-- `GetSettingsAction.INSTANCE`
 - `ClusterSearchShardsAction.INSTANCE`
 - `RecoveryAction.INSTANCE`
 - `IndicesSegmentsAction.INSTANCE`
