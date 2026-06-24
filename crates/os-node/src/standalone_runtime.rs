@@ -14297,16 +14297,13 @@ impl SteelNode {
             .cloned()
             .or_else(|| self.resolve_alias_write_routing(index));
         let key = format!("{resolved_index}:{id}:{}", routing.clone().unwrap_or_default());
+        let Some((expected_seq_no, expected_primary_term)) =
+            validate_doc_write_occ_query_params(request)
+        else {
+            return doc_write_occ_query_params_error(request);
+        };
         let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
         let doc_existed = docs.contains_key(&key);
-        let expected_seq_no = request
-            .query_params
-            .get("if_seq_no")
-            .and_then(|value| value.parse::<i64>().ok());
-        let expected_primary_term = request
-            .query_params
-            .get("if_primary_term")
-            .and_then(|value| value.parse::<i64>().ok());
         let external_version = request
             .query_params
             .get("version")
@@ -14437,6 +14434,13 @@ impl SteelNode {
             .cloned()
             .or_else(|| self.resolve_alias_write_routing(index));
         let key = format!("{resolved_index}:{id}:{}", routing.clone().unwrap_or_default());
+        if request.query_params.contains_key("if_seq_no")
+            || request.query_params.contains_key("if_primary_term")
+        {
+            return action_request_validation_error(vec![
+                "create operations do not support compare and set. use index instead",
+            ]);
+        }
         let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
         if docs.contains_key(&key) {
             return RestResponse::json(
@@ -14639,15 +14643,12 @@ impl SteelNode {
             .or_else(|| self.resolve_alias_read_routing(index))
             .unwrap_or_default();
         let key = format!("{resolved_index}:{id}:{routing}");
+        let Some((expected_seq_no, expected_primary_term)) =
+            validate_doc_write_occ_query_params(request)
+        else {
+            return doc_write_occ_query_params_error(request);
+        };
         let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
-        let expected_seq_no = request
-            .query_params
-            .get("if_seq_no")
-            .and_then(|value| value.parse::<i64>().ok());
-        let expected_primary_term = request
-            .query_params
-            .get("if_primary_term")
-            .and_then(|value| value.parse::<i64>().ok());
         if expected_seq_no.is_some() || expected_primary_term.is_some() {
             let conflict = match docs.get(&key) {
                 Some(record) => {
@@ -14731,19 +14732,43 @@ impl SteelNode {
         let scripted_upsert = body.get("scripted_upsert").and_then(Value::as_bool).unwrap_or(false);
         let detect_noop = body.get("detect_noop").and_then(Value::as_bool).unwrap_or(true);
         let script = body.get("script").cloned();
+        let Some((expected_seq_no, expected_primary_term)) =
+            validate_doc_write_occ_query_params(request)
+        else {
+            return doc_write_occ_query_params_error(request);
+        };
+        let mut validation_errors = Vec::new();
+        if request.query_params.contains_key("version") || request.query_params.contains_key("version_type") {
+            validation_errors.push(
+                "internal versioning can not be used for optimistic concurrency control. Please use `if_seq_no` and `if_primary_term` instead".to_string(),
+            );
+        }
+        if expected_seq_no.is_some() {
+            if request
+                .query_params
+                .get("retry_on_conflict")
+                .and_then(|value| value.parse::<i64>().ok())
+                .is_some_and(|value| value > 0)
+            {
+                validation_errors.push("compare and write operations can not be retried".to_string());
+            }
+            if doc_as_upsert {
+                validation_errors.push("compare and write operations can not be used with upsert".to_string());
+            }
+            if !upsert.is_null() {
+                validation_errors.push(
+                    "upsert requests don't support `if_seq_no` and `if_primary_term`".to_string(),
+                );
+            }
+        }
+        if !validation_errors.is_empty() {
+            return action_request_validation_error_owned(validation_errors);
+        }
         let forced_refresh = request
             .query_params
             .get("refresh")
             .is_some_and(|value| value == "wait_for" || value == "true");
         let mut docs = self.documents_state.lock().expect("documents state lock poisoned");
-        let expected_seq_no = request
-            .query_params
-            .get("if_seq_no")
-            .and_then(|value| value.parse::<i64>().ok());
-        let expected_primary_term = request
-            .query_params
-            .get("if_primary_term")
-            .and_then(|value| value.parse::<i64>().ok());
         if expected_seq_no.is_some() || expected_primary_term.is_some() {
             let conflict = match docs.get(&key) {
                 Some(record) => {
@@ -19421,6 +19446,15 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
 }
 
 fn action_request_validation_error(validation_errors: Vec<&str>) -> RestResponse {
+    action_request_validation_error_owned(
+        validation_errors
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect(),
+    )
+}
+
+fn action_request_validation_error_owned(validation_errors: Vec<String>) -> RestResponse {
     RestResponse::json(
         400,
         serde_json::json!({
@@ -19439,6 +19473,63 @@ fn action_request_validation_error(validation_errors: Vec<&str>) -> RestResponse
             "status": 400
         }),
     )
+}
+
+fn validate_doc_write_occ_query_params(request: &RestRequest) -> Option<(Option<i64>, Option<i64>)> {
+    let raw_seq_no = request.query_params.get("if_seq_no");
+    let raw_primary_term = request.query_params.get("if_primary_term");
+    match (raw_seq_no, raw_primary_term) {
+        (None, None) => Some((None, None)),
+        (Some(seq_no), Some(primary_term)) => Some((
+            Some(seq_no.parse::<i64>().ok()?),
+            Some(primary_term.parse::<i64>().ok()?),
+        )),
+        _ => None,
+    }
+}
+
+fn doc_write_occ_query_params_error(request: &RestRequest) -> RestResponse {
+    let raw_seq_no = request.query_params.get("if_seq_no");
+    let raw_primary_term = request.query_params.get("if_primary_term");
+    if let Some(seq_no) = raw_seq_no {
+        if seq_no.parse::<i64>().is_err() {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": format!("Failed to parse value [{seq_no}] for [if_seq_no] as a long")
+                    },
+                    "status": 400
+                }),
+            );
+        }
+    }
+    if let Some(primary_term) = raw_primary_term {
+        if primary_term.parse::<i64>().is_err() {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": format!("Failed to parse value [{primary_term}] for [if_primary_term] as a long")
+                    },
+                    "status": 400
+                }),
+            );
+        }
+    }
+    match (raw_seq_no, raw_primary_term) {
+        (Some(_), None) => action_request_validation_error(vec![
+            "ifSeqNo is set, but primary term is [0]",
+        ]),
+        (None, Some(primary_term)) => action_request_validation_error_owned(vec![format!(
+            "ifSeqNo is unassigned, but primary term is [{primary_term}]"
+        )]),
+        _ => action_request_validation_error(vec![
+            "if_seq_no and if_primary_term must be specified together",
+        ]),
+    }
 }
 
 fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool {
@@ -33995,6 +34086,82 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             stale_seq_term.body["error"]["type"],
             "version_conflict_engine_exception"
+        );
+
+        let missing_primary_term = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-write-negatives/_doc/doc-1?if_seq_no=0",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "missing primary term"
+            })),
+        );
+        assert_eq!(missing_primary_term.status, 400);
+        assert_eq!(
+            missing_primary_term.body["error"]["reason"],
+            "Validation Failed: 1: ifSeqNo is set, but primary term is [0];"
+        );
+
+        let missing_seq_no = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Delete,
+                "/logs-write-negatives/_doc/doc-1?if_primary_term=1",
+            ),
+        );
+        assert_eq!(missing_seq_no.status, 400);
+        assert_eq!(
+            missing_seq_no.body["error"]["reason"],
+            "Validation Failed: 1: ifSeqNo is unassigned, but primary term is [1];"
+        );
+
+        let create_with_occ = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-write-negatives/_create/doc-occ?if_seq_no=0&if_primary_term=1",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "create with occ"
+            })),
+        );
+        assert_eq!(create_with_occ.status, 400);
+        assert_eq!(
+            create_with_occ.body["error"]["reason"],
+            "Validation Failed: 1: create operations do not support compare and set. use index instead;"
+        );
+
+        let update_with_version = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-write-negatives/_update/doc-1?version=1",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "processed": true
+                }
+            })),
+        );
+        assert_eq!(update_with_version.status, 400);
+        assert_eq!(
+            update_with_version.body["error"]["reason"],
+            "Validation Failed: 1: internal versioning can not be used for optimistic concurrency control. Please use `if_seq_no` and `if_primary_term` instead;"
+        );
+
+        let update_upsert_with_occ = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-write-negatives/_update/doc-missing?if_seq_no=0&if_primary_term=1",
+            )
+            .with_json_body(serde_json::json!({
+                "upsert": {
+                    "message": "upsert with occ"
+                }
+            })),
+        );
+        assert_eq!(update_upsert_with_occ.status, 400);
+        assert_eq!(
+            update_upsert_with_occ.body["error"]["reason"],
+            "Validation Failed: 1: upsert requests don't support `if_seq_no` and `if_primary_term`;"
         );
 
         let wrong_routing = node.handle_rest_request(
