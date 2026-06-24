@@ -237,8 +237,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
 - `cluster:monitor/shards` (rejected fail-closed)
-- `cluster:monitor/nodes/info` (rejected fail-closed)
-- `cluster:monitor/nodes/stats` (rejected fail-closed)
+- `cluster:monitor/nodes/info` (implemented local node-info subset)
+- `cluster:monitor/nodes/stats` (implemented local empty-node-stats subset)
 - `cluster:monitor/wlm/stats` (rejected fail-closed)
 - `cluster:monitor/_remotestore/stats` (rejected fail-closed)
 - `cluster:admin/remote_store/metadata` (rejected fail-closed)
@@ -314,9 +314,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/point_in_time/delete` (rejected fail-closed)
 - `indices:data/read/point_in_time/readall` (rejected fail-closed)
 - `cluster:monitor/task`
-- `cluster:monitor/tasks/lists`
+- `cluster:monitor/tasks/lists` (implemented empty default subset)
 - `cluster:monitor/task/get` (rejected fail-closed)
-- `cluster:admin/tasks/cancel`
+- `cluster:admin/tasks/cancel` (implemented no-active-task default subset)
 - `indices:data/read/get`
 - `indices:data/read/mget`
 - `indices:data/write/bulk`
@@ -2267,6 +2267,8 @@ The list-tasks adapter covers:
   and `wait_for_completion=false`;
 - OpenSearch `ListTasksResponse` with no task failures, no node failures, and
   no task info entries, matching the current no-active-task transport contract;
+- daemon transport first-request and follow-up routes render the empty
+  OpenSearch-shaped response for the supported subset;
 - explicit rejection for task id filters, parent task filters, node filters,
   action filters, timeout, detailed task info, wait-for-completion, non-empty
   task failure payloads, non-empty node failure payloads, and non-empty task
@@ -2289,6 +2291,8 @@ The cancel-tasks adapter covers:
 - OpenSearch `CancelTasksResponse` with no cancelled task entries, no task
   failures, and no node failures, matching the current no-active-cancellable-task
   transport contract;
+- daemon transport first-request and follow-up routes render the empty
+  OpenSearch-shaped response for the supported subset;
 - explicit rejection for task id filters, parent task filters, node filters,
   action filters, timeout, custom reason, wait-for-completion, non-empty task
   failure payloads, non-empty node failure payloads, and non-empty task info
@@ -5090,11 +5094,11 @@ Current list-tasks wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin list-tasks-wire-benchmark
-list_tasks_request_encode ops_per_second=1991760.42 nanos_per_op=502.07
-list_tasks_response_encode ops_per_second=4572593.83 nanos_per_op=218.69
-list_tasks_request_decode ops_per_second=1852258.41 nanos_per_op=539.88
-list_tasks_response_decode ops_per_second=4290654.24 nanos_per_op=233.06
-list_tasks_wire_bottleneck_ops_per_second=1852258.41
+list_tasks_request_encode ops_per_second=2014306.94 nanos_per_op=496.45
+list_tasks_response_encode ops_per_second=4549504.28 nanos_per_op=219.80
+list_tasks_request_decode ops_per_second=1845179.15 nanos_per_op=541.95
+list_tasks_response_decode ops_per_second=4262578.14 nanos_per_op=234.60
+list_tasks_wire_bottleneck_ops_per_second=1845179.15
 ```
 
 The current list-tasks wire bottleneck is request decode. The supported subset
@@ -5107,11 +5111,11 @@ Current cancel-tasks wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cancel-tasks-wire-benchmark
-cancel_tasks_request_encode ops_per_second=1270672.41 nanos_per_op=786.98
-cancel_tasks_response_encode ops_per_second=4551448.70 nanos_per_op=219.71
-cancel_tasks_request_decode ops_per_second=1485477.46 nanos_per_op=673.18
-cancel_tasks_response_decode ops_per_second=4250393.89 nanos_per_op=235.27
-cancel_tasks_wire_bottleneck_ops_per_second=1270672.41
+cancel_tasks_request_encode ops_per_second=1327741.27 nanos_per_op=753.16
+cancel_tasks_response_encode ops_per_second=4484978.74 nanos_per_op=222.97
+cancel_tasks_request_decode ops_per_second=1463596.71 nanos_per_op=683.25
+cancel_tasks_response_decode ops_per_second=3945958.01 nanos_per_op=253.42
+cancel_tasks_wire_bottleneck_ops_per_second=1327741.27
 ```
 
 The current cancel-tasks wire bottleneck is request encode. Compared with

@@ -939,6 +939,52 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/tasks/lists") {
+        let response = build_empty_list_tasks_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/tasks/lists[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("cluster:admin/tasks/cancel") {
+        let response = build_empty_cancel_tasks_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/tasks/cancel[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && action_hint.as_deref() == Some("internal:cluster/request_pre_vote") {
         let response = build_pre_vote_response(request_id, header_version_id, 0, 0, 0);
         response_frame = summarize_transport_response_frame(&response);
@@ -2634,6 +2680,26 @@ fn build_empty_remote_info_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_empty_list_tasks_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_list_tasks_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::ListTasksResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_empty_cancel_tasks_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_cancel_tasks_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::CancelTasksResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_recovery_translog_operations_response(
     request_id: i64,
     header_version_id: u32,
@@ -3719,6 +3785,12 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("cluster:monitor/remote/info") => {
             Some(build_empty_remote_info_response(request_id, header_version_id))
+        }
+        Some("cluster:monitor/tasks/lists") => {
+            Some(build_empty_list_tasks_response(request_id, header_version_id))
+        }
+        Some("cluster:admin/tasks/cancel") => {
+            Some(build_empty_cancel_tasks_response(request_id, header_version_id))
         }
         Some("internal:cluster/request_pre_vote") => Some(build_pre_vote_response(
             request_id,
@@ -7779,6 +7851,43 @@ mod tests {
         assert_eq!(
             response,
             os_transport::action::RemoteInfoResponseWire::default()
+        );
+    }
+
+    #[test]
+    fn list_tasks_transport_route_builds_opensearch_shaped_empty_response() {
+        let response =
+            build_empty_list_tasks_response(79, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected list tasks response message");
+        };
+
+        assert_eq!(message.request_id, 79);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_list_tasks_response_message(&message).unwrap();
+        assert_eq!(response, os_transport::action::ListTasksResponseWire::empty());
+    }
+
+    #[test]
+    fn cancel_tasks_transport_route_builds_opensearch_shaped_empty_response() {
+        let response =
+            build_empty_cancel_tasks_response(80, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected cancel tasks response message");
+        };
+
+        assert_eq!(message.request_id, 80);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_cancel_tasks_response_message(&message).unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::CancelTasksResponseWire::empty()
         );
     }
 
