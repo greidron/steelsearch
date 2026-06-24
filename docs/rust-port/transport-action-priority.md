@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 33 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 127 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 34 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 126 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -293,7 +293,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/views/delete` (rejected fail-closed)
 - `views:data/read/get` (rejected fail-closed)
 - `cluster:admin/views/update` (rejected fail-closed)
-- `views:data/read/list` (rejected fail-closed)
+- `views:data/read/list` (implemented empty view-name list subset)
 - `views:data/read/search` (rejected fail-closed)
 - `cluster:admin/persistent/start` (rejected fail-closed)
 - `cluster:admin/persistent/update_status` (rejected fail-closed)
@@ -1977,10 +1977,10 @@ The list-view-names boundary covers:
   decode/build layer, with trailing bytes rejected;
 - OpenSearch `ListViewNamesAction.Response` decode/build for the `views`
   string list payload, with deterministic sorted output;
-- explicit fail-closed classification for `views:data/read/list` until
-  view-name listing and list response rendering are implemented;
-- explicit rejection for list-view-names execution and unsupported response
-  shapes such as blank names, oversized names, or excessive name counts.
+- implemented classification for `views:data/read/list` default empty request
+  returning an OpenSearch-shaped empty `views` list;
+- explicit rejection for unsupported response shapes such as blank names,
+  oversized names, or excessive name counts.
 
 The search-view boundary covers:
 
@@ -4706,22 +4706,23 @@ the OpenSearch update action name before rejecting at admission. At roughly
 latest create-view run on this machine; future performance-sensitive work is
 view validation, target resolution, metadata mutation, and response rendering.
 
-Current list-view-names reject wire microbenchmark:
+Current list-view-names supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin list-view-names-reject-wire-benchmark
-list_view_names_reject_request_encode iterations=400000 elapsed_ms=160.598 ops_per_second=2490685.92 nanos_per_op=401.50
-list_view_names_reject_request_decode iterations=400000 elapsed_ms=147.617 ops_per_second=2709716.35 nanos_per_op=369.04
-list_view_names_reject_validation iterations=400000 elapsed_ms=146.676 ops_per_second=2727105.92 nanos_per_op=366.69
-list_view_names_response_decode iterations=400000 elapsed_ms=153.268 ops_per_second=2609799.81 nanos_per_op=383.17
-list_view_names_reject_wire_bottleneck_ops_per_second=2490685.92
+cargo run -p os-transport --release --bin list-view-names-wire-benchmark
+list_view_names_request_encode iterations=400000 elapsed_ms=158.070 ops_per_second=2530521.07 nanos_per_op=395.18
+list_view_names_request_decode iterations=400000 elapsed_ms=144.318 ops_per_second=2771653.94 nanos_per_op=360.80
+list_view_names_request_validate iterations=400000 elapsed_ms=143.681 ops_per_second=2783948.94 nanos_per_op=359.20
+list_view_names_response_encode iterations=400000 elapsed_ms=51.196 ops_per_second=7813183.20 nanos_per_op=127.99
+list_view_names_response_decode iterations=400000 elapsed_ms=58.059 ops_per_second=6889506.97 nanos_per_op=145.15
+list_view_names_wire_bottleneck_ops_per_second=2530521.07
 ```
 
-The current list-view-names fail-closed boundary bottleneck is request encode.
-This path carries an empty request body before rejecting at admission and
-decodes the `views` string list response. At roughly 2.49M ops/s in the latest
-local release run, it is the lightest current view-admin boundary; future
-performance-sensitive work is view-name listing and response rendering.
+The current list-view-names supported subset bottleneck is request encode. This
+path carries an empty request body, validates the supported subset, and renders
+an empty OpenSearch `views` string list response. At roughly 2.53M ops/s in the
+latest local release run, this adapter does not expose a material wire-codec
+regression; future performance-sensitive work is populated view-name listing.
 
 Current search-view reject wire microbenchmark:
 

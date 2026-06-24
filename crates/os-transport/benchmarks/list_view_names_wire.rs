@@ -15,7 +15,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchListViewNamesRequestWire;
 
-    let request_encode = measure("list_view_names_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("list_view_names_request_encode", ITERATIONS, || {
         let frame = build_opensearch_list_view_names_request_message(
             84,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -29,7 +29,7 @@ fn main() {
         build_opensearch_list_view_names_request_message(84, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("list-view-names request encode should succeed");
 
-    let request_decode = measure("list_view_names_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("list_view_names_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_list_view_names_request_message(black_box(&message))
@@ -37,20 +37,27 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("list_view_names_reject_validation", ITERATIONS, || {
+    let request_validate = measure("list_view_names_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_list_view_names_request_message(black_box(&message))
             .expect("list-view-names request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("list-view-names execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("list-view-names request should validate");
+        black_box(decoded);
     });
 
-    let response = OpenSearchListViewNamesResponseWire {
-        views: vec!["metrics-view".to_string(), "logs-view".to_string()],
-    };
+    let response = OpenSearchListViewNamesResponseWire::empty();
+    let response_encode = measure("list_view_names_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_list_view_names_response_message(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("list-view-names response encode should succeed");
+        black_box(frame);
+    });
     let response_frame = build_opensearch_list_view_names_response_message(
         84,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -69,9 +76,10 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!("list_view_names_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+    println!("list_view_names_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

@@ -522,8 +522,8 @@ name = "update-view-reject-wire-benchmark"
 path = "benchmarks/update_view_reject_wire.rs"
 
 [[bin]]
-name = "list-view-names-reject-wire-benchmark"
-path = "benchmarks/list_view_names_reject_wire.rs"
+name = "list-view-names-wire-benchmark"
+path = "benchmarks/list_view_names_wire.rs"
 
 [[bin]]
 name = "search-view-reject-wire-benchmark"
