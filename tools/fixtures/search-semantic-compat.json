@@ -194,6 +194,166 @@
       "description": "[lexical] search bool zero minimum_should_match semantic"
     },
     {
+      "name": "search_match_query_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "log"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-1"
+      ],
+      "description": "[lexical] search match query semantic"
+    },
+    {
+      "name": "search_multi_match_best_fields_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "metric",
+            "fields": [
+              "message",
+              "tenant"
+            ]
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-2"
+      ],
+      "description": "[lexical] search multi_match best_fields semantic"
+    },
+    {
+      "name": "search_match_phrase_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": "log doc"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-1"
+      ],
+      "description": "[lexical] search match_phrase semantic"
+    },
+    {
+      "name": "search_match_phrase_prefix_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": "null contact"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-3"
+      ],
+      "description": "[lexical] search match_phrase_prefix semantic"
+    },
+    {
+      "name": "search_range_keyword_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "range": {
+            "tenant": {
+              "gte": "tenant-b"
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-2"
+      ],
+      "description": "[lexical] search range keyword semantic"
+    },
+    {
+      "name": "search_dis_max_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "dis_max": {
+            "queries": [
+              {
+                "match": {
+                  "message": "log"
+                }
+              },
+              {
+                "term": {
+                  "tenant": "tenant-b"
+                }
+              }
+            ]
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-1",
+        "doc-2"
+      ],
+      "description": "[lexical] search dis_max semantic"
+    },
+    {
+      "name": "search_ids_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              "doc-2"
+            ]
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-2"
+      ],
+      "description": "[lexical] search ids semantic"
+    },
+    {
       "name": "search_after_sorted_keyword_window_semantic",
       "area": "search-semantic",
       "method": "POST",

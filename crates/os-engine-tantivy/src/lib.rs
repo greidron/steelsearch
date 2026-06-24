@@ -3753,6 +3753,15 @@ fn build_tantivy_range_query(
                 upper,
             ))))
         }
+        TantivyFieldType::Keyword => {
+            let lower = bound_str(bounds.gte.as_ref(), bounds.gt.as_ref())?;
+            let upper = bound_str(bounds.lte.as_ref(), bounds.lt.as_ref())?;
+            Ok(Some(Box::new(RangeQuery::new_str_bounds(
+                field.to_string(),
+                lower,
+                upper,
+            ))))
+        }
         _ => Ok(None),
     }
 }
@@ -3868,6 +3877,25 @@ fn bound_date(
         let value = parse_tantivy_datetime_value(value).ok_or_else(|| {
             invalid_request("range bound must be an RFC3339 string or epoch_millis number".to_string())
         })?;
+        return Ok(Bound::Excluded(value));
+    }
+    Ok(Bound::Unbounded)
+}
+
+fn bound_str<'a>(
+    inclusive: Option<&'a Value>,
+    exclusive: Option<&'a Value>,
+) -> EngineResult<Bound<&'a str>> {
+    if let Some(value) = inclusive {
+        let value = value
+            .as_str()
+            .ok_or_else(|| invalid_request("range bound must be a string".to_string()))?;
+        return Ok(Bound::Included(value));
+    }
+    if let Some(value) = exclusive {
+        let value = value
+            .as_str()
+            .ok_or_else(|| invalid_request("range bound must be a string".to_string()))?;
         return Ok(Bound::Excluded(value));
     }
     Ok(Bound::Unbounded)
@@ -8405,7 +8433,12 @@ fn current_hybrid_bool_candidate_reduction_supports_keyword_text_prefix_wildcard
                     .map(|field| &field.field_type);
                 matches!(
                     field_type,
-                    Some(TantivyFieldType::I64 | TantivyFieldType::F64 | TantivyFieldType::Date)
+                    Some(
+                        TantivyFieldType::I64
+                            | TantivyFieldType::F64
+                            | TantivyFieldType::Date
+                            | TantivyFieldType::Keyword
+                    )
                 ) && matches_range_query(value, bounds)
             })
             .then_some(1.0)),
@@ -138254,6 +138287,137 @@ mod tests {
             .unwrap()
             .expect("native date range hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["2"]);
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_keyword_range_query() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "tenant": { "type": "keyword" },
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, tenant) in [("1", "tenant-a"), ("2", "tenant-b"), ("3", "tenant-c")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "tenant": tenant,
+                        "message": "alpha checkout"
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "range": {
+                "tenant": {
+                    "gte": "tenant-b",
+                    "lt": "tenant-c"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native keyword range hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2"]);
+    }
+
+    #[test]
+    fn multi_index_search_executes_keyword_range_query() {
+        let engine = TantivyEngine::default();
+        for index in ["logs", "metrics"] {
+            engine
+                .create_index(CreateIndexRequest {
+                    index: index.to_string(),
+                    settings: serde_json::json!({}),
+                    mappings: serde_json::json!({
+                        "properties": {
+                            "tenant": { "type": "keyword" },
+                            "message": { "type": "text" }
+                        }
+                    }),
+                })
+                .unwrap();
+        }
+
+        for (index, id, tenant) in [
+            ("logs", "1", "tenant-a"),
+            ("metrics", "2", "tenant-b"),
+            ("metrics", "3", "tenant-c"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: index.to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "tenant": tenant,
+                        "message": "alpha checkout"
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs".to_string(), "metrics".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: Vec::new(),
+                query: serde_json::json!({
+                    "range": {
+                        "tenant": {
+                            "gte": "tenant-b",
+                            "lt": "tenant-c"
+                        }
+                    }
+                }),
+                aggregations: serde_json::json!({}),
+                sort: vec![SortSpec {
+                    field: "_id".to_string(),
+                    order: SortOrder::Asc,
+                    unmapped_type: None,
+                    geo_origin: None,
+                    mode: None,
+                    script: None,
+                }],
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(response.total_hits, 1);
+        assert_eq!(search_hit_ids(&response.hits), vec!["2"]);
     }
 
     #[test]
