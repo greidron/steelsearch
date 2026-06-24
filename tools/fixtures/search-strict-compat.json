@@ -3634,6 +3634,31 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "hit_metadata_seq_query_param_overrides_body_only_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?seq_no_primary_term=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": true,
+        "seq_no_primary_term": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] seq metadata query param overrides body without changing version search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "wildcard_match_search",
       "area": "search",
       "method": "POST",
