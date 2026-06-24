@@ -18502,6 +18502,14 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
             "unsupported search option [pit]",
         ));
     }
+    if object
+        .get("keep_alive")
+        .is_some_and(|keep_alive| !keep_alive.is_string())
+    {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [pit]",
+        ));
+    }
     None
 }
 
@@ -34883,6 +34891,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_pit_keep_alive.status, 400);
         assert_eq!(
             invalid_pit_keep_alive.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let numeric_pit_keep_alive = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": 60000
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(numeric_pit_keep_alive.status, 400);
+        assert_eq!(
+            numeric_pit_keep_alive.body["error"]["type"],
             "illegal_argument_exception"
         );
 
