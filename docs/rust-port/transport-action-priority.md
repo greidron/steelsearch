@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 13 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 147 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 14 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 146 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -428,11 +428,12 @@ The nodes-stats boundary covers:
 - OpenSearch `NodesStatsRequest` parent task, node ids, optional timeout,
   `CommonStatsFlags`, and requested metric names at the wire decode/build
   layer;
-- explicit fail-closed classification for `cluster:monitor/nodes/stats` until
-  runtime node telemetry and field-level metric mapping are implemented;
+- implemented local-node `cluster:monitor/nodes/stats` request admission for the
+  default all-node, all-stats subset, backed by the daemon transport response
+  path that renders an empty Java-compatible nodes-stats response with local
+  node identity;
 - explicit rejection for concrete node payloads, node filters, timeout,
-  non-default index stats flags, requested metric selection, and nodes-stats
-  execution.
+  non-default index stats flags, and requested metric selection.
 
 The nodes-usage boundary covers:
 
@@ -2561,21 +2562,22 @@ array encode/decode, not the supported-subset check itself. At roughly 645K ops/
 in the latest local run, this path is above the retained k-NN stats reject-wire
 bottleneck and does not currently introduce a new transport admission hotspot.
 
-Current nodes-stats reject wire microbenchmark:
+Current nodes-stats supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin nodes-stats-reject-wire-benchmark
-nodes_stats_reject_request_encode ops_per_second=1660735.39 nanos_per_op=602.14
-nodes_stats_reject_request_decode ops_per_second=1676765.46 nanos_per_op=596.39
-nodes_stats_reject_validation ops_per_second=1617055.31 nanos_per_op=618.41
-nodes_stats_reject_wire_bottleneck_ops_per_second=1617055.31
+cargo run -p os-transport --release --bin nodes-stats-wire-benchmark
+nodes_stats_request_encode ops_per_second=1687353.69 nanos_per_op=592.64
+nodes_stats_request_decode ops_per_second=1688999.84 nanos_per_op=592.07
+nodes_stats_supported_validation ops_per_second=1654117.74 nanos_per_op=604.55
+nodes_stats_wire_bottleneck_ops_per_second=1654117.74
 ```
 
-The current nodes-stats fail-closed boundary bottleneck is validation. This path
-adds a full `CommonStatsFlags` default-shape comparison after decode, so it is
-slightly heavier than the cluster-stats rejection boundary. At roughly 1.62M
-ops/s in the latest local release run, it remains in the lightweight admin
-transport range and does not introduce a new source-materialization bottleneck.
+The current nodes-stats supported-subset boundary is compact because the default
+request carries empty node filters plus default common stats flags. The first
+performance-sensitive work beyond this boundary is populating non-empty node
+telemetry groups and rendering full stats responses. At roughly 1.65M ops/s in
+the latest local run, this path does not introduce a new transport admission
+hotspot.
 
 Current wlm-stats reject wire microbenchmark:
 

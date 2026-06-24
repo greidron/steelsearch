@@ -1678,8 +1678,8 @@ pub fn classify_opensearch_transport_action(
         },
         NODES_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "nodes-stats transport execution requires runtime node telemetry mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "nodes-stats transport adapter is available for the local empty-node-stats subset",
         },
         WLM_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3482,34 +3482,39 @@ impl NodesStatsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats node filter",
-                reason: "nodes-stats node-scoped routing requires runtime node telemetry mapping",
+                reason: "nodes-stats node-scoped routing is outside the local empty-node-stats subset",
             });
         }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats timeout",
-                reason: "nodes-stats timeout semantics require runtime node telemetry mapping",
+                reason: "nodes-stats timeout semantics are outside the local empty-node-stats subset",
             });
         }
         if !self.indices.is_default_all_stats_shape() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats indices flags",
-                reason: "nodes-stats index flag subsets require field-level telemetry mapping",
+                reason: "nodes-stats index flag subsets are outside the local empty-node-stats subset",
             });
         }
         if !self.requested_metrics.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats requested metrics",
-                reason: "nodes-stats metric selection requires field-level telemetry mapping",
+                reason: "nodes-stats metric selection is outside the local empty-node-stats subset",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "nodes stats execution",
-            reason: "nodes-stats transport execution requires runtime node telemetry mapping",
+            reason: "use validate_supported_subset for the implemented local empty-node-stats adapter",
         })
     }
 }
@@ -32531,7 +32536,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_STATS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(WLM_STATS_ACTION_NAME).disposition,
@@ -35929,7 +35934,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn nodes_stats_request_wire_round_trips_supported_local_subset() {
         let request = NodesStatsRequestWire::default();
         assert_eq!(request.indices.flags, OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS);
         let mut output = StreamOutput::new();
@@ -35937,13 +35942,7 @@ mod tests {
 
         let decoded = NodesStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "nodes stats execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -35953,7 +35952,7 @@ mod tests {
             ..NodesStatsRequestWire::default()
         };
         assert!(matches!(
-            node_filter.reject_unsupported_execution(),
+            node_filter.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats node filter",
                 ..
@@ -35965,7 +35964,7 @@ mod tests {
             ..NodesStatsRequestWire::default()
         };
         assert!(matches!(
-            timeout.reject_unsupported_execution(),
+            timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats timeout",
                 ..
@@ -35980,7 +35979,7 @@ mod tests {
             ..NodesStatsRequestWire::default()
         };
         assert!(matches!(
-            indices_subset.reject_unsupported_execution(),
+            indices_subset.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats indices flags",
                 ..
@@ -35992,7 +35991,7 @@ mod tests {
             ..NodesStatsRequestWire::default()
         };
         assert!(matches!(
-            requested_metrics.reject_unsupported_execution(),
+            requested_metrics.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats requested metrics",
                 ..
@@ -36017,7 +36016,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_stats_transport_messages_bind_rejected_action_frame() {
+    fn nodes_stats_transport_messages_bind_supported_action_frame() {
         let request = NodesStatsRequestWire::default();
         let mut frame =
             build_nodes_stats_request_message(19, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -36025,15 +36024,10 @@ mod tests {
             panic!("expected nodes stats request message");
         };
         assert_eq!(read_nodes_stats_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_nodes_stats_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "nodes stats execution",
-                ..
-            })
-        ));
+        read_nodes_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
     }
 
     #[test]

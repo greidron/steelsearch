@@ -11,7 +11,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = NodesStatsRequestWire::default();
 
-    let request_encode = measure("nodes_stats_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("nodes_stats_request_encode", ITERATIONS, || {
         let frame =
             build_nodes_stats_request_message(16, OPENSEARCH_3_7_0_TRANSPORT, black_box(&request))
                 .expect("nodes stats request encode should succeed");
@@ -21,7 +21,7 @@ fn main() {
     let request_frame = build_nodes_stats_request_message(16, OPENSEARCH_3_7_0_TRANSPORT, &request)
         .expect("nodes stats request encode should succeed");
 
-    let request_decode = measure("nodes_stats_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("nodes_stats_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_nodes_stats_request_message(black_box(&message))
@@ -29,22 +29,22 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("nodes_stats_reject_validation", ITERATIONS, || {
+    let supported_validate = measure("nodes_stats_supported_validation", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_nodes_stats_request_message(black_box(&message))
             .expect("nodes stats request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("nodes stats execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("nodes stats default subset should validate");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("nodes_stats_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(supported_validate.ops_per_second);
+    println!("nodes_stats_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]
