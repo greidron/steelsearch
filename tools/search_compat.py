@@ -1830,6 +1830,21 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "count": len(pit_ids),
             "ids_present": all(bool(pit_id) for pit_id in pit_ids),
         }
+    if kind == "pit_list_details":
+        pits = [
+            pit
+            for pit in (body.get("pits") or [])
+            if isinstance(pit, dict) and (pit.get("pit_id") or pit.get("id")) is not None
+        ]
+        return {
+            "status": response["status"],
+            "count": len(pits),
+            "ids_present": all(bool(pit.get("pit_id") or pit.get("id")) for pit in pits),
+            "keep_alive": sorted(
+                (pit.get("keep_alive") for pit in pits),
+                key=lambda value: json.dumps(value, sort_keys=True),
+            ),
+        }
     if kind == "tier_preference":
         tiers = body.get("tiers") if isinstance(body, dict) else None
         return {

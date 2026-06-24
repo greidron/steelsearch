@@ -334,7 +334,16 @@ Required semantic cases:
 - `wildcard_query_search`
 - `nested_query_search`
 - `pit_open_search`
+- `pit_list_search`
+- `pit_clear_all_search`
+- `pit_clear_all_body_search`
+- `pit_search_after_close_missing_context`
 - `pit_search`
+- `pit_search_extends_keep_alive`
+- `pit_snapshot_after_update_delete_search`
+- `pit_search_with_default_ignore_throttled`
+- `pit_search_with_order_sensitive_default_wildcards`
+- `pit_search_with_default_ccs_minimize_roundtrips`
 - `scroll_initial_search`
 - `scroll_follow_up_search`
 - `collapse_search`
