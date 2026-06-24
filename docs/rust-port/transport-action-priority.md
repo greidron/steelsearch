@@ -1826,10 +1826,12 @@ The indices-segments boundary covers:
 - OpenSearch `IndicesSegmentsRequest` parent task, indices array,
   `IndicesOptions.strictExpandOpenAndForbidClosed()`, and `verbose` at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:monitor/segments` until
-  shard segment metadata response rendering is implemented;
+- implemented classification for `indices:monitor/segments` default all-index,
+  non-verbose request admission, backed by the daemon transport response path
+  that renders an empty Java-compatible broadcast node response and by an empty
+  final `IndicesSegmentResponse` wire adapter;
 - explicit rejection for index filters, custom indices options, verbose segment
-  output, and indices-segments execution.
+  output, shard failures, and non-empty shard segment metadata.
 
 The PIT-segments boundary covers:
 
@@ -4500,14 +4502,16 @@ pressure for a future implementation is shard routing, pressure-service stats
 collection, target-service live state lookup, primary/replica grouping, and
 response rendering.
 
-Current indices-segments reject wire microbenchmark:
+Current indices-segments wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin indices-segments-reject-wire-benchmark
-indices_segments_reject_request_encode iterations=400000 elapsed_ms=208.391 ops_per_second=1919464.98 nanos_per_op=520.98
-indices_segments_reject_request_decode iterations=400000 elapsed_ms=223.254 ops_per_second=1791683.29 nanos_per_op=558.13
-indices_segments_reject_validation iterations=400000 elapsed_ms=226.423 ops_per_second=1766601.77 nanos_per_op=566.06
-indices_segments_reject_wire_bottleneck_ops_per_second=1766601.77
+cargo run -p os-transport --release --bin indices-segments-wire-benchmark
+indices_segments_request_encode iterations=400000 elapsed_ms=208.312 ops_per_second=1920199.02 nanos_per_op=520.78
+indices_segments_request_decode iterations=400000 elapsed_ms=222.212 ops_per_second=1800085.77 nanos_per_op=555.53
+indices_segments_request_validate iterations=400000 elapsed_ms=223.902 ops_per_second=1786496.44 nanos_per_op=559.75
+indices_segments_response_encode iterations=400000 elapsed_ms=93.971 ops_per_second=4256633.54 nanos_per_op=234.93
+indices_segments_response_decode iterations=400000 elapsed_ms=94.830 ops_per_second=4218057.46 nanos_per_op=237.08
+indices_segments_wire_bottleneck_ops_per_second=1786496.44
 ```
 
 The current indices-segments fail-closed boundary bottleneck is validation. This
@@ -6288,8 +6292,6 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `RecoveryAction.INSTANCE`
-- `IndicesSegmentsAction.INSTANCE`
 - `IndicesShardStoresAction.INSTANCE`
 - `GetDataStreamAction.INSTANCE`
 - `DataStreamsStatsAction.INSTANCE`

@@ -1482,6 +1482,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("indices:monitor/segments") {
+        let response = build_empty_indices_segments_node_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/segments[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request
         && matches!(
             action_hint.as_deref(),
@@ -4195,6 +4222,19 @@ fn build_empty_indices_recovery_node_response(
     build_transport_response_frame(request_id, header_version_id, payload)
 }
 
+fn build_empty_indices_segments_node_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_string(&mut payload, &transport_identity.node_id);
+    write_transport_vint_to(&mut payload, 0);
+    write_transport_vint_to(&mut payload, 0);
+    write_bool(&mut payload, false);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
 fn build_liveness_response(
     request_id: i64,
     header_version_id: u32,
@@ -4982,6 +5022,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
         )),
         Some("indices:monitor/recovery") => Some(build_empty_indices_recovery_node_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("indices:monitor/segments") => Some(build_empty_indices_segments_node_response(
             request_id,
             header_version_id,
             transport_identity,
@@ -9331,6 +9376,46 @@ mod tests {
     }
 
     #[test]
+    fn indices_segments_transport_route_builds_opensearch_shaped_empty_node_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_empty_indices_segments_node_response(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected indices segments node response message");
+        };
+
+        assert_eq!(message.request_id, 87);
+        assert!(!message.status.is_request());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.remaining(), 0);
+    }
+
+    #[test]
     fn nodes_hot_threads_transport_route_builds_opensearch_shaped_local_response() {
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
@@ -9347,7 +9432,7 @@ mod tests {
             task_queue_state: None,
         };
         let response = build_nodes_hot_threads_response(
-            87,
+            88,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,
         );
@@ -9360,7 +9445,7 @@ mod tests {
             panic!("expected nodes hot threads response message");
         };
 
-        assert_eq!(message.request_id, 87);
+        assert_eq!(message.request_id, 88);
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_nodes_hot_threads_response_message(&message).unwrap();

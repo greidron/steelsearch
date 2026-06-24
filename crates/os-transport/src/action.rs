@@ -2226,9 +2226,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason:
-                "indices-segments transport execution requires shard segment metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "indices-segments transport adapter returns an OpenSearch-shaped empty segment response for the default all-indices request",
         },
         OPENSEARCH_PIT_SEGMENTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10101,6 +10100,36 @@ pub fn read_opensearch_indices_segments_request_message(
         });
     }
     OpenSearchIndicesSegmentsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_indices_segments_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchIndicesSegmentsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_indices_segments_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndicesSegmentsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchIndicesSegmentsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_pit_segments_request_message(
@@ -22507,6 +22536,15 @@ impl OpenSearchIndicesSegmentsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "indices segments execution",
+            reason:
+                "use validate_supported_subset for the implemented empty indices-segments adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices segments index filter",
@@ -22526,11 +22564,80 @@ impl OpenSearchIndicesSegmentsRequestWire {
                 reason: "verbose segment output requires extended shard segment metadata rendering",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "indices segments execution",
-            reason:
-                "indices-segments transport execution requires shard segment metadata response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct OpenSearchIndicesSegmentsResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub shard_segment_count: i32,
+}
+
+impl OpenSearchIndicesSegmentsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_vint(self.shard_segment_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+            shard_failure_count: input.read_vint()?,
+            shard_segment_count: input.read_vint()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices segments response shard counters",
+                reason: "IndicesSegmentResponse shard counters must be non-negative",
+            });
+        }
+        if self.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices segments response failure count",
+                reason: "IndicesSegmentResponse shard failure count must be non-negative",
+            });
+        }
+        if self.shard_segment_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices segments response shard segment count",
+                reason: "IndicesSegmentResponse shard segment count must be non-negative",
+            });
+        }
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices segments shard failures",
+                reason: "IndicesSegmentResponse shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        if self.shard_segment_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices segments shard segment metadata",
+                reason: "non-empty ShardSegments payloads require shard routing and Lucene segment metadata decoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -34776,7 +34883,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PIT_SEGMENTS_ACTION_NAME).disposition,
@@ -34915,6 +35022,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -34973,7 +35081,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
@@ -52433,20 +52540,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_segments_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_indices_segments_request_wire_round_trips_and_validates_default_all_segments() {
         let request = OpenSearchIndicesSegmentsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchIndicesSegmentsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices segments execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -52492,7 +52593,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_segments_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_indices_segments_transport_messages_bind_supported_action_frame_and_empty_response(
+    ) {
         let request = OpenSearchIndicesSegmentsRequestWire::default();
         let mut frame = build_opensearch_indices_segments_request_message(
             41,
@@ -52507,12 +52609,63 @@ mod tests {
             read_opensearch_indices_segments_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_indices_segments_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchIndicesSegmentsResponseWire::empty();
+        let mut frame = build_opensearch_indices_segments_response_message(
+            41,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected indices segments response message");
+        };
+        assert_eq!(
+            read_opensearch_indices_segments_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_indices_segments_response_wire_round_trips_empty_response() {
+        let response = OpenSearchIndicesSegmentsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchIndicesSegmentsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_indices_segments_response_rejects_failures_and_non_empty_segments() {
+        let failed = OpenSearchIndicesSegmentsResponseWire {
+            total_shards: 1,
+            failed_shards: 1,
+            shard_failure_count: 1,
+            ..OpenSearchIndicesSegmentsResponseWire::empty()
+        };
         assert!(matches!(
-            read_opensearch_indices_segments_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
+            failed.write(&mut StreamOutput::new()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices segments execution",
+                shape: "indices segments shard failures",
+                ..
+            })
+        ));
+
+        let mut segments = StreamOutput::new();
+        segments.write_vint(0);
+        segments.write_vint(0);
+        segments.write_vint(0);
+        segments.write_vint(0);
+        segments.write_vint(1);
+        assert!(matches!(
+            OpenSearchIndicesSegmentsResponseWire::read(segments.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices segments shard segment metadata",
                 ..
             })
         ));

@@ -428,7 +428,7 @@ transport_action	planned	action	ClusterGetWeightedRoutingAction.INSTANCE	Transpo
 transport_action	planned	action	ClusterDeleteWeightedRoutingAction.INSTANCE	TransportDeleteWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	695
 transport_action	planned	action	IndicesStatsAction.INSTANCE	TransportIndicesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	696
 transport_action	planned	action	CatShardsAction.INSTANCE	TransportCatShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	697
-transport_action	planned	action	IndicesSegmentsAction.INSTANCE	TransportIndicesSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	698
+transport_action	implemented	action	IndicesSegmentsAction.INSTANCE	TransportIndicesSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	698
 transport_action	planned	action	IndicesShardStoresAction.INSTANCE	TransportIndicesShardStoresAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	699
 transport_action	planned	action	CreateIndexAction.INSTANCE	TransportCreateIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	700
 transport_action	planned	action	ResizeAction.INSTANCE	TransportResizeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	701
@@ -482,7 +482,7 @@ transport_action	planned	action	SearchScrollAction.INSTANCE	TransportSearchScrol
 transport_action	planned	action	MultiSearchAction.INSTANCE	TransportMultiSearchAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	760
 transport_action	planned	action	ExplainAction.INSTANCE	TransportExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	761
 transport_action	planned	action	ClearScrollAction.INSTANCE	TransportClearScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	762
-transport_action	planned	action	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
+transport_action	implemented	action	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
 transport_action	planned	action	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
 transport_action	planned	action	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
 transport_action	planned	action	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766

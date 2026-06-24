@@ -470,8 +470,8 @@ name = "recovery-wire-benchmark"
 path = "benchmarks/recovery_wire.rs"
 
 [[bin]]
-name = "indices-segments-reject-wire-benchmark"
-path = "benchmarks/indices_segments_reject_wire.rs"
+name = "indices-segments-wire-benchmark"
+path = "benchmarks/indices_segments_wire.rs"
 
 [[bin]]
 name = "pit-segments-reject-wire-benchmark"
