@@ -2395,6 +2395,13 @@ pub struct PitContext {
     pub creation_time_millis: u128,
 }
 
+#[derive(Clone, Debug)]
+struct ParsedMsearchRequest {
+    target: Option<String>,
+    body: Value,
+    query_params: BTreeMap<String, String>,
+}
+
 #[derive(Clone, Debug, Default)]
 struct RuntimeThreadPoolCounters {
     active: u64,
@@ -7659,17 +7666,18 @@ impl SteelNode {
             Ok(Some(requests)) => {
                 let responses = requests
                     .into_iter()
-                    .map(|(header_target, body)| {
-                        let effective_target = header_target.as_deref().or(target).unwrap_or("_all");
-                        let search_path = if header_target.is_some() || target.is_some() {
+                    .map(|parsed| {
+                        let effective_target = parsed.target.as_deref().or(target).unwrap_or("_all");
+                        let search_path = if parsed.target.is_some() || target.is_some() {
                             format!("/{effective_target}/_search")
                         } else {
                             "/_search".to_string()
                         };
-                        let mut search_request =
-                            RestRequest::new(RestMethod::Post, search_path).with_json_body(body);
+                        let mut search_request = RestRequest::new(RestMethod::Post, search_path)
+                            .with_json_body(parsed.body);
                         search_request.headers = request.headers.clone();
                         search_request.query_params = request.query_params.clone();
+                        search_request.query_params.extend(parsed.query_params);
                         msearch_response_with_status(
                             self.handle_index_search_route(effective_target, &search_request),
                         )
@@ -7709,11 +7717,11 @@ impl SteelNode {
             Ok(Some(requests)) => {
                 let responses = requests
                     .into_iter()
-                    .map(|(header_target, body)| {
-                        let effective_target = header_target.as_deref().or(target);
+                    .map(|parsed| {
+                        let effective_target = parsed.target.as_deref().or(target);
                         match self.search_template_payload_body(
                             effective_target,
-                            &body,
+                            &parsed.body,
                             &request.headers,
                             None,
                         ) {
@@ -7769,7 +7777,7 @@ impl SteelNode {
     fn parse_msearch_requests(
         &self,
         request: &RestRequest,
-    ) -> Result<Option<Vec<(Option<String>, Value)>>, RestResponse> {
+    ) -> Result<Option<Vec<ParsedMsearchRequest>>, RestResponse> {
         if request.body.is_empty() {
             return Ok(None);
         }
@@ -7813,10 +7821,51 @@ impl SteelNode {
             {
                 return Err(build_parsing_search_response("malformed msearch header"));
             }
-            requests.push((target, body));
+            let query_params = header_object
+                .map(Self::msearch_header_query_params)
+                .unwrap_or_default();
+            requests.push(ParsedMsearchRequest {
+                target,
+                body,
+                query_params,
+            });
             index += 2;
         }
         Ok(Some(requests))
+    }
+
+    fn msearch_header_query_params(
+        header_object: &serde_json::Map<String, Value>,
+    ) -> BTreeMap<String, String> {
+        [
+            "routing",
+            "preference",
+            "ignore_unavailable",
+            "allow_no_indices",
+            "expand_wildcards",
+            "ignore_throttled",
+        ]
+        .into_iter()
+        .filter_map(|key| {
+            header_object
+                .get(key)
+                .and_then(Self::msearch_header_value_as_query_param)
+                .map(|value| (key.to_string(), value))
+        })
+        .collect()
+    }
+
+    fn msearch_header_value_as_query_param(value: &Value) -> Option<String> {
+        match value {
+            Value::String(value) => Some(value.clone()),
+            Value::Bool(value) => Some(value.to_string()),
+            Value::Number(value) => Some(value.to_string()),
+            Value::Array(values) => {
+                let values = values.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+                (!values.is_empty()).then(|| values.join(","))
+            }
+            Value::Null | Value::Object(_) => None,
+        }
     }
 
     fn handle_search_pipeline_collection_get_route(&self) -> RestResponse {
@@ -37152,6 +37201,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .unwrap()
                 .contains("[indices] cannot be used with point in time")
         );
+
+        let metadata_pit_body = format!(
+            "{{\"routing\":\"tenant-a\",\"preference\":\"_local\",\"ignore_unavailable\":true}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_msearch.status, 200);
+        assert_eq!(metadata_msearch.body["responses"][0]["status"], 400);
+        let metadata_reason = metadata_msearch.body["responses"][0]["error"]["reason"]
+            .as_str()
+            .unwrap();
+        assert!(metadata_reason.contains("[indicesOptions] cannot be used with point in time"));
+        assert!(metadata_reason.contains("[routing] cannot be used with point in time"));
+        assert!(metadata_reason.contains("[preference] cannot be used with point in time"));
     }
 
     #[test]
