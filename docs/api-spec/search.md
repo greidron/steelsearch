@@ -241,6 +241,7 @@ part of the OpenSearch parity target.
   - therefore this surface is excluded from Phase A-1 OpenSearch fullset closure and treated as a Steelsearch-only extension
 - `derived` note:
   - OpenSearch request-scoped derived fields are supported for the bounded object-or-string script forms using `emit(doc["field"].value)` and `emit(params._source["field"])`
+  - `properties`, `prefilter_field`, `format`, and `ignore_malformed` are accepted with bounded structural validation on request-scoped derived definitions
   - derived fields participate in query matching and `fields` response extraction in the standalone route
 - The current live partial response-shaping/suggestion families are:
   - `highlight`

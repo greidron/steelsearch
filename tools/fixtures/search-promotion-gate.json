@@ -40,6 +40,7 @@
         "highlight_search",
         "derived_field_request_search",
         "derived_field_string_script_search",
+        "derived_field_definition_options_search",
         "terms_aggregation",
         "composite_aggregation",
         "geo_bounds_aggregation",

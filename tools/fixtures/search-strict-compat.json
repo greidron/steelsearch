@@ -1327,6 +1327,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "derived_field_definition_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "derived": {
+          "derived_service_with_options": {
+            "type": "keyword",
+            "script": {
+              "source": "emit(doc[\"service\"].value)"
+            },
+            "prefilter_field": "message",
+            "format": "strict_date_optional_time",
+            "ignore_malformed": false,
+            "properties": {}
+          }
+        },
+        "query": {
+          "term": {
+            "derived_service_with_options": "catalog"
+          }
+        },
+        "fields": [
+          "derived_service_with_options"
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped derived field definition options search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",

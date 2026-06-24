@@ -19883,16 +19883,32 @@ fn validate_collapse_request_body(collapse: &Value) -> Option<RestResponse> {
 }
 
 fn validate_runtime_mappings_request_body(runtime_mappings: &Value) -> Option<RestResponse> {
-    validate_request_scoped_field_definitions(runtime_mappings, "runtime_mappings")
+    validate_request_scoped_field_definitions(
+        runtime_mappings,
+        "runtime_mappings",
+        &["type", "script"],
+    )
 }
 
 fn validate_derived_request_body(derived: &Value) -> Option<RestResponse> {
-    validate_request_scoped_field_definitions(derived, "derived")
+    validate_request_scoped_field_definitions(
+        derived,
+        "derived",
+        &[
+            "type",
+            "script",
+            "properties",
+            "prefilter_field",
+            "format",
+            "ignore_malformed",
+        ],
+    )
 }
 
 fn validate_request_scoped_field_definitions(
     definitions: &Value,
     option: &str,
+    allowed_keys: &[&str],
 ) -> Option<RestResponse> {
     let unsupported = || {
         build_unsupported_search_response(&format!("unsupported search option [{option}]"))
@@ -19904,10 +19920,37 @@ fn validate_request_scoped_field_definitions(
         let Some(definition_object) = definition.as_object() else {
             return Some(unsupported());
         };
-        if definition_object.keys().any(|key| key != "type" && key != "script") {
+        if definition_object
+            .keys()
+            .any(|key| !allowed_keys.iter().any(|allowed| allowed == key))
+        {
             return Some(unsupported());
         }
         if definition_object.get("type").and_then(Value::as_str).is_none() {
+            return Some(unsupported());
+        }
+        if definition_object
+            .get("properties")
+            .is_some_and(|value| !value.is_object())
+        {
+            return Some(unsupported());
+        }
+        if definition_object
+            .get("prefilter_field")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Some(unsupported());
+        }
+        if definition_object
+            .get("format")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Some(unsupported());
+        }
+        if definition_object
+            .get("ignore_malformed")
+            .is_some_and(|value| !value.is_boolean())
+        {
             return Some(unsupported());
         }
         let Some(source) = request_scoped_field_script_source(definition_object) else {
@@ -37910,6 +37953,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             derived_string_script_search.body["hits"]["hits"][0]["fields"]["derived_tenant"],
             serde_json::json!(["beta"])
+        );
+
+        let derived_options_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "derived": {
+                        "derived_service_with_options": {
+                            "type": "keyword",
+                            "script": {
+                                "source": "emit(doc[\"service\"].value)"
+                            },
+                            "prefilter_field": "message",
+                            "format": "strict_date_optional_time",
+                            "ignore_malformed": false,
+                            "properties": {}
+                        }
+                    },
+                    "query": {
+                        "term": {
+                            "derived_service_with_options": "checkout"
+                        }
+                    },
+                    "fields": ["derived_service_with_options"]
+                })),
+        );
+        assert_eq!(derived_options_search.status, 200);
+        assert_eq!(
+            derived_options_search.body["hits"]["total"]["value"],
+            2
+        );
+        assert_eq!(
+            derived_options_search.body["hits"]["hits"][0]["fields"]["derived_service_with_options"],
+            serde_json::json!(["checkout"])
         );
 
         let search_after = node.handle_rest_request(
