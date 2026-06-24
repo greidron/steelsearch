@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 12 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 148 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 13 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 147 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -416,10 +416,12 @@ The nodes-info boundary covers:
 
 - OpenSearch `NodesInfoRequest` parent task, node ids, optional timeout, and
   requested metric names at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/nodes/info` until
-  runtime node-info response mapping is implemented;
-- explicit rejection for concrete node payloads, node filters, timeout,
-  non-default requested metrics, and nodes-info execution.
+- implemented local-node `cluster:monitor/nodes/info` request admission for the
+  default all-node, default-metric subset, backed by the daemon transport
+  response path that renders local node identity, version/build, process, and
+  role metadata through the Java-compatible response fixture builder;
+- explicit rejection for concrete node payloads, node filters, timeout, and
+  non-default requested metrics.
 
 The nodes-stats boundary covers:
 
@@ -2543,22 +2545,21 @@ latest local release run, the boundary itself is lightweight; the first
 performance point to inspect before accepting execution is shard routing plus
 indices stats response rendering.
 
-Current nodes-info reject wire microbenchmark:
+Current nodes-info supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin nodes-info-reject-wire-benchmark
-nodes_info_reject_request_encode ops_per_second=758739.72 nanos_per_op=1317.98
-nodes_info_reject_request_decode ops_per_second=654994.28 nanos_per_op=1526.73
-nodes_info_reject_validation ops_per_second=643305.31 nanos_per_op=1554.47
-nodes_info_reject_wire_bottleneck_ops_per_second=643305.31
+cargo run -p os-transport --release --bin nodes-info-wire-benchmark
+nodes_info_request_encode ops_per_second=750450.67 nanos_per_op=1332.53
+nodes_info_request_decode ops_per_second=650867.55 nanos_per_op=1536.41
+nodes_info_supported_validation ops_per_second=644897.32 nanos_per_op=1550.63
+nodes_info_wire_bottleneck_ops_per_second=644897.32
 ```
 
-The current nodes-info fail-closed boundary bottleneck is validation over the
-decoded request. The dominant cost is the OpenSearch default metric string array
-encode/decode, not the unsupported execution check itself. At roughly 643K ops/s
-in the latest local release run, this boundary is still below the JSON
-source-materializing document paths but is materially heavier than the compact
-cluster-stats request shape.
+The current nodes-info supported-subset boundary bottleneck is validation over
+the decoded request. The dominant cost is the OpenSearch default metric string
+array encode/decode, not the supported-subset check itself. At roughly 645K ops/s
+in the latest local run, this path is above the retained k-NN stats reject-wire
+bottleneck and does not currently introduce a new transport admission hotspot.
 
 Current nodes-stats reject wire microbenchmark:
 

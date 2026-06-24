@@ -1673,8 +1673,8 @@ pub fn classify_opensearch_transport_action(
         },
         NODES_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "nodes-info transport execution requires runtime node info mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "nodes-info transport adapter is available for the local node-info subset",
         },
         NODES_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3386,28 +3386,33 @@ impl NodesInfoRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes info node filter",
-                reason: "nodes-info node-scoped routing requires runtime node info mapping",
+                reason: "nodes-info node-scoped routing is outside the local node-info subset",
             });
         }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes info timeout",
-                reason: "nodes-info timeout semantics require runtime node info mapping",
+                reason: "nodes-info timeout semantics are outside the local node-info subset",
             });
         }
         if !nodes_info_metrics_are_default(&self.requested_metrics) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes info requested metrics",
-                reason: "nodes-info metric selection requires field-level node info mapping",
+                reason: "nodes-info metric selection is outside the local node-info subset",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "nodes info execution",
-            reason: "nodes-info transport execution requires runtime node info mapping",
+            reason: "use validate_supported_subset for the implemented local node-info adapter",
         })
     }
 }
@@ -32522,7 +32527,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_INFO_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_STATS_ACTION_NAME).disposition,
@@ -35836,7 +35841,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_info_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn nodes_info_request_wire_round_trips_supported_local_subset() {
         let request = NodesInfoRequestWire::default();
         assert_eq!(
             request.requested_metrics,
@@ -35850,13 +35855,7 @@ mod tests {
 
         let decoded = NodesInfoRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "nodes info execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -35866,7 +35865,7 @@ mod tests {
             ..NodesInfoRequestWire::default()
         };
         assert!(matches!(
-            node_filter.reject_unsupported_execution(),
+            node_filter.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes info node filter",
                 ..
@@ -35878,7 +35877,7 @@ mod tests {
             ..NodesInfoRequestWire::default()
         };
         assert!(matches!(
-            timeout.reject_unsupported_execution(),
+            timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes info timeout",
                 ..
@@ -35890,7 +35889,7 @@ mod tests {
             ..NodesInfoRequestWire::default()
         };
         assert!(matches!(
-            requested_metrics.reject_unsupported_execution(),
+            requested_metrics.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes info requested metrics",
                 ..
@@ -35915,7 +35914,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_info_transport_messages_bind_rejected_action_frame() {
+    fn nodes_info_transport_messages_bind_supported_action_frame() {
         let request = NodesInfoRequestWire::default();
         let mut frame =
             build_nodes_info_request_message(29, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -35923,15 +35922,10 @@ mod tests {
             panic!("expected nodes info request message");
         };
         assert_eq!(read_nodes_info_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_nodes_info_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "nodes info execution",
-                ..
-            })
-        ));
+        read_nodes_info_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
     }
 
     #[test]

@@ -50,8 +50,8 @@ name = "cat-shards-reject-wire-benchmark"
 path = "benchmarks/cat_shards_reject_wire.rs"
 
 [[bin]]
-name = "nodes-info-reject-wire-benchmark"
-path = "benchmarks/nodes_info_reject_wire.rs"
+name = "nodes-info-wire-benchmark"
+path = "benchmarks/nodes_info_wire.rs"
 
 [[bin]]
 name = "nodes-stats-reject-wire-benchmark"

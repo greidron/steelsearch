@@ -1,6 +1,6 @@
 status	action	transport_handler	source	line
 partial	MainAction.INSTANCE	TransportMainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	656
-partial	NodesInfoAction.INSTANCE	TransportNodesInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	657
+implemented	NodesInfoAction.INSTANCE	TransportNodesInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	657
 partial	RemoteInfoAction.INSTANCE	TransportRemoteInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	658
 partial	NodesStatsAction.INSTANCE	TransportNodesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	659
 partial	WlmStatsAction.INSTANCE	TransportWlmStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	660
