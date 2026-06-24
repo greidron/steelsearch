@@ -375,6 +375,7 @@ Required semantic cases:
 - `phrase_suggest_search`
 - `term_suggest_search`
 - `highlight_search`
+- `docvalue_fields_epoch_millis_search`
 - `fields_top_level_search`
 - `fields_dot_path_array_search`
 - `metric_aggregations`

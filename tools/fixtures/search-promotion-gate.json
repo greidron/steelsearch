@@ -74,6 +74,7 @@
         "derived_field_request_search",
         "derived_field_string_script_search",
         "derived_field_definition_options_search",
+        "docvalue_fields_epoch_millis_search",
         "fields_top_level_search",
         "fields_dot_path_array_search",
         "metric_aggregations",

@@ -22575,27 +22575,70 @@ fn script_field_script_source(definition_object: &serde_json::Map<String, Value>
 fn normalize_docvalue_field_value(
     mapping: &serde_json::Map<String, Value>,
     value: &Value,
-    _format: Option<&str>,
+    format: Option<&str>,
 ) -> Value {
     match mapping.get("type").and_then(Value::as_str) {
-        Some("date") => Value::String(
-            value
-                .as_str()
-                .map(|raw| {
-                    if raw.ends_with('Z') && !raw.contains('.') {
-                        raw.trim_end_matches('Z').to_string() + ".000Z"
-                    } else {
-                        raw.to_string()
-                    }
-                })
-                .unwrap_or_default(),
-        ),
+        Some("date") => normalize_docvalue_date_field_value(value, format),
         Some("long") | Some("integer") | Some("short") | Some("byte") | Some("double") | Some("float") => {
             value.clone()
         }
         Some("keyword") | Some("boolean") => value.clone(),
         _ => value.clone(),
     }
+}
+
+fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> Value {
+    let Some(raw) = value.as_str() else {
+        return Value::String(String::new());
+    };
+    if format == Some("epoch_millis") {
+        return parse_iso_utc_millis(raw)
+            .map(|millis| Value::String(millis.to_string()))
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    Value::String(if raw.ends_with('Z') && !raw.contains('.') {
+        raw.trim_end_matches('Z').to_string() + ".000Z"
+    } else {
+        raw.to_string()
+    })
+}
+
+fn parse_iso_utc_millis(raw: &str) -> Option<i64> {
+    let trimmed = raw.strip_suffix('Z')?;
+    let (date, time) = trimmed.split_once('T')?;
+    let mut date_parts = date.split('-');
+    let year = date_parts.next()?.parse::<i32>().ok()?;
+    let month = date_parts.next()?.parse::<u32>().ok()?;
+    let day = date_parts.next()?.parse::<u32>().ok()?;
+    if date_parts.next().is_some() {
+        return None;
+    }
+    let mut time_parts = time.split(':');
+    let hour = time_parts.next()?.parse::<i64>().ok()?;
+    let minute = time_parts.next()?.parse::<i64>().ok()?;
+    let second_fraction = time_parts.next()?;
+    if time_parts.next().is_some() {
+        return None;
+    }
+    let (second_raw, fraction_raw) = second_fraction
+        .split_once('.')
+        .map(|(second, fraction)| (second, Some(fraction)))
+        .unwrap_or((second_fraction, None));
+    let second = second_raw.parse::<i64>().ok()?;
+    let millis = fraction_raw
+        .map(|fraction| {
+            let digits = fraction.chars().take(3).collect::<String>();
+            format!("{digits:0<3}").parse::<i64>().ok()
+        })
+        .unwrap_or(Some(0))?;
+    if !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute)
+        || !(0..=59).contains(&second)
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day)?;
+    Some((((days * 24 + hour) * 60 + minute) * 60 + second) * 1000 + millis)
 }
 
 fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {

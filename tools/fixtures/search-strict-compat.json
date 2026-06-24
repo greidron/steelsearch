@@ -1283,6 +1283,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "docvalue_fields_epoch_millis_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "epoch_millis"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields epoch millis search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "derived_field_request_search",
       "area": "search",
       "method": "POST",
