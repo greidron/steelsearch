@@ -3783,6 +3783,22 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "profile_disabled_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": false
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile disabled search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "rescore_search",
       "area": "search",
       "method": "POST",

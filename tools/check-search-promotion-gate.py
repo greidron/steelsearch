@@ -99,6 +99,7 @@ def main() -> int:
             "explain_search",
             "explain_query_param_overrides_body_search",
             "profile_search",
+            "profile_disabled_search",
             "rescore_search",
             "function_score_search",
             "script_score_search",
