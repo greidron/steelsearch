@@ -2394,7 +2394,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_GET_ALL_PITS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-all-PITs transport adapter returns an OpenSearch-shaped empty PIT list response for the default all-nodes request",
+            reason: "get-all-PITs transport wire adapter renders OpenSearch-shaped node responses with ListPitInfo entries",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -26525,20 +26525,128 @@ impl OpenSearchGetAllPitsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get all pits execution",
-            reason: "use validate_supported_subset for the implemented empty get-all-PITs adapter",
+            reason: "get-all-PITs transport execution requires runtime PIT listing fanout",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchListPitInfoWire {
+    pub pit_id: String,
+    pub creation_time_millis: i64,
+    pub keep_alive_millis: i64,
+}
+
+impl OpenSearchListPitInfoWire {
+    pub fn new(
+        pit_id: impl Into<String>,
+        creation_time_millis: i64,
+        keep_alive_millis: i64,
+    ) -> Self {
+        Self {
+            pit_id: pit_id.into(),
+            creation_time_millis,
+            keep_alive_millis,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.pit_id);
+        output.write_i64(self.creation_time_millis);
+        output.write_i64(self.keep_alive_millis);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let info = Self {
+            pit_id: input.read_string()?,
+            creation_time_millis: input.read_i64()?,
+            keep_alive_millis: input.read_i64()?,
+        };
+        info.validate_supported_subset()?;
+        Ok(info)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.pit_id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits empty pit id",
+                reason: "ListPitInfo requires a non-empty PIT id",
+            });
+        }
+        if self.creation_time_millis < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits creation time",
+                reason: "ListPitInfo creation time must be non-negative",
+            });
+        }
+        if self.keep_alive_millis <= 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits keep alive",
+                reason: "ListPitInfo keep-alive must be positive",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetAllPitsNodeResponseWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub pit_infos: Vec<OpenSearchListPitInfoWire>,
+}
+
+impl OpenSearchGetAllPitsNodeResponseWire {
+    pub fn new(
+        node: OpenSearchDiscoveryNodeWire,
+        pit_infos: Vec<OpenSearchListPitInfoWire>,
+    ) -> Self {
+        Self { node, pit_infos }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.node.write(output);
+        output.write_vint(self.pit_infos.len() as i32);
+        for pit_info in &self.pit_infos {
+            pit_info.write(output)?;
+        }
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let pit_count = read_len(input)?;
+        let mut pit_infos = Vec::with_capacity(pit_count);
+        for _ in 0..pit_count {
+            pit_infos.push(OpenSearchListPitInfoWire::read(input)?);
+        }
+        let response = Self { node, pit_infos };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.node.validate_supported_subset()?;
+        for pit_info in &self.pit_infos {
+            pit_info.validate_supported_subset()?;
+        }
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchGetAllPitsResponseWire {
     pub cluster_name: String,
+    pub nodes: Vec<OpenSearchGetAllPitsNodeResponseWire>,
 }
 
 impl Default for OpenSearchGetAllPitsResponseWire {
     fn default() -> Self {
         Self {
             cluster_name: "steelsearch".to_string(),
+            nodes: Vec::new(),
         }
     }
 }
@@ -26547,13 +26655,27 @@ impl OpenSearchGetAllPitsResponseWire {
     pub fn empty(cluster_name: impl Into<String>) -> Self {
         Self {
             cluster_name: cluster_name.into(),
+            nodes: Vec::new(),
+        }
+    }
+
+    pub fn with_nodes(
+        cluster_name: impl Into<String>,
+        nodes: Vec<OpenSearchGetAllPitsNodeResponseWire>,
+    ) -> Self {
+        Self {
+            cluster_name: cluster_name.into(),
+            nodes,
         }
     }
 
     pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
         self.validate_supported_subset()?;
         output.write_string(&self.cluster_name);
-        output.write_vint(0);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
         output.write_vint(0);
         Ok(())
     }
@@ -26568,12 +26690,9 @@ impl OpenSearchGetAllPitsResponseWire {
                 reason: "GetAllPitNodesResponse nodes count must be non-negative",
             });
         }
-        if nodes_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits node responses",
-                reason:
-                    "GetAllPitNodesResponse node responses require DiscoveryNode and PIT info decoding",
-            });
+        let mut nodes = Vec::with_capacity(nodes_count as usize);
+        for _ in 0..nodes_count {
+            nodes.push(OpenSearchGetAllPitsNodeResponseWire::read(&mut input)?);
         }
         let failures_count = input.read_vint()?;
         if failures_count < 0 {
@@ -26589,7 +26708,10 @@ impl OpenSearchGetAllPitsResponseWire {
             });
         }
         require_no_trailing_bytes(&input)?;
-        let response = Self { cluster_name };
+        let response = Self {
+            cluster_name,
+            nodes,
+        };
         response.validate_supported_subset()?;
         Ok(response)
     }
@@ -26600,6 +26722,9 @@ impl OpenSearchGetAllPitsResponseWire {
                 shape: "get all pits response cluster name",
                 reason: "GetAllPitNodesResponse cluster name must be non-empty",
             });
+        }
+        for node in &self.nodes {
+            node.validate_supported_subset()?;
         }
         Ok(())
     }
@@ -57597,8 +57722,17 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_all_pits_response_wire_round_trips_empty_subset() {
-        let response = OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev");
+    fn opensearch_get_all_pits_response_wire_round_trips_node_pit_subset() {
+        let response = OpenSearchGetAllPitsResponseWire::with_nodes(
+            "steelsearch-dev",
+            vec![OpenSearchGetAllPitsNodeResponseWire::new(
+                test_discovery_node_wire(),
+                vec![
+                    OpenSearchListPitInfoWire::new("pit-context-a", 1_700_000_000_000, 60_000),
+                    OpenSearchListPitInfoWire::new("pit-context-b", 1_700_000_001_000, 120_000),
+                ],
+            )],
+        );
         let mut output = StreamOutput::new();
         response.write(&mut output).unwrap();
 
@@ -57608,14 +57742,18 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_all_pits_response_rejects_non_empty_nodes_or_failures() {
-        let mut node_payload = StreamOutput::new();
-        node_payload.write_string("steelsearch-dev");
-        node_payload.write_vint(1);
+    fn opensearch_get_all_pits_response_rejects_invalid_pit_infos_or_failures() {
+        let response = OpenSearchGetAllPitsResponseWire::with_nodes(
+            "steelsearch-dev",
+            vec![OpenSearchGetAllPitsNodeResponseWire::new(
+                test_discovery_node_wire(),
+                vec![OpenSearchListPitInfoWire::new("", 1_700_000_000_000, 60_000)],
+            )],
+        );
         assert!(matches!(
-            OpenSearchGetAllPitsResponseWire::read(node_payload.freeze()),
+            response.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits node responses",
+                shape: "get all pits empty pit id",
                 ..
             })
         ));
@@ -57639,6 +57777,23 @@ mod tests {
                 ..
             })
         ));
+
+        assert!(matches!(
+            OpenSearchListPitInfoWire::new("pit-context", -1, 60_000).validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits creation time",
+                ..
+            })
+        ));
+
+        assert!(matches!(
+            OpenSearchListPitInfoWire::new("pit-context", 1_700_000_000_000, 0)
+                .validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits keep alive",
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -57659,7 +57814,13 @@ mod tests {
             .validate_supported_subset()
             .unwrap();
 
-        let response = OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev");
+        let response = OpenSearchGetAllPitsResponseWire::with_nodes(
+            "steelsearch-dev",
+            vec![OpenSearchGetAllPitsNodeResponseWire::new(
+                test_discovery_node_wire(),
+                vec![OpenSearchListPitInfoWire::new("pit-context", 1_700_000_000_000, 60_000)],
+            )],
+        );
         let mut frame = build_opensearch_get_all_pits_response_message(
             55,
             OPENSEARCH_3_7_0_TRANSPORT,

@@ -2,17 +2,30 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_opensearch_get_all_pits_request_message, build_opensearch_get_all_pits_response_message,
     read_opensearch_get_all_pits_request_message, read_opensearch_get_all_pits_response_message,
-    OpenSearchGetAllPitsRequestWire, OpenSearchGetAllPitsResponseWire,
+    OpenSearchDiscoveryNodeRoleWire, OpenSearchDiscoveryNodeWire, OpenSearchGetAllPitsNodeResponseWire,
+    OpenSearchGetAllPitsRequestWire, OpenSearchGetAllPitsResponseWire, OpenSearchListPitInfoWire,
+    OpenSearchTransportAddressWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
+use std::collections::BTreeMap;
 use std::hint::black_box;
+use std::net::IpAddr;
 use std::time::Instant;
 
 const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = OpenSearchGetAllPitsRequestWire::default();
-    let response = OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev");
+    let response = OpenSearchGetAllPitsResponseWire::with_nodes(
+        "steelsearch-dev",
+        vec![OpenSearchGetAllPitsNodeResponseWire::new(
+            benchmark_discovery_node(),
+            vec![
+                OpenSearchListPitInfoWire::new("pit-context-a", 1_700_000_000_000, 60_000),
+                OpenSearchListPitInfoWire::new("pit-context-b", 1_700_000_001_000, 120_000),
+            ],
+        )],
+    );
 
     let request_encode = measure("get_all_pits_request_encode", ITERATIONS, || {
         let frame = build_opensearch_get_all_pits_request_message(
@@ -106,5 +119,34 @@ fn decode_message(frame: &mut bytes::BytesMut) -> os_transport::TransportMessage
     {
         DecodedFrame::Message(message) => message,
         DecodedFrame::Ping => panic!("expected message frame"),
+    }
+}
+
+fn benchmark_discovery_node() -> OpenSearchDiscoveryNodeWire {
+    OpenSearchDiscoveryNodeWire {
+        name: "steel-node".to_string(),
+        id: "steel-node-id".to_string(),
+        ephemeral_id: "steel-node-ephemeral".to_string(),
+        host_name: "127.0.0.1".to_string(),
+        host_address: "127.0.0.1".to_string(),
+        transport_address: OpenSearchTransportAddressWire {
+            ip: IpAddr::from([127, 0, 0, 1]),
+            host: "127.0.0.1".to_string(),
+            port: 9300,
+        },
+        attributes: BTreeMap::new(),
+        roles: vec![
+            OpenSearchDiscoveryNodeRoleWire {
+                name: "cluster_manager".to_string(),
+                abbreviation: "m".to_string(),
+                can_contain_data: false,
+            },
+            OpenSearchDiscoveryNodeRoleWire {
+                name: "data".to_string(),
+                abbreviation: "d".to_string(),
+                can_contain_data: true,
+            },
+        ],
+        version: OPENSEARCH_3_7_0_TRANSPORT,
     }
 }
