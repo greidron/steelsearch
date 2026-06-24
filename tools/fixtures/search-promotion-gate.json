@@ -34,6 +34,7 @@
         "pit_clear_all_search",
         "pit_clear_all_body_search",
         "pit_search",
+        "pit_snapshot_after_update_delete_search",
         "pit_search_with_default_ignore_throttled",
         "pit_search_with_order_sensitive_default_wildcards",
         "pit_search_with_default_ccs_minimize_roundtrips",

@@ -71,6 +71,7 @@ def main() -> int:
             "nested_query_search",
             "pit_open_search",
             "pit_search",
+            "pit_snapshot_after_update_delete_search",
             "scroll_initial_search",
             "scroll_follow_up_search",
             "collapse_search",

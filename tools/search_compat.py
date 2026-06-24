@@ -887,8 +887,9 @@ def run_case_request(
 
     step_results: list[dict[str, Any]] = []
     response: dict[str, Any] = {"status": 0, "body": {}, "error": "case has no steps"}
+    saved_values: dict[str, Any] = {}
     for index, step in enumerate(steps):
-        resolved_step = resolve_step_placeholders(step, response)
+        resolved_step = resolve_step_placeholders(step, response, saved_values)
         step_headers = resolve_request_headers(fixture, resolved_step, case_headers)
         response = http_json(
             base_url,
@@ -911,11 +912,17 @@ def run_case_request(
                 "extract": extract(resolved_step.get("extract", "status_only"), response),
             }
         )
+        for name, path in (resolved_step.get("save") or {}).items():
+            saved_values[str(name)] = response_path(response, str(path))
     return response, step_results
 
 
-def resolve_step_placeholders(step: dict[str, Any], previous_response: dict[str, Any]) -> dict[str, Any]:
-    return resolve_placeholders(step, previous_response)
+def resolve_step_placeholders(
+    step: dict[str, Any],
+    previous_response: dict[str, Any],
+    saved_values: dict[str, Any],
+) -> dict[str, Any]:
+    return resolve_placeholders(step, previous_response, saved_values)
 
 
 def resolve_request_headers(
@@ -957,11 +964,18 @@ def resolve_credential_headers(fixture: dict[str, Any], credential_set_name: str
     return {"Authorization": f"Basic {token}"}
 
 
-def resolve_placeholders(value: Any, previous_response: dict[str, Any]) -> Any:
+def resolve_placeholders(
+    value: Any,
+    previous_response: dict[str, Any],
+    saved_values: dict[str, Any] | None = None,
+) -> Any:
     if isinstance(value, dict):
-        return {key: resolve_placeholders(item, previous_response) for key, item in value.items()}
+        return {
+            key: resolve_placeholders(item, previous_response, saved_values)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [resolve_placeholders(item, previous_response) for item in value]
+        return [resolve_placeholders(item, previous_response, saved_values) for item in value]
     if not isinstance(value, str):
         return value
     if value == "${last._scroll_id}":
@@ -977,7 +991,19 @@ def resolve_placeholders(value: Any, previous_response: dict[str, Any]) -> Any:
             else:
                 return None
         return current
+    if value.startswith("${saved.") and value.endswith("}"):
+        return (saved_values or {}).get(value[len("${saved.") : -1])
     return value
+
+
+def response_path(response: dict[str, Any], path: str) -> Any:
+    current: Any = response
+    for part in path.split("."):
+        if isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return None
+    return current
 
 
 def http_json(
