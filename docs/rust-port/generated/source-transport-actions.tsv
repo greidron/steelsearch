@@ -7,7 +7,7 @@ implemented	WlmStatsAction.INSTANCE	TransportWlmStatsAction.class	/home/ubuntu/O
 partial	RemoteStoreStatsAction.INSTANCE	TransportRemoteStoreStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	661
 partial	RemoteStoreMetadataAction.INSTANCE	TransportRemoteStoreMetadataAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	662
 implemented	NodesUsageAction.INSTANCE	TransportNodesUsageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	663
-partial	NodesHotThreadsAction.INSTANCE	TransportNodesHotThreadsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	664
+implemented	NodesHotThreadsAction.INSTANCE	TransportNodesHotThreadsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	664
 implemented	ListTasksAction.INSTANCE	TransportListTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	665
 implemented	GetTaskAction.INSTANCE	TransportGetTaskAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	666
 implemented	CancelTasksAction.INSTANCE	TransportCancelTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	667

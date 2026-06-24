@@ -481,11 +481,12 @@ The nodes-hot-threads boundary covers:
 - OpenSearch `NodesHotThreadsRequest` parent task, node ids, optional timeout,
   thread count, idle-thread inclusion flag, sampling type, interval, and
   snapshot count at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/nodes/hot_threads`
-  until runtime stack sampling and diagnostic output mapping are implemented;
+- implemented classification for `cluster:monitor/nodes/hot_threads` default
+  local-node requests, returning an OpenSearch-shaped BaseNodesResponse with
+  local diagnostic text;
 - explicit rejection for concrete node payloads, node filters, timeout, custom
   thread count, idle-thread inclusion, non-CPU sampling type, custom interval,
-  custom snapshot count, and nodes-hot-threads execution.
+  and custom snapshot count.
 
 The add-voting-config-exclusions boundary covers:
 
@@ -2734,21 +2735,24 @@ lightweight admin transport range; the next performance-sensitive work is
 populating real REST action or aggregation usage telemetry without adding
 per-request allocation spikes.
 
-Current nodes-hot-threads reject wire microbenchmark:
+Current nodes-hot-threads implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin nodes-hot-threads-reject-wire-benchmark
-nodes_hot_threads_reject_request_encode iterations=400000 elapsed_ms=262.869 ops_per_second=1521670.82 nanos_per_op=657.17
-nodes_hot_threads_reject_request_decode iterations=400000 elapsed_ms=242.725 ops_per_second=1647956.61 nanos_per_op=606.81
-nodes_hot_threads_reject_validation iterations=400000 elapsed_ms=245.280 ops_per_second=1630792.35 nanos_per_op=613.20
-nodes_hot_threads_reject_wire_bottleneck_ops_per_second=1521670.82
+cargo run -p os-transport --release --bin nodes-hot-threads-wire-benchmark
+nodes_hot_threads_request_encode iterations=400000 elapsed_ms=253.522 ops_per_second=1577771.11 nanos_per_op=633.81
+nodes_hot_threads_request_decode iterations=400000 elapsed_ms=250.324 ops_per_second=1597930.05 nanos_per_op=625.81
+nodes_hot_threads_request_validate iterations=400000 elapsed_ms=251.848 ops_per_second=1588260.20 nanos_per_op=629.62
+nodes_hot_threads_response_encode iterations=400000 elapsed_ms=924.979 ops_per_second=432442.11 nanos_per_op=2312.45
+nodes_hot_threads_response_decode iterations=400000 elapsed_ms=1056.059 ops_per_second=378766.76 nanos_per_op=2640.15
+nodes_hot_threads_wire_bottleneck_ops_per_second=378766.76
 ```
 
-The current nodes-hot-threads fail-closed boundary bottleneck is request encode.
-The payload adds fixed diagnostic sampling controls on top of the BaseNodesRequest
-envelope, so it is heavier than nodes-usage but still in the lightweight admin
-transport range. At roughly 1.52M ops/s in the latest local release run, this
-boundary does not introduce a source-materialization bottleneck.
+The current nodes-hot-threads implemented-path bottleneck is response decode.
+The response carries the BaseNodesResponse envelope, local DiscoveryNode
+identity, and diagnostic text for the local node. At roughly 379k ops/s in the
+latest local release run, this remains lightweight enough for administrative
+transport use; future work should keep richer diagnostic rendering off the hot
+request parse path.
 
 Current add-voting-config-exclusions reject wire microbenchmark:
 
@@ -6277,7 +6281,6 @@ response-shape examples.
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
 - `NodesInfoAction.INSTANCE`
-- `NodesHotThreadsAction.INSTANCE`
 - `GetMappingsAction.INSTANCE`
 - `GetFieldMappingsAction.INSTANCE`
 - `GetAliasesAction.INSTANCE`

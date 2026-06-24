@@ -238,8 +238,8 @@ name = "nodes-usage-wire-benchmark"
 path = "benchmarks/nodes_usage_wire.rs"
 
 [[bin]]
-name = "nodes-hot-threads-reject-wire-benchmark"
-path = "benchmarks/nodes_hot_threads_reject_wire.rs"
+name = "nodes-hot-threads-wire-benchmark"
+path = "benchmarks/nodes_hot_threads_wire.rs"
 
 [[bin]]
 name = "add-voting-config-exclusions-reject-wire-benchmark"
